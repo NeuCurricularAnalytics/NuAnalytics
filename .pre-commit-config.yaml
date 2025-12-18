@@ -1,0 +1,26 @@
+# Pre-commit hooks configuration
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v9.13.0
+    hooks:
+      - id: eslint
+        name: eslint (wasm typescript)
+        files: ^src/wasm/typescript/.*\.ts$
+        additional_dependencies:
+          - eslint@9.13.0
+          - "@typescript-eslint/parser@8.0.0"
+          - "@typescript-eslint/eslint-plugin@8.0.0"
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v2.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]

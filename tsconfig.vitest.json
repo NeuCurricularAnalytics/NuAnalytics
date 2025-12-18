@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.wasm.json",
+  "compilerOptions": {
+    "types": ["vitest/globals", "node"],
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["tests/typescript/**/*.ts", "tests/typescript/setup.d.ts"],
+  "exclude": ["dist", "node_modules"]
+}

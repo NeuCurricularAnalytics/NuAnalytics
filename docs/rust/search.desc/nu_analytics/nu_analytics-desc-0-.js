@@ -1,0 +1,1 @@
+searchState.loadedDescShard("nu_analytics", 0, "Shared library for <code>NuAnalytics</code> Contains core functionality …\nShared module for common functionality across all targets\nReturns the current version of the <code>NuAnalytics</code> crate")

@@ -1,0 +1,17 @@
+# Clippy linting configuration
+# Enforces code quality and best practices
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 30
+
+# Type complexity threshold
+type-complexity-threshold = 250
+
+# Allow panic! in tests
+allow-panic-in-tests = true
+
+# Allow dbg! in tests
+allow-dbg-in-tests = true
+
+# Enforce doc comments for public items
+missing-docs-in-crate-items = true

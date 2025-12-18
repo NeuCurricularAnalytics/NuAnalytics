@@ -1,0 +1,59 @@
+{
+  "name": "nuanalytics",
+  "version": "0.1.0",
+  "homepage": "https://github.com/NeuCurricularAnalytics/NuAnalytics#readme",
+  "bugs": {
+    "url": "https://github.com/NeuCurricularAnalytics/NuAnalytics/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NeuCurricularAnalytics/NuAnalytics.git"
+  },
+  "license": "MIT",
+  "scripts": {
+    "dev": "cargo build",
+    "dev:watch": "cargo watch -x build",
+    "dev:all": "npm run dev && npm run dev:wasm:build",
+    "dev:wasm": "concurrently \"npm run dev:wasm:watch\" \"npm run dev:typescript:watch\" \"npm run dev:sass:watch\"",
+    "dev:wasm:build": "wasm-pack build --target web --out-dir dist/wasm && npm run dev:typescript && npm run dev:sass && cp src/wasm/index.html dist/",
+    "dev:wasm:watch": "cargo watch -s 'wasm-pack build --target web --out-dir dist/wasm'",
+    "dev:typescript": "esbuild src/wasm/typescript/index.ts --bundle --format=esm --outfile=dist/js/index.js --sourcemap --external:../wasm/nu_analytics.js",
+    "dev:typescript:watch": "esbuild src/wasm/typescript/index.ts --bundle --format=esm --outfile=dist/js/index.js --sourcemap --watch --external:../wasm/nu_analytics.js",
+    "dev:sass": "sass --no-source-map src/wasm/sass:dist/css",
+    "dev:sass:watch": "sass --no-source-map --watch src/wasm/sass:dist/css",
+    "build": "cargo build --release",
+    "build:cli": "cargo build --release",
+    "build:all": "npm run build:cli && npm run build:wasm",
+    "build:wasm": "wasm-pack build --target web --out-dir dist/wasm && npm run build:typescript && npm run build:sass && cp src/wasm/index.html dist/",
+    "build:typescript": "esbuild src/wasm/typescript/index.ts --bundle --format=esm --outfile=dist/js/index.js --minify --drop:debugger --pure:console.debug --external:../wasm/nu_analytics.js",
+    "build:sass": "sass --no-source-map --style=compressed src/wasm/sass:dist/css",
+    "lint": "npm run lint:clippy && npm run lint:fmt && npm run lint:doc && npm run lint:typescript && npm run lint:styles",
+    "lint:clippy": "cargo clippy --all-targets --all-features -- -D warnings",
+    "lint:fmt": "cargo fmt --all -- --check",
+    "lint:doc": "cargo doc --no-deps --all-features",
+    "lint:typescript": "eslint src/wasm/typescript --ext .ts",
+    "lint:styles": "stylelint src/wasm/sass/**/*.scss",
+    "lint:fix": "cargo clippy --fix --allow-dirty && cargo fmt --all && eslint --fix src/wasm/typescript --ext .ts && stylelint --fix src/wasm/sass/**/*.scss",
+    "test": "cargo test",
+    "test:ts": "vitest run tests/typescript",
+    "test:ts:watch": "vitest watch tests/typescript",
+    "test:all": "npm run test && npm run test:ts",
+    "test:wasm": "wasm-pack test --headless --firefox src/wasm/rs",
+    "serve": "serve dist -l 4173",
+    "doc": "cargo doc --no-deps --document-private-items --all-features && rm -rf docs/rust && mv target/doc docs/rust",
+    "clean": "cargo clean && rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "concurrently": "^9.2.1",
+    "eslint": "^8.56.0",
+    "serve": "^14.2.1",
+    "sass": "^1.97.0",
+    "stylelint": "^16.9.0",
+    "stylelint-config-standard-scss": "^14.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
+  }
+}
