@@ -1,7 +1,7 @@
 //! WASM bindings exported to JavaScript/TypeScript
 
 use crate::get_version;
-use crate::{debug, error, info, warn};
+use logger::{debug, error, info, warn};
 use wasm_bindgen::prelude::*;
 
 /// Returns the current NuAnalytics version for the WASM build.
