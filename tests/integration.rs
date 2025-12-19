@@ -1,3 +1,3 @@
-//! Integration tests for nu_analytics
+//! Integration tests for `nu_analytics`
 
 mod rs;

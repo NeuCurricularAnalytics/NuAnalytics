@@ -12,6 +12,7 @@ Ensure you have the following installed:
 - **Node.js 18+** and npm - [Install Node.js](https://nodejs.org/)
 - **Git** - [Install Git](https://git-scm.com/)
 - **wasm-pack** - Install with: `cargo install wasm-pack`
+- **cargo-watch** - Install with: `cargo install cargo-watch` (required for `npm run dev:watch` and `npm run dev:wasm`)
 
 ### Installation
 
@@ -59,10 +60,30 @@ cargo build --release
 cargo run --bin nuanalytics-cli
 ```
 
+You can control logging with either the explicit `--log-level` or shorthand flags:
+
+```bash
+# Shorthand flags
+cargo run --bin nuanalytics-cli -- -v          # enable info-level
+cargo run --bin nuanalytics-cli -- --debug     # enable debug-level + runtime debug
+
+# Explicit level
+cargo run --bin nuanalytics-cli -- --log-level warn
+cargo run --bin nuanalytics-cli -- --log-level debug
+```
+
+Tip: For quick CLI testing, prefer `cargo run` so it rebuilds as needed and runs in one step. If you want to skip rebuild when code hasn’t changed, run the compiled binary directly:
+
+```bash
+target/debug/nuanalytics-cli -- --log-level info
+```
+
 **Watch for changes and rebuild:**
 ```bash
 npm run dev:watch
 ```
+
+This uses `cargo-watch` to rebuild with all features enabled during development.
 
 **Run CLI tests:**
 ```bash
@@ -84,6 +105,8 @@ npm run dev:wasm:build
 ```bash
 npm run build:wasm
 ```
+
+Note: In production WASM builds, debug logging is disabled by design. The build script uses `--no-default-features --features log-info` so only info/warn/error are emitted.
 
 **Watch WASM build continuously:**
 ```bash
@@ -130,6 +153,8 @@ npm run dev:all
 ```bash
 npm run build:all
 ```
+
+Feature defaults: During development, debug logging is enabled by default for native and WASM dev builds. Release WASM builds explicitly disable debug.
 
 ### Documentation
 

@@ -16,9 +16,15 @@ path = "src/native/main.rs"
 # WASM library (requires wasm-bindgen feature)
 [dependencies]
 wasm-bindgen = "0.2"
+clap = { version = "4.5", features = ["derive"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["console"] }
 
 [features]
-default = []
+default = ["log-info", "log-debug"]
+log-info = []
+log-debug = []
 
 [profile.release]
 opt-level = "z"  # Optimize for size
