@@ -7,3 +7,4 @@ pub mod wasm;
 pub mod shared;
 
 pub use shared::*;
+// No logger re-exports: use the standalone `logger` crate directly.

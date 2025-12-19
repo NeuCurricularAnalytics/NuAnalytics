@@ -1,4 +1,4 @@
-//! Integration tests for logger behavior.
+//! Integration tests for the `logger` crate
 
 use logger::{debug, error, info, warn};
 use logger::{set_level, set_level_from_str, Level};
@@ -24,4 +24,15 @@ fn logs_do_not_panic() {
     warn!("warn integration");
     error!("error integration");
     debug!("debug integration");
+}
+
+#[cfg(feature = "log-debug")]
+#[test]
+fn debug_respects_runtime_flag() {
+    use logger::{disable_debug, enable_debug};
+    set_level(Level::Debug);
+    disable_debug();
+    debug!("should be silent");
+    enable_debug();
+    debug!("should emit");
 }

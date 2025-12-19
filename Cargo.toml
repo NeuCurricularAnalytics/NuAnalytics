@@ -17,14 +17,16 @@ path = "src/native/main.rs"
 [dependencies]
 wasm-bindgen = "0.2"
 clap = { version = "4.5", features = ["derive"] }
+logger = { path = "crates/logger" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["console"] }
 
 [features]
 default = ["log-info", "log-debug"]
-log-info = []
-log-debug = []
+# Forward feature flags to the logger crate
+log-info = ["logger/log-info"]
+log-debug = ["logger/log-debug"]
 
 [profile.release]
 opt-level = "z"  # Optimize for size
@@ -41,3 +43,8 @@ pedantic = "warn"
 nursery = "warn"
 correctness = "deny"
 perf = "deny"
+
+[workspace]
+members = [
+	"crates/logger",
+]

@@ -1,0 +1,31 @@
+[package]
+name = "logger"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "logger"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[features]
+# Mirror feature flags for consistency
+default = ["log-info", "log-debug"]
+log-info = []
+log-debug = []
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["console"] }
+wasm-bindgen = "0.2"
+
+# Linting configuration
+[lints.rust]
+unsafe_code = "warn"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+correctness = "deny"
+perf = "deny"

@@ -133,10 +133,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "logger"
+version = "0.1.0"
+dependencies = [
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "nu_analytics"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "logger",
  "wasm-bindgen",
  "web-sys",
 ]

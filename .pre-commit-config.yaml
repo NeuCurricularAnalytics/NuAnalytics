@@ -11,7 +11,7 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy
-        entry: cargo clippy --all-targets --all-features -- -D warnings
+        entry: cargo clippy --all-targets --all-features --workspace -- -D warnings
         language: system
         types: [rust]
         pass_filenames: false

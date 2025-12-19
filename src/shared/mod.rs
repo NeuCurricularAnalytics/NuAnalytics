@@ -11,5 +11,4 @@ pub const fn get_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
-pub mod logger;
-pub use logger::*;
+// The `logger` module moved to standalone crate; use `logger` directly.

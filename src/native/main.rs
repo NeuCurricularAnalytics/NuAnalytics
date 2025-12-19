@@ -1,7 +1,8 @@
 //! Command-line interface entry point for `NuAnalytics`
 
 use clap::{Parser, ValueEnum};
-use nu_analytics::{debug, error, get_version, info, shared::logger, warn};
+use logger::{debug, enable_debug, error, info, set_level, warn, Level};
+use nu_analytics::get_version;
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum LogLevelArg {
@@ -11,7 +12,7 @@ enum LogLevelArg {
     Debug,
 }
 
-impl From<LogLevelArg> for logger::Level {
+impl From<LogLevelArg> for Level {
     fn from(arg: LogLevelArg) -> Self {
         match arg {
             LogLevelArg::Error => Self::Error,
@@ -42,17 +43,17 @@ fn main() {
     let args = Cli::parse();
 
     // Determine effective level with shorthand flags taking precedence
-    let mut level: logger::Level = args.log_level.into();
+    let mut level: Level = args.log_level.into();
     if args.debug_flag {
-        level = logger::Level::Debug;
-        logger::enable_debug();
+        level = Level::Debug;
+        enable_debug();
     } else if args.verbose {
         // Only raise to info if not explicitly set higher
-        if (level as u8) < (logger::Level::Info as u8) {
-            level = logger::Level::Info;
+        if (level as u8) < (Level::Info as u8) {
+            level = Level::Info;
         }
     }
-    logger::set_level(level);
+    set_level(level);
 
     println!("NuAnalytics CLI v{}", get_version());
     println!("Hello from the command-line interface!");
