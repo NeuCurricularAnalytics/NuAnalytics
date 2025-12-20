@@ -1,6 +1,8 @@
 //! Lightweight cross-platform logger crate with feature-gated levels.
 //! - `log-info` enables `info!` output (enabled by default).
 //! - `log-debug` enables `debug!` output and a runtime debug flag.
+//! - `verbose` enables `verbose!` output, a simple printer with no tags.
+//! - `file-logging` enables writing log messages to a file (verbose does NOT go to file).
 //! - `warn!` and `error!` are always active.
 //!
 //! On `wasm32`, logs go to `web_sys::console`; on native they use stdout/stderr.
@@ -10,6 +12,13 @@ use std::fmt::Arguments;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::LazyLock;
+
+#[cfg(feature = "file-logging")]
+use std::{
+    fs::{File, OpenOptions},
+    io::Write,
+    sync::Mutex,
+};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
@@ -49,6 +58,12 @@ static LOG_LEVEL: LazyLock<AtomicU8> = LazyLock::new(|| AtomicU8::new(default_le
 /// Runtime flag controlling whether `debug!` messages should emit.
 #[cfg(feature = "log-debug")]
 static DEBUG_ENABLED: AtomicBool = AtomicBool::new(true);
+/// Runtime flag controlling whether `verbose!` output should emit.
+#[cfg(feature = "verbose")]
+static VERBOSE_ENABLED: AtomicBool = AtomicBool::new(false);
+/// Global storage for the log file path and handle.
+#[cfg(feature = "file-logging")]
+static LOG_FILE: LazyLock<Mutex<Option<File>>> = LazyLock::new(|| Mutex::new(None));
 
 /// Set the global log level.
 pub fn set_level(level: Level) {
@@ -109,16 +124,111 @@ pub fn is_debug_enabled() -> bool {
     false
 }
 
+/// Enable verbose output at runtime (no-op when verbose is disabled).
+#[cfg(feature = "verbose")]
+pub fn enable_verbose() {
+    VERBOSE_ENABLED.store(true, Ordering::SeqCst);
+}
+#[cfg(not(feature = "verbose"))]
+/// Enable verbose output at runtime (no-op when verbose is disabled).
+pub fn enable_verbose() {}
+
+/// Disable verbose output at runtime (no-op when verbose is disabled).
+#[cfg(feature = "verbose")]
+pub fn disable_verbose() {
+    VERBOSE_ENABLED.store(false, Ordering::SeqCst);
+}
+#[cfg(not(feature = "verbose"))]
+/// Disable verbose output at runtime (no-op when verbose is disabled).
+pub fn disable_verbose() {}
+
+/// Returns whether verbose output is enabled (false if `verbose` is disabled).
+#[cfg(feature = "verbose")]
+pub fn is_verbose_enabled() -> bool {
+    VERBOSE_ENABLED.load(Ordering::SeqCst)
+}
+
+/// Returns whether verbose output is enabled (false if `verbose` is disabled).
+#[cfg(not(feature = "verbose"))]
+pub fn is_verbose_enabled() -> bool {
+    false
+}
+
+/// Initialize file logging to the specified path.
+/// Returns true on success, false on failure.
+///
+/// # Panics
+///
+/// Panics if the `LOG_FILE` mutex is poisoned.
+#[cfg(feature = "file-logging")]
+#[must_use]
+pub fn init_file_logging(path: &std::path::Path) -> bool {
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .is_ok_and(|file| {
+            let mut log_file = LOG_FILE.lock().unwrap();
+            *log_file = Some(file);
+            true
+        })
+}
+
+/// Initialize file logging to the specified path.
+/// Returns true on success, false on failure.
+#[cfg(not(feature = "file-logging"))]
+pub fn init_file_logging(_path: &std::path::Path) -> bool {
+    false
+}
+
+/// Write a message to the log file (if file logging is enabled).
+#[cfg(feature = "file-logging")]
+fn write_to_file(message: &str) {
+    if let Ok(mut log_file) = LOG_FILE.lock() {
+        if let Some(ref mut file) = *log_file {
+            let _ = writeln!(file, "{message}");
+            let _ = file.flush();
+        }
+    }
+}
+
+/// Write a message to the log file (if file logging is enabled).
+#[cfg(not(feature = "file-logging"))]
+fn write_to_file(_message: &str) {}
+
+/// Returns true if file logging has been initialized and is active.
+#[cfg(feature = "file-logging")]
+fn is_file_logging_active() -> bool {
+    LOG_FILE.lock().map(|lf| lf.is_some()).unwrap_or(false)
+}
+
+/// Returns false when file logging feature is disabled.
+#[cfg(not(feature = "file-logging"))]
+fn is_file_logging_active() -> bool {
+    false
+}
+
 /// Internal emission helper.
 ///
 /// Routes messages to platform-appropriate sinks:
 /// - On `wasm32`, uses `web_sys::console` with light styling for `[ERROR]`/`[WARN]`.
 /// - On native, writes to stdout by default and stderr for warnings/errors.
+/// - When file-logging is enabled, also writes to the log file.
 ///
 /// `prefix` controls the level tag (e.g., `[ERROR]`), while `to_stderr`
 /// indicates whether the native path should use stderr.
 #[allow(dead_code)]
 fn emit(prefix: &str, msg: &str, to_stderr: bool) {
+    // If file logging is enabled, write to file and do not echo to console.
+    #[cfg(feature = "file-logging")]
+    {
+        if is_file_logging_active() && !prefix.is_empty() {
+            let file_message = format!("{prefix} {msg}");
+            write_to_file(&file_message);
+            return;
+        }
+    }
+    // Then emit to console/stdout
     #[cfg(target_arch = "wasm32")]
     {
         let _ = to_stderr; // routing is based on prefix on wasm
@@ -237,6 +347,20 @@ macro_rules! info {
 /// Logs a debug-level message (requires `log-debug` feature and runtime enablement).
 macro_rules! debug {
     ($($arg:tt)*) => { $crate::log_impl($crate::Level::Debug, format_args!($($arg)*)) };
+}
+
+#[macro_export]
+/// Prints a verbose message (requires `verbose` feature and runtime enablement).
+/// This is a simple printer with no tags, and does NOT go to log files.
+macro_rules! verbose {
+    ($($arg:tt)*) => {
+        #[cfg(feature = "verbose")]
+        {
+            if $crate::is_verbose_enabled() {
+                println!($($arg)*);
+            }
+        }
+    };
 }
 
 #[cfg(test)]
