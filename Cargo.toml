@@ -23,10 +23,12 @@ logger = { path = "crates/logger" }
 web-sys = { version = "0.3", features = ["console"] }
 
 [features]
-default = ["log-info", "log-debug"]
+default = ["log-info", "log-debug", "verbose", "file-logging"]
 # Forward feature flags to the logger crate
 log-info = ["logger/log-info"]
 log-debug = ["logger/log-debug"]
+verbose = ["logger/verbose"]
+file-logging = ["logger/file-logging"]
 
 [profile.release]
 opt-level = "z"  # Optimize for size
