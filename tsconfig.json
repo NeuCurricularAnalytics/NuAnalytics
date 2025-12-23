@@ -1,7 +1,0 @@
-{
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.wasm.json" },
-    { "path": "./tsconfig.vitest.json" }
-  ]
-}

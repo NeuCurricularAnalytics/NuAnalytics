@@ -1,26 +1,37 @@
-# Quick Commands
+# Quick Commands (CLI-only)
 
-Common one-liners for everyday development:
+Common one-liners for everyday development with the CLI.
 
 ```bash
-# Build everything for development
-npm run dev:all
+# Build (debug)
+npm run dev
 
-# Run CLI with debug
-cargo run --bin nuanalytics-cli -- --debug
+# Build (release)
+npm run build
 
-# Run CLI with info via -v
-cargo run --bin nuanalytics-cli -- -v
+# Run the CLI
+npm run run
+# or
+cargo run --bin nuanalytics-cli
 
-# Build WASM dev and serve locally
-npm run dev:wasm:build && npm run serve
+# Logging examples
+cargo run --bin nuanalytics-cli -- --log-level warn
+cargo run --bin nuanalytics-cli -- --debug           # enable debug level + runtime flag
+cargo run --bin nuanalytics-cli -- -v                # enable verbose output
+cargo run --bin nuanalytics-cli -- --log-file ./nu.log
 
-# Build production bundles (CLI + WASM)
-npm run build:all
+# Tests
+npm run test                      # cargo test --workspace
 
-# Run all tests
-npm run test:all
+# Linting
+npm run lint                      # clippy + fmt + doc
+npm run lint:clippy
+npm run lint:fmt
+npm run lint:doc
 
-# Run linters
-npm run lint
+# Docs
+npm run doc                       # generates docs into docs/rust
+
+# Clean
+npm run clean
 ```

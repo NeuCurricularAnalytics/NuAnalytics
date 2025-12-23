@@ -6,21 +6,18 @@ edition = "2021"
 [lib]
 name = "nu_analytics"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 # CLI binary (default)
 [[bin]]
 name = "nuanalytics-cli"
-path = "src/native/main.rs"
+path = "src/cli/main.rs"
 
-# WASM library (requires wasm-bindgen feature)
 [dependencies]
-wasm-bindgen = "0.2"
 clap = { version = "4.5", features = ["derive"] }
 logger = { path = "crates/logger" }
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3", features = ["console"] }
+# No WASM target dependencies; CLI-only
 
 [features]
 default = ["log-info", "log-debug", "verbose", "file-logging"]

@@ -1,8 +1,5 @@
 //! Shared library for `NuAnalytics`
-//! Contains core functionality used across CLI, native, and WASM targets
-
-#[cfg(target_arch = "wasm32")]
-pub mod wasm;
+//! Core functionality used by the CLI only
 
 pub mod shared;
 

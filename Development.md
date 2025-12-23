@@ -11,8 +11,7 @@ Ensure you have the following installed:
 - **Rust 1.70+** - [Install Rust](https://rustup.rs/)
 - **Node.js 18+** and npm - [Install Node.js](https://nodejs.org/)
 - **Git** - [Install Git](https://git-scm.com/)
-- **wasm-pack** - Install with: `cargo install wasm-pack`
-- **cargo-watch** - Install with: `cargo install cargo-watch` (required for `npm run dev:watch` and `npm run dev:wasm`)
+- **cargo-watch** (optional) - Install with: `cargo install cargo-watch` (used by `npm run dev:watch`)
 
 ### Installation
 
@@ -33,13 +32,13 @@ Ensure you have the following installed:
    pre-commit install --hook-type commit-msg
    ```
 
-   This ensures code quality checks run automatically before each commit.
+   This ensures code quality checks run automatically before each commit.v   If you don't have pre-commit installed, you need to install it via pip or pip3 `pip install pre-commit`.
 
 ## Common Development Actions
 
 ### CLI Development
 
-The CLI is built with Rust and can be found in `src/native/`.
+The CLI is built with Rust and can be found in `src/cli/`.
 
 **Build the CLI in debug mode:**
 ```bash
@@ -94,53 +93,7 @@ cargo test
 
 ### WASM Development
 
-The WASM module consists of Rust bindings (`src/wasm/rs/`), TypeScript (`src/wasm/typescript/`), and Sass styles (`src/wasm/sass/`).
-
-**Build WASM in development mode (with sourcemaps):**
-```bash
-npm run dev:wasm:build
-```
-
-**Build WASM for production (minified):**
-```bash
-npm run build:wasm
-```
-
-Note: In production WASM builds, debug logging is disabled by design. The build script uses `--no-default-features --features log-info` so only info/warn/error are emitted.
-
-**Watch WASM build continuously:**
-```bash
-npm run dev:wasm
-```
-
-This runs concurrent watch tasks for:
-- `dev:wasm:watch` - Rust compilation
-- `dev:typescript:watch` - TypeScript bundling with sourcemaps
-- `dev:sass:watch` - Sass compilation
-
-**Serve the built WASM app locally:**
-```bash
-npm run serve
-```
-
-Open http://localhost:4173 in your browser to view the app.
-
-**Run WASM tests:**
-```bash
-npm run test:wasm
-```
-
-**Run TypeScript tests:**
-```bash
-npm run test:ts
-# Watch mode:
-npm run test:ts:watch
-```
-
-**Run all tests:**
-```bash
-npm run test:all
-```
+WASM support has been removed. The project now targets the CLI only.
 
 ### Build Everything
 
@@ -154,7 +107,7 @@ npm run dev:all
 npm run build:all
 ```
 
-Feature defaults: During development, debug logging is enabled by default for native and WASM dev builds. Release WASM builds explicitly disable debug.
+Feature defaults: During development, debug logging is enabled by default for the CLI.
 
 ### Documentation
 
@@ -181,11 +134,9 @@ npm run lint
 
 **Run specific linters:**
 ```bash
-npm run lint:clippy      # Rust linting
-npm run lint:fmt         # Rust formatting check
-npm run lint:typescript  # TypeScript linting
-npm run lint:styles      # Sass linting
-npm run lint:doc         # Generate and check docs
+npm run lint:clippy   # Rust linting
+npm run lint:fmt      # Rust formatting check
+npm run lint:doc      # Generate and check docs
 ```
 
 **Auto-fix issues:**
@@ -196,8 +147,6 @@ npm run lint:fix
 This will:
 - Fix Rust formatting with `cargo fmt`
 - Fix Clippy warnings with `--fix`
-- Fix ESLint issues in TypeScript
-- Fix Stylelint issues in Sass
 
 ### Pre-commit Hooks
 
@@ -205,8 +154,6 @@ Pre-commit hooks run automatically before commits and enforce:
 
 - **Rust formatting** - `cargo fmt`
 - **Rust linting** - `cargo clippy` (deny warnings)
-- **SCSS linting** - `stylelint`
-- **TypeScript linting** - `eslint`
 - **File cleanup** - Trailing whitespace, EOF fixes
 - **YAML validation** - `.pre-commit-config.yaml`, etc.
 - **Commit message format** - Conventional commits
@@ -222,21 +169,17 @@ git commit -m "your message"
 
 ### Testing Requirements
 
-All code changes must include appropriate tests:
+All code changes must include appropriate Rust tests:
 
 - **Rust changes**: Add tests to `tests/rs/` or inline in Rust files
-- **TypeScript changes**: Add tests to `tests/typescript/`
-- **WASM changes**: Test both Rust and TypeScript integration
 
 **Before committing**, ensure all tests pass:
 
 ```bash
-npm run test:all
+npm run test
 ```
 
-This runs:
-- Rust tests: `cargo test`
-- TypeScript tests: `vitest run tests/typescript`
+This runs Rust tests via `cargo test`.
 
 **CI/CD will enforce**: All tests must pass before PRs can be merged.
 
@@ -272,10 +215,7 @@ test(rs): add smoke tests for get_version
 ```
 
 **Scope options:**
-- `wasm` - WASM module changes
 - `cli` - CLI changes
-- `typescript` - TypeScript/JS changes
-- `sass` - Styling changes
 - `tests` - Test infrastructure
 - No scope for general/cross-cutting changes
 
@@ -304,12 +244,12 @@ If a pre-commit hook fails:
 5. Re-stage files: `git add .`
 6. Retry commit: `git commit -m "message"`
 
-### WASM build issues
+### Build issues
 
-If WASM build fails:
+If a build fails:
 
 1. Clean build artifacts: `npm run clean`
-2. Rebuild: `npm run build:wasm`
+2. Rebuild: `npm run build`
 3. Check for compilation errors in the output
 
 ### Port already in use
@@ -323,7 +263,5 @@ npx --yes serve dist -l 3000  # Use different port
 ## Additional Resources
 
 - [Rust Book](https://doc.rust-lang.org/book/)
-- [wasm-bindgen Guide](https://rustwasm.github.io/docs/wasm-bindgen/)
-- [TypeScript Handbook](https://www.typescriptlang.org/docs/)
 - [Conventional Commits](https://www.conventionalcommits.org/)
 - [Pre-commit Documentation](https://pre-commit.com/)
