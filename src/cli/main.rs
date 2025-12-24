@@ -28,7 +28,7 @@ impl From<LogLevelArg> for Level {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "nuanalytics-cli", about = "NuAnalytics command-line interface")]
+#[command(name = "nuanalytics", about = "NuAnalytics command-line interface")]
 struct Cli {
     /// Set the log level (error|warn|info|debug)
     #[arg(long, value_enum, default_value = "warn")]

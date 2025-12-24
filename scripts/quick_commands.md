@@ -15,10 +15,10 @@ npm run run
 cargo run --bin nuanalytics-cli
 
 # Logging examples
-cargo run --bin nuanalytics-cli -- --log-level warn
-cargo run --bin nuanalytics-cli -- --debug           # enable debug level + runtime flag
-cargo run --bin nuanalytics-cli -- -v                # enable verbose output
-cargo run --bin nuanalytics-cli -- --log-file ./nu.log
+cargo run --bin nuanalytics -- --log-level warn
+cargo run --bin nuanalytics -- --debug           # enable debug level + runtime flag
+cargo run --bin nuanalytics -- -v                # enable verbose output
+cargo run --bin nuanalytics -- --log-file ./nu.log
 
 # Tests
 npm run test                      # cargo test --workspace

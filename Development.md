@@ -56,25 +56,25 @@ cargo build --release
 
 **Run the CLI:**
 ```bash
-cargo run --bin nuanalytics-cli
+cargo run --bin nuanalytics
 ```
 
 You can control logging with either the explicit `--log-level` or shorthand flags:
 
 ```bash
 # Shorthand flags
-cargo run --bin nuanalytics-cli -- -v          # enable info-level
-cargo run --bin nuanalytics-cli -- --debug     # enable debug-level + runtime debug
+cargo run --bin nuanalytics -- -v          # enable info-level
+cargo run --bin nuanalytics -- --debug     # enable debug-level + runtime debug
 
 # Explicit level
-cargo run --bin nuanalytics-cli -- --log-level warn
-cargo run --bin nuanalytics-cli -- --log-level debug
+cargo run --bin nuanalytics -- --log-level warn
+cargo run --bin nuanalytics -- --log-level debug
 ```
 
 Tip: For quick CLI testing, prefer `cargo run` so it rebuilds as needed and runs in one step. If you want to skip rebuild when code hasn’t changed, run the compiled binary directly:
 
 ```bash
-target/debug/nuanalytics-cli -- --log-level info
+target/debug/nuanalytics -- --log-level info
 ```
 
 **Watch for changes and rebuild:**

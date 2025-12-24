@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "cargo build",
     "build": "cargo build --release",
-    "run": "cargo run --package nu_analytics --bin nuanalytics-cli",
+    "run": "cargo run --package nu_analytics --bin nuanalytics",
     "lint": "npm run lint:clippy && npm run lint:fmt && npm run lint:doc",
     "lint:clippy": "cargo clippy --all-targets --all-features --workspace -- -D warnings",
     "lint:fmt": "cargo fmt --all -- --check",

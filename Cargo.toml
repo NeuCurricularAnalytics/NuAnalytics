@@ -10,7 +10,7 @@ crate-type = ["rlib"]
 
 # CLI binary (default)
 [[bin]]
-name = "nuanalytics-cli"
+name = "nuanalytics"
 path = "src/cli/main.rs"
 
 [dependencies]
