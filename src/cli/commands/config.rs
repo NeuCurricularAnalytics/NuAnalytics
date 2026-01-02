@@ -104,10 +104,15 @@ pub fn handle_config_reset() {
 
     // Ask for confirmation
     print!("Are you sure you want to reset config to defaults? (y/n): ");
-    io::stdout().flush().ok();
+    if io::stdout().flush().is_err() {
+        eprintln!("Warning: Failed to flush stdout");
+    }
 
     let mut response = String::new();
-    io::stdin().read_line(&mut response).ok();
+    if io::stdin().read_line(&mut response).is_err() {
+        eprintln!("Failed to read user input");
+        std::process::exit(1);
+    }
 
     if response.trim().eq_ignore_ascii_case("y") || response.trim().eq_ignore_ascii_case("yes") {
         if let Err(e) = Config::reset() {
