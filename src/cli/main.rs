@@ -3,22 +3,12 @@
 mod commands;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use commands::handle_config_command;
 use logger::{
     debug, enable_debug, enable_verbose, error, info, init_file_logging, is_debug_enabled,
     set_level, verbose, warn, Level,
 };
+use nu_analytics::config::Config;
 use std::path::PathBuf;
-
-/// Default CLI configuration loaded based on build profile.
-/// Uses release defaults in release mode, debug defaults in debug mode.
-// loads the default when compile is release mode
-#[cfg(not(debug_assertions))]
-const CONFIG_DEFAULTS: &str = include_str!("../assets/DefaultCLIConfigRelease.toml");
-
-// loads the default when compile is debug mode
-#[cfg(debug_assertions)]
-const CONFIG_DEFAULTS: &str = include_str!("../assets/DefaultCLIConfigDebug.toml");
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum LogLevelArg {
@@ -40,15 +30,43 @@ impl From<LogLevelArg> for Level {
 }
 
 #[derive(Debug, Subcommand)]
-enum Command {
-    /// Show current configuration values.
+enum ConfigSubcommand {
+    /// Display configuration values.
     ///
     /// If a KEY is provided, displays only that configuration value.
-    /// If no KEY is provided, displays all configuration values formatted by section.
-    Config {
+    /// If no KEY is provided, displays all configuration values.
+    Get {
         /// Optional configuration key to display (e.g., `level`, `file`, `plans_dir`)
         #[arg(value_name = "KEY")]
         key: Option<String>,
+    },
+    /// Set a configuration value.
+    Set {
+        /// Configuration key to set
+        #[arg(value_name = "KEY")]
+        key: String,
+        /// Value to set
+        #[arg(value_name = "VALUE")]
+        value: String,
+    },
+    /// Unset a configuration value.
+    Unset {
+        /// Configuration key to unset
+        #[arg(value_name = "KEY")]
+        key: String,
+    },
+    /// Reset configuration to defaults (requires confirmation).
+    Reset,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Manage configuration.
+    ///
+    /// If no subcommand is provided, displays all configuration values.
+    Config {
+        #[command(subcommand)]
+        subcommand: Option<ConfigSubcommand>,
     },
 }
 
@@ -108,10 +126,31 @@ fn main() {
         }
     }
 
+    // Load configuration once at startup
+    let mut config = Config::load();
+    let defaults = Config::from_defaults();
+
     // Handle subcommands
     match args.command {
-        Command::Config { key } => {
-            handle_config_command(CONFIG_DEFAULTS, key);
+        Command::Config { subcommand } => {
+            match subcommand {
+                None => {
+                    // No subcommand provided, display all config values
+                    commands::config::handle_config_get(&config, None);
+                }
+                Some(ConfigSubcommand::Get { key }) => {
+                    commands::config::handle_config_get(&config, key);
+                }
+                Some(ConfigSubcommand::Set { key, value }) => {
+                    commands::config::handle_config_set(&mut config, &key, &value);
+                }
+                Some(ConfigSubcommand::Unset { key }) => {
+                    commands::config::handle_config_unset(&mut config, &defaults, &key);
+                }
+                Some(ConfigSubcommand::Reset) => {
+                    commands::config::handle_config_reset();
+                }
+            }
             return;
         }
     }
