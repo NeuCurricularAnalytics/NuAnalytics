@@ -1,8 +1,8 @@
 # Default Config File - Ideally to use during release code
 
-[Logging]
+[logging]
 level = "warn"
-file = "%DEFAULT%/nuanalytics.log"
+file = "$NU_ANALYTICS/nuanalytics.log"
 verbose = false
 
 [database]

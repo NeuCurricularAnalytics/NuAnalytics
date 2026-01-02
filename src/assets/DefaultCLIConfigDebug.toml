@@ -1,6 +1,6 @@
 # Default Config File - Ideally to use during release code
 
-[Logging]
+[logging]
 level = "debug"
 file = "/tmp/nuanalytics.debug.log"
 verbose = true

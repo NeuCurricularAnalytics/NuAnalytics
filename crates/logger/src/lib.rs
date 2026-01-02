@@ -168,9 +168,10 @@ pub fn init_file_logging(path: &std::path::Path) -> bool {
         .append(true)
         .open(path)
         .is_ok_and(|file| {
-            let mut log_file = LOG_FILE.lock().unwrap();
-            *log_file = Some(file);
-            true
+            LOG_FILE.lock().is_ok_and(|mut log_file| {
+                *log_file = Some(file);
+                true
+            })
         })
 }
 
