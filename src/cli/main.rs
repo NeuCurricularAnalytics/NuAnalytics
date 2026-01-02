@@ -1,12 +1,24 @@
 //! Command-line interface entry point for `NuAnalytics`
 
-use clap::{Parser, ValueEnum};
+mod commands;
+
+use clap::{Parser, Subcommand, ValueEnum};
+use commands::handle_config_command;
 use logger::{
     debug, enable_debug, enable_verbose, error, info, init_file_logging, is_debug_enabled,
     set_level, verbose, warn, Level,
 };
-use nu_analytics::get_version;
 use std::path::PathBuf;
+
+/// Default CLI configuration loaded based on build profile.
+/// Uses release defaults in release mode, debug defaults in debug mode.
+// loads the default when compile is release mode
+#[cfg(not(debug_assertions))]
+const CONFIG_DEFAULTS: &str = include_str!("../assets/DefaultCLIConfigRelease.toml");
+
+// loads the default when compile is debug mode
+#[cfg(debug_assertions)]
+const CONFIG_DEFAULTS: &str = include_str!("../assets/DefaultCLIConfigDebug.toml");
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum LogLevelArg {
@@ -27,8 +39,25 @@ impl From<LogLevelArg> for Level {
     }
 }
 
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Show current configuration values.
+    ///
+    /// If a KEY is provided, displays only that configuration value.
+    /// If no KEY is provided, displays all configuration values formatted by section.
+    Config {
+        /// Optional configuration key to display (e.g., `level`, `file`, `plans_dir`)
+        #[arg(value_name = "KEY")]
+        key: Option<String>,
+    },
+}
+
 #[derive(Parser, Debug)]
-#[command(name = "nuanalytics", about = "NuAnalytics command-line interface")]
+#[command(
+    name = "nuanalytics",
+    about = "NuAnalytics command-line interface",
+    version = env!("CARGO_PKG_VERSION")
+)]
 struct Cli {
     /// Set the log level (error|warn|info|debug)
     #[arg(long, value_enum, default_value = "warn")]
@@ -45,6 +74,11 @@ struct Cli {
     /// Write logs to a file
     #[arg(long, value_name = "PATH")]
     log_file: Option<PathBuf>,
+
+    /// Subcommand to execute.
+    /// A subcommand is required to run the CLI.
+    #[command(subcommand)]
+    command: Command,
 }
 
 fn main() {
@@ -74,17 +108,28 @@ fn main() {
         }
     }
 
-    println!("NuAnalytics CLI v{}", get_version());
-    println!("Hello from the command-line interface!");
-
-    // Use verbose! for verbose output when enabled
-    if args.verbose {
-        verbose!("CLI started with level {:?}, verbose enabled", level);
-        verbose!("Debug enabled: {}", is_debug_enabled());
+    // Handle subcommands
+    match args.command {
+        Command::Config { key } => {
+            handle_config_command(CONFIG_DEFAULTS, key);
+            return;
+        }
     }
 
-    warn!("Sample warning from CLI");
-    error!("Sample error from CLI");
-    info!("Sample info from CLI");
-    debug!("Sample debug from CLI");
+    // This line is unreachable since all commands return
+    #[allow(unreachable_code)]
+    {
+        println!("Hello from the command-line interface!");
+
+        // Use verbose! for verbose output when enabled
+        if args.verbose {
+            verbose!("CLI started with level {:?}, verbose enabled", level);
+            verbose!("Debug enabled: {}", is_debug_enabled());
+        }
+
+        warn!("Sample warning from CLI");
+        error!("Sample error from CLI");
+        info!("Sample info from CLI");
+        debug!("Sample debug from CLI");
+    }
 }

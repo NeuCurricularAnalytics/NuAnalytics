@@ -1,0 +1,14 @@
+# Default Config File - Ideally to use during release code
+
+[Logging]
+level = "debug"
+file = "/tmp/nuanalytics.debug.log"
+verbose = true
+
+[database]
+token = ""
+endpoint = ""
+
+[paths]
+plans_dir = "./plans"
+out_dir = "./output"

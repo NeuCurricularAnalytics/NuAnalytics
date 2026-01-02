@@ -1,5 +1,7 @@
 //! Shared module for common functionality across all targets
 
+pub mod config;
+
 // Add shared modules here
 // pub mod models;
 // pub mod services;
