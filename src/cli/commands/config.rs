@@ -1,7 +1,19 @@
 //! Config command handler
 
+use crate::args::ConfigSubcommand;
 use nu_analytics::config::Config;
 use std::io::{self, Write};
+
+/// Dispatch config subcommands
+pub fn run(subcommand: Option<ConfigSubcommand>, config: &mut Config, defaults: &Config) {
+    match subcommand {
+        None => handle_config_get(config, None),
+        Some(ConfigSubcommand::Get { key }) => handle_config_get(config, key),
+        Some(ConfigSubcommand::Set { key, value }) => handle_config_set(config, &key, &value),
+        Some(ConfigSubcommand::Unset { key }) => handle_config_unset(config, defaults, &key),
+        Some(ConfigSubcommand::Reset) => handle_config_reset(),
+    }
+}
 
 /// Handle the config get subcommand
 pub fn handle_config_get(config: &Config, key: Option<String>) {

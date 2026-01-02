@@ -13,6 +13,12 @@ const CONFIG_DEFAULTS: &str = include_str!("../../assets/DefaultCLIConfigRelease
 #[cfg(debug_assertions)]
 const CONFIG_DEFAULTS: &str = include_str!("../../assets/DefaultCLIConfigDebug.toml");
 
+#[cfg(not(debug_assertions))]
+const CONFIG_FILE_NAME: &str = "config.toml";
+
+#[cfg(debug_assertions)]
+const CONFIG_FILE_NAME: &str = "dconfig.toml";
+
 /// Logging configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LoggingConfig {
@@ -60,6 +66,25 @@ pub struct Config {
     /// Path settings
     #[serde(default)]
     pub paths: PathsConfig,
+}
+
+/// Optional CLI overrides for configuration values
+#[derive(Debug, Clone, Default)]
+pub struct ConfigOverrides {
+    /// Override logging level
+    pub level: Option<String>,
+    /// Override log file path
+    pub file: Option<String>,
+    /// Override verbose flag
+    pub verbose: Option<bool>,
+    /// Override database token
+    pub db_token: Option<String>,
+    /// Override database endpoint
+    pub db_endpoint: Option<String>,
+    /// Override plans directory
+    pub plans_dir: Option<String>,
+    /// Override output directory
+    pub out_dir: Option<String>,
 }
 
 impl Config {
@@ -117,20 +142,40 @@ impl Config {
         changed
     }
 
+    /// Apply CLI-provided overrides onto the loaded configuration
+    pub fn apply_overrides(&mut self, overrides: &ConfigOverrides) {
+        if let Some(level) = &overrides.level {
+            self.logging.level.clone_from(level);
+        }
+        if let Some(file) = &overrides.file {
+            self.logging.file.clone_from(file);
+        }
+        if let Some(verbose) = overrides.verbose {
+            self.logging.verbose = verbose;
+        }
+
+        if let Some(token) = &overrides.db_token {
+            self.database.token.clone_from(token);
+        }
+        if let Some(endpoint) = &overrides.db_endpoint {
+            self.database.endpoint.clone_from(endpoint);
+        }
+
+        if let Some(plans_dir) = &overrides.plans_dir {
+            self.paths.plans_dir.clone_from(plans_dir);
+        }
+        if let Some(out_dir) = &overrides.out_dir {
+            self.paths.out_dir.clone_from(out_dir);
+        }
+    }
+
     /// Get the user config file path
     ///
     /// return config.toml for release
     ///        dconfig.toml for debug
     #[must_use]
     pub fn get_config_file_path() -> PathBuf {
-        #[cfg(debug_assertions)]
-        {
-            Self::get_nuanalytics_dir().join("dconfig.toml")
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            Self::get_nuanalytics_dir().join("config.toml")
-        }
+        Self::get_nuanalytics_dir().join(CONFIG_FILE_NAME)
     }
 
     /// Expand `$NU_ANALYTICS` variable in a string
