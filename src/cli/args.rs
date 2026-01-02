@@ -6,11 +6,19 @@ use std::path::PathBuf;
 use logger::Level;
 use nu_analytics::config::ConfigOverrides;
 
-#[derive(Copy, Clone, Debug, ValueEnum)]
+/// CLI log level argument
+///
+/// Represents log levels that can be passed via CLI arguments. Converts to lowercase
+/// strings for config storage and to `logger::Level` for runtime use.
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
 pub enum LogLevelArg {
+    /// Error-level logging
     Error,
+    /// Warning-level logging
     Warn,
+    /// Info-level logging
     Info,
+    /// Debug-level logging
     Debug,
 }
 
@@ -154,6 +162,20 @@ pub struct Cli {
 
 impl Cli {
     /// Convert CLI flags into config overrides
+    ///
+    /// Transforms CLI arguments into a `ConfigOverrides` struct that can be applied to
+    /// the loaded configuration. Short-form flags (e.g., `--db-token`) take precedence
+    /// over long-form flags (e.g., `--config-db-token`) when both are provided.
+    ///
+    /// # Returns
+    /// A `ConfigOverrides` struct with values from CLI flags, where `None` means no override.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let args = Cli::parse();
+    /// let overrides = args.to_config_overrides();
+    /// config.apply_overrides(&overrides);
+    /// ```
     pub fn to_config_overrides(&self) -> ConfigOverrides {
         ConfigOverrides {
             level: self.config_level.map(|lvl| lvl.to_string().to_lowercase()),
@@ -189,5 +211,146 @@ impl Cli {
                         .map(|p| p.to_string_lossy().to_string())
                 }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_log_level_display() {
+        assert_eq!(LogLevelArg::Error.to_string(), "error");
+        assert_eq!(LogLevelArg::Warn.to_string(), "warn");
+        assert_eq!(LogLevelArg::Info.to_string(), "info");
+        assert_eq!(LogLevelArg::Debug.to_string(), "debug");
+    }
+
+    #[test]
+    fn test_log_level_to_logger_level() {
+        assert_eq!(Level::from(LogLevelArg::Error), Level::Error);
+        assert_eq!(Level::from(LogLevelArg::Warn), Level::Warn);
+        assert_eq!(Level::from(LogLevelArg::Info), Level::Info);
+        assert_eq!(Level::from(LogLevelArg::Debug), Level::Debug);
+    }
+
+    #[test]
+    fn test_to_config_overrides_empty() {
+        let cli = Cli {
+            log_level: None,
+            verbose: false,
+            debug_flag: false,
+            log_file: None,
+            config_level: None,
+            config_log_file: None,
+            config_verbose: None,
+            config_db_token: None,
+            db_token: None,
+            config_db_endpoint: None,
+            db_endpoint: None,
+            config_plans_dir: None,
+            plans_dir: None,
+            config_out_dir: None,
+            out_dir: None,
+            command: Command::Config { subcommand: None },
+        };
+
+        let overrides = cli.to_config_overrides();
+        assert!(overrides.level.is_none());
+        assert!(overrides.file.is_none());
+        assert!(overrides.verbose.is_none());
+        assert!(overrides.db_token.is_none());
+        assert!(overrides.db_endpoint.is_none());
+        assert!(overrides.plans_dir.is_none());
+        assert!(overrides.out_dir.is_none());
+    }
+
+    #[test]
+    fn test_to_config_overrides_with_values() {
+        let cli = Cli {
+            log_level: None,
+            verbose: false,
+            debug_flag: false,
+            log_file: None,
+            config_level: Some(LogLevelArg::Debug),
+            config_log_file: Some(PathBuf::from("/tmp/test.log")),
+            config_verbose: Some(true),
+            config_db_token: None,
+            db_token: Some("test-token".to_string()),
+            config_db_endpoint: None,
+            db_endpoint: Some("https://test.com".to_string()),
+            config_plans_dir: None,
+            plans_dir: Some(PathBuf::from("/plans")),
+            config_out_dir: None,
+            out_dir: Some(PathBuf::from("/output")),
+            command: Command::Config { subcommand: None },
+        };
+
+        let overrides = cli.to_config_overrides();
+        assert_eq!(overrides.level, Some("debug".to_string()));
+        assert_eq!(overrides.file, Some("/tmp/test.log".to_string()));
+        assert_eq!(overrides.verbose, Some(true));
+        assert_eq!(overrides.db_token, Some("test-token".to_string()));
+        assert_eq!(overrides.db_endpoint, Some("https://test.com".to_string()));
+        assert_eq!(overrides.plans_dir, Some("/plans".to_string()));
+        assert_eq!(overrides.out_dir, Some("/output".to_string()));
+    }
+
+    #[test]
+    fn test_short_form_precedence_over_long_form() {
+        // Short-form flags should take precedence over long-form
+        let cli = Cli {
+            log_level: None,
+            verbose: false,
+            debug_flag: false,
+            log_file: None,
+            config_level: None,
+            config_log_file: None,
+            config_verbose: None,
+            config_db_token: Some("long-token".to_string()),
+            db_token: Some("short-token".to_string()),
+            config_db_endpoint: Some("https://long.com".to_string()),
+            db_endpoint: Some("https://short.com".to_string()),
+            config_plans_dir: Some(PathBuf::from("/long/plans")),
+            plans_dir: Some(PathBuf::from("/short/plans")),
+            config_out_dir: Some(PathBuf::from("/long/out")),
+            out_dir: Some(PathBuf::from("/short/out")),
+            command: Command::Config { subcommand: None },
+        };
+
+        let overrides = cli.to_config_overrides();
+        assert_eq!(overrides.db_token, Some("short-token".to_string()));
+        assert_eq!(overrides.db_endpoint, Some("https://short.com".to_string()));
+        assert_eq!(overrides.plans_dir, Some("/short/plans".to_string()));
+        assert_eq!(overrides.out_dir, Some("/short/out".to_string()));
+    }
+
+    #[test]
+    fn test_long_form_when_short_form_absent() {
+        // Long-form flags should be used when short-form is absent
+        let cli = Cli {
+            log_level: None,
+            verbose: false,
+            debug_flag: false,
+            log_file: None,
+            config_level: None,
+            config_log_file: None,
+            config_verbose: None,
+            config_db_token: Some("long-token".to_string()),
+            db_token: None,
+            config_db_endpoint: Some("https://long.com".to_string()),
+            db_endpoint: None,
+            config_plans_dir: Some(PathBuf::from("/long/plans")),
+            plans_dir: None,
+            config_out_dir: Some(PathBuf::from("/long/out")),
+            out_dir: None,
+            command: Command::Config { subcommand: None },
+        };
+
+        let overrides = cli.to_config_overrides();
+        assert_eq!(overrides.db_token, Some("long-token".to_string()));
+        assert_eq!(overrides.db_endpoint, Some("https://long.com".to_string()));
+        assert_eq!(overrides.plans_dir, Some("/long/plans".to_string()));
+        assert_eq!(overrides.out_dir, Some("/long/out".to_string()));
     }
 }

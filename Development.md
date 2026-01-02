@@ -28,17 +28,25 @@ Ensure you have the following installed:
 
 3. Set up pre-commit hooks:
    ```bash
+   pip3 install pre-commit  # if not already installed
+   ```
+   Then run:
+   ```bash
    pre-commit install
    pre-commit install --hook-type commit-msg
    ```
 
-   This ensures code quality checks run automatically before each commit.v   If you don't have pre-commit installed, you need to install it via pip or pip3 `pip install pre-commit`.
+   This ensures code quality checks run automatically before each commit. If you don't have pre-commit installed, you need to install it via pip or pip3 `pip install pre-commit`.
 
 ## Common Development Actions
 
 ### CLI Development
 
-The CLI is built with Rust and can be found in `src/cli/`.
+The CLI is built with Rust using a modular architecture:
+- `src/cli/main.rs` - Entry point and startup logic
+- `src/cli/args.rs` - CLI argument definitions using clap
+- `src/cli/commands/` - Command handlers (config, plan, degree, etc.)
+- `src/shared/config/` - Configuration management
 
 **Build the CLI in debug mode:**
 ```bash
@@ -56,25 +64,56 @@ cargo build --release
 
 **Run the CLI:**
 ```bash
-cargo run --bin nuanalytics
+cargo run -- config
+```
+
+#### Configuration Management
+
+Configuration is stored in:
+- Linux/macOS: `~/.config/nuanalytics/config.toml`
+- Windows: `%APPDATA%\nuanalytics\config.toml`
+
+The configuration system supports:
+- Persistent settings via TOML file
+- CLI overrides (in-memory only, doesn't modify file)
+- Automatic merging of missing fields from defaults on upgrades
+- Variable expansion (`$NU_ANALYTICS` expands to config directory)
+
+**Configuration commands:**
+```bash
+cargo run -- config              # Display all config
+cargo run -- config get level    # Get specific value
+cargo run -- config set level info  # Set value (persists to file)
+cargo run -- config unset level  # Reset to default
+cargo run -- config reset        # Reset all (with confirmation)
+```
+
+**CLI overrides (in-memory only):**
+```bash
+cargo run -- --db-token <TOKEN> --plans-dir ./my-plans config
+cargo run -- --config-level debug config get level  # Shows "debug"
 ```
 
 You can control logging with either the explicit `--log-level` or shorthand flags:
 
 ```bash
 # Shorthand flags
-cargo run --bin nuanalytics -- -v          # enable info-level
-cargo run --bin nuanalytics -- --debug     # enable debug-level + runtime debug
+cargo run -- -v          # enable verbose
+cargo run -- --debug     # enable debug-level + runtime debug
 
-# Explicit level
-cargo run --bin nuanalytics -- --log-level warn
-cargo run --bin nuanalytics -- --log-level debug
+# Explicit level (overrides config)
+cargo run -- --log-level warn
+cargo run -- --log-level debug
+
+# Falls back to config.logging.level if --log-level not provided
+cargo run -- config set level info  # Set in config
+cargo run -- config                 # Will use info level from config
 ```
 
 Tip: For quick CLI testing, prefer `cargo run` so it rebuilds as needed and runs in one step. If you want to skip rebuild when code hasn’t changed, run the compiled binary directly:
 
 ```bash
-target/debug/nuanalytics -- --log-level info
+target/nuanalytics --log-level info
 ```
 
 **Watch for changes and rebuild:**
@@ -91,20 +130,18 @@ npm run test
 cargo test
 ```
 
-### WASM Development
 
-WASM support has been removed. The project now targets the CLI only.
 
 ### Build Everything
 
-**Development (unminified, with sourcemaps):**
+**Development / Debug:**
 ```bash
-npm run dev:all
+npm run dev
 ```
 
-**Production (minified, optimized):**
+**Production / Release:**
 ```bash
-npm run build:all
+npm run build
 ```
 
 Feature defaults: During development, debug logging is enabled by default for the CLI.
@@ -169,17 +206,31 @@ git commit -m "your message"
 
 ### Testing Requirements
 
-All code changes must include appropriate Rust tests:
+All code changes must include appropriate tests:
 
-- **Rust changes**: Add tests to `tests/rs/` or inline in Rust files
+- **Unit tests**: Add inline tests in modules (`#[cfg(test)]`)
+- **Integration tests**: Add to `tests/` directory
+- **Documentation tests**: Add examples in doc comments
+
+**Test organization:**
+- `tests/integration.rs` - High-level integration tests
+- `tests/rs/` - Rust-specific test modules
+- Inline `#[cfg(test)]` modules in source files for unit tests
 
 **Before committing**, ensure all tests pass:
 
 ```bash
 npm run test
+# or
+cargo test
 ```
 
-This runs Rust tests via `cargo test`.
+**Run specific tests:**
+```bash
+cargo test config         # Tests matching "config"
+cargo test --lib          # Only library tests
+cargo test --test integration  # Only integration tests
+```
 
 **CI/CD will enforce**: All tests must pass before PRs can be merged.
 
@@ -252,13 +303,7 @@ If a build fails:
 2. Rebuild: `npm run build`
 3. Check for compilation errors in the output
 
-### Port already in use
 
-If port 4173 is already in use when running `npm run serve`:
-
-```bash
-npx --yes serve dist -l 3000  # Use different port
-```
 
 ## Additional Resources
 

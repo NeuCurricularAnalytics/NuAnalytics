@@ -18,6 +18,7 @@
     "lint:clippy": "cargo clippy --all-targets --all-features --workspace -- -D warnings",
     "lint:fmt": "cargo fmt --all -- --check",
     "lint:doc": "cargo doc --no-deps --all-features",
+    "lint:fix": "cargo clippy --all-targets --all-features --workspace --fix --allow-dirty --allow-staged && cargo fmt --all",
     "test": "cargo test --workspace",
     "doc": "cargo doc --no-deps --document-private-items --all-features && rm -rf docs/rust && mv target/doc docs/rust",
     "clean": "cargo clean"

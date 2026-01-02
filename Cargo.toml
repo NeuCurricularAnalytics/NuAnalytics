@@ -20,6 +20,9 @@ serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 dirs = "5.0"
 
+[dev-dependencies]
+tempfile = "3.8"
+
 # No WASM target dependencies; CLI-only
 
 [features]

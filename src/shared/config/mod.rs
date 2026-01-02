@@ -102,9 +102,27 @@ impl Config {
     }
 
     /// Merge missing fields from defaults into this config
-    /// Returns true if any fields were added
+    ///
+    /// This method is used when loading configuration to ensure that newly added
+    /// configuration fields are populated with their default values. Only fields
+    /// that are empty in the current config and non-empty in defaults are updated.
+    ///
+    /// # Returns
+    ///
+    /// `true` if any fields were added/changed, `false` otherwise
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let mut config = Config::from_toml(old_config_str)?;
+    /// let defaults = Config::from_defaults();
+    /// if config.merge_defaults(&defaults) {
+    ///     // Config was updated with new fields
+    ///     config.save()?;
+    /// }
+    /// ```
     #[allow(clippy::useless_let_if_seq)]
-    fn merge_defaults(&mut self, defaults: &Self) -> bool {
+    pub fn merge_defaults(&mut self, defaults: &Self) -> bool {
         let mut changed = false;
 
         // Merge logging fields - only if they're empty (use defaults for empty values)
@@ -143,6 +161,26 @@ impl Config {
     }
 
     /// Apply CLI-provided overrides onto the loaded configuration
+    ///
+    /// This allows command-line arguments to override configuration file values
+    /// without modifying the persistent configuration file. Only non-`None` values
+    /// in the overrides struct will replace config values.
+    ///
+    /// # Arguments
+    ///
+    /// * `overrides` - A `ConfigOverrides` struct with optional override values
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let mut config = Config::load();
+    /// let overrides = ConfigOverrides {
+    ///     level: Some("debug".to_string()),
+    ///     ..Default::default()
+    /// };
+    /// config.apply_overrides(&overrides);
+    /// // config.logging.level is now "debug" for this run only
+    /// ```
     pub fn apply_overrides(&mut self, overrides: &ConfigOverrides) {
         if let Some(level) = &overrides.level {
             self.logging.level.clone_from(level);
@@ -171,14 +209,38 @@ impl Config {
 
     /// Get the user config file path
     ///
-    /// return config.toml for release
-    ///        dconfig.toml for debug
+    /// Returns the full path to the configuration file:
+    /// - `config.toml` for release builds
+    /// - `dconfig.toml` for debug builds (allows separate debug config)
+    ///
+    /// The file is located in the directory returned by [`get_nuanalytics_dir`].
+    ///
+    /// [`get_nuanalytics_dir`]: Self::get_nuanalytics_dir
     #[must_use]
     pub fn get_config_file_path() -> PathBuf {
         Self::get_nuanalytics_dir().join(CONFIG_FILE_NAME)
     }
 
     /// Expand `$NU_ANALYTICS` variable in a string
+    ///
+    /// Replaces occurrences of `$NU_ANALYTICS` with the actual nuanalytics
+    /// directory path. This allows configuration values to reference the
+    /// config directory dynamically.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The string potentially containing `$NU_ANALYTICS`
+    ///
+    /// # Returns
+    ///
+    /// The string with `$NU_ANALYTICS` expanded to the actual path
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let expanded = Config::expand_variables("$NU_ANALYTICS/logs/app.log");
+    /// // Returns something like "/home/user/.config/nuanalytics/logs/app.log"
+    /// ```
     #[must_use]
     fn expand_variables(value: &str) -> String {
         if value.contains("$NU_ANALYTICS") {
@@ -191,8 +253,27 @@ impl Config {
 
     /// Initialize config from a TOML string
     ///
+    /// Parses a TOML configuration string and expands any `$NU_ANALYTICS` variables
+    /// in the values. Missing fields will use their serde defaults (typically empty
+    /// strings or false).
+    ///
+    /// # Arguments
+    ///
+    /// * `toml_str` - A TOML-formatted configuration string
+    ///
     /// # Errors
-    /// Returns an error if the TOML cannot be parsed
+    ///
+    /// Returns an error if the TOML cannot be parsed or doesn't match the expected schema
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let config = Config::from_toml(r#"
+    /// [Logging]
+    /// level = "info"
+    /// file = "$NU_ANALYTICS/app.log"
+    /// "#)?;
+    /// ```
     pub fn from_toml(toml_str: &str) -> Result<Self, toml::de::Error> {
         let mut config: Self = toml::from_str(toml_str)?;
 
@@ -206,16 +287,48 @@ impl Config {
         Ok(config)
     }
 
-    /// Initialize config from defaults (TOML string)
+    /// Load configuration from embedded defaults
+    ///
+    /// Loads the compiled-in default configuration that is bundled with the binary.
+    /// The defaults differ between debug and release builds:
+    /// - Debug: Uses `DefaultCLIConfigDebug.toml`
+    /// - Release: Uses `DefaultCLIConfigRelease.toml`
+    ///
+    /// # Returns
+    /// A `Config` instance with all values set to their defaults.
     ///
     /// # Panics
-    /// Panics if the compiled-in defaults TOML cannot be parsed
+    /// Panics if the embedded default configuration is invalid TOML or cannot be parsed.
+    /// This should never happen in practice since the defaults are compiled into the binary.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let config = Config::from_defaults();
+    /// assert_eq!(config.logging.level, "info");
+    /// ```
     #[must_use]
     pub fn from_defaults() -> Self {
         Self::from_toml(CONFIG_DEFAULTS).expect("Failed to parse compiled-in default configuration")
     }
 
-    /// Load config from user config file, creating it from defaults on first run
+    /// Load configuration from file, or create from defaults if not found
+    ///
+    /// This is the primary way to load configuration. It handles several scenarios:
+    /// - If config file exists: Loads from file, merges missing fields from defaults, saves updated config
+    /// - If config file doesn't exist (first run): Creates config directory if needed, loads defaults, saves to file
+    ///
+    /// The merge behavior ensures that upgrading the application automatically adds new config
+    /// fields while preserving existing user settings.
+    ///
+    /// # Returns
+    /// A `Config` instance loaded from file or defaults. Falls back to defaults if any error occurs
+    /// during loading.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let config = Config::load();
+    /// // Config is now loaded from ~/.config/nuanalytics/config.toml (or defaults if first run)
+    /// ```
     #[must_use]
     pub fn load() -> Self {
         let config_file = Self::get_config_file_path();
@@ -249,10 +362,40 @@ impl Config {
         defaults
     }
 
-    /// Save config to user config file
+    /// Save configuration to file
+    ///
+    /// Serializes the current configuration to TOML format and writes it to the
+    /// platform-specific config file. The config directory will be created if it
+    /// doesn't exist.
+    ///
+    /// The saved file will use the format:
+    /// ```toml
+    /// [Logging]
+    /// level = "info"
+    /// file = "$NU_ANALYTICS/logs/nuanalytics.log"
+    /// verbose = false
+    ///
+    /// [Database]
+    /// token = "your-token"
+    /// endpoint = "https://api.example.com"
+    ///
+    /// [Paths]
+    /// plans_dir = "$NU_ANALYTICS/plans"
+    /// out_dir = "$NU_ANALYTICS/output"
+    /// ```
     ///
     /// # Errors
-    /// Returns an error if the config cannot be saved
+    /// Returns an error if:
+    /// - The config cannot be serialized to TOML (shouldn't happen)
+    /// - The config directory cannot be created
+    /// - The file cannot be written (permissions, disk full, etc.)
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let mut config = Config::load()?;
+    /// config.logging.level = "debug".to_string();
+    /// config.save()?;
+    /// ```
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
         let config_file = Self::get_config_file_path();
         if let Some(parent) = config_file.parent() {
@@ -264,6 +407,33 @@ impl Config {
     }
 
     /// Get a configuration value by key
+    ///
+    /// Retrieves a configuration value using a string key that maps to the config structure.
+    /// Supports all config fields in the format `section.field` or just `field` for top-level fields.
+    ///
+    /// Supported keys:
+    /// - `level`: Logging level ("debug", "info", "warn", "error")
+    /// - `file`: Log file path
+    /// - `verbose`: Verbose logging boolean
+    /// - `token`: Database authentication token
+    /// - `endpoint`: Database API endpoint
+    /// - `plans_dir`: Plans directory path
+    /// - `out_dir`: Output directory path
+    ///
+    /// # Arguments
+    /// - `key`: The configuration key to retrieve
+    ///
+    /// # Returns
+    /// - `Some(String)`: The configuration value as a string
+    /// - `None`: If the key is not recognized
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let config = Config::load()?;
+    /// if let Some(level) = config.get("level") {
+    ///     println!("Current log level: {}", level);
+    /// }
+    /// ```
     #[must_use]
     pub fn get(&self, key: &str) -> Option<String> {
         match key {
@@ -280,8 +450,36 @@ impl Config {
 
     /// Set a configuration value by key
     ///
+    /// Updates a configuration value using a string key and value. The value will be
+    /// validated and converted to the appropriate type.
+    ///
+    /// Supported keys and their value formats:
+    /// - `level`: String ("debug", "info", "warn", "error", "trace", "off")
+    /// - `file`: String (file path, can include `$NU_ANALYTICS`)
+    /// - `verbose`: Boolean ("true" or "false")
+    /// - `token`: String (any value)
+    /// - `endpoint`: String (typically a URL)
+    /// - `plans_dir`: String (directory path)
+    /// - `out_dir`: String (directory path)
+    ///
+    /// Note: This method updates the in-memory config. Call [`save()`](Config::save) to persist changes.
+    ///
+    /// # Arguments
+    /// - `key`: The configuration key to set
+    /// - `value`: The new value as a string
+    ///
     /// # Errors
-    /// Returns an error if the key is unknown or the value is invalid
+    /// Returns an error if:
+    /// - The key is not recognized
+    /// - The value cannot be parsed (e.g., "maybe" for verbose boolean)
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let mut config = Config::load()?;
+    /// config.set("level", "debug")?;
+    /// config.set("verbose", "true")?;
+    /// config.save()?;
+    /// ```
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
         match key {
             "level" => self.logging.level = value.to_string(),
@@ -302,8 +500,30 @@ impl Config {
 
     /// Unset a configuration value by key (reset to default)
     ///
+    /// Resets a single configuration value to its default value. This is useful for
+    /// reverting individual settings without losing all customizations.
+    ///
+    /// The default value is taken from the provided defaults config (typically from
+    /// [`from_defaults()`](Config::from_defaults)).
+    ///
+    /// Note: This method updates the in-memory config. Call [`save()`](Config::save) to persist changes.
+    ///
+    /// # Arguments
+    /// - `key`: The configuration key to reset
+    /// - `defaults`: A config instance containing default values
+    ///
     /// # Errors
-    /// Returns an error if the key is unknown
+    /// Returns an error if the key is not recognized.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let mut config = Config::load()?;
+    /// let defaults = Config::from_defaults();
+    ///
+    /// config.set("level", "trace")?;
+    /// config.unset("level", &defaults)?;  // Resets to "info"
+    /// config.save()?;
+    /// ```
     pub fn unset(&mut self, key: &str, defaults: &Self) -> Result<(), String> {
         match key {
             "level" => self.logging.level.clone_from(&defaults.logging.level),
@@ -323,8 +543,29 @@ impl Config {
 
     /// Reset all configuration to defaults
     ///
+    /// Deletes the configuration file, causing the next [`load()`](Config::load) call to
+    /// recreate it from defaults. This is a destructive operation that removes all user
+    /// customizations.
+    ///
+    /// If the config file doesn't exist, this method succeeds without doing anything.
+    ///
+    /// # Safety
+    /// This is a destructive operation. The CLI typically requires user confirmation
+    /// before calling this method.
+    ///
     /// # Errors
-    /// Returns an error if the config file cannot be deleted
+    /// Returns an error if:
+    /// - The config file exists but cannot be deleted (permissions, file locked, etc.)
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Typically preceded by user confirmation
+    /// Config::reset()?;
+    /// println!("Configuration reset to defaults");
+    ///
+    /// // Next load will recreate from defaults
+    /// let config = Config::load()?;
+    /// ```
     pub fn reset() -> Result<(), std::io::Error> {
         let config_file = Self::get_config_file_path();
         if config_file.exists() {
