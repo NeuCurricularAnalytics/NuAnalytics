@@ -1,7 +1,7 @@
-//! Shared library for `NuAnalytics`
-//! Core functionality used by the CLI only
+//! Core library for `NuAnalytics`
+//! Core functionality used by the CLI and other components
 
-pub mod shared;
+pub mod core;
 
-pub use shared::*;
+pub use core::*;
 // No logger re-exports: use the standalone `logger` crate directly.

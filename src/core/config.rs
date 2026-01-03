@@ -8,10 +8,10 @@ use std::path::PathBuf;
 /// Default CLI configuration loaded based on build profile.
 /// Uses release defaults in release mode, debug defaults in debug mode.
 #[cfg(not(debug_assertions))]
-const CONFIG_DEFAULTS: &str = include_str!("../../assets/DefaultCLIConfigRelease.toml");
+const CONFIG_DEFAULTS: &str = include_str!("../assets/DefaultCLIConfigRelease.toml");
 
 #[cfg(debug_assertions)]
-const CONFIG_DEFAULTS: &str = include_str!("../../assets/DefaultCLIConfigDebug.toml");
+const CONFIG_DEFAULTS: &str = include_str!("../assets/DefaultCLIConfigDebug.toml");
 
 #[cfg(not(debug_assertions))]
 const CONFIG_FILE_NAME: &str = "config.toml";

@@ -1,10 +1,11 @@
-//! Shared module for common functionality across all targets
+//! Core module for common functionality across all targets
 
 pub mod config;
+pub mod planner;
 
-// Add shared modules here
-// pub mod models;
-// pub mod services;
+// Add core domain modules here as they're developed:
+// pub mod degree;
+// pub mod school;
 // pub mod utils;
 
 /// Returns the current version of the `NuAnalytics` crate
