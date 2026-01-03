@@ -1,11 +1,13 @@
 //! Core module for common functionality across all targets
 
 pub mod config;
+pub mod models;
 pub mod planner;
 
 // Add core domain modules here as they're developed:
 // pub mod degree;
 // pub mod school;
+// pub mod database;
 // pub mod utils;
 
 /// Returns the current version of the `NuAnalytics` crate
