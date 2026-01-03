@@ -10,12 +10,8 @@ pub struct School {
     /// School name
     pub name: String,
 
-    /// Courses offered by the school
-    courses: Vec<Course>,
-
-    /// Course lookup by key (PREFIX NUMBER)
-    #[serde(skip)]
-    course_lookup: HashMap<String, usize>,
+    /// Courses offered by the school, indexed by course key (PREFIXNUMBER)
+    courses: HashMap<String, Course>,
 
     /// Degrees offered by the school
     pub degrees: Vec<Degree>,
@@ -33,8 +29,7 @@ impl School {
     pub fn new(name: String) -> Self {
         Self {
             name,
-            courses: Vec::new(),
-            course_lookup: HashMap::new(),
+            courses: HashMap::new(),
             degrees: Vec::new(),
             plans: Vec::new(),
         }
@@ -49,15 +44,7 @@ impl School {
     /// `true` if the course was added, `false` if a course with that key already exists
     pub fn add_course(&mut self, course: Course) -> bool {
         let key = course.key();
-
-        if self.course_lookup.contains_key(&key) {
-            return false;
-        }
-
-        let index = self.courses.len();
-        self.courses.push(course);
-        self.course_lookup.insert(key, index);
-        true
+        self.courses.insert(key, course).is_none()
     }
 
     /// Get a course by its key (PREFIX NUMBER)
@@ -69,9 +56,7 @@ impl School {
     /// A reference to the course, or `None` if not found
     #[must_use]
     pub fn get_course(&self, key: &str) -> Option<&Course> {
-        self.course_lookup
-            .get(key)
-            .and_then(|&index| self.courses.get(index))
+        self.courses.get(key)
     }
 
     /// Get a mutable reference to a course by its key
@@ -82,25 +67,13 @@ impl School {
     /// # Returns
     /// A mutable reference to the course, or `None` if not found
     pub fn get_course_mut(&mut self, key: &str) -> Option<&mut Course> {
-        self.course_lookup
-            .get(key)
-            .copied()
-            .and_then(|index| self.courses.get_mut(index))
+        self.courses.get_mut(key)
     }
 
     /// Get all courses
     #[must_use]
-    pub fn courses(&self) -> &[Course] {
-        &self.courses
-    }
-
-    /// Rebuild the course lookup index
-    /// Call this after deserializing or if the lookup gets out of sync
-    pub fn rebuild_course_lookup(&mut self) {
-        self.course_lookup.clear();
-        for (index, course) in self.courses.iter().enumerate() {
-            self.course_lookup.insert(course.key(), index);
-        }
+    pub fn courses(&self) -> Vec<&Course> {
+        self.courses.values().collect()
     }
 
     /// Add a degree to the school
@@ -178,7 +151,7 @@ impl School {
     pub fn validate_course_dependencies(&self) -> Result<(), Vec<String>> {
         let mut invalid = Vec::new();
 
-        for course in &self.courses {
+        for course in self.courses.values() {
             for prereq in &course.prerequisites {
                 if self.get_course(prereq).is_none() {
                     invalid.push(format!(
@@ -452,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rebuild_course_lookup() {
+    fn test_courses_iteration() {
         let mut school = School::new("Test University".to_string());
 
         school.add_course(Course::new(
@@ -468,13 +441,11 @@ mod tests {
             4.0,
         ));
 
-        // Clear the lookup
-        school.course_lookup.clear();
-        assert!(school.get_course("CS1800").is_none());
+        let courses = school.courses();
+        assert_eq!(courses.len(), 2);
 
-        // Rebuild
-        school.rebuild_course_lookup();
-        assert!(school.get_course("CS1800").is_some());
-        assert!(school.get_course("CS2510").is_some());
+        let keys: Vec<String> = courses.iter().map(|c| c.key()).collect();
+        assert!(keys.contains(&"CS1800".to_string()));
+        assert!(keys.contains(&"CS2510".to_string()));
     }
 }

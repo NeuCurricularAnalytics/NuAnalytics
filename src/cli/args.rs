@@ -84,6 +84,18 @@ pub enum Command {
         #[command(subcommand)]
         subcommand: Option<ConfigSubcommand>,
     },
+    /// Plan and analyze curricula.
+    ///
+    /// Load a curriculum from a CSV file and analyze the plan.
+    Planner {
+        /// Path to the curriculum CSV file
+        #[arg(value_name = "FILE")]
+        input_file: std::path::PathBuf,
+
+        /// Output file path (optional; defaults to config `out_dir`)
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Parser, Debug)]

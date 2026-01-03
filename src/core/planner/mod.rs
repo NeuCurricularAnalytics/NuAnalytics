@@ -1,9 +1,5 @@
 //! Planner module for curriculum planning and analysis
 
-// Re-export main types
-// pub use models::*;
+pub mod csv_parser;
 
-// Add planner submodules here as they're developed
-// pub mod models;
-// pub mod analytics;
-// pub mod validation;
+pub use csv_parser::parse_curriculum_csv;
