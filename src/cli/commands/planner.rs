@@ -14,7 +14,10 @@ pub fn run(input_file: &std::path::Path, output_file: Option<&std::path::Path>) 
                 "✓ Curriculum loaded successfully from: {}",
                 input_file.display()
             );
-            println!("\n{school:#?}");
+
+            // Build and display the prerequisite DAG
+            let dag = school.build_dag();
+            println!("\n{dag}");
 
             if let Some(output) = output_file {
                 println!("\nOutput file specified: {}", output.display());

@@ -179,6 +179,29 @@ impl School {
             Err(invalid)
         }
     }
+
+    /// Build a directed acyclic graph (DAG) of course prerequisites
+    ///
+    /// # Returns
+    /// A DAG with all courses and their prerequisite relationships
+    #[must_use]
+    pub fn build_dag(&self) -> super::DAG {
+        let mut dag = super::DAG::new();
+
+        // Add all courses to the DAG
+        for course in self.courses.values() {
+            dag.add_course(course.key());
+        }
+
+        // Add prerequisite relationships
+        for course in self.courses.values() {
+            for prereq_key in &course.prerequisites {
+                dag.add_prerequisite(course.key(), prereq_key);
+            }
+        }
+
+        dag
+    }
 }
 
 #[cfg(test)]
