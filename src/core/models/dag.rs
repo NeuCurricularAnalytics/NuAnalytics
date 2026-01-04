@@ -82,8 +82,14 @@ pub struct DAG {
     /// Maps course key -> list of prerequisite course keys
     pub dependencies: HashMap<String, Vec<String>>,
 
+    /// Maps course key -> list of corequisite course keys
+    pub corequisites: HashMap<String, Vec<String>>,
+
     /// Maps course key -> list of courses that depend on it
     pub dependents: HashMap<String, Vec<String>>,
+
+    /// Maps course key -> list of courses that list it as a corequisite
+    pub coreq_dependents: HashMap<String, Vec<String>>,
 
     /// All course keys in the DAG
     pub courses: Vec<String>,
@@ -95,7 +101,9 @@ impl DAG {
     pub fn new() -> Self {
         Self {
             dependencies: HashMap::new(),
+            corequisites: HashMap::new(),
             dependents: HashMap::new(),
+            coreq_dependents: HashMap::new(),
             courses: Vec::new(),
         }
     }
@@ -108,7 +116,9 @@ impl DAG {
         if !self.courses.contains(&course_key) {
             self.courses.push(course_key.clone());
             self.dependencies.entry(course_key.clone()).or_default();
-            self.dependents.entry(course_key).or_default();
+            self.corequisites.entry(course_key.clone()).or_default();
+            self.dependents.entry(course_key.clone()).or_default();
+            self.coreq_dependents.entry(course_key).or_default();
         }
     }
 
@@ -137,6 +147,31 @@ impl DAG {
         }
     }
 
+    /// Add a corequisite relationship
+    ///
+    /// # Arguments
+    /// * `course_key` - Course that lists the corequisite
+    /// * `coreq_key` - Course that must be taken concurrently
+    pub fn add_corequisite(&mut self, course_key: String, coreq_key: &str) {
+        // Ensure both courses exist in the DAG
+        self.add_course(course_key.clone());
+        self.add_course(coreq_key.to_string());
+
+        // Add to corequisites (course -> coreqs)
+        if let Some(coreqs) = self.corequisites.get_mut(&course_key) {
+            if !coreqs.contains(&coreq_key.to_string()) {
+                coreqs.push(coreq_key.to_string());
+            }
+        }
+
+        // Add to reverse coreq lookup (coreq -> courses that list it)
+        if let Some(dependents) = self.coreq_dependents.get_mut(coreq_key) {
+            if !dependents.contains(&course_key) {
+                dependents.push(course_key);
+            }
+        }
+    }
+
     /// Get all prerequisites for a course
     ///
     /// # Arguments
@@ -159,6 +194,18 @@ impl DAG {
     #[must_use]
     pub fn get_dependents(&self, course_key: &str) -> Option<&Vec<String>> {
         self.dependents.get(course_key)
+    }
+
+    /// Get all corequisites for a course
+    #[must_use]
+    pub fn get_corequisites(&self, course_key: &str) -> Option<&Vec<String>> {
+        self.corequisites.get(course_key)
+    }
+
+    /// Get all courses that list this course as a corequisite
+    #[must_use]
+    pub fn get_coreq_dependents(&self, course_key: &str) -> Option<&Vec<String>> {
+        self.coreq_dependents.get(course_key)
     }
 
     /// Get the number of courses in the DAG
@@ -191,11 +238,23 @@ impl std::fmt::Display for DAG {
 
         for course_key in sorted_courses {
             if let Some(deps) = self.dependencies.get(&course_key) {
-                if deps.is_empty() {
-                    writeln!(f, "  {course_key} → (no prerequisites)")?;
+                let coreqs: &[String] = match self.corequisites.get(&course_key) {
+                    Some(v) => v.as_slice(),
+                    None => &[],
+                };
+
+                let mut parts = Vec::new();
+                if !deps.is_empty() {
+                    parts.push(format!("prereq: {}", deps.join(", ")));
+                }
+                if !coreqs.is_empty() {
+                    parts.push(format!("coreq: {}", coreqs.join(", ")));
+                }
+
+                if parts.is_empty() {
+                    writeln!(f, "  {course_key} → (no prerequisites or corequisites)")?;
                 } else {
-                    let deps_str = deps.join(", ");
-                    writeln!(f, "  {course_key} → {deps_str}")?;
+                    writeln!(f, "  {course_key} → {}", parts.join(" | "))?;
                 }
             }
         }
@@ -267,11 +326,29 @@ mod tests {
         let mut dag = DAG::new();
         dag.add_prerequisite("CS220".to_string(), "CS165");
         dag.add_prerequisite("CS220".to_string(), "MATH156");
+        dag.add_corequisite("CHEM108".to_string(), "CHEM107");
         dag.add_course("CS1800".to_string()); // Course with no prerequisites
 
         let display = format!("{dag}");
         assert!(display.contains("Prerequisite DAG"));
         assert!(display.contains("CS220"));
         assert!(display.contains("CS165"));
+        assert!(display.contains("coreq: CHEM107"));
+    }
+
+    #[test]
+    fn test_add_corequisite() {
+        let mut dag = DAG::new();
+        dag.add_corequisite("CHEM108".to_string(), "CHEM107");
+
+        assert!(dag.contains_course("CHEM108"));
+        assert!(dag.contains_course("CHEM107"));
+
+        let coreqs = dag.get_corequisites("CHEM108").unwrap();
+        assert_eq!(coreqs.len(), 1);
+        assert!(coreqs.contains(&"CHEM107".to_string()));
+
+        let dependents = dag.get_coreq_dependents("CHEM107").unwrap();
+        assert!(dependents.contains(&"CHEM108".to_string()));
     }
 }

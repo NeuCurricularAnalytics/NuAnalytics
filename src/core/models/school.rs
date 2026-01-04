@@ -198,6 +198,10 @@ impl School {
             for prereq_key in &course.prerequisites {
                 dag.add_prerequisite(course.key(), prereq_key);
             }
+
+            for coreq_key in &course.corequisites {
+                dag.add_corequisite(course.key(), coreq_key);
+            }
         }
 
         dag
