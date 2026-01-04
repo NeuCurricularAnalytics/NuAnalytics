@@ -9,6 +9,74 @@ use std::collections::HashMap;
 /// - `dependents`: maps each course to the courses that depend on it (reverse graph)
 ///
 /// This bidirectional structure enables efficient traversal in both directions.
+///
+/// # Handling Complex Boolean Prerequisites
+/// Currently, the DAG assumes AND semantics (all prerequisites must be satisfied).
+/// Real curricula have complex boolean expressions like:
+/// - "CS101 OR CS102"
+/// - "(CS101 AND MATH156) OR CS200"
+/// - "CS101 OR (CS102 AND MATH156)"
+///
+/// Approaches to handle complex prerequisites:
+///
+/// ## Option 1: Disjunctive Normal Form (DNF)
+/// Store prerequisites as OR of ANDs: `Vec<Vec<String>>`.
+/// Example: `[[\"CS101\"], [\"CS102\", \"MATH156\"]]` means CS101 OR (CS102 AND MATH156).
+/// - Pros: Standard logical form, reasonably simple
+/// - Cons: Some expressions require exponential expansion
+///
+/// ## Option 2: Expression Tree with Metadata
+/// Store prerequisite relationships with a tree structure:
+/// ```ignore
+/// enum PrereqNode {
+///     Course(String),
+///     And(Vec<PrereqNode>),
+///     Or(Vec<PrereqNode>),
+/// }
+/// // In DAG: dependencies: HashMap<String, PrereqNode>
+/// ```
+/// - Pros: Can represent any boolean expression naturally
+/// - Cons: More complex to traverse and validate
+///
+/// ## Option 3: Virtual/Composite Nodes
+/// Create synthetic nodes like `\"CS101_OR_CS102\"` or `\"CS101_AND_MATH156\"`.
+/// Build satisfaction rules: virtual node is satisfied if any/all children are satisfied.
+/// - Pros: Keeps graph structure simple
+/// - Cons: Need to track which nodes are virtual and their satisfaction rules
+///
+/// ## Option 4: Hypergraph with Labeled Edges
+/// Extend to hypergraph where edges can connect to multiple nodes with labels:
+/// ```ignore
+/// struct HyperEdge {
+///     to_course: String,
+///     from_groups: Vec<(Vec<String>, BoolOp)>,  // (courses, AND/OR)
+/// }
+/// ```
+/// - Pros: Natural representation of complex requirements
+/// - Cons: More complex graph algorithms needed
+///
+/// ## Option 5: Choice Resolution at Build Time (Recommended for Plans)
+/// When building a DAG from a plan (not just from courses), require the plan
+/// to specify which alternative was chosen, then build a simple DAG.
+/// **Important**: The Course struct must still store the full prerequisite expression
+/// using one of the above approaches. This option is about how we build the DAG from
+/// a plan, not about how we store prerequisites in courses.
+/// - Example: Course CS300 requires "(CS101 AND MATH156) OR CS200". The Course stores
+///   this full expression. When a plan includes CS300, it also specifies that the student
+///   took CS101 and MATH156 (not CS200), so we build the DAG with only those edges.
+///
+///   This is the recommended approach for plan analysis since plans represent
+///   actual course selections where students have already chosen which alternative
+///   to take. The boolean logic has been resolved by the student's choices.
+/// - Pros: Keeps DAG simple, works for actual plans, preserves full requirement info
+/// - Cons: Cannot analyze "what if" scenarios from the DAG alone (need course data)
+///
+/// ## Option 6: Multi-DAG Expansion
+/// Generate all possible DAGs by expanding boolean choices, then analyze each.
+/// For "(CS101 AND MATH156) OR CS200", generate two DAGs: one with both CS101 and
+/// MATH156, another with CS200.
+/// - Pros: Can find optimal paths, analyze all possibilities
+/// - Cons: Exponential explosion for complex requirements
 #[derive(Debug, Clone)]
 pub struct DAG {
     /// Maps course key -> list of prerequisite course keys

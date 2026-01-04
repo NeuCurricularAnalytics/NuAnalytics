@@ -3,6 +3,46 @@
 use serde::{Deserialize, Serialize};
 
 /// Represents a course in a curriculum
+///
+/// # Note on Complex Prerequisites
+/// Currently, prerequisites are stored as a flat list with implicit AND semantics.
+/// However, real curricula often have complex boolean expressions like:
+/// - "CS101 OR CS102"
+/// - "(CS101 AND MATH156) OR CS200"
+/// - "CS101 OR (CS102 AND MATH156)"
+///
+/// Several approaches to handle complex prerequisites:
+///
+/// 1. **Disjunctive Normal Form (DNF)**: Store as `Vec<Vec<String>>` where
+///    outer Vec is OR, inner Vec is AND. Example: `[[\"CS101\"], [\"CS102\", \"MATH156\"]]`
+///    means CS101 OR (CS102 AND MATH156). This is a standard form in logic.
+///
+/// 2. **Prerequisite Expression Trees**: Use a recursive enum:
+///    ```ignore
+///    enum PrereqExpr {
+///        Course(String),
+///        And(Vec<PrereqExpr>),
+///        Or(Vec<PrereqExpr>),
+///    }
+///    ```
+///    This can represent any boolean expression and is most flexible.
+///
+/// 3. **Virtual Courses**: Create synthetic course keys like `\"CS101_OR_CS102\"` or
+///    `\"CS101_AND_MATH156\"` in the DAG. Each virtual course represents a requirement
+///    that can be satisfied by its components.
+///
+/// 4. **Hypergraph Representation**: Extend DAG to support hyperedges where a single
+///    edge can connect to multiple prerequisite sets with boolean operators.
+///
+/// 5. **Choice Resolution at Plan Build Time** (Recommended for Plan Analysis): The Course
+///    struct stores the full prerequisite expression (using one of the above approaches),
+///    but when building a DAG from a Plan, the plan specifies which alternative was chosen.
+///    This keeps plan DAGs simple while preserving the full requirement information in courses.
+///    Plans represent actual student selections where boolean logic has been resolved.
+///
+/// **Note**: Regardless of approach, the Course struct must be able to represent the full
+/// prerequisite expression. The choice resolution approach means that when analyzing a
+/// specific plan, we only include the paths the student actually took, not all possibilities.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Course {
     /// Course name (e.g., "Calculus for Physical Scientists I")
@@ -15,6 +55,7 @@ pub struct Course {
     pub number: String,
 
     /// Prerequisites - stored as "PREFIX NUMBER" keys (e.g., "MATH 1341")
+    /// Currently assumes ALL prerequisites must be satisfied (AND semantics)
     pub prerequisites: Vec<String>,
 
     /// Co-requisites - stored as "PREFIX NUMBER" keys
