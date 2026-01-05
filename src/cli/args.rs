@@ -86,15 +86,17 @@ pub enum Command {
     },
     /// Plan and analyze curricula.
     ///
-    /// Load a curriculum from a CSV file and analyze the plan.
+    /// Load one or more curriculum CSV files and analyze the plan.
     Planner {
-        /// Path to the curriculum CSV file
-        #[arg(value_name = "FILE")]
-        input_file: std::path::PathBuf,
+        /// Paths to curriculum CSV files (supports multiple)
+        #[arg(value_name = "FILES", num_args = 1..)]
+        input_files: Vec<std::path::PathBuf>,
 
-        /// Output file path (optional; defaults to config `out_dir`)
-        #[arg(short, long, value_name = "FILE")]
-        output: Option<std::path::PathBuf>,
+        /// Output file paths (optional; defaults to config `out_dir` when omitted)
+        ///
+        /// When provided, must match the number of input files 1:1.
+        #[arg(short, long, value_name = "FILES", num_args = 1..)]
+        output: Vec<std::path::PathBuf>,
     },
 }
 

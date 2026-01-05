@@ -76,7 +76,7 @@ pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn E
         if let Ok(course) = parse_course_line(line, &headers) {
             let key = course.key();
             if let Some(course_id) = get_field(line, "Course ID", &headers) {
-                course_id_to_key.insert(course_id.to_string(), key.clone());
+                course_id_to_key.insert(course_id, key.clone());
             }
             courses_by_key.insert(key, course);
         }
@@ -93,14 +93,14 @@ pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn E
                 // Parse prerequisites
                 if let Some(prereq_str) = get_field(line, "Prerequisites", &headers) {
                     if !prereq_str.trim().is_empty() {
-                        add_prerequisites_with_mapping(course, prereq_str, &course_id_to_key);
+                        add_prerequisites_with_mapping(course, &prereq_str, &course_id_to_key);
                     }
                 }
 
                 // Parse corequisites
                 if let Some(coreq_str) = get_field(line, "Corequisites", &headers) {
                     if !coreq_str.trim().is_empty() {
-                        add_corequisites_with_mapping(course, coreq_str, &course_id_to_key);
+                        add_corequisites_with_mapping(course, &coreq_str, &course_id_to_key);
                     }
                 }
             }
@@ -135,6 +135,13 @@ pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn E
     Ok(school)
 }
 
+/// Normalize a raw CSV field by stripping whitespace, quotes, BOM, and zero-width characters
+fn clean_field(field: &str) -> String {
+    field
+        .trim_matches(|c: char| c.is_whitespace() || c == '"' || c == '\u{feff}' || c == '\u{200b}')
+        .to_string()
+}
+
 /// Parse curriculum metadata from the header section
 fn parse_metadata(lines: &[&str]) -> Result<CurriculumMetadata, Box<dyn Error>> {
     let mut metadata = CurriculumMetadata {
@@ -146,17 +153,17 @@ fn parse_metadata(lines: &[&str]) -> Result<CurriculumMetadata, Box<dyn Error>> 
     };
 
     for line in lines.iter().take(10) {
-        let parts: Vec<&str> = line.split(',').map(str::trim).collect();
+        let parts = parse_csv_line(line);
         if parts.len() < 2 {
             continue;
         }
 
         let key = parts[0].to_lowercase();
-        let value = parts[1].to_string();
+        let value = parts[1].clone();
 
         match key.as_str() {
             "curriculum" => metadata.name = value,
-            "institution" => metadata.institution = value,
+            "institution" | "insitution" => metadata.institution = value, // or because of the common typo in the plan database
             "degree type" => metadata.degree_type = value,
             "system type" => metadata.system_type = value,
             "cip" => metadata.cip_code = value,
@@ -177,27 +184,19 @@ fn parse_metadata(lines: &[&str]) -> Result<CurriculumMetadata, Box<dyn Error>> 
 
 /// Parse a CSV line into fields
 fn parse_csv_line(line: &str) -> Vec<String> {
-    line.split(',')
-        .map(str::trim)
-        .map(std::string::ToString::to_string)
-        .collect()
+    line.split(',').map(clean_field).collect()
 }
 
 /// Parse a single course line from the CSV
 fn parse_course_line(line: &str, headers: &[String]) -> Result<Course, Box<dyn Error>> {
     let _fields = parse_csv_line(line);
 
-    let name = get_field(line, "Course Name", headers)
-        .unwrap_or_default()
-        .to_string();
-    let prefix = get_field(line, "Prefix", headers)
-        .unwrap_or_default()
-        .to_string();
-    let number = get_field(line, "Number", headers)
-        .unwrap_or_default()
-        .to_string();
+    let name = get_field(line, "Course Name", headers).unwrap_or_default();
+    let prefix = get_field(line, "Prefix", headers).unwrap_or_default();
+    let number = get_field(line, "Number", headers).unwrap_or_default();
 
-    let credit_hours_str = get_field(line, "Credit Hours", headers).unwrap_or("0");
+    let credit_hours_str =
+        get_field(line, "Credit Hours", headers).unwrap_or_else(|| "0".to_string());
     let credit_hours = credit_hours_str.parse::<f32>().unwrap_or(0.0);
 
     if prefix.is_empty() || number.is_empty() {
@@ -209,7 +208,7 @@ fn parse_course_line(line: &str, headers: &[String]) -> Result<Course, Box<dyn E
     // Set optional fields
     if let Some(canonical) = get_field(line, "Canonical Name", headers) {
         if !canonical.is_empty() {
-            course.set_canonical_name(canonical.to_string());
+            course.set_canonical_name(canonical);
         }
     }
 
@@ -225,14 +224,14 @@ fn extract_course_key(line: &str, headers: &[String]) -> Result<String, Box<dyn 
 }
 
 /// Get a field value from a CSV line by header name
-fn get_field<'a>(line: &'a str, header_name: &str, headers: &[String]) -> Option<&'a str> {
-    let fields: Vec<&str> = line.split(',').map(str::trim).collect();
+fn get_field(line: &str, header_name: &str, headers: &[String]) -> Option<String> {
+    let fields = parse_csv_line(line);
 
     headers
         .iter()
         .position(|h| h.eq_ignore_ascii_case(header_name))
         .and_then(|idx| fields.get(idx))
-        .copied()
+        .cloned()
 }
 
 /// Add prerequisites from a semicolon-separated string, converting course IDs to keys

@@ -5,7 +5,7 @@ mod commands;
 
 use args::{Cli, Command};
 use clap::Parser;
-use logger::{enable_debug, enable_verbose, init_file_logging, set_level, Level};
+use logger::{enable_debug, enable_verbose, info, init_file_logging, set_level, Level};
 use nu_analytics::config::Config;
 
 fn main() {
@@ -46,7 +46,11 @@ fn main() {
     if let Some(log_path) = args.log_file.as_ref().or(config_log_path.as_ref()) {
         let display_path = log_path.to_string_lossy();
         if init_file_logging(log_path) {
-            eprintln!("✓ File logging initialized at: {display_path}");
+            if verbose {
+                eprintln!("✓ File logging initialized at: {display_path}");
+            } else {
+                info!("File logging initialized at: {display_path}");
+            }
         } else {
             eprintln!("✗ Failed to initialize file logging at: {display_path}");
         }
@@ -57,8 +61,11 @@ fn main() {
         Command::Config { subcommand } => {
             commands::config::run(subcommand, &mut config, &defaults);
         }
-        Command::Planner { input_file, output } => {
-            commands::planner::run(&input_file, output.as_deref(), &config, verbose);
+        Command::Planner {
+            input_files,
+            output,
+        } => {
+            commands::planner::run(&input_files, &output, &config, verbose);
         }
     }
 }
