@@ -1,6 +1,10 @@
 //! Planner command handler
 
-use nu_analytics::core::{metrics, planner::parse_curriculum_csv};
+use nu_analytics::core::{
+    metrics, metrics_export,
+    models::{Degree, Plan},
+    planner::parse_curriculum_csv,
+};
 
 /// Run the planner command
 ///
@@ -19,62 +23,65 @@ pub fn run(input_file: &std::path::Path, output_file: Option<&std::path::Path>) 
             let dag = school.build_dag();
             println!("\n{dag}");
 
-            let delay_result = metrics::compute_delay(&dag);
-            let blocking_result = metrics::compute_blocking(&dag);
-
-            match delay_result {
-                Ok(ref delay_by_course) => {
+            // Compute all metrics at once
+            match metrics::compute_all_metrics(&dag) {
+                Ok(all_metrics) => {
                     println!("\nDelay factors (longest requisite path lengths in vertices):");
-
-                    let mut entries: Vec<_> = delay_by_course.iter().collect();
+                    let mut entries: Vec<_> = all_metrics.iter().collect();
                     entries.sort_by(|a, b| a.0.cmp(b.0));
-
-                    for (course, delay) in entries {
-                        println!("  {course}: {delay}");
+                    for (course, m) in &entries {
+                        println!("  {course}: {}", m.delay);
                     }
-                }
-                Err(ref err) => {
-                    eprintln!("✗ Failed to compute delay factors: {err}");
-                }
-            }
 
-            match blocking_result {
-                Ok(ref blocking_by_course) => {
                     println!("\nBlocking factors (number of courses blocked by each course):");
-
-                    let mut entries: Vec<_> = blocking_by_course.iter().collect();
-                    entries.sort_by(|a, b| a.0.cmp(b.0));
-
-                    for (course, blocking) in entries {
-                        println!("  {course}: {blocking}");
+                    for (course, m) in &entries {
+                        println!("  {course}: {}", m.blocking);
                     }
-                }
-                Err(ref err) => {
-                    eprintln!("✗ Failed to compute blocking factors: {err}");
-                }
-            }
 
-            if let (Ok(delay), Ok(blocking)) = (delay_result, blocking_result) {
-                match metrics::compute_complexity(&delay, &blocking) {
-                    Ok(complexity_by_course) => {
-                        println!("\nStructural complexity (delay + blocking):");
+                    println!("\nStructural complexity (delay + blocking):");
+                    for (course, m) in &entries {
+                        println!("  {course}: {}", m.complexity);
+                    }
 
-                        let mut entries: Vec<_> = complexity_by_course.into_iter().collect();
-                        entries.sort_by(|a, b| a.0.cmp(&b.0));
+                    println!("\nCentrality (sum of path lengths through each course):");
+                    for (course, m) in &entries {
+                        println!("  {course}: {}", m.centrality);
+                    }
 
-                        for (course, complexity) in entries {
-                            println!("  {course}: {complexity}");
+                    // Export metrics to CSV if output file is specified
+                    if let Some(output) = output_file {
+                        // If no plans exist, create a default plan with all courses
+                        let plan = if let Some(p) = school.plans.first() {
+                            p.clone()
+                        } else {
+                            let mut default_plan = Plan::new(
+                                "All Courses".to_string(),
+                                school.degrees.first().map(Degree::id).unwrap_or_default(),
+                            );
+                            for course in &dag.courses {
+                                default_plan.add_course(course.clone());
+                            }
+                            default_plan
+                        };
+
+                        match metrics_export::export_metrics_csv(
+                            &school,
+                            &plan,
+                            &all_metrics,
+                            output,
+                        ) {
+                            Ok(()) => {
+                                println!("\n✓ Metrics exported to: {}", output.display());
+                            }
+                            Err(e) => {
+                                eprintln!("✗ Failed to export metrics: {e}");
+                            }
                         }
                     }
-                    Err(err) => {
-                        eprintln!("✗ Failed to compute complexity: {err}");
-                    }
                 }
-            }
-
-            if let Some(output) = output_file {
-                println!("\nOutput file specified: {}", output.display());
-                println!("(Output functionality coming soon)");
+                Err(e) => {
+                    eprintln!("✗ Failed to compute metrics: {e}");
+                }
             }
         }
         Err(e) => {

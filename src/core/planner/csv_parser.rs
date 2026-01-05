@@ -1,6 +1,6 @@
 //! CSV parser for curriculum data
 
-use crate::core::models::{Course, Degree, School};
+use crate::core::models::{Course, Degree, Plan, School};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
@@ -38,10 +38,14 @@ pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn E
     // Parse metadata section
     let metadata = parse_metadata(&lines)?;
 
+    // Extract metadata values to avoid redundant clones
+    let curriculum_name = metadata.name;
+    let institution_name = metadata.institution;
+
     // Create school and degree
-    let mut school = School::new(metadata.institution.clone());
+    let mut school = School::new(institution_name);
     let degree = Degree::new(
-        metadata.name.clone(),
+        curriculum_name.clone(),
         metadata.degree_type.clone(),
         metadata.cip_code,
     );
@@ -107,6 +111,26 @@ pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn E
     for course in courses_by_key.into_values() {
         school.add_course(course);
     }
+
+    // Create a default plan with all courses
+    let mut plan = Plan::new(
+        curriculum_name,
+        school.degrees.first().ok_or("No degree found")?.id(),
+    );
+    plan.institution = Some(school.name.clone());
+
+    // Add all courses from courses_by_key to the plan
+    for line in lines.iter().skip(courses_start + 2) {
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        if let Ok(course_key) = extract_course_key(line, &headers) {
+            plan.add_course(course_key);
+        }
+    }
+
+    school.add_plan(plan);
 
     Ok(school)
 }

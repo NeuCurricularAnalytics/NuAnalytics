@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod metrics;
+pub mod metrics_export;
 pub mod models;
 pub mod planner;
 

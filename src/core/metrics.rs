@@ -12,6 +12,58 @@ pub type BlockingByCourse = HashMap<String, usize>;
 /// Structural complexity per course keyed by course code (e.g., "CS2510").
 pub type ComplexityByCourse = HashMap<String, usize>;
 
+/// Centrality per course keyed by course code (e.g., "CS2510").
+pub type CentralityByCourse = HashMap<String, usize>;
+
+/// Metrics for a single course
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CourseMetrics {
+    /// Delay factor (longest requisite path length in vertices)
+    pub delay: usize,
+    /// Blocking factor (number of courses blocked)
+    pub blocking: usize,
+    /// Structural complexity (delay + blocking)
+    pub complexity: usize,
+    /// Centrality (sum of path lengths through this course)
+    pub centrality: usize,
+}
+
+/// All metrics for a curriculum, keyed by course code
+pub type CurriculumMetrics = HashMap<String, CourseMetrics>;
+
+/// Compute all metrics for every course in the requisite graph.
+///
+/// # Errors
+///
+/// Returns an error if the graph contains a cycle.
+pub fn compute_all_metrics(dag: &DAG) -> Result<CurriculumMetrics, String> {
+    let delay = compute_delay(dag)?;
+    let blocking = compute_blocking(dag)?;
+    let complexity = compute_complexity(&delay, &blocking)?;
+    let centrality = compute_centrality(dag)?;
+
+    let mut metrics = CurriculumMetrics::new();
+
+    for course in &dag.courses {
+        let delay_val = delay.get(course).copied().unwrap_or(0);
+        let blocking_val = blocking.get(course).copied().unwrap_or(0);
+        let complexity_val = complexity.get(course).copied().unwrap_or(0);
+        let centrality_val = centrality.get(course).copied().unwrap_or(0);
+
+        metrics.insert(
+            course.clone(),
+            CourseMetrics {
+                delay: delay_val,
+                blocking: blocking_val,
+                complexity: complexity_val,
+                centrality: centrality_val,
+            },
+        );
+    }
+
+    Ok(metrics)
+}
+
 /// Compute the delay factor for every course in the requisite graph.
 ///
 /// The delay factor of a course is the length (in vertices) of the longest
@@ -98,6 +150,138 @@ pub fn compute_complexity(
     }
 
     Ok(complexity)
+}
+
+/// Compute the centrality for every course in the requisite graph.
+///
+/// Centrality of a course is the sum of the lengths of all source-to-sink paths
+/// that pass through that course. Source and sink vertices have centrality 0.
+/// This metric identifies courses that are central to many pathways through
+/// the curriculum.
+///
+/// # Errors
+///
+/// Returns an error if the graph contains a cycle.
+pub fn compute_centrality(dag: &DAG) -> Result<CentralityByCourse, String> {
+    let outgoing = build_outgoing_edges(dag);
+    let incoming = build_incoming_edges(dag);
+    let indegree = build_indegree_counts(dag);
+
+    // Verify DAG is acyclic
+    let _ = topological_order(&dag.courses, &outgoing, &indegree)?;
+
+    // Find sources (no incoming edges) and sinks (no outgoing edges)
+    let sources: Vec<String> = dag
+        .courses
+        .iter()
+        .filter(|c| incoming.get(*c).is_none_or(Vec::is_empty))
+        .cloned()
+        .collect();
+
+    let sinks: Vec<String> = dag
+        .courses
+        .iter()
+        .filter(|c| outgoing.get(*c).is_none_or(Vec::is_empty))
+        .cloned()
+        .collect();
+
+    // Initialize centrality to 0 for all courses
+    let mut centrality: HashMap<String, usize> =
+        dag.courses.iter().map(|c| (c.clone(), 0)).collect();
+
+    // For each source, enumerate all paths to all sinks
+    for source in &sources {
+        for sink in &sinks {
+            if source != sink {
+                enumerate_paths_and_update_centrality(source, sink, &outgoing, &mut centrality);
+            }
+        }
+    }
+
+    Ok(centrality)
+}
+
+/// Enumerate all paths from source to sink and update centrality counts.
+/// Only intermediate nodes (not source or sink) get centrality updates.
+fn enumerate_paths_and_update_centrality(
+    source: &str,
+    sink: &str,
+    outgoing: &HashMap<String, Vec<String>>,
+    centrality: &mut HashMap<String, usize>,
+) {
+    let mut path = Vec::new();
+    let mut visited = HashSet::new();
+
+    path.push(source.to_string());
+    visited.insert(source.to_string());
+
+    dfs_paths(source, sink, &mut path, &mut visited, outgoing, centrality);
+}
+
+/// DFS to find all paths from current node to target, updating centrality.
+/// Only intermediate nodes (not source or sink) are included in centrality updates.
+fn dfs_paths(
+    current: &str,
+    target: &str,
+    path: &mut Vec<String>,
+    visited: &mut HashSet<String>,
+    outgoing: &HashMap<String, Vec<String>>,
+    centrality: &mut HashMap<String, usize>,
+) {
+    if current == target {
+        // Found a complete path - add its length to centrality of intermediate nodes only
+        // (exclude the source at path[0] and sink at path[len-1])
+        if path.len() <= 2 {
+            // If path has only source and sink, no intermediate nodes
+            return;
+        }
+
+        let path_length = path.len();
+        // Skip first (source) and last (sink) elements
+        for course in path.iter().skip(1).take(path.len() - 2) {
+            if let Some(count) = centrality.get_mut(course) {
+                *count += path_length;
+            }
+        }
+        return;
+    }
+
+    if let Some(neighbors) = outgoing.get(current) {
+        for neighbor in neighbors {
+            if !visited.contains(neighbor) {
+                visited.insert(neighbor.clone());
+                path.push(neighbor.clone());
+
+                dfs_paths(neighbor, target, path, visited, outgoing, centrality);
+
+                path.pop();
+                visited.remove(neighbor);
+            }
+        }
+    }
+}
+
+fn build_incoming_edges(dag: &DAG) -> HashMap<String, Vec<String>> {
+    let mut incoming = HashMap::new();
+
+    for course in &dag.courses {
+        let mut neighbors: HashSet<String> = HashSet::new();
+
+        if let Some(prereqs) = dag.dependencies.get(course) {
+            neighbors.extend(prereqs.iter().cloned());
+        }
+
+        if let Some(coreqs) = dag.corequisites.get(course) {
+            neighbors.extend(coreqs.iter().cloned());
+        }
+
+        let mut sorted: Vec<String> = neighbors.into_iter().collect();
+        sorted.sort();
+
+        incoming.insert(course.clone(), sorted);
+    }
+
+    incoming
 }
 
 /// Count the number of courses reachable from a given course via BFS.
@@ -390,5 +574,89 @@ mod tests {
         assert_eq!(complexity.get("CS165"), Some(&17));
         // CS220: delay=3, blocking=2, complexity=5
         assert_eq!(complexity.get("CS220"), Some(&5));
+    }
+
+    #[test]
+    fn computes_centrality_simple_chain() {
+        let mut dag = DAG::new();
+        dag.add_prerequisite("B".to_string(), "A");
+        dag.add_prerequisite("C".to_string(), "B");
+
+        let centrality = compute_centrality(&dag).expect("centrality");
+
+        // One path A->B->C of length 3
+        // A: source, centrality=0
+        assert_eq!(centrality.get("A"), Some(&0));
+        // B: intermediate node in path A->B->C (length 3)
+        assert_eq!(centrality.get("B"), Some(&3));
+        // C: sink, centrality=0
+        assert_eq!(centrality.get("C"), Some(&0));
+    }
+
+    #[test]
+    fn computes_centrality_with_fork() {
+        let mut dag = DAG::new();
+        dag.add_prerequisite("B".to_string(), "A");
+        dag.add_prerequisite("C".to_string(), "A");
+        dag.add_prerequisite("D".to_string(), "B");
+
+        let centrality = compute_centrality(&dag).expect("centrality");
+
+        // Paths: A->B->D (length 3), A->C (length 2)
+        // A: source, centrality=0
+        assert_eq!(centrality.get("A"), Some(&0));
+        // B: intermediate in path A->B->D (length 3)
+        assert_eq!(centrality.get("B"), Some(&3));
+        // C: sink (in path A->C), centrality=0
+        assert_eq!(centrality.get("C"), Some(&0));
+        // D: sink, centrality=0
+        assert_eq!(centrality.get("D"), Some(&0));
+    }
+
+    #[test]
+    fn matches_sample_centrality_values() {
+        let school = parse_curriculum_csv("samples/correct/Colostate_CSDegree_w_metrics.csv")
+            .expect("parse sample curriculum");
+        let dag = school.build_dag();
+        let centrality = compute_centrality(&dag).expect("centrality");
+
+        // Sources and sinks should have centrality 0
+        assert_eq!(centrality.get("MATH156"), Some(&0));
+        assert_eq!(centrality.get("CS150B"), Some(&0));
+        assert_eq!(centrality.get("CO150"), Some(&0));
+
+        // Intermediate courses should have non-zero centrality
+        assert_eq!(centrality.get("CS164"), Some(&44));
+        assert_eq!(centrality.get("CS220"), Some(&12));
+    }
+
+    #[test]
+    fn compute_all_metrics_combines_all_metrics() {
+        let mut dag = DAG::new();
+        dag.add_prerequisite("B".to_string(), "A");
+        dag.add_prerequisite("C".to_string(), "B");
+
+        let all_metrics = compute_all_metrics(&dag).expect("all metrics");
+
+        // Check A
+        let a_metrics = all_metrics.get("A").expect("A metrics");
+        assert_eq!(a_metrics.delay, 3);
+        assert_eq!(a_metrics.blocking, 2);
+        assert_eq!(a_metrics.complexity, 5);
+        assert_eq!(a_metrics.centrality, 0);
+
+        // Check B
+        let b_metrics = all_metrics.get("B").expect("B metrics");
+        assert_eq!(b_metrics.delay, 3);
+        assert_eq!(b_metrics.blocking, 1);
+        assert_eq!(b_metrics.complexity, 4);
+        assert_eq!(b_metrics.centrality, 3);
+
+        // Check C
+        let c_metrics = all_metrics.get("C").expect("C metrics");
+        assert_eq!(c_metrics.delay, 3);
+        assert_eq!(c_metrics.blocking, 0);
+        assert_eq!(c_metrics.complexity, 3);
+        assert_eq!(c_metrics.centrality, 0);
     }
 }
