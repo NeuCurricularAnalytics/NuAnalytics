@@ -11,7 +11,8 @@ use nu_analytics::core::{
 /// # Arguments
 /// * `input_file` - Path to the input CSV file
 /// * `output_file` - Optional path to output file
-pub fn run(input_file: &std::path::Path, output_file: Option<&std::path::Path>) {
+/// * `verbose` - Whether to show detailed metrics output
+pub fn run(input_file: &std::path::Path, output_file: Option<&std::path::Path>, verbose: bool) {
     match parse_curriculum_csv(input_file) {
         Ok(school) => {
             println!(
@@ -19,35 +20,12 @@ pub fn run(input_file: &std::path::Path, output_file: Option<&std::path::Path>) 
                 input_file.display()
             );
 
-            // Build and display the prerequisite DAG
+            // Build the prerequisite DAG
             let dag = school.build_dag();
-            println!("\n{dag}");
 
             // Compute all metrics at once
             match metrics::compute_all_metrics(&dag) {
                 Ok(all_metrics) => {
-                    println!("\nDelay factors (longest requisite path lengths in vertices):");
-                    let mut entries: Vec<_> = all_metrics.iter().collect();
-                    entries.sort_by(|a, b| a.0.cmp(b.0));
-                    for (course, m) in &entries {
-                        println!("  {course}: {}", m.delay);
-                    }
-
-                    println!("\nBlocking factors (number of courses blocked by each course):");
-                    for (course, m) in &entries {
-                        println!("  {course}: {}", m.blocking);
-                    }
-
-                    println!("\nStructural complexity (delay + blocking):");
-                    for (course, m) in &entries {
-                        println!("  {course}: {}", m.complexity);
-                    }
-
-                    println!("\nCentrality (sum of path lengths through each course):");
-                    for (course, m) in &entries {
-                        println!("  {course}: {}", m.centrality);
-                    }
-
                     // Export metrics to CSV if output file is specified
                     if let Some(output) = output_file {
                         // If no plans exist, create a default plan with all courses
@@ -70,8 +48,27 @@ pub fn run(input_file: &std::path::Path, output_file: Option<&std::path::Path>) 
                             &all_metrics,
                             output,
                         ) {
-                            Ok(()) => {
-                                println!("\n✓ Metrics exported to: {}", output.display());
+                            Ok(summary) => {
+                                println!("✓ Metrics exported to: {}", output.display());
+
+                                // Show plan-level summary if verbose is enabled
+                                if verbose {
+                                    println!("\n=== Plan Summary ===");
+                                    println!(
+                                        "Total Structural Complexity: {}",
+                                        summary.total_complexity
+                                    );
+                                    println!(
+                                        "Longest Delay: {} ({})",
+                                        summary.longest_delay,
+                                        summary.longest_delay_path.join("->")
+                                    );
+                                    println!(
+                                        "Highest Centrality: {} ({})",
+                                        summary.highest_centrality,
+                                        summary.highest_centrality_course
+                                    );
+                                }
                             }
                             Err(e) => {
                                 eprintln!("✗ Failed to export metrics: {e}");

@@ -30,7 +30,8 @@ fn main() {
     }
 
     // Verbose: enable if CLI flag OR config has verbose=true
-    if args.verbose || config.logging.verbose {
+    let verbose = args.verbose || config.logging.verbose;
+    if verbose {
         enable_verbose();
     }
     set_level(level);
@@ -57,7 +58,7 @@ fn main() {
             commands::config::run(subcommand, &mut config, &defaults);
         }
         Command::Planner { input_file, output } => {
-            commands::planner::run(&input_file, output.as_deref());
+            commands::planner::run(&input_file, output.as_deref(), verbose);
         }
     }
 }

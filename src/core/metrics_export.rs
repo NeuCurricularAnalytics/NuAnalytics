@@ -264,6 +264,8 @@ pub fn export_metrics_csv_with_summary(
 
 /// Convenience function to export metrics using the default CSV exporter
 ///
+/// Returns the computed summary statistics for further use
+///
 /// # Errors
 /// Returns an error if file writing fails
 pub fn export_metrics_csv<P: AsRef<Path>>(
@@ -271,8 +273,10 @@ pub fn export_metrics_csv<P: AsRef<Path>>(
     plan: &Plan,
     metrics: &CurriculumMetrics,
     output_path: P,
-) -> Result<(), Box<dyn Error>> {
-    CsvExporter.export(school, plan, metrics, output_path.as_ref())
+) -> Result<CurriculumSummary, Box<dyn Error>> {
+    let summary = CurriculumSummary::from_metrics(plan, school, metrics);
+    export_metrics_csv_with_summary(school, plan, metrics, &summary, output_path.as_ref())?;
+    Ok(summary)
 }
 
 #[cfg(test)]
@@ -291,7 +295,8 @@ mod tests {
         let metrics_data = metrics::compute_all_metrics(&dag).expect("compute metrics");
 
         let output_path = "/tmp/test_metrics_export.csv";
-        export_metrics_csv(&school, &plan, &metrics_data, output_path).expect("export metrics");
+        let summary =
+            export_metrics_csv(&school, &plan, &metrics_data, output_path).expect("export metrics");
 
         let contents = fs::read_to_string(output_path).expect("read file");
         assert!(contents.contains("Curriculum"));
@@ -300,6 +305,10 @@ mod tests {
         assert!(contents.contains("Structural Complexity"));
         assert!(contents.contains("Longest Delay"));
         assert!(contents.contains("Highest Centrality Course"));
+
+        // Verify summary was computed
+        assert!(summary.total_complexity > 0);
+        assert!(summary.longest_delay > 0);
 
         fs::remove_file(output_path).ok();
     }
