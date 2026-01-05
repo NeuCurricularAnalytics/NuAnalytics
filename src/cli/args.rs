@@ -52,7 +52,7 @@ pub enum ConfigSubcommand {
     /// If a KEY is provided, displays only that configuration value.
     /// If no KEY is provided, displays all configuration values.
     Get {
-        /// Optional configuration key to display (e.g., `level`, `file`, `plans_dir`)
+        /// Optional configuration key to display (e.g., `level`, `file`, `out_dir`)
         #[arg(value_name = "KEY")]
         key: Option<String>,
     },
@@ -150,14 +150,6 @@ pub struct Cli {
     #[arg(long = "db-endpoint", value_name = "URL")]
     pub db_endpoint: Option<String>,
 
-    /// Override config plans directory
-    #[arg(long = "config-plans-dir", value_name = "DIR")]
-    pub config_plans_dir: Option<PathBuf>,
-
-    /// Override config plans directory (short form)
-    #[arg(long = "plans-dir", value_name = "DIR")]
-    pub plans_dir: Option<PathBuf>,
-
     /// Override config output directory
     #[arg(long = "config-out-dir", value_name = "DIR")]
     pub config_out_dir: Option<PathBuf>,
@@ -204,15 +196,6 @@ impl Cli {
                 .db_endpoint
                 .clone()
                 .or_else(|| self.config_db_endpoint.clone()),
-            plans_dir: self
-                .plans_dir
-                .as_ref()
-                .map(|p| p.to_string_lossy().to_string())
-                .or_else(|| {
-                    self.config_plans_dir
-                        .as_ref()
-                        .map(|p| p.to_string_lossy().to_string())
-                }),
             out_dir: self
                 .out_dir
                 .as_ref()
@@ -260,8 +243,6 @@ mod tests {
             db_token: None,
             config_db_endpoint: None,
             db_endpoint: None,
-            config_plans_dir: None,
-            plans_dir: None,
             config_out_dir: None,
             out_dir: None,
             command: Command::Config { subcommand: None },
@@ -273,7 +254,6 @@ mod tests {
         assert!(overrides.verbose.is_none());
         assert!(overrides.db_token.is_none());
         assert!(overrides.db_endpoint.is_none());
-        assert!(overrides.plans_dir.is_none());
         assert!(overrides.out_dir.is_none());
     }
 
@@ -291,8 +271,6 @@ mod tests {
             db_token: Some("test-token".to_string()),
             config_db_endpoint: None,
             db_endpoint: Some("https://test.com".to_string()),
-            config_plans_dir: None,
-            plans_dir: Some(PathBuf::from("/plans")),
             config_out_dir: None,
             out_dir: Some(PathBuf::from("/output")),
             command: Command::Config { subcommand: None },
@@ -304,7 +282,6 @@ mod tests {
         assert_eq!(overrides.verbose, Some(true));
         assert_eq!(overrides.db_token, Some("test-token".to_string()));
         assert_eq!(overrides.db_endpoint, Some("https://test.com".to_string()));
-        assert_eq!(overrides.plans_dir, Some("/plans".to_string()));
         assert_eq!(overrides.out_dir, Some("/output".to_string()));
     }
 
@@ -323,8 +300,6 @@ mod tests {
             db_token: Some("short-token".to_string()),
             config_db_endpoint: Some("https://long.com".to_string()),
             db_endpoint: Some("https://short.com".to_string()),
-            config_plans_dir: Some(PathBuf::from("/long/plans")),
-            plans_dir: Some(PathBuf::from("/short/plans")),
             config_out_dir: Some(PathBuf::from("/long/out")),
             out_dir: Some(PathBuf::from("/short/out")),
             command: Command::Config { subcommand: None },
@@ -333,7 +308,6 @@ mod tests {
         let overrides = cli.to_config_overrides();
         assert_eq!(overrides.db_token, Some("short-token".to_string()));
         assert_eq!(overrides.db_endpoint, Some("https://short.com".to_string()));
-        assert_eq!(overrides.plans_dir, Some("/short/plans".to_string()));
         assert_eq!(overrides.out_dir, Some("/short/out".to_string()));
     }
 
@@ -352,8 +326,6 @@ mod tests {
             db_token: None,
             config_db_endpoint: Some("https://long.com".to_string()),
             db_endpoint: None,
-            config_plans_dir: Some(PathBuf::from("/long/plans")),
-            plans_dir: None,
             config_out_dir: Some(PathBuf::from("/long/out")),
             out_dir: None,
             command: Command::Config { subcommand: None },
@@ -362,7 +334,6 @@ mod tests {
         let overrides = cli.to_config_overrides();
         assert_eq!(overrides.db_token, Some("long-token".to_string()));
         assert_eq!(overrides.db_endpoint, Some("https://long.com".to_string()));
-        assert_eq!(overrides.plans_dir, Some("/long/plans".to_string()));
         assert_eq!(overrides.out_dir, Some("/long/out".to_string()));
     }
 }

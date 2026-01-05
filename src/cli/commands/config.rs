@@ -137,7 +137,6 @@ mod tests {
         config.logging.verbose = true;
         config.database.token = "test_token".to_string();
         config.database.endpoint = "https://test.com".to_string();
-        config.paths.plans_dir = "/test/plans".to_string();
         config.paths.out_dir = "/test/output".to_string();
         config
     }
@@ -152,7 +151,6 @@ mod tests {
         assert_eq!(config.get("verbose"), Some("true".to_string()));
         assert_eq!(config.get("token"), Some("test_token".to_string()));
         assert_eq!(config.get("endpoint"), Some("https://test.com".to_string()));
-        assert_eq!(config.get("plans_dir"), Some("/test/plans".to_string()));
         assert_eq!(config.get("out_dir"), Some("/test/output".to_string()));
     }
 
@@ -250,9 +248,6 @@ mod tests {
 
         assert!(config.unset("endpoint", &defaults).is_ok());
         assert_eq!(config.database.endpoint, defaults.database.endpoint);
-
-        assert!(config.unset("plans_dir", &defaults).is_ok());
-        assert_eq!(config.paths.plans_dir, defaults.paths.plans_dir);
 
         assert!(config.unset("out_dir", &defaults).is_ok());
         assert_eq!(config.paths.out_dir, defaults.paths.out_dir);
