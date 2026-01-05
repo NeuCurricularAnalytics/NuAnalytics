@@ -11,4 +11,4 @@ endpoint = ""
 
 [paths]
 plans_dir = "./plans"
-out_dir = "./output"
+out_dir = "./plans"

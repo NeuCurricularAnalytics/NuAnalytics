@@ -58,7 +58,7 @@ fn main() {
             commands::config::run(subcommand, &mut config, &defaults);
         }
         Command::Planner { input_file, output } => {
-            commands::planner::run(&input_file, output.as_deref(), verbose);
+            commands::planner::run(&input_file, output.as_deref(), &config, verbose);
         }
     }
 }
