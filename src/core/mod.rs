@@ -1,6 +1,7 @@
 //! Core module for common functionality across all targets
 
 pub mod config;
+pub mod metrics;
 pub mod models;
 pub mod planner;
 
