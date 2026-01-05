@@ -3,7 +3,6 @@
 use super::metrics::CurriculumMetrics;
 use super::models::DAG;
 use crate::core::models::{Plan, School};
-use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
 
@@ -42,7 +41,7 @@ pub struct CurriculumSummary {
 impl CurriculumSummary {
     /// Compute summary statistics from curriculum metrics
     #[must_use]
-    pub fn from_metrics(plan: &Plan, school: &School, metrics: &CurriculumMetrics) -> Self {
+    pub fn from_metrics(plan: &Plan, _school: &School, metrics: &CurriculumMetrics) -> Self {
         let mut total_complexity = 0;
         let mut highest_centrality = 0;
         let mut highest_centrality_course = String::new();
@@ -65,67 +64,92 @@ impl CurriculumSummary {
             }
         }
 
-        // Compute the longest path through the curriculum
-        let dag = school.build_dag();
-        let longest_delay_path = compute_longest_path(&dag, metrics);
-
         Self {
             total_complexity,
             highest_centrality,
             highest_centrality_course,
             longest_delay,
             longest_delay_course,
-            longest_delay_path,
+            longest_delay_path: Vec::new(), // Will be computed separately when DAG is available
         }
+    }
+
+    /// Set the longest delay path from a precomputed DAG
+    #[must_use]
+    pub fn with_delay_path(mut self, dag: &DAG, metrics: &CurriculumMetrics) -> Self {
+        self.longest_delay_path = compute_longest_path(dag, metrics);
+        self
     }
 }
 
-/// Compute the longest path through the curriculum DAG
+/// Compute the longest path through the curriculum DAG by tracing back prerequisites
+///
+/// Finds the course with the maximum delay value, then traces back through its
+/// prerequisites by following the chain of courses with the highest delay values.
+/// This represents the critical path through the curriculum.
+///
+/// # Arguments
+/// * `dag` - The directed acyclic graph of course prerequisites
+/// * `metrics` - Computed metrics for all courses
+///
+/// # Returns
+/// A vector of course keys representing the path from start to end, or empty if no courses
 fn compute_longest_path(dag: &DAG, metrics: &CurriculumMetrics) -> Vec<String> {
-    // Build a map of course -> (delay_value, predecessor)
-    let mut delay_info: HashMap<String, (usize, Option<String>)> = HashMap::new();
+    // Find all courses with the maximum delay value
+    let max_delay = metrics.values().map(|m| m.delay).max().unwrap_or(0);
 
-    // Initialize all courses with delay 0 and no predecessor
-    for course in &dag.courses {
-        if let Some(m) = metrics.get(course) {
-            delay_info.insert(course.clone(), (m.delay, None));
+    if max_delay == 0 {
+        return Vec::new();
+    }
+
+    // Among courses with max delay, find the one that's furthest down the dependency chain
+    // (i.e., has the most prerequisites to trace back through)
+    let max_delay_courses: Vec<_> = metrics
+        .iter()
+        .filter(|(_, m)| m.delay == max_delay)
+        .map(|(course, _)| course)
+        .collect();
+
+    let mut longest_path = Vec::new();
+
+    // Try each course with max delay and find which gives the longest traceback path
+    for &end_course in &max_delay_courses {
+        let path = trace_prerequisites(end_course, dag, metrics);
+        if path.len() > longest_path.len() {
+            longest_path = path;
         }
     }
 
-    // Find the course with maximum delay
-    let max_delay_course = delay_info
-        .iter()
-        .max_by_key(|(_, (delay, _))| delay)
-        .map(|(course, _)| course.clone());
+    longest_path
+}
 
-    max_delay_course.map_or_else(Vec::new, |end_course| {
-        // Trace back the path using prerequisites
-        let mut path = vec![end_course.clone()];
-        let mut current = end_course;
+/// Trace back through prerequisites to build a path
+fn trace_prerequisites(start: &str, dag: &DAG, metrics: &CurriculumMetrics) -> Vec<String> {
+    let mut path = vec![start.to_string()];
+    let mut current = start.to_string();
 
-        // Trace back through prerequisites
-        while let Some(prereqs) = dag.get_prerequisites(&current) {
-            if prereqs.is_empty() {
-                break;
-            }
-
-            // Find the prerequisite with the highest delay
-            let best_prereq = prereqs
-                .iter()
-                .max_by_key(|p| metrics.get(*p).map_or(0, |m| m.delay));
-
-            if let Some(prereq) = best_prereq {
-                path.push(prereq.clone());
-                current = prereq.clone();
-            } else {
-                break;
-            }
+    // Trace back through prerequisites
+    while let Some(prereqs) = dag.get_prerequisites(&current) {
+        if prereqs.is_empty() {
+            break;
         }
 
-        // Reverse to get the path from start to end
-        path.reverse();
-        path
-    })
+        // Find the prerequisite with the highest delay
+        let best_prereq = prereqs
+            .iter()
+            .max_by_key(|p| metrics.get(*p).map_or(0, |m| m.delay));
+
+        if let Some(prereq) = best_prereq {
+            path.push(prereq.clone());
+            current = prereq.clone();
+        } else {
+            break;
+        }
+    }
+
+    // Reverse to get the path from start to end
+    path.reverse();
+    path
 }
 
 /// CSV exporter for curriculum metrics
@@ -139,7 +163,9 @@ impl MetricsExporter for CsvExporter {
         metrics: &CurriculumMetrics,
         output_path: &Path,
     ) -> Result<(), Box<dyn Error>> {
-        let summary = CurriculumSummary::from_metrics(plan, school, metrics);
+        let dag = school.build_dag();
+        let summary =
+            CurriculumSummary::from_metrics(plan, school, metrics).with_delay_path(&dag, metrics);
         export_metrics_csv_with_summary(school, plan, metrics, &summary, output_path)
     }
 }
@@ -274,7 +300,9 @@ pub fn export_metrics_csv<P: AsRef<Path>>(
     metrics: &CurriculumMetrics,
     output_path: P,
 ) -> Result<CurriculumSummary, Box<dyn Error>> {
-    let summary = CurriculumSummary::from_metrics(plan, school, metrics);
+    let dag = school.build_dag();
+    let summary =
+        CurriculumSummary::from_metrics(plan, school, metrics).with_delay_path(&dag, metrics);
     export_metrics_csv_with_summary(school, plan, metrics, &summary, output_path.as_ref())?;
     Ok(summary)
 }
@@ -349,6 +377,94 @@ mod tests {
             .expect("export metrics");
 
         assert!(std::path::Path::new(output_path).exists());
+        fs::remove_file(output_path).ok();
+    }
+
+    #[test]
+    fn computes_longest_delay_path() {
+        let school =
+            parse_curriculum_csv("samples/plans/Colostate_CSDegree.csv").expect("parse curriculum");
+        let dag = school.build_dag();
+        let metrics_data = metrics::compute_all_metrics(&dag).expect("compute metrics");
+
+        let path = compute_longest_path(&dag, &metrics_data);
+
+        // Should have at least one course in the path
+        assert!(!path.is_empty(), "Longest path should not be empty");
+
+        // Path should be ordered from prerequisite to dependent
+        if path.len() > 1 {
+            for i in 0..path.len() - 1 {
+                let current = &path[i];
+                let next = &path[i + 1];
+
+                // Verify that current is a prerequisite of next
+                let prereqs = dag.get_prerequisites(next);
+                assert!(
+                    prereqs.is_some_and(|deps| deps.contains(current)),
+                    "Course {current} should be a prerequisite of {next}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn summary_with_delay_path_includes_path() {
+        let school =
+            parse_curriculum_csv("samples/plans/Colostate_CSDegree.csv").expect("parse curriculum");
+        let plan = school.plans.first().expect("has at least one plan").clone();
+        let dag = school.build_dag();
+        let metrics_data = metrics::compute_all_metrics(&dag).expect("compute metrics");
+
+        let summary = CurriculumSummary::from_metrics(&plan, &school, &metrics_data)
+            .with_delay_path(&dag, &metrics_data);
+
+        // Path should be populated
+        assert!(
+            !summary.longest_delay_path.is_empty(),
+            "Delay path should be computed"
+        );
+
+        // Path should start and end with actual courses
+        for course in &summary.longest_delay_path {
+            assert!(
+                dag.contains_course(course),
+                "Path should only contain valid courses"
+            );
+        }
+    }
+
+    #[test]
+    fn csv_contains_delay_path() {
+        let school =
+            parse_curriculum_csv("samples/plans/Colostate_CSDegree.csv").expect("parse curriculum");
+        let plan = school.plans.first().expect("has at least one plan").clone();
+        let dag = school.build_dag();
+        let metrics_data = metrics::compute_all_metrics(&dag).expect("compute metrics");
+
+        let output_path = "/tmp/test_delay_path.csv";
+        export_metrics_csv(&school, &plan, &metrics_data, output_path).expect("export metrics");
+
+        let contents = fs::read_to_string(output_path).expect("read file");
+
+        // Check that the CSV contains the path separator
+        assert!(
+            contents.contains("->"),
+            "CSV should contain delay path with -> separator"
+        );
+
+        // Find the "Longest Delay" line
+        let delay_line = contents
+            .lines()
+            .find(|line| line.starts_with("Longest Delay"))
+            .expect("Should have Longest Delay line");
+
+        // Should have at least 3 fields: label, value, and path
+        assert!(
+            delay_line.split(',').count() >= 3,
+            "Longest Delay line should include the path"
+        );
+
         fs::remove_file(output_path).ok();
     }
 }

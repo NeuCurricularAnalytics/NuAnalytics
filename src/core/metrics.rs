@@ -261,6 +261,13 @@ fn dfs_paths(
     }
 }
 
+/// Build a map of incoming edges (prerequisites and corequisites) for each course
+///
+/// # Arguments
+/// * `dag` - The directed acyclic graph of course prerequisites
+///
+/// # Returns
+/// A map from each course to its sorted list of prerequisite and corequisite courses
 fn build_incoming_edges(dag: &DAG) -> HashMap<String, Vec<String>> {
     let mut incoming = HashMap::new();
 
@@ -284,7 +291,14 @@ fn build_incoming_edges(dag: &DAG) -> HashMap<String, Vec<String>> {
     incoming
 }
 
-/// Count the number of courses reachable from a given course via BFS.
+/// Count the number of courses reachable from a given course via breadth-first search
+///
+/// # Arguments
+/// * `start` - The course key to start from
+/// * `outgoing` - Map of outgoing edges from each course
+///
+/// # Returns
+/// The count of reachable courses (excluding the start course itself)
 fn count_reachable(start: &str, outgoing: &HashMap<String, Vec<String>>) -> usize {
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
@@ -306,6 +320,15 @@ fn count_reachable(start: &str, outgoing: &HashMap<String, Vec<String>>) -> usiz
     visited.len() - 1
 }
 
+/// Build a map of outgoing edges (dependents) for each course
+///
+/// Creates the reverse graph where edges point from prerequisites to courses that require them.
+///
+/// # Arguments
+/// * `dag` - The directed acyclic graph of course prerequisites
+///
+/// # Returns
+/// A map from each course to its sorted list of dependent courses
 fn build_outgoing_edges(dag: &DAG) -> HashMap<String, Vec<String>> {
     let mut outgoing = HashMap::new();
 
@@ -329,6 +352,15 @@ fn build_outgoing_edges(dag: &DAG) -> HashMap<String, Vec<String>> {
     outgoing
 }
 
+/// Calculate the in-degree (number of incoming edges) for each course
+///
+/// The in-degree represents how many prerequisites and corequisites a course has.
+///
+/// # Arguments
+/// * `dag` - The directed acyclic graph of course prerequisites
+///
+/// # Returns
+/// A map from each course to its in-degree count
 fn build_indegree_counts(dag: &DAG) -> HashMap<String, usize> {
     let mut indegree = HashMap::new();
 
@@ -349,6 +381,18 @@ fn build_indegree_counts(dag: &DAG) -> HashMap<String, usize> {
     indegree
 }
 
+/// Compute a topological ordering of courses using Kahn's algorithm
+///
+/// # Arguments
+/// * `courses` - List of all course keys
+/// * `outgoing` - Map of outgoing edges from each course
+/// * `indegree` - Map of in-degree counts for each course
+///
+/// # Returns
+/// A topologically sorted list of courses
+///
+/// # Errors
+/// Returns an error if a cycle is detected in the graph
 fn topological_order(
     courses: &[String],
     outgoing: &HashMap<String, Vec<String>>,
@@ -390,6 +434,17 @@ fn topological_order(
     Ok(order)
 }
 
+/// Compute the longest path length from any root to each course
+///
+/// Uses dynamic programming over the topological order to find the longest
+/// incoming path to each course.
+///
+/// # Arguments
+/// * `topo_order` - Topologically sorted list of courses
+/// * `dag` - The directed acyclic graph of course prerequisites
+///
+/// # Returns
+/// A map from each course to its longest incoming path length
 fn longest_paths_to(topo_order: &[String], dag: &DAG) -> HashMap<String, usize> {
     let mut longest = HashMap::new();
 
@@ -420,6 +475,17 @@ fn longest_paths_to(topo_order: &[String], dag: &DAG) -> HashMap<String, usize> 
     longest
 }
 
+/// Compute the longest path length from each course to any leaf
+///
+/// Uses dynamic programming over the reverse topological order to find the
+/// longest outgoing path from each course.
+///
+/// # Arguments
+/// * `topo_order` - Topologically sorted list of courses
+/// * `outgoing` - Map of outgoing edges from each course
+///
+/// # Returns
+/// A map from each course to its longest outgoing path length
 fn longest_paths_from(
     topo_order: &[String],
     outgoing: &HashMap<String, Vec<String>>,
