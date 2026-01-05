@@ -1,18 +1,16 @@
-# Quick Commands (CLI-only)
+# Quick Commands (Cargo Aliases)
 
 Common one-liners for everyday development with the CLI.
 
 ```bash
 # Build (debug)
-npm run dev
+cargo build
 
 # Build (release)
-npm run build
+cargo build --release
 
 # Run the CLI
-npm run run
-# or
-cargo run --bin nuanalytics-cli
+cargo run --bin nuanalytics
 
 # Logging examples
 cargo run --bin nuanalytics -- --log-level warn
@@ -21,17 +19,17 @@ cargo run --bin nuanalytics -- -v                # enable verbose output
 cargo run --bin nuanalytics -- --log-file ./nu.log
 
 # Tests
-npm run test                      # cargo test --workspace
+cargo test --workspace
 
-# Linting
-npm run lint                      # clippy + fmt + doc
-npm run lint:clippy
-npm run lint:fmt
-npm run lint:doc
+# Linting & Formatting
+cargo lint                        # clippy with warnings as errors
+cargo lint-fix                    # clippy fixes + fmt
+cargo fmt-check                   # check formatting without changes
+cargo fmt --all                   # format all code
 
 # Docs
-npm run doc                       # generates docs into docs/rust
+cargo doc-private                 # generates docs with private items
 
 # Clean
-npm run clean
+cargo clean
 ```
