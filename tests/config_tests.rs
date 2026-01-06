@@ -22,10 +22,6 @@ fn test_config_from_defaults() {
         "Default log level should not be empty"
     );
     assert!(
-        !config.paths.plans_dir.is_empty(),
-        "Default plans_dir should not be empty"
-    );
-    assert!(
         !config.paths.out_dir.is_empty(),
         "Default out_dir should not be empty"
     );
@@ -44,7 +40,6 @@ token = "test_token"
 endpoint = "https://example.com"
 
 [paths]
-plans_dir = "./plans"
 out_dir = "./output"
 "#;
 
@@ -55,7 +50,6 @@ out_dir = "./output"
     assert!(config.logging.verbose);
     assert_eq!(config.database.token, "test_token");
     assert_eq!(config.database.endpoint, "https://example.com");
-    assert_eq!(config.paths.plans_dir, "./plans");
     assert_eq!(config.paths.out_dir, "./output");
 }
 
@@ -171,7 +165,6 @@ fn test_config_overrides_apply() {
         verbose: Some(true),
         db_token: Some("override_token".to_string()),
         db_endpoint: Some("https://override.com".to_string()),
-        plans_dir: Some("./custom_plans".to_string()),
         out_dir: Some("./custom_out".to_string()),
     };
 
@@ -182,7 +175,6 @@ fn test_config_overrides_apply() {
     assert!(config.logging.verbose);
     assert_eq!(config.database.token, "override_token");
     assert_eq!(config.database.endpoint, "https://override.com");
-    assert_eq!(config.paths.plans_dir, "./custom_plans");
     assert_eq!(config.paths.out_dir, "./custom_out");
 }
 
@@ -197,7 +189,6 @@ fn test_config_overrides_partial() {
         verbose: None,
         db_token: None,
         db_endpoint: None,
-        plans_dir: None,
         out_dir: None,
     };
 
@@ -236,7 +227,6 @@ token = ""
 endpoint = ""
 
 [paths]
-plans_dir = ""
 out_dir = ""
 "#;
 
@@ -244,18 +234,14 @@ out_dir = ""
     let defaults = Config::from_defaults();
 
     // Before merge, non-logging fields should be empty
-    assert_eq!(config.paths.plans_dir, "");
 
     // Merge should add missing fields from defaults
     let changed = config.merge_defaults(&defaults);
 
-    if !defaults.paths.plans_dir.is_empty() {
-        assert!(
-            changed,
-            "merge_defaults should return true when fields are added"
-        );
-        assert_eq!(config.paths.plans_dir, defaults.paths.plans_dir);
-    }
+    assert!(
+        changed,
+        "merge_defaults should return true when fields are added"
+    );
 }
 
 #[test]
@@ -271,7 +257,6 @@ token = ""
 endpoint = ""
 
 [paths]
-plans_dir = "./my_plans"
 out_dir = ""
 "#;
 
@@ -283,7 +268,6 @@ out_dir = ""
     // Custom values should be preserved
     assert_eq!(config.logging.level, "error");
     assert_eq!(config.logging.file, "/my/custom/path.log");
-    assert_eq!(config.paths.plans_dir, "./my_plans");
 }
 
 #[test]

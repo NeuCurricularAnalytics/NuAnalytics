@@ -1,0 +1,41 @@
+Curriculum,Metropolitan_State_University_CS,,,,,,,,,
+Institution,"Metro State University",,,,,,,,,
+Degree Type,"BS",,,,,,,,,
+System Type,"semester",,,,,,,,,
+CIP,"11.07",,,,,,,,,
+Courses,,,,,,,,,,
+Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
+1,"Computational Thinking with Programming","ICS","140","2",,,4,"","",19.0,13,6.0,44
+2,"Precalculus","MATH","120",,,,4,"","",22.0,16,6.0,0
+3,"Discrete Mathematics","MATH","215","2",,,4,"","",16.0,11,5.0,52
+4,"Problem Solving with Programming","ICS","141","1",,,4,"","",18.0,12,6.0,44
+5,"Computer Orgination and Architecture","ICS","232","4;3",,,4,"","",4.0,0,4.0,0
+6,"Introduction to Data Structures","ICS","240","4;3",,,4,"","",14.0,8,6.0,58
+7,"Calculus I","MATH","210","2",,,4,"","",2.0,0,2.0,0
+8,"Database Management Systems","ICS","311","4;3",,,4,"","",4.0,0,4.0,0
+9,"Algorithms and Data Structures","ICS","340","6;3",,,4,"","",7.0,1,6.0,15
+10,"Organization of Programming Languages","ICS","365","6;3",,,4,"","",5.0,0,5.0,0
+11,"Object Oriented Design and Implementation","ICS","372","6;3",,,4,"","",7.0,1,6.0,15
+12,"Parallel and Distibuted Algorithms","ICS","440","9;3",,,4,"","",6.0,0,6.0,0
+13,"Networks and Security","ICS","460","6;3",,,4,"","",5.0,0,5.0,0
+14,"Operating Systems","ICS","462","6;3",,,4,"","",5.0,0,5.0,0
+15,"Software Engineering and Capstone Project","ICS","499","11",,,4,"","",6.0,0,6.0,0
+16,"Mobile Application Development (CS Elective)","ICS","342","4",,,4,"","",4.0,0,4.0,0
+17,"Machine Learning (CS Elective)","ICS","352","6",,,4,"","",5.0,0,5.0,0
+18,"Goal 1 - Communication Introductory","WRIT","XX",,,,3,"","",3.0,1,2.0,0
+19,"Goal 1 - Intermediate Writing'","WRIT","XX","18",,,3,"","",2.0,0,2.0,0
+20,"Goal 1 - Oral and Visual Communication","WRIT","XX",,,,3,"","",1.0,0,1.0,0
+21,"Goal 3 - Natural Science","XX","XX",,,"22",3,"","",2.0,0,2.0,0
+22,"Goal 3 - Natural Science Lab","XX","XX",,,,1,"","",3.0,1,2.0,0
+23,"Goal 5 - History and Behavioral Science","XX","XX",,,,3,"","",1.0,0,1.0,0
+24,"Goal 5 - History and Behavioral Science","XX","XX",,,,3,"","",1.0,0,1.0,0
+25,"Goal 6 - Humanities and Fine Arts","XX","XX",,,,3,"","",1.0,0,1.0,0
+26,"Goal 6 - Humanities and Fine Arts","XX","XX",,,,3,"","",1.0,0,1.0,0
+27,"Goal 7 - Human Diversity","XX","XX",,,,3,"","",1.0,0,1.0,0
+28,"Goal 8 - Global Perspective","XX","XX",,,,3,"","",1.0,0,1.0,0
+29,"Goal 9 - Ethical and Civic Responsibility","XX","XX",,,,3,"","",1.0,0,1.0,0
+30,"Goal 10 - People and the Environment","XX","XX",,,,3,"","",1.0,0,1.0,0
+31,"GELS Elective","XX","XX",,,,4,"","",1.0,0,1.0,0
+32,"Racial Issues Graduation Requirment","XX","XX",,,,3,"","",1.0,0,1.0,0
+33,"Upper Division Liberal Studies","XX","XX",,,,4,"","",1.0,0,1.0,0
+34,"Upper Division Liberal Studies","XX","XX",,,,4,"","",1.0,0,1.0,0

@@ -10,5 +10,4 @@ token = ""
 endpoint = ""
 
 [paths]
-plans_dir = "./plans"
-out_dir = "./output"
+out_dir = "/tmp/nuanalytics/plans"

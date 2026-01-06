@@ -4,3 +4,4 @@
 //! Each command is implemented in its own submodule.
 
 pub mod config;
+pub mod planner;

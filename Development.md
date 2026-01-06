@@ -9,9 +9,7 @@ This guide provides information for developers working on NuAnalytics, including
 Ensure you have the following installed:
 
 - **Rust 1.70+** - [Install Rust](https://rustup.rs/)
-- **Node.js 18+** and npm - [Install Node.js](https://nodejs.org/)
 - **Git** - [Install Git](https://git-scm.com/)
-- **cargo-watch** (optional) - Install with: `cargo install cargo-watch` (used by `npm run dev:watch`)
 
 ### Installation
 
@@ -20,13 +18,7 @@ Ensure you have the following installed:
    git clone https://github.com/NeuCurricularAnalytics/NuAnalytics.git
    cd NuAnalytics
    ```
-
-2. Install Node.js dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Set up pre-commit hooks:
+2. Set up pre-commit hooks:
    ```bash
    pip3 install pre-commit  # if not already installed
    ```
@@ -50,22 +42,14 @@ The CLI is built with Rust using a modular architecture:
 
 **Build the CLI in debug mode:**
 ```bash
-npm run dev
-# or
 cargo build
 ```
 
 **Build the CLI for release:**
 ```bash
-npm run build
-# or
 cargo build --release
 ```
 
-**Run the CLI:**
-```bash
-cargo run -- config
-```
 
 #### Configuration Management
 
@@ -116,74 +100,46 @@ Tip: For quick CLI testing, prefer `cargo run` so it rebuilds as needed and runs
 target/nuanalytics --log-level info
 ```
 
-**Watch for changes and rebuild:**
-```bash
-npm run dev:watch
-```
-
-This uses `cargo-watch` to rebuild with all features enabled during development.
-
 **Run CLI tests:**
 ```bash
-npm run test
-# or
 cargo test
-```
-
-
-
-### Build Everything
-
-**Development / Debug:**
-```bash
-npm run dev
-```
-
-**Production / Release:**
-```bash
-npm run build
 ```
 
 Feature defaults: During development, debug logging is enabled by default for the CLI.
 
 ### Documentation
 
-**Generate Rust documentation:**
+**Generate Rust documentation (including private items):**
 ```bash
-npm run doc
+cargo doc-private
 ```
 
-Open `docs/rust/index.html` in your browser.
-
-**View docs in browser directly:**
-```bash
-./scripts/open_docs.py
-```
+Generated docs are available in `target/doc/nu_analytics/index.html`.
 
 ## Code Quality
 
-### Linting
+### Linting & Formatting
 
-**Run all linters:**
+**Check formatting without changes:**
 ```bash
-npm run lint
+cargo fmt-check
 ```
 
-**Run specific linters:**
+**Apply clippy fixes automatically:**
 ```bash
-npm run lint:clippy   # Rust linting
-npm run lint:fmt      # Rust formatting check
-npm run lint:doc      # Generate and check docs
+cargo lint-fix
 ```
 
-**Auto-fix issues:**
+**Run full linting (warnings as errors):**
 ```bash
-npm run lint:fix
+cargo lint
 ```
 
-This will:
-- Fix Rust formatting with `cargo fmt`
-- Fix Clippy warnings with `--fix`
+**Format all code:**
+```bash
+cargo fmt --all
+```
+
 
 ### Pre-commit Hooks
 
@@ -220,8 +176,6 @@ All code changes must include appropriate tests:
 **Before committing**, ensure all tests pass:
 
 ```bash
-npm run test
-# or
 cargo test
 ```
 
@@ -274,8 +228,8 @@ test(rs): add smoke tests for get_version
 
 1. **Create a feature branch**: `git checkout -b feat/your-feature`
 2. **Make changes**: Edit files, add tests, update docs as needed
-3. **Run linting**: `npm run lint:fix` to auto-fix issues
-4. **Run tests**: `npm run test:all` to ensure everything passes
+3. **Run linting**: `cargo fmt && cargo fix-all` to auto-fix issues
+4. **Run tests**: `cargo test` to ensure everything passes
 5. **Commit**: Use conventional commit messages
 6. **Push**: `git push origin feat/your-feature`
 7. **Create PR**: Describe your changes and link any issues
@@ -289,8 +243,8 @@ test(rs): add smoke tests for get_version
 If a pre-commit hook fails:
 
 1. Read the error message carefully
-2. Run the linter locally to see detailed output: `npm run lint`
-3. Use `npm run lint:fix` to auto-fix what you can
+2. Run the linter locally to see detailed output: `cargo clippy --workspace --all-targets -- -D warnings`
+3. Use `cargo fix-all` to auto-fix what you can
 4. Manually fix remaining issues
 5. Re-stage files: `git add .`
 6. Retry commit: `git commit -m "message"`
@@ -299,8 +253,8 @@ If a pre-commit hook fails:
 
 If a build fails:
 
-1. Clean build artifacts: `npm run clean`
-2. Rebuild: `npm run build`
+1. Clean build artifacts: `cargo clean`
+2. Rebuild: `cargo build --release`
 3. Check for compilation errors in the output
 
 

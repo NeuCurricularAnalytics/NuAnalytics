@@ -1,0 +1,44 @@
+Curriculum,Colostate_CS Degree,,,,,,,,,
+Institution,"Colorado State University",,,,,,,,,
+Degree Type,"BS",,,,,,,,,
+System Type,"semester",,,,,,,,,
+CIP,"11.0701",,,,,,,,,
+Courses,,,,,,,,,,
+Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
+1,"Mathematics for Computational Science I","MATH","156",,,,4,"","",9.0,6,3.0,0
+2,"Culture and Coding: Python (GT-AH3)","CS","150B",,,,3,"","",22.0,16,6.0,0
+3,"CS1--Computational Thinking with Java","CS","164","2",,,4,"","",19.0,13,6.0,44
+4,"Ethical Computing Systems (GT-AH3)","CS","201",,,,3,"","",1.0,0,1.0,0
+5,"CS2--Data Structures","CS","165","3",,,4,"","",17.0,11,6.0,39
+6,"Discrete Structures and their Applications","CS","220","2;1",,,4,"","",5.0,2,3.0,12
+7,"Software Development with C++","CS","253","5",,,4,"","",11.0,5,6.0,22
+8,"Computer Organization","CS","270","3",,,4,"","",7.0,2,5.0,5
+9,"Linear Algebra for Data Science","DSCI","369","1",,,4,"","",4.0,1,3.0,3
+10,"Introduction to Applied Statistical Methods","STAT","301","1",,,4,"","",2.0,0,2.0,0
+11,"Software Engineering","CS","314","7",,,3,"","",8.0,2,6.0,12
+12,"Algorithms--Theory and Practice","CS","320","5;6",,,3,"","",4.0,0,4.0,0
+13,"Operating Systems","CS","370","5;8",,,3,"","",6.0,1,5.0,10
+14,"300++ Course","CS","356","7",,,3,"","",5.0,0,5.0,0
+15,"300++ Course","CS","345","6;1",,,3,"","",3.0,0,3.0,0
+16,"400++ Course","CS","414","11",,,4,"","",6.0,0,6.0,0
+17,"400++ Course","CS","415","11",,,4,"","",6.0,0,6.0,0
+18,"400++ Course","CS","462","7;9",,,4,"","",5.0,0,5.0,0
+19,"Tech Focus","JTC","372","5",,,3,"","",4.0,0,4.0,0
+20,"Tech Focus","CIS","413","5",,,3,"","",4.0,0,4.0,0
+21,"400+","CS","455","13",,,4,"","",5.0,0,5.0,0
+22,"Composition","CO","150",,,,3,"","",3.0,1,2.0,0
+23,"Advanced Writing","CO","300","22",,,3,"","",2.0,0,2.0,0
+24,"CS Science","PH","121",,,,3,"","",1.0,0,1.0,0
+25,"CS Science w/lab","CHEM","107",,,,3,"","",3.0,1,2.0,0
+26,"CS Science lab","CHEM","108",,"25",,1,"","",2.0,0,2.0,0
+27,"DEI Elective","DEI","1xx",,,,3,"","",1.0,0,1.0,0
+28,"History Elective","HIST","1xx",,,,3,"","",1.0,0,1.0,0
+29,"Social Science Elective","Soc","1xx",,,,3,"","",1.0,0,1.0,0
+30,"Elective","elec","1xx",,,,3,"","",1.0,0,1.0,0
+31,"Elective","elec","1xx",,,,3,"","",1.0,0,1.0,0
+32,"Elective","elec","1xx",,,,3,"","",1.0,0,1.0,0
+33,"Elective","elec","1xx",,,,3,"","",1.0,0,1.0,0
+34,"Elective","elec","3++",,,,3,"","",1.0,0,1.0,0
+35,"Elective","elec","3++",,,,3,"","",1.0,0,1.0,0
+36,"Elective","elec","3++",,,,3,"","",1.0,0,1.0,0
+37,"Elective","elec","3++",,,,2,"","",1.0,0,1.0,0

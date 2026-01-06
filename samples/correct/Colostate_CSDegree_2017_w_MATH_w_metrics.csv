@@ -1,0 +1,48 @@
+Curriculum,Colostate_CSDegree_2017_w_MATH,,,,,,,,,
+Institution,"Colorado State University",,,,,,,,,
+Degree Type,"BS",,,,,,,,,
+System Type,"semester",,,,,,,,,
+CIP,"11.0701",,,,,,,,,
+Courses,,,,,,,,,,
+Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
+1,"Calculus I","MATH","160","35;37",,,4,"","",27.0,17,10.0,400
+2,"A&H elective","AH","1xx",,,,3,"","",1.0,0,1.0,0
+3,"Java (Prior) programming experience","CS","164","35",,,4,"","",23.0,14,9.0,92
+4,"A&H elective","AH","1xx",,,,3,"","",1.0,0,1.0,0
+5,"CS2--Data Structures","CS","165","3","1",,4,"","",23.0,13,10.0,288
+6,"Discrete Structures and their Applications","CS","220","5;1",,,4,"","",16.0,6,10.0,160
+7,"Software Development with C++","CS","253","6;8",,,4,"","",14.0,4,10.0,250
+8,"Computer Organization","CS","270","5;1",,,4,"","",18.0,8,10.0,240
+9,"Calculus II","MATH","161","1",,,4,"","",11.0,3,8.0,41
+10,"Introduction to Applied Statistical Methods","STAT","301","1",,,4,"","",8.0,1,7.0,13
+11,"Software Engineering","CS","314","7",,,3,"","",11.0,1,10.0,90
+12,"Algorithms--Theory and Practice","CS","320","6;9;30",,,3,"","",8.0,0,8.0,0
+13,"Operating Systems","CS","370","8",,,3,"","",11.0,2,9.0,80
+14,"Computer Security","CS","356","7;10;8",,,3,"","",9.0,0,9.0,0
+15,"Tech Elective","elec","3++",,,,3,"","",1.0,0,1.0,0
+16,"400++ Course","CS","414","11",,,4,"","",10.0,0,10.0,0
+17,"400++ Course","CS","455","13",,,4,"","",9.0,0,9.0,0
+18,"400++ Course","CS","462","7;9",,,4,"","",9.0,0,9.0,0
+19,"Tech Elective","JTC","372","5",,,3,"","",7.0,0,7.0,0
+20,"Tech Elective","CIS","413","5",,,3,"","",7.0,0,7.0,0
+21,"400+","CS","455","13",,,4,"","",9.0,0,9.0,0
+22,"Composition","CO","150",,,,3,"","",3.0,1,2.0,0
+23,"Advanced Writing","CO","300","22",,,3,"","",2.0,0,2.0,0
+24,"CS Science","PH","121",,,,3,"","",1.0,0,1.0,0
+25,"CS Science w/lab","CHEM","107",,,,3,"","",3.0,1,2.0,0
+26,"CS Science lab","CHEM","108",,"25",,1,"","",2.0,0,2.0,0
+27,"DEI Elective","DEI","1xx",,,,3,"","",1.0,0,1.0,0
+28,"History Elective","HIST","1xx",,,,3,"","",1.0,0,1.0,0
+29,"Social Science Elective","Soc","1xx",,,,3,"","",1.0,0,1.0,0
+30,"Linear Algebra","MATH","369","9",,,3,"","",9.0,1,8.0,15
+31,"CS Science 2 w/lab","SCI","2++",,,,3,"","",3.0,1,2.0,0
+32,"CS Science 2 w/lab","SCI","2++","31",,,2,"","",2.0,0,2.0,0
+33,"College Algebra in Context I","MATH","117",,,,1,"","",33.0,23,10.0,0
+34,"College Algebra in Context II","MATH","118","33",,,1,"","",32.0,22,10.0,492
+35,"Logarithmic and Exponential Functions","MATH","124","34",,,1,"","",28.0,19,9.0,279
+36,"Numerical Trigonometry","MATH","125","34",,,1,"","",29.0,19,10.0,213
+37,"Analytic Trigonometry","MATH","126","36",,,1,"","",28.0,18,10.0,213
+38,"Elective","elec","3++",,,,3,"","",1.0,0,1.0,0
+39,"Elective","elec","3++",,,,3,"","",1.0,0,1.0,0
+40,"Elective","elec","3++",,,,3,"","",1.0,0,1.0,0
+41,"Elective","elec","1xx",,,,1,"","",1.0,0,1.0,0
