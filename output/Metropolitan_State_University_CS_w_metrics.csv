@@ -1,0 +1,44 @@
+Curriculum,Computer Science
+Institution,Metro State University
+Degree Type,"BS"
+System Type,semester
+CIP,"11.07"
+Total Structural Complexity,169
+Longest Delay,6,MATH120->ICS140->ICS141->ICS240->ICS372->ICS499
+Highest Centrality Course,"ICS240",58
+Courses
+Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
+1,Computational Thinking with Programming,"ICS","140","MATH120","","",4,"Metro State University","",19,13,6,44
+2,Precalculus,"MATH","120","","","",4,"Metro State University","",22,16,6,0
+3,Discrete Mathematics,"MATH","215","MATH120","","",4,"Metro State University","",16,11,5,52
+4,Problem Solving with Programming,"ICS","141","ICS140","","",4,"Metro State University","",18,12,6,44
+5,Computer Orgination and Architecture,"ICS","232","ICS141;MATH215","","",4,"Metro State University","",4,0,4,0
+6,Introduction to Data Structures,"ICS","240","ICS141;MATH215","","",4,"Metro State University","",14,8,6,58
+7,Calculus I,"MATH","210","MATH120","","",4,"Metro State University","",2,0,2,0
+8,Database Management Systems,"ICS","311","ICS141;MATH215","","",4,"Metro State University","",4,0,4,0
+9,Algorithms and Data Structures,"ICS","340","ICS240;MATH215","","",4,"Metro State University","",7,1,6,15
+10,Organization of Programming Languages,"ICS","365","ICS240;MATH215","","",4,"Metro State University","",5,0,5,0
+11,Object Oriented Design and Implementation,"ICS","372","ICS240;MATH215","","",4,"Metro State University","",7,1,6,15
+12,Parallel and Distibuted Algorithms,"ICS","440","ICS340;MATH215","","",4,"Metro State University","",6,0,6,0
+13,Networks and Security,"ICS","460","ICS240;MATH215","","",4,"Metro State University","",5,0,5,0
+14,Operating Systems,"ICS","462","ICS240;MATH215","","",4,"Metro State University","",5,0,5,0
+15,Software Engineering and Capstone Project,"ICS","499","ICS372","","",4,"Metro State University","",6,0,6,0
+16,Mobile Application Development (CS Elective),"ICS","342","ICS141","","",4,"Metro State University","",4,0,4,0
+17,Machine Learning (CS Elective),"ICS","352","ICS240","","",4,"Metro State University","",5,0,5,0
+18,Goal 1 - Communication Introductory,"WRIT","XX","","","",3,"Metro State University","",3,1,2,0
+19,Goal 1 - Intermediate Writing',"WRIT","XX","WRITXX_18","","",3,"Metro State University","",2,0,2,0
+20,Goal 1 - Oral and Visual Communication,"WRIT","XX","","","",3,"Metro State University","",1,0,1,0
+21,Goal 3 - Natural Science,"XX","XX","","","",3,"Metro State University","",1,0,1,0
+22,Goal 3 - Natural Science Lab,"XX","XX","","","",1,"Metro State University","",1,0,1,0
+23,Goal 5 - History and Behavioral Science,"XX","XX","","","",3,"Metro State University","",1,0,1,0
+24,Goal 5 - History and Behavioral Science,"XX","XX","","","",3,"Metro State University","",1,0,1,0
+25,Goal 6 - Humanities and Fine Arts,"XX","XX","","","",3,"Metro State University","",1,0,1,0
+26,Goal 6 - Humanities and Fine Arts,"XX","XX","","","",3,"Metro State University","",1,0,1,0
+27,Goal 7 - Human Diversity,"XX","XX","","","",3,"Metro State University","",1,0,1,0
+28,Goal 8 - Global Perspective,"XX","XX","","","",3,"Metro State University","",1,0,1,0
+29,Goal 9 - Ethical and Civic Responsibility,"XX","XX","","","",3,"Metro State University","",1,0,1,0
+30,Goal 10 - People and the Environment,"XX","XX","","","",3,"Metro State University","",1,0,1,0
+31,GELS Elective,"XX","XX","","","",4,"Metro State University","",1,0,1,0
+32,Racial Issues Graduation Requirment,"XX","XX","","","",3,"Metro State University","",1,0,1,0
+33,Upper Division Liberal Studies,"XX","XX","","","",4,"Metro State University","",1,0,1,0
+34,Upper Division Liberal Studies,"XX","XX","","","",4,"Metro State University","",1,0,1,0

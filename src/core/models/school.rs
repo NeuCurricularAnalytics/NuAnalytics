@@ -42,21 +42,67 @@ impl School {
     ///
     /// # Returns
     /// `true` if the course was added, `false` if a course with that key already exists
+    /// Add a course to the school (fails if key already exists)
+    ///
+    /// # Arguments
+    /// * `course` - The course to add
+    ///
+    /// # Returns
+    /// true if the course was added, false if a course with the same key already exists
     pub fn add_course(&mut self, course: Course) -> bool {
         let key = course.key();
         self.courses.insert(key, course).is_none()
     }
 
-    /// Get a course by its key (PREFIX NUMBER)
+    /// Add a course with a custom key (for handling deduplication)
     ///
     /// # Arguments
-    /// * `key` - Course key (e.g., "CS 2510")
+    /// * `key` - Custom key for the course
+    /// * `course` - The course to add
+    pub fn add_course_with_key(&mut self, key: String, course: Course) {
+        self.courses.insert(key, course);
+    }
+
+    /// Get a course by its storage key (which may include deduplicated suffixes)
+    ///
+    /// # Arguments
+    /// * `storage_key` - The key used to store the course in the `HashMap`
     ///
     /// # Returns
     /// A reference to the course, or `None` if not found
     #[must_use]
-    pub fn get_course(&self, key: &str) -> Option<&Course> {
-        self.courses.get(key)
+    pub fn get_course(&self, storage_key: &str) -> Option<&Course> {
+        self.courses.get(storage_key)
+    }
+
+    /// Get a course by its natural key (PREFIX NUMBER) - returns the first match if there are duplicates
+    ///
+    /// # Arguments
+    /// * `natural_key` - The course key (e.g., "CS2510")
+    ///
+    /// # Returns
+    /// A reference to the course, or `None` if not found
+    #[must_use]
+    pub fn get_course_by_natural_key(&self, natural_key: &str) -> Option<&Course> {
+        self.courses
+            .iter()
+            .find(|(_, course)| course.key() == natural_key)
+            .map(|(_, course)| course)
+    }
+
+    /// Get the storage key for a course (which may differ from its natural key due to deduplication)
+    ///
+    /// # Arguments
+    /// * `natural_key` - The course key (e.g., "CS2510")
+    ///
+    /// # Returns
+    /// The storage key (e.g., "`CS2510_2`" for a deduplicated course), or None if not found
+    #[must_use]
+    pub fn get_storage_key(&self, natural_key: &str) -> Option<String> {
+        self.courses
+            .iter()
+            .find(|(_, course)| course.key() == natural_key)
+            .map(|(storage_key, _)| storage_key.clone())
     }
 
     /// Get a mutable reference to a course by its key
@@ -188,19 +234,27 @@ impl School {
     pub fn build_dag(&self) -> super::DAG {
         let mut dag = super::DAG::new();
 
-        // Add all courses to the DAG
-        for course in self.courses.values() {
-            dag.add_course(course.key());
+        // Add all courses to the DAG using the keys they're stored under
+        for stored_key in self.courses.keys() {
+            dag.add_course(stored_key.clone());
         }
 
         // Add prerequisite relationships
-        for course in self.courses.values() {
+        // Note: prerequisite keys stored in course.prerequisites are already the stored keys
+        // (including deduplication suffixes), so we can add them directly to the DAG
+        for (stored_key, course) in &self.courses {
             for prereq_key in &course.prerequisites {
-                dag.add_prerequisite(course.key(), prereq_key);
+                // Check if this prerequisite key exists in our courses
+                if self.courses.contains_key(prereq_key) {
+                    dag.add_prerequisite(stored_key.clone(), prereq_key.as_str());
+                }
             }
 
             for coreq_key in &course.corequisites {
-                dag.add_corequisite(course.key(), coreq_key);
+                // Check if this corequisite key exists in our courses
+                if self.courses.contains_key(coreq_key) {
+                    dag.add_corequisite(stored_key.clone(), coreq_key.as_str());
+                }
             }
         }
 

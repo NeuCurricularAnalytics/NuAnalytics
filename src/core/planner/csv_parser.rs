@@ -31,6 +31,9 @@ pub struct CurriculumMetadata {
 ///
 /// # Errors
 /// Returns an error if file cannot be read or parsed
+///
+/// # Panics
+/// Panics if a course's natural key is not found in the `natural_key_to_ids` map during deduplication
 pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn Error>> {
     let content = fs::read_to_string(path)?;
     let lines: Vec<&str> = content.lines().collect();
@@ -64,52 +67,93 @@ pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn E
     let header_line = lines[courses_start + 1];
     let headers = parse_csv_line(header_line);
 
-    // First pass: create all courses without prerequisites
-    let mut courses_by_key: HashMap<String, Course> = HashMap::new();
-    let mut course_id_to_key: HashMap<String, String> = HashMap::new();
+    // First pass: Load all courses with their IDs and natural keys
+    // Build a mapping from Course ID -> natural key to detect duplicates
+    let mut course_id_to_natural_key: HashMap<String, String> = HashMap::new();
+    let mut natural_key_to_ids: HashMap<String, Vec<String>> = HashMap::new();
+    let mut courses_by_id: HashMap<String, Course> = HashMap::new();
+    let mut course_ids_in_order: Vec<String> = Vec::new();
 
     for line in lines.iter().skip(courses_start + 2) {
         if line.trim().is_empty() {
             continue;
         }
 
-        if let Ok(course) = parse_course_line(line, &headers) {
-            let key = course.key();
+        if let Ok(mut course) = parse_course_line(line, &headers) {
+            let natural_key = course.key(); // e.g., "XXXX"
+
             if let Some(course_id) = get_field(line, "Course ID", &headers) {
-                course_id_to_key.insert(course_id, key.clone());
+                course.csv_id = Some(course_id.clone());
+
+                // Track this course ID
+                course_id_to_natural_key.insert(course_id.clone(), natural_key.clone());
+                natural_key_to_ids
+                    .entry(natural_key)
+                    .or_default()
+                    .push(course_id.clone());
+                courses_by_id.insert(course_id.clone(), course);
+                course_ids_in_order.push(course_id);
             }
-            courses_by_key.insert(key, course);
         }
     }
 
-    // Second pass: add prerequisites and corequisites, converting Course IDs to course keys
+    // Second pass: Determine final storage keys
+    // If a natural key has multiple IDs, append the ID to make it unique
+    let mut course_id_to_storage_key: HashMap<String, String> = HashMap::new();
+
+    for (course_id, natural_key) in &course_id_to_natural_key {
+        let ids_with_same_key = natural_key_to_ids.get(natural_key).unwrap();
+        let storage_key = if ids_with_same_key.len() > 1 {
+            // Conflict - append ID
+            format!("{natural_key}_{course_id}")
+        } else {
+            // No conflict - use natural key
+            natural_key.clone()
+        };
+
+        course_id_to_storage_key.insert(course_id.clone(), storage_key);
+    }
+
+    // Third pass: Add prerequisites using course IDs, which will be converted to storage keys
     for line in lines.iter().skip(courses_start + 2) {
         if line.trim().is_empty() {
             continue;
         }
 
-        if let Ok(course_key) = extract_course_key(line, &headers) {
-            if let Some(course) = courses_by_key.get_mut(&course_key) {
+        if let Some(course_id) = get_field(line, "Course ID", &headers) {
+            if let Some(course) = courses_by_id.get_mut(&course_id) {
                 // Parse prerequisites
                 if let Some(prereq_str) = get_field(line, "Prerequisites", &headers) {
                     if !prereq_str.trim().is_empty() {
-                        add_prerequisites_with_mapping(course, &prereq_str, &course_id_to_key);
+                        add_prerequisites_with_mapping(
+                            course,
+                            &prereq_str,
+                            &course_id_to_storage_key,
+                        );
                     }
                 }
 
                 // Parse corequisites
                 if let Some(coreq_str) = get_field(line, "Corequisites", &headers) {
                     if !coreq_str.trim().is_empty() {
-                        add_corequisites_with_mapping(course, &coreq_str, &course_id_to_key);
+                        add_corequisites_with_mapping(
+                            course,
+                            &coreq_str,
+                            &course_id_to_storage_key,
+                        );
                     }
                 }
             }
         }
     }
 
-    // Add all courses to school
-    for course in courses_by_key.into_values() {
-        school.add_course(course);
+    // Add all courses to school using their storage keys
+    for course_id in &course_ids_in_order {
+        if let Some(course) = courses_by_id.remove(course_id) {
+            if let Some(storage_key) = course_id_to_storage_key.get(course_id) {
+                school.add_course_with_key(storage_key.clone(), course);
+            }
+        }
     }
 
     // Create a default plan with all courses
@@ -119,14 +163,10 @@ pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn E
     );
     plan.institution = Some(school.name.clone());
 
-    // Add all courses from courses_by_key to the plan
-    for line in lines.iter().skip(courses_start + 2) {
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        if let Ok(course_key) = extract_course_key(line, &headers) {
-            plan.add_course(course_key);
+    // Add all courses to the plan using their storage keys in order
+    for course_id in &course_ids_in_order {
+        if let Some(storage_key) = course_id_to_storage_key.get(course_id) {
+            plan.add_course(storage_key.clone());
         }
     }
 
@@ -215,14 +255,6 @@ fn parse_course_line(line: &str, headers: &[String]) -> Result<Course, Box<dyn E
     Ok(course)
 }
 
-/// Extract the course key (PREFIXNUMBER) from a course line
-fn extract_course_key(line: &str, headers: &[String]) -> Result<String, Box<dyn Error>> {
-    let prefix = get_field(line, "Prefix", headers).ok_or("Missing Prefix")?;
-    let number = get_field(line, "Number", headers).ok_or("Missing Number")?;
-
-    Ok(format!("{prefix}{number}"))
-}
-
 /// Get a field value from a CSV line by header name
 fn get_field(line: &str, header_name: &str, headers: &[String]) -> Option<String> {
     let fields = parse_csv_line(line);
@@ -258,6 +290,7 @@ fn add_prerequisites_with_mapping(
 }
 
 /// Add corequisites from a semicolon-separated string, converting course IDs to keys
+/// Note: Corequisites are optional and should not create hard dependencies
 fn add_corequisites_with_mapping(
     course: &mut Course,
     coreq_str: &str,
@@ -266,15 +299,10 @@ fn add_corequisites_with_mapping(
     for coreq in coreq_str.split(';') {
         let trimmed = coreq.trim();
         if !trimmed.is_empty() {
-            // Try to map course ID to key, otherwise use as-is
+            // Try to map course ID to key; skip if mapping not found
+            // (corequisites may be optional or electives that don't have explicit mappings)
             if let Some(key) = course_id_to_key.get(trimmed) {
                 course.add_corequisite(key.clone());
-            } else {
-                // Fall back to normalizing as course key
-                let normalized = normalize_course_key(trimmed);
-                if !normalized.is_empty() {
-                    course.add_corequisite(normalized);
-                }
             }
         }
     }

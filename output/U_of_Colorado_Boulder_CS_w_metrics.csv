@@ -1,0 +1,48 @@
+Curriculum,Computer Science
+Institution,University of Colorado Boulder
+Degree Type,"BS"
+System Type,semester
+CIP,"11.07"
+Total Structural Complexity,191
+Longest Delay,5,APPM1350->CSCI2824->CSCI3104->CSCI4114
+Highest Centrality Course,"CSCI2270",98
+Courses
+Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
+1,Computer Science as a Field of Work and Study,"CSCI","1000","","","",1,"University of Colorado Boulder","",1,0,1,0
+2,Computer Science 1: Starting Computing,"CSCI","1300","APPM1350","","",4,"University of Colorado Boulder","",21,16,5,82
+3,Computer Science 2: Data Structure,"CSCI","2270","CSCI1300;APPM1350","","",4,"University of Colorado Boulder","",19,14,5,98
+4,Computer Systems,"CSCI","2400","CSCI2270","","",4,"University of Colorado Boulder","",7,2,5,18
+5,Algorithms,"CSCI","3104","CSCI2270;APPM1360;CSCI2824","","",4,"University of Colorado Boulder","",7,2,5,44
+6,Principles of Programming Languages,"CSCI","3155","CSCI2270;CSCI2400;CSCI2824","","",4,"University of Colorado Boulder","",5,0,5,0
+7,Software Development Methods and Tools,"CSCI","3308","CSCI2270","","",3,"University of Colorado Boulder","",6,1,5,9
+8,Fundamentals of Human Computer Interaction (Computer Science Core Elective),"CSCI","3002","CSCI2270","","",4,"University of Colorado Boulder","",4,0,4,0
+9,Introduction to Artifical Intelligence (Computer Science Core Elective),"CSCI","3202","CSCI2270;CSCI2824;CSCI3022","","",3,"University of Colorado Boulder","",5,0,5,0
+10,Design and Analysis of Database Systems (Computer Science Core Elective),"CSCI","3287","CSCI2270","","",3,"University of Colorado Boulder","",4,0,4,0
+11,Introduction to Robotics (Computer Science Core Elective),"CSCI","3302","CSCI2270;CSCI2824;CSCI2820","","",3,"University of Colorado Boulder","",5,0,5,0
+12,Introduction to Cybersecuirty for a Converged World (Computer Science Core Elective),"CSCI","3403","CSCI2400","","",4,"University of Colorado Boulder","",5,0,5,0
+13,Theory of Computation (CS Elective),"CSCI","3434","CSCI3104","","",3,"University of Colorado Boulder","",5,0,5,0
+14,Practical Algorithm Complexity (CS Elective),"CSCI","4114","CSCI3104","","",3,"University of Colorado Boulder","",5,0,5,0
+15,Object Orinted Analysis and Design,"CSCI","4448","CSCI3308","","",3,"University of Colorado Boulder","",5,0,5,0
+16,Critical Thinking,"PHIL","1440","","","",3,"University of Colorado Boulder","",1,0,1,0
+17,Software Engineering Project 1,"CSCI","4308","","","",4,"University of Colorado Boulder","",3,1,2,0
+18,Software Engineering Project 2,"CSCI","4318","CSCI4308","","",4,"University of Colorado Boulder","",2,0,2,0
+19,Calculus 1 for Engineers,"APPM","1350","","","",4,"University of Colorado Boulder","",25,20,5,0
+20,Calculus 2 for Engineers,"APPM","1360","APPM1350","","",4,"University of Colorado Boulder","",12,8,4,19
+21,Discrete Structures,"CSCI","2824","CSCI1300;APPM1350","","",3,"University of Colorado Boulder","",12,7,5,48
+22,Linear Algebra with Computer Science Applications,"CSCI","2820","CSCI2270;APPM1360","","",3,"University of Colorado Boulder","",6,1,5,13
+23,Introduction to Data Science with Probability and Statistics,"CSCI","3022","CSCI2270;APPM1360;CSCI2824","","",3,"University of Colorado Boulder","",6,1,5,22
+24,Ethics,"PHIL","1100","","","",3,"University of Colorado Boulder","",1,0,1,0
+25,Writing,"ENES","1010","","","",3,"University of Colorado Boulder","",1,0,1,0
+26,Humanities/Social Sciences,"XX","XX","","","",3,"University of Colorado Boulder","",1,0,1,0
+27,Humanities/Social Sciences,"XX","XX","","","",3,"University of Colorado Boulder","",1,0,1,0
+28,Humanities/Social Sciences,"XX","XX","","","",3,"University of Colorado Boulder","",1,0,1,0
+29,Humanities/Social Sciences,"XX","XX","","","",3,"University of Colorado Boulder","",1,0,1,0
+30,Humanities/Social Sciences,"XX","XX","","","",3,"University of Colorado Boulder","",1,0,1,0
+31,General Physics 1,"PHYS","1110","APPM1350","","",4,"University of Colorado Boulder","",4,1,3,3
+32,General Physics 2 (Science Elective),"PHYS","1120","APPM1360;PHYS1110","","",4,"University of Colorado Boulder","",3,0,3,0
+33,Experimental Physics 1 (Science Elective),"PHYS","1140","","","",1,"University of Colorado Boulder","",1,0,1,0
+34,Natural Science Elective,"XX","XX","","","",4,"University of Colorado Boulder","",1,0,1,0
+35,Natural Science Elective,"XX","XX","","","",4,"University of Colorado Boulder","",1,0,1,0
+36,Free Elective,"XX","XX","","","",4,"University of Colorado Boulder","",1,0,1,0
+37,Free Elective,"XX","XX","","","",4,"University of Colorado Boulder","",1,0,1,0
+38,Free Elective,"XX","XX","","","",4,"University of Colorado Boulder","",1,0,1,0

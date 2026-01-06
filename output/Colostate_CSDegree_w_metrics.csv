@@ -1,0 +1,47 @@
+Curriculum,Colostate_CS Degree
+Institution,Colorado State University
+Degree Type,"BS"
+System Type,semester
+CIP,"11.0701"
+Total Structural Complexity,175
+Longest Delay,6,CS150B->CS164->CS165->CS253->CS314->CS414
+Highest Centrality Course,"CS164",44
+Courses
+Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
+1,Mathematics for Computational Science I,"MATH","156","","","",4,"Colorado State University","",9,6,3,0
+2,Culture and Coding: Python (GT-AH3),"CS","150B","","","",3,"Colorado State University","",22,16,6,0
+3,CS1--Computational Thinking with Java,"CS","164","CS150B","","",4,"Colorado State University","",19,13,6,44
+4,Ethical Computing Systems (GT-AH3),"CS","201","","","",3,"Colorado State University","",1,0,1,0
+5,CS2--Data Structures,"CS","165","CS164","","",4,"Colorado State University","",17,11,6,39
+6,Discrete Structures and their Applications,"CS","220","CS150B;MATH156","","",4,"Colorado State University","",5,2,3,12
+7,Software Development with C++,"CS","253","CS165","","",4,"Colorado State University","",11,5,6,22
+8,Computer Organization,"CS","270","CS164","","",4,"Colorado State University","",7,2,5,5
+9,Linear Algebra for Data Science,"DSCI","369","MATH156","","",4,"Colorado State University","",4,1,3,3
+10,Introduction to Applied Statistical Methods,"STAT","301","MATH156","","",4,"Colorado State University","",2,0,2,0
+11,Software Engineering,"CS","314","CS253","","",3,"Colorado State University","",8,2,6,12
+12,Algorithms--Theory and Practice,"CS","320","CS165;CS220","","",3,"Colorado State University","",4,0,4,0
+13,Operating Systems,"CS","370","CS165;CS270","","",3,"Colorado State University","",6,1,5,10
+14,300++ Course,"CS","356","CS253","","",3,"Colorado State University","",5,0,5,0
+15,300++ Course,"CS","345","CS220;MATH156","","",3,"Colorado State University","",3,0,3,0
+16,400++ Course,"CS","414","CS314","","",4,"Colorado State University","",6,0,6,0
+17,400++ Course,"CS","415","CS314","","",4,"Colorado State University","",6,0,6,0
+18,400++ Course,"CS","462","CS253;DSCI369","","",4,"Colorado State University","",5,0,5,0
+19,Tech Focus,"JTC","372","CS165","","",3,"Colorado State University","",4,0,4,0
+20,Tech Focus,"CIS","413","CS165","","",3,"Colorado State University","",4,0,4,0
+21,400+,"CS","455","CS370","","",4,"Colorado State University","",5,0,5,0
+22,Composition,"CO","150","","","",3,"Colorado State University","",3,1,2,0
+23,Advanced Writing,"CO","300","CO150","","",3,"Colorado State University","",2,0,2,0
+24,CS Science,"PH","121","","","",3,"Colorado State University","",1,0,1,0
+25,CS Science w/lab,"CHEM","107","","","",3,"Colorado State University","",3,1,2,0
+26,CS Science lab,"CHEM","108","","CHEM107","",1,"Colorado State University","",2,0,2,0
+27,DEI Elective,"DEI","1xx","","","",3,"Colorado State University","",1,0,1,0
+28,History Elective,"HIST","1xx","","","",3,"Colorado State University","",1,0,1,0
+29,Social Science Elective,"Soc","1xx","","","",3,"Colorado State University","",1,0,1,0
+30,Elective,"elec","1xx","","","",3,"Colorado State University","",1,0,1,0
+31,Elective,"elec","1xx","","","",3,"Colorado State University","",1,0,1,0
+32,Elective,"elec","1xx","","","",3,"Colorado State University","",1,0,1,0
+33,Elective,"elec","1xx","","","",3,"Colorado State University","",1,0,1,0
+34,Elective,"elec","3++","","","",3,"Colorado State University","",1,0,1,0
+35,Elective,"elec","3++","","","",3,"Colorado State University","",1,0,1,0
+36,Elective,"elec","3++","","","",3,"Colorado State University","",1,0,1,0
+37,Elective,"elec","3++","","","",2,"Colorado State University","",1,0,1,0

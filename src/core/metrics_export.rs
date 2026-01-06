@@ -2,7 +2,7 @@
 
 use super::metrics::CurriculumMetrics;
 use super::models::DAG;
-use crate::core::models::{Plan, School};
+use crate::core::models::{Course, Plan, School};
 use std::error::Error;
 use std::path::Path;
 
@@ -250,39 +250,63 @@ pub fn export_metrics_csv_with_summary(
     )?;
 
     // Write course data
-    let mut course_id = 1;
-    for course_key in &plan.courses {
-        if let Some(course) = school.get_course(course_key) {
-            let metrics_data = metrics.get(course_key);
+    logger::debug!("Exporting {} courses from plan", plan.courses.len());
 
-            let prereqs = course.prerequisites.join(";");
-            let coreqs = course.corequisites.join(";");
+    // Create a sorted list of courses by CSV ID to ensure consistent order
+    let mut courses_by_csv_id: Vec<(String, String, &Course)> = plan
+        .courses
+        .iter()
+        .filter_map(|storage_key| {
+            school.get_course(storage_key).map(|course| {
+                (
+                    course.csv_id.clone().unwrap_or_else(|| "0".to_string()),
+                    storage_key.clone(),
+                    course,
+                )
+            })
+        })
+        .collect();
 
-            let (complexity, blocking, delay, centrality) = metrics_data
-                .map_or((0, 0, 0, 0), |m| {
-                    (m.complexity, m.blocking, m.delay, m.centrality)
-                });
+    // Sort by CSV ID (numerically if possible)
+    courses_by_csv_id.sort_by(|a, b| {
+        let a_num = a.0.parse::<usize>().unwrap_or(0);
+        let b_num = b.0.parse::<usize>().unwrap_or(0);
+        a_num.cmp(&b_num)
+    });
 
-            writeln!(
-                file,
-                "{},{},\"{}\",\"{}\",\"{}\",\"{}\",\"\",{},\"{}\",\"{}\",{},{},{},{}",
-                course_id,
-                course.name,
-                course.prefix,
-                course.number,
-                prereqs,
-                coreqs,
-                course.credit_hours,
-                institution,
-                course.canonical_name.as_deref().unwrap_or(""),
-                complexity,
-                blocking,
-                delay,
-                centrality
-            )?;
+    for (csv_id, storage_key, course) in courses_by_csv_id {
+        logger::debug!(
+            "Exporting course {} ({}) - storage key: {}",
+            csv_id,
+            course.name,
+            storage_key
+        );
+        let metrics_data = metrics.get(&storage_key);
 
-            course_id += 1;
-        }
+        let prereqs = course.prerequisites.join(";");
+        let coreqs = course.corequisites.join(";");
+
+        let (complexity, blocking, delay, centrality) = metrics_data.map_or((0, 0, 0, 0), |m| {
+            (m.complexity, m.blocking, m.delay, m.centrality)
+        });
+
+        writeln!(
+            file,
+            "{},{},\"{}\",\"{}\",\"{}\",\"{}\",\"\",{},\"{}\",\"{}\",{},{},{},{}",
+            csv_id,
+            course.name,
+            course.prefix,
+            course.number,
+            prereqs,
+            coreqs,
+            course.credit_hours,
+            institution,
+            course.canonical_name.as_deref().unwrap_or(""),
+            complexity,
+            blocking,
+            delay,
+            centrality
+        )?;
     }
 
     Ok(())

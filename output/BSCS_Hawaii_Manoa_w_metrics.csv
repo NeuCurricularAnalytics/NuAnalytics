@@ -1,0 +1,51 @@
+Curriculum,Computer Science
+Institution,University of Hawaii - Manoa
+Degree Type,"BS"
+System Type,semester
+CIP,"11.0701"
+Total Structural Complexity,236
+Longest Delay,5,MATH241->ICS141->ICS241->ICS314->ICS415
+Highest Centrality Course,"ICS311",84
+Courses
+Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
+1,Introduction to Computer Science I,"ICS","111","","","",4,"University of Hawaii - Manoa","",18,14,4,0
+2,Discrete Math 1,"ICS","141","MATH241","","",3,"University of Hawaii - Manoa","",18,13,5,75
+3,Introduction to Computer Science 2,"ICS","211","ICS111","","",4,"University of Hawaii - Manoa","",17,13,4,68
+4,Program Structure,"ICS","212","ICS211","","",3,"University of Hawaii - Manoa","",6,2,4,8
+5,Discrete Math 2,"ICS","241","ICS141","","",3,"University of Hawaii - Manoa","",17,12,5,75
+6,Algorithms,"ICS","311","ICS211;ICS241;MATH241","","",4,"University of Hawaii - Manoa","",12,7,5,84
+7,Software Engineering,"ICS","314","ICS211;ICS241","","",3,"University of Hawaii - Manoa","",12,7,5,63
+8,Database Systems,"ICS","321","ICS211;ICS241","","",3,"University of Hawaii - Manoa","",6,1,5,9
+9,Operating Systems,"ICS","332","ICS311;ICS314","","",3,"University of Hawaii - Manoa","",5,0,5,0
+10,Security and Trust I,"ICS","355","ICS314","","",3,"University of Hawaii - Manoa","",5,0,5,0
+11,Capstone Project,"ICS","496","ICS311;ICS314","","",3,"University of Hawaii - Manoa","",5,0,5,0
+12,Linear Algebra,"MATH","307","MATH242","","",3,"University of Hawaii - Manoa","",3,0,3,0
+13,Machine-Level and System Programming,"ICS","312","ICS212;ICS311;ICS314","","",3,"University of Hawaii - Manoa","",5,0,5,0
+14,Programming Language Theory,"ICS","313","ICS212;ICS311;ICS314","","",3,"University of Hawaii - Manoa","",5,0,5,0
+15,Upper division CS elective,"ICS","414","ICS311;ICS314","","",3,"University of Hawaii - Manoa","",5,0,5,0
+16,Upper division CS elective,"ICS","415","ICS311;ICS314","","",3,"University of Hawaii - Manoa","",5,0,5,0
+17,Upper division CS elective,"ICS","421","ICS321","","",3,"University of Hawaii - Manoa","",5,0,5,0
+18,Upper division CS elective,"ICS","461","ICS311","","",3,"University of Hawaii - Manoa","",5,0,5,0
+19,Calculus 1,"MATH","241","","","",4,"University of Hawaii - Manoa","",21,16,5,0
+20,Calculus 2,"MATH","242","MATH241","","",4,"University of Hawaii - Manoa","",4,1,3,3
+21,Physics 1,"PHYS","151","","","",3,"University of Hawaii - Manoa","",6,3,3,0
+22,Physics 1 -lab,"PHYS","151L","","PHYS151","",1,"University of Hawaii - Manoa","",4,1,3,3
+23,Physcis 2,"PHYS","152","PHYS151","","",3,"University of Hawaii - Manoa","",4,1,3,3
+24,Physcis 2 - Lab,"PHYS","152L","PHYS151L","PHYS152","",1,"University of Hawaii - Manoa","",3,0,3,0
+25,Hawaiian SL,"HSL","101","","","",3,"University of Hawaii - Manoa","",7,3,4,0
+26,Hawaiian SL,"HSL","102","HSL101","","",3,"University of Hawaii - Manoa","",6,2,4,4
+27,Hawaiian SL,"HSL","201","HSL102","","",3,"University of Hawaii - Manoa","",5,1,4,4
+28,Hawaiian SL,"HSL","202","HSL201","","",3,"University of Hawaii - Manoa","",4,0,4,0
+29,Chemistry 1,"CHEM","161","","","",3,"University of Hawaii - Manoa","",4,2,2,0
+30,Chemistry 1 - lab,"CHEM","161L","","CHEM161","",1,"University of Hawaii - Manoa","",2,0,2,0
+31,Chemistry 2,"CHEM","162","CHEM161","","",3,"University of Hawaii - Manoa","",2,0,2,0
+32,Chemistry 2 - lab,"CHEM","162L","","","",1,"University of Hawaii - Manoa","",1,0,1,0
+33,Gen Ed FG,"FG","101","","","",3,"University of Hawaii - Manoa","",1,0,1,0
+34,Gen Ed FW,"FW","101","","","",3,"University of Hawaii - Manoa","",1,0,1,0
+35,Gen Ed FG 2,"FG","102","","","",3,"University of Hawaii - Manoa","",1,0,1,0
+36,Gen Ed DS,"DS","101","","","",3,"University of Hawaii - Manoa","",1,0,1,0
+37,Gen Ed DS 2,"DS","102","","","",3,"University of Hawaii - Manoa","",1,0,1,0
+38,Gen Ed DB,"DB","101","","","",3,"University of Hawaii - Manoa","",1,0,1,0
+39,Gen Ed DA/DH/DL 300,"DA","301","","","",3,"University of Hawaii - Manoa","",1,0,1,0
+40,Elective 300+,"Elec","301","","","",3,"University of Hawaii - Manoa","",1,0,1,0
+41,Gen Ed FQ,"FQ","101","","","",3,"University of Hawaii - Manoa","",1,0,1,0

@@ -1,0 +1,40 @@
+Curriculum,Computer Science
+Institution,California Berkeley
+Degree Type,"BA"
+System Type,semester
+CIP,"11.07"
+Total Structural Complexity,100
+Longest Delay,5,COMPSCI61A->COMPSCI61B->COMPSCI61C->COMPSCI152
+Highest Centrality Course,"COMPSCI61A",52
+Courses
+Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
+1,The Structure and Interpretation of Computer Programs,"COMPSCI","61A","","MATH1A","",4,"California Berkeley","",12,7,5,52
+2,Data Structures,"COMPSCI","61B","COMPSCI61A","","",4,"California Berkeley","",11,6,5,36
+3,Discrete Mathematics and Probaility Theory,"COMPSCI","70","","","",4,"California Berkeley","",4,2,2,0
+4,Calculus,"MATH","1A","","","",4,"California Berkeley","",15,10,5,0
+5,Calculus,"MATH","1B","MATH1A","","",4,"California Berkeley","",4,1,3,3
+6,Linear Algebra and Differntial Equations,"MATH","54","MATH1B","","",4,"California Berkeley","",3,0,3,0
+7,Great Ideas of Computer Architecture,"COMPSCI","61C","COMPSCI61A;COMPSCI61B","","",4,"California Berkeley","",9,4,5,36
+8,Software Engineering (Upper Division CS Elective),"COMPSCI","169","COMPSCI61B;COMPSCI61C;COMPSCI70","","",4,"California Berkeley","",5,0,5,0
+9,User Interface Design and Development (Upper Division CS Elective),"COMPSCI","160","COMPSCI61B","","",4,"California Berkeley","",4,0,4,0
+10,Programming Languages and Compilers (Upper Division CS Elective),"COMPSCI","164","COMPSCI61B;COMPSCI61C","","",4,"California Berkeley","",5,0,5,0
+11,Principles of Computer Aided Architectural Design (Non CS Technical Elective),"ARCH","129","","","",4,"California Berkeley","",1,0,1,0
+12,Reading and Composition A,"XX","XX","","","",4,"California Berkeley","",1,0,1,0
+13,Reading and Composition B,"XX","XX","","","",4,"California Berkeley","",1,0,1,0
+14,L&S Breadth,"XX","XX","","","",4,"California Berkeley","",1,0,1,0
+15,L&S Breadth,"XX","XX","","","",3,"California Berkeley","",1,0,1,0
+16,L&S Breadth,"XX","XX","","","",3,"California Berkeley","",1,0,1,0
+17,American Culuters Req,"XX","XX","","","",4,"California Berkeley","",1,0,1,0
+18,Elective,"XX","XX","","","",4,"California Berkeley","",1,0,1,0
+19,Elective,"XX","XX","","","",3,"California Berkeley","",1,0,1,0
+20,Computer Architecture and Engineering (Upper Division CS Elective),"COMPSCI","152","COMPSCI61C","","",4,"California Berkeley","",5,0,5,0
+21,Operating Systems and System Programming (Upper Division CS Elective),"COMPSCI","162","COMPSCI61B;COMPSCI61C;COMPSCI70","","",4,"California Berkeley","",5,0,5,0
+22,L&S Breadth,"XX","XX","","","",4,"California Berkeley","",1,0,1,0
+23,Elective,"XX","XX","","","",3,"California Berkeley","",1,0,1,0
+24,L&S Breadth,"XX","XX","","","",4,"California Berkeley","",1,0,1,0
+25,Elective,"XX","XX","","","",3,"California Berkeley","",1,0,1,0
+26,Elective,"XX","XX","","","",3,"California Berkeley","",1,0,1,0
+27,Elective,"XX","XX","","","",4,"California Berkeley","",1,0,1,0
+28,UD L&S Elective,"XX","XX","","","",4,"California Berkeley","",1,0,1,0
+29,UD L&S Elective,"XX","XX","","","",3,"California Berkeley","",1,0,1,0
+30,The Beauty and Joy of Computing,"COMPSCI","10","","","",4,"California Berkeley","",1,0,1,0

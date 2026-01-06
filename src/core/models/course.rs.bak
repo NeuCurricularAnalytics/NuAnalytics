@@ -45,11 +45,6 @@ use serde::{Deserialize, Serialize};
 /// specific plan, we only include the paths the student actually took, not all possibilities.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Course {
-    /// Original course ID from the curriculum file
-    pub csv_id: Option<String>,
-
-    /// Unique course identifier (optional, used for deduplication when multiple courses have same key)
-    pub id: Option<String>,
     /// Course name (e.g., "Calculus for Physical Scientists I")
     pub name: String,
 
@@ -84,8 +79,6 @@ impl Course {
     #[must_use]
     pub const fn new(name: String, prefix: String, number: String, credit_hours: f32) -> Self {
         Self {
-            csv_id: None,
-            id: None,
             name,
             prefix,
             number,
