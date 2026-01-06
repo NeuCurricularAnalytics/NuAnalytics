@@ -5,6 +5,7 @@ pub mod metrics;
 pub mod metrics_export;
 pub mod models;
 pub mod planner;
+pub mod report;
 
 // Add core domain modules here as they're developed:
 // pub mod degree;

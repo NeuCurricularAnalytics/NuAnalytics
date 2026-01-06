@@ -64,8 +64,53 @@ fn main() {
         Command::Planner {
             input_files,
             output,
+            report,
+            term_credits,
+            no_csv,
         } => {
-            commands::planner::run(&input_files, &output, &config, verbose);
+            // Run normal planner (CSV export) unless --no-csv is set
+            if !no_csv {
+                commands::planner::run(&input_files, &output, &config, verbose);
+            }
+
+            // Generate report if requested
+            if let Some(format) = report {
+                let out_dir = std::path::PathBuf::from(&config.paths.out_dir);
+                if std::fs::create_dir_all(&out_dir).is_err() {
+                    eprintln!("✗ Failed to create output directory: {}", out_dir.display());
+                    return;
+                }
+
+                for input_file in &input_files {
+                    match commands::report::generate_from_planner(
+                        input_file,
+                        &out_dir,
+                        &format,
+                        term_credits,
+                    ) {
+                        Ok(report_path) => {
+                            println!("✓ Report generated: {}", report_path.display());
+                        }
+                        Err(e) => {
+                            eprintln!("{e}");
+                        }
+                    }
+                }
+            }
+        }
+        Command::Report {
+            input_file,
+            output,
+            format,
+            term_credits,
+        } => {
+            commands::report::run(
+                &input_file,
+                output.as_deref(),
+                &format,
+                term_credits,
+                &config,
+            );
         }
     }
 }

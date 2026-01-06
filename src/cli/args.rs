@@ -97,6 +97,38 @@ pub enum Command {
         /// When provided, must match the number of input files 1:1.
         #[arg(short, long, value_name = "FILES", num_args = 1..)]
         output: Vec<std::path::PathBuf>,
+
+        /// Generate a report in the specified format (markdown, html, pdf)
+        #[arg(long, value_name = "FORMAT")]
+        report: Option<String>,
+
+        /// Target credits per term for scheduling (default: 15.0)
+        #[arg(long, value_name = "CREDITS")]
+        term_credits: Option<f32>,
+
+        /// Skip CSV metrics export (only generate report when --report is used)
+        #[arg(long)]
+        no_csv: bool,
+    },
+    /// Generate a curriculum report from a CSV file.
+    ///
+    /// Creates a formatted report with metrics, term scheduling, and visualizations.
+    Report {
+        /// Path to curriculum CSV file
+        #[arg(value_name = "FILE")]
+        input_file: std::path::PathBuf,
+
+        /// Output file path (optional; defaults to input name with format extension)
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<std::path::PathBuf>,
+
+        /// Report format: markdown (md), html, or pdf
+        #[arg(short, long, value_name = "FORMAT", default_value = "html")]
+        format: String,
+
+        /// Target credits per term for scheduling (default: 15.0)
+        #[arg(long, value_name = "CREDITS")]
+        term_credits: Option<f32>,
     },
 }
 
