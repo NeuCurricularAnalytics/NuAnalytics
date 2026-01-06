@@ -76,6 +76,10 @@ fn export_single(
     let plan = if let Some(p) = school.plans.first() {
         p.clone()
     } else {
+        // If no explicit plans are defined, create a default plan that includes all courses.
+        // This ensures metrics can be computed for the entire curriculum even if individual
+        // plans haven't been specified in the input file. The default plan is named "All Courses"
+        // and associated with the first degree in the school (if any).
         let mut default_plan = Plan::new(
             "All Courses".to_string(),
             school.degrees.first().map_or_else(String::new, Degree::id),

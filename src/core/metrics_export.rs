@@ -123,18 +123,34 @@ fn compute_longest_path(dag: &DAG, metrics: &CurriculumMetrics) -> Vec<String> {
     longest_path
 }
 
-/// Trace back through prerequisites to build a path
+/// Trace back through prerequisites to build a path.
+///
+/// Starting from a course, recursively follows the prerequisite chain by selecting
+/// the prerequisite with the highest delay value at each step. This creates a
+/// "critical path" through the curriculum prerequisites, representing the longest
+/// sequence of requirements leading to the start course.
+///
+/// # Arguments
+/// * `start` - The course to start tracing from (typically has highest delay)
+/// * `dag` - The DAG containing prerequisite relationships
+/// * `metrics` - Course metrics including delay values (used to select best path)
+///
+/// # Returns
+/// A vector of courses from leaf prerequisite to start course (in reverse topological order).
+/// The first element is typically a root course (no prerequisites), and the last element
+/// is the start course.
 fn trace_prerequisites(start: &str, dag: &DAG, metrics: &CurriculumMetrics) -> Vec<String> {
     let mut path = vec![start.to_string()];
     let mut current = start.to_string();
 
-    // Trace back through prerequisites
+    // Trace back through prerequisites by greedily selecting the prerequisite
+    // with the highest delay at each step. This ensures we follow the longest chain.
     while let Some(prereqs) = dag.get_prerequisites(&current) {
         if prereqs.is_empty() {
             break;
         }
 
-        // Find the prerequisite with the highest delay
+        // Find the prerequisite with the highest delay value
         let best_prereq = prereqs
             .iter()
             .max_by_key(|p| metrics.get(*p).map_or(0, |m| m.delay));
@@ -295,41 +311,9 @@ pub fn export_metrics_csv_with_summary(
         let metrics_data = metrics.get(storage_key);
 
         // Convert stored keys back to CSV IDs for export
-        let prereqs = course
-            .prerequisites
-            .iter()
-            .map(|k| {
-                school
-                    .get_course(k)
-                    .and_then(|c| c.csv_id.clone())
-                    .unwrap_or_else(|| k.clone())
-            })
-            .collect::<Vec<_>>()
-            .join(";");
-
-        let coreqs = course
-            .corequisites
-            .iter()
-            .map(|k| {
-                school
-                    .get_course(k)
-                    .and_then(|c| c.csv_id.clone())
-                    .unwrap_or_else(|| k.clone())
-            })
-            .collect::<Vec<_>>()
-            .join(";");
-
-        let strict_coreqs = course
-            .strict_corequisites
-            .iter()
-            .map(|k| {
-                school
-                    .get_course(k)
-                    .and_then(|c| c.csv_id.clone())
-                    .unwrap_or_else(|| k.clone())
-            })
-            .collect::<Vec<_>>()
-            .join(";");
+        let prereqs = format_course_keys_as_csv(course.prerequisites.iter(), school);
+        let coreqs = format_course_keys_as_csv(course.corequisites.iter(), school);
+        let strict_coreqs = format_course_keys_as_csv(course.strict_corequisites.iter(), school);
 
         let (complexity, blocking, delay, centrality) = metrics_data.map_or((0, 0, 0, 0), |m| {
             (m.complexity, m.blocking, m.delay, m.centrality)
@@ -379,6 +363,28 @@ pub fn export_metrics_csv<P: AsRef<Path>>(
         CurriculumSummary::from_metrics(plan, school, metrics).with_delay_path(&dag, metrics);
     export_metrics_csv_with_summary(school, plan, metrics, &summary, output_path.as_ref())?;
     Ok(summary)
+}
+
+/// Format course storage keys as CSV with semicolons.
+///
+/// # Arguments
+/// * `keys` - Iterator over course storage keys (references)
+/// * `school` - School containing course lookup table
+///
+/// # Returns
+/// Semicolon-separated string of CSV IDs or storage keys
+fn format_course_keys_as_csv<'a>(
+    keys: impl Iterator<Item = &'a String>,
+    school: &School,
+) -> String {
+    keys.map(|k| {
+        school
+            .get_course(k)
+            .and_then(|c| c.csv_id.clone())
+            .unwrap_or_else(|| k.clone())
+    })
+    .collect::<Vec<_>>()
+    .join(";")
 }
 
 #[cfg(test)]

@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["nu_analytics",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.90.0/core/cmp/trait.PartialEq.html\" title=\"trait core::cmp::PartialEq\">PartialEq</a> for <a class=\"struct\" href=\"nu_analytics/core/metrics/struct.CourseMetrics.html\" title=\"struct nu_analytics::core::metrics::CourseMetrics\">CourseMetrics</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.90.0/core/cmp/trait.PartialEq.html\" title=\"trait core::cmp::PartialEq\">PartialEq</a> for <a class=\"struct\" href=\"nu_analytics/core/models/course/struct.Course.html\" title=\"struct nu_analytics::core::models::course::Course\">Course</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.90.0/core/cmp/trait.PartialEq.html\" title=\"trait core::cmp::PartialEq\">PartialEq</a> for <a class=\"struct\" href=\"nu_analytics/core/models/degree/struct.Degree.html\" title=\"struct nu_analytics::core::models::degree::Degree\">Degree</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.90.0/core/cmp/trait.PartialEq.html\" title=\"trait core::cmp::PartialEq\">PartialEq</a> for <a class=\"struct\" href=\"nu_analytics/core/models/plan/struct.Plan.html\" title=\"struct nu_analytics::core::models::plan::Plan\">Plan</a>"]]],["nuanalytics",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.90.0/core/cmp/trait.PartialEq.html\" title=\"trait core::cmp::PartialEq\">PartialEq</a> for <a class=\"enum\" href=\"nuanalytics/args/enum.LogLevelArg.html\" title=\"enum nuanalytics::args::LogLevelArg\">LogLevelArg</a>"]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[1240,301]}

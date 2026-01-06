@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["shared"]};
+window.SIDEBAR_ITEMS = {"mod":["core"]};

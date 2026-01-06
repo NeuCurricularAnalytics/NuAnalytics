@@ -104,7 +104,14 @@ pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn E
     let mut course_id_to_storage_key: HashMap<String, String> = HashMap::new();
 
     for (course_id, natural_key) in &course_id_to_natural_key {
-        let ids_with_same_key = natural_key_to_ids.get(natural_key).unwrap();
+        let Some(ids_with_same_key) = natural_key_to_ids.get(natural_key) else {
+            // This should not happen since every key in course_id_to_natural_key came from natural_key_to_ids
+            // But handle it defensively to prevent panics
+            return Err(format!(
+                "Internal consistency error: natural key '{natural_key}' not found in key mapping"
+            )
+            .into());
+        };
         let storage_key = if ids_with_same_key.len() > 1 {
             // Conflict - append ID
             format!("{natural_key}_{course_id}")

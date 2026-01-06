@@ -28,6 +28,17 @@ pub struct CourseMetrics {
     pub centrality: usize,
 }
 
+impl CourseMetrics {
+    /// Get all metrics as a tuple for convenient unpacking.
+    ///
+    /// # Returns
+    /// A tuple of (complexity, blocking, delay, centrality) in export order.
+    #[must_use]
+    pub const fn as_export_tuple(&self) -> (usize, usize, usize, usize) {
+        (self.complexity, self.blocking, self.delay, self.centrality)
+    }
+}
+
 /// All metrics for a curriculum, keyed by course code
 pub type CurriculumMetrics = HashMap<String, CourseMetrics>;
 
@@ -159,6 +170,14 @@ pub fn compute_complexity(
 /// This metric identifies courses that are central to many pathways through
 /// the curriculum.
 ///
+/// # Performance Characteristics
+///
+/// - **Typical time complexity**: $O(P \times E)$ where P = number of unique paths, E = edges
+/// - **Worst-case complexity**: $O(2^E)$ for highly connected DAGs with many diamonds
+/// - **Note**: For curricula with highly parallel course sequences (many independent prerequisites
+///   leading to the same courses), the number of paths can grow exponentially. This can make
+///   computation slow for large, complex curricula.
+///
 /// # Errors
 ///
 /// Returns an error if the graph contains a cycle.
@@ -202,7 +221,20 @@ pub fn compute_centrality(dag: &DAG) -> Result<CentralityByCourse, String> {
 }
 
 /// Enumerate all paths from source to sink and update centrality counts.
-/// Only intermediate nodes (not source or sink) get centrality updates.
+///
+/// This helper function initiates a depth-first search to find all paths between
+/// two nodes in the curriculum graph. For each path found, the centrality count
+/// is incremented for all intermediate nodes (excluding source and sink).
+///
+/// # Arguments
+/// * `source` - Starting node for the path search
+/// * `sink` - Target node to reach
+/// * `outgoing` - Map of outgoing edges from each course
+/// * `centrality` - Mutable map to accumulate centrality counts
+///
+/// # Behavior
+/// Only intermediate nodes (not source or sink) receive centrality updates.
+/// If a path contains only 2 nodes, no intermediate nodes exist and nothing is updated.
 fn enumerate_paths_and_update_centrality(
     source: &str,
     sink: &str,
@@ -218,8 +250,25 @@ fn enumerate_paths_and_update_centrality(
     dfs_paths(source, sink, &mut path, &mut visited, outgoing, centrality);
 }
 
-/// DFS to find all paths from current node to target, updating centrality.
-/// Only intermediate nodes (not source or sink) are included in centrality updates.
+/// DFS helper to find all paths from current node to target.
+///
+/// Uses depth-first search with backtracking to enumerate all possible paths
+/// from the current node to a target node. For each complete path discovered,
+/// the centrality counts are updated for all intermediate nodes.
+///
+/// # Arguments
+/// * `current` - The node currently being explored
+/// * `target` - The destination node to reach
+/// * `path` - The current path being built (includes nodes visited so far)
+/// * `visited` - Set of nodes already in the current path (prevents cycles)
+/// * `outgoing` - Map of outgoing edges from each course
+/// * `centrality` - Mutable map to accumulate centrality counts
+///
+/// # Algorithm
+/// Uses backtracking to explore all neighbors of the current node. When the target
+/// is reached, intermediate nodes (all except first and last) have their centrality
+/// incremented by the path length. The visited set prevents revisiting nodes within
+/// a single path (necessary for correctness even though DAG shouldn't have cycles).
 fn dfs_paths(
     current: &str,
     target: &str,
@@ -261,34 +310,37 @@ fn dfs_paths(
     }
 }
 
-/// Build a map of incoming edges (prerequisites and corequisites) for each course
+/// Collect related courses (prerequisites and corequisites) for a given course.
+///
+/// This is a helper function used by `build_incoming_edges()`, `build_outgoing_edges()`,
+/// and `build_indegree_counts()` to centralize the logic of extracting prerequisite and
+/// corequisite relationships from different parts of the DAG structure.
 ///
 /// # Arguments
-/// * `dag` - The directed acyclic graph of course prerequisites
+/// * `course` - The course key to get relationships for
+/// * `primary_map` - First map to check (usually dependencies or dependents)
+/// * `secondary_map` - Second map to check (usually corequisites or `coreq_dependents`)
 ///
 /// # Returns
-/// A map from each course to its sorted list of prerequisite and corequisite courses
-fn build_incoming_edges(dag: &DAG) -> HashMap<String, Vec<String>> {
-    let mut incoming = HashMap::new();
+/// A sorted vector of all related course keys
+fn collect_and_sort_related_courses(
+    course: &str,
+    primary_map: &HashMap<String, Vec<String>>,
+    secondary_map: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let mut neighbors: HashSet<String> = HashSet::new();
 
-    for course in &dag.courses {
-        let mut neighbors: HashSet<String> = HashSet::new();
-
-        if let Some(prereqs) = dag.dependencies.get(course) {
-            neighbors.extend(prereqs.iter().cloned());
-        }
-
-        if let Some(coreqs) = dag.corequisites.get(course) {
-            neighbors.extend(coreqs.iter().cloned());
-        }
-
-        let mut sorted: Vec<String> = neighbors.into_iter().collect();
-        sorted.sort();
-
-        incoming.insert(course.clone(), sorted);
+    if let Some(related) = primary_map.get(course) {
+        neighbors.extend(related.iter().cloned());
     }
 
-    incoming
+    if let Some(related) = secondary_map.get(course) {
+        neighbors.extend(related.iter().cloned());
+    }
+
+    let mut sorted: Vec<String> = neighbors.into_iter().collect();
+    sorted.sort();
+    sorted
 }
 
 /// Count the number of courses reachable from a given course via breadth-first search
@@ -320,6 +372,25 @@ fn count_reachable(start: &str, outgoing: &HashMap<String, Vec<String>>) -> usiz
     visited.len() - 1
 }
 
+/// Build a map of incoming edges (prerequisites and corequisites) for each course
+///
+/// # Arguments
+/// * `dag` - The directed acyclic graph of course prerequisites
+///
+/// # Returns
+/// A map from each course to its sorted list of prerequisite and corequisite courses
+fn build_incoming_edges(dag: &DAG) -> HashMap<String, Vec<String>> {
+    let mut incoming = HashMap::new();
+
+    for course in &dag.courses {
+        let related =
+            collect_and_sort_related_courses(course, &dag.dependencies, &dag.corequisites);
+        incoming.insert(course.clone(), related);
+    }
+
+    incoming
+}
+
 /// Build a map of outgoing edges (dependents) for each course
 ///
 /// Creates the reverse graph where edges point from prerequisites to courses that require them.
@@ -333,20 +404,9 @@ fn build_outgoing_edges(dag: &DAG) -> HashMap<String, Vec<String>> {
     let mut outgoing = HashMap::new();
 
     for course in &dag.courses {
-        let mut neighbors: HashSet<String> = HashSet::new();
-
-        if let Some(dependents) = dag.dependents.get(course) {
-            neighbors.extend(dependents.iter().cloned());
-        }
-
-        if let Some(coreq_dependents) = dag.coreq_dependents.get(course) {
-            neighbors.extend(coreq_dependents.iter().cloned());
-        }
-
-        let mut sorted: Vec<String> = neighbors.into_iter().collect();
-        sorted.sort();
-
-        outgoing.insert(course.clone(), sorted);
+        let related =
+            collect_and_sort_related_courses(course, &dag.dependents, &dag.coreq_dependents);
+        outgoing.insert(course.clone(), related);
     }
 
     outgoing
@@ -365,17 +425,9 @@ fn build_indegree_counts(dag: &DAG) -> HashMap<String, usize> {
     let mut indegree = HashMap::new();
 
     for course in &dag.courses {
-        let mut incoming: HashSet<String> = HashSet::new();
-
-        if let Some(prereqs) = dag.dependencies.get(course) {
-            incoming.extend(prereqs.iter().cloned());
-        }
-
-        if let Some(coreqs) = dag.corequisites.get(course) {
-            incoming.extend(coreqs.iter().cloned());
-        }
-
-        indegree.insert(course.clone(), incoming.len());
+        let related =
+            collect_and_sort_related_courses(course, &dag.dependencies, &dag.corequisites);
+        indegree.insert(course.clone(), related.len());
     }
 
     indegree
@@ -724,5 +776,82 @@ mod tests {
         assert_eq!(c_metrics.blocking, 0);
         assert_eq!(c_metrics.complexity, 3);
         assert_eq!(c_metrics.centrality, 0);
+    }
+
+    #[test]
+    fn test_delay_empty_dag() {
+        let dag = DAG::new();
+        let delay = compute_delay(&dag).expect("empty dag");
+        assert!(delay.is_empty(), "Empty DAG should produce no delays");
+    }
+
+    #[test]
+    fn test_blocking_empty_dag() {
+        let dag = DAG::new();
+        let blocking = compute_blocking(&dag).expect("empty dag");
+        assert!(
+            blocking.is_empty(),
+            "Empty DAG should produce no blocking factors"
+        );
+    }
+
+    #[test]
+    fn test_delay_single_course() {
+        let mut dag = DAG::new();
+        dag.add_course("A".to_string());
+
+        let delay = compute_delay(&dag).expect("single course");
+        assert_eq!(
+            delay.get("A"),
+            Some(&1),
+            "Single course with no prerequisites should have delay of 1"
+        );
+    }
+
+    #[test]
+    fn test_blocking_single_course() {
+        let mut dag = DAG::new();
+        dag.add_course("A".to_string());
+
+        let blocking = compute_blocking(&dag).expect("single course");
+        assert_eq!(
+            blocking.get("A"),
+            Some(&0),
+            "Single course with no dependents should have blocking of 0"
+        );
+    }
+
+    #[test]
+    fn test_corequisites_cycle_detection() {
+        let mut dag = DAG::new();
+        dag.add_corequisite("A".to_string(), "B");
+        dag.add_corequisite("B".to_string(), "A");
+
+        // This creates a cycle through corequisites, which should be detected
+        let delay_result = compute_delay(&dag);
+        assert!(
+            delay_result.is_err(),
+            "Should detect cycle through corequisites"
+        );
+        assert!(
+            delay_result.unwrap_err().contains("Cycle"),
+            "Error message should mention cycle detection"
+        );
+    }
+
+    #[test]
+    fn test_course_metrics_export_tuple() {
+        let metrics = CourseMetrics {
+            delay: 5,
+            blocking: 3,
+            complexity: 8,
+            centrality: 10,
+        };
+
+        let (complexity, blocking, delay, centrality) = metrics.as_export_tuple();
+        assert_eq!(complexity, 8);
+        assert_eq!(blocking, 3);
+        assert_eq!(delay, 5);
+        assert_eq!(centrality, 10);
     }
 }
