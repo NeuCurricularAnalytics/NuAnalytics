@@ -122,6 +122,14 @@ impl School {
         self.courses.values().collect()
     }
 
+    /// Get all courses with their storage keys
+    ///
+    /// # Returns
+    /// An iterator over (`storage_key`, course) pairs
+    pub fn courses_with_keys(&self) -> impl Iterator<Item = (&String, &Course)> {
+        self.courses.iter()
+    }
+
     /// Add a degree to the school
     pub fn add_degree(&mut self, degree: Degree) {
         self.degrees.push(degree);
@@ -256,6 +264,12 @@ impl School {
                     dag.add_corequisite(stored_key.clone(), coreq_key.as_str());
                 }
             }
+
+            for coreq_key in &course.strict_corequisites {
+                if self.courses.contains_key(coreq_key) {
+                    dag.add_corequisite(stored_key.clone(), coreq_key.as_str());
+                }
+            }
         }
 
         dag
@@ -344,6 +358,7 @@ mod tests {
             "Computer Science".to_string(),
             "BS".to_string(),
             "11.0701".to_string(),
+            "semester".to_string(),
         );
 
         school.add_degree(degree);

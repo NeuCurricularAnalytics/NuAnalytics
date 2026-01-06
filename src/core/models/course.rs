@@ -66,6 +66,9 @@ pub struct Course {
     /// Co-requisites - stored as "PREFIX NUMBER" keys
     pub corequisites: Vec<String>,
 
+    /// Strict co-requisites - stored as "PREFIX NUMBER" keys (must be taken together)
+    pub strict_corequisites: Vec<String>,
+
     /// Credit hours (can be fractional)
     pub credit_hours: f32,
 
@@ -91,6 +94,7 @@ impl Course {
             number,
             prerequisites: Vec::new(),
             corequisites: Vec::new(),
+            strict_corequisites: Vec::new(),
             credit_hours,
             canonical_name: None,
         }
@@ -116,6 +120,13 @@ impl Course {
     pub fn add_corequisite(&mut self, coreq_key: String) {
         if !self.corequisites.contains(&coreq_key) {
             self.corequisites.push(coreq_key);
+        }
+    }
+
+    /// Add a strict co-requisite by course key
+    pub fn add_strict_corequisite(&mut self, coreq_key: String) {
+        if !self.strict_corequisites.contains(&coreq_key) {
+            self.strict_corequisites.push(coreq_key);
         }
     }
 

@@ -2,7 +2,7 @@
 
 use super::metrics::CurriculumMetrics;
 use super::models::DAG;
-use crate::core::models::{Course, Plan, School};
+use crate::core::models::{Course, Degree, Plan, School};
 use std::error::Error;
 use std::path::Path;
 
@@ -181,6 +181,7 @@ impl MetricsExporter for CsvExporter {
 ///
 /// # Errors
 /// Returns an error if file writing fails
+#[allow(clippy::too_many_lines)]
 pub fn export_metrics_csv_with_summary(
     school: &School,
     plan: &Plan,
@@ -193,17 +194,50 @@ pub fn export_metrics_csv_with_summary(
 
     let mut file = File::create(output_path)?;
 
-    // Try to find the degree to get degree type
-    let degree_info = school
-        .degrees
-        .iter()
-        .find(|d| d.id() == plan.degree_id)
-        .map_or_else(
-            || ("BS".to_string(), String::new()),
-            |d| (d.degree_type.clone(), d.cip_code.clone()),
-        );
+    // Try to find the degree to get degree type and system type
+    let degree = school.degrees.iter().find(|d| d.id() == plan.degree_id);
+
+    let degree_type = degree.map_or_else(|| "BS".to_string(), |d| d.degree_type.clone());
+    let cip_code = degree.map_or_else(String::new, |d| d.cip_code.clone());
+    let system_type = degree.map_or_else(|| "semester".to_string(), |d| d.system_type.clone());
+    let scale_factor = degree.map_or(1.0, Degree::complexity_scale_factor);
 
     let institution = plan.institution.as_deref().unwrap_or(&school.name);
+
+    // Pre-compute scaled complexity for each course to get accurate total
+    // (scaling each course individually and rounding matches reference tool behavior)
+    let mut courses_by_csv_id: Vec<(String, String, &Course)> = plan
+        .courses
+        .iter()
+        .filter_map(|storage_key| {
+            school.get_course(storage_key).map(|course| {
+                (
+                    course.csv_id.clone().unwrap_or_else(|| "0".to_string()),
+                    storage_key.clone(),
+                    course,
+                )
+            })
+        })
+        .collect();
+
+    // Sort by CSV ID (numerically if possible)
+    courses_by_csv_id.sort_by(|a, b| {
+        let a_num = a.0.parse::<usize>().unwrap_or(0);
+        let b_num = b.0.parse::<usize>().unwrap_or(0);
+        a_num.cmp(&b_num)
+    });
+
+    // Compute scaled complexity for each course, then sum for total
+    // This matches the reference tool which rounds per-course before summing
+    #[allow(clippy::cast_precision_loss)]
+    let scaled_total_complexity: f64 = courses_by_csv_id
+        .iter()
+        .map(|(_, storage_key, _)| {
+            let complexity = metrics.get(storage_key).map_or(0, |m| m.complexity);
+            // Round to 1 decimal place per course (matches reference tool)
+            ((complexity as f64 * scale_factor) * 10.0).round() / 10.0
+        })
+        .sum();
 
     // Write header section with summary statistics - one item per row
     // Row 1: Curriculum name
@@ -213,19 +247,18 @@ pub fn export_metrics_csv_with_summary(
     writeln!(file, "Institution,{institution}")?;
 
     // Row 3: Degree Type
-    writeln!(file, "Degree Type,\"{}\"", degree_info.0)?;
+    writeln!(file, "Degree Type,\"{degree_type}\"")?;
 
-    // Row 4: System Type (hardcoded as semester for now)
-    writeln!(file, "System Type,semester")?;
+    // Row 4: System Type
+    writeln!(file, "System Type,{system_type}")?;
 
     // Row 5: CIP code
-    writeln!(file, "CIP,\"{}\"", degree_info.1)?;
+    writeln!(file, "CIP,\"{cip_code}\"")?;
 
-    // Row 6: Total Structural Complexity
+    // Row 6: Total Structural Complexity (sum of scaled per-course values)
     writeln!(
         file,
-        "Total Structural Complexity,{}",
-        summary.total_complexity
+        "Total Structural Complexity,{scaled_total_complexity:.1}"
     )?;
 
     // Row 7: Longest Delay with path
@@ -252,57 +285,74 @@ pub fn export_metrics_csv_with_summary(
     // Write course data
     logger::debug!("Exporting {} courses from plan", plan.courses.len());
 
-    // Create a sorted list of courses by CSV ID to ensure consistent order
-    let mut courses_by_csv_id: Vec<(String, String, &Course)> = plan
-        .courses
-        .iter()
-        .filter_map(|storage_key| {
-            school.get_course(storage_key).map(|course| {
-                (
-                    course.csv_id.clone().unwrap_or_else(|| "0".to_string()),
-                    storage_key.clone(),
-                    course,
-                )
-            })
-        })
-        .collect();
-
-    // Sort by CSV ID (numerically if possible)
-    courses_by_csv_id.sort_by(|a, b| {
-        let a_num = a.0.parse::<usize>().unwrap_or(0);
-        let b_num = b.0.parse::<usize>().unwrap_or(0);
-        a_num.cmp(&b_num)
-    });
-
-    for (csv_id, storage_key, course) in courses_by_csv_id {
+    for (csv_id, storage_key, course) in &courses_by_csv_id {
         logger::debug!(
             "Exporting course {} ({}) - storage key: {}",
             csv_id,
             course.name,
             storage_key
         );
-        let metrics_data = metrics.get(&storage_key);
+        let metrics_data = metrics.get(storage_key);
 
-        let prereqs = course.prerequisites.join(";");
-        let coreqs = course.corequisites.join(";");
+        // Convert stored keys back to CSV IDs for export
+        let prereqs = course
+            .prerequisites
+            .iter()
+            .map(|k| {
+                school
+                    .get_course(k)
+                    .and_then(|c| c.csv_id.clone())
+                    .unwrap_or_else(|| k.clone())
+            })
+            .collect::<Vec<_>>()
+            .join(";");
+
+        let coreqs = course
+            .corequisites
+            .iter()
+            .map(|k| {
+                school
+                    .get_course(k)
+                    .and_then(|c| c.csv_id.clone())
+                    .unwrap_or_else(|| k.clone())
+            })
+            .collect::<Vec<_>>()
+            .join(";");
+
+        let strict_coreqs = course
+            .strict_corequisites
+            .iter()
+            .map(|k| {
+                school
+                    .get_course(k)
+                    .and_then(|c| c.csv_id.clone())
+                    .unwrap_or_else(|| k.clone())
+            })
+            .collect::<Vec<_>>()
+            .join(";");
 
         let (complexity, blocking, delay, centrality) = metrics_data.map_or((0, 0, 0, 0), |m| {
             (m.complexity, m.blocking, m.delay, m.centrality)
         });
 
+        // Scale complexity for quarter systems
+        #[allow(clippy::cast_precision_loss)]
+        let scaled_complexity = (complexity as f64) * scale_factor;
+
         writeln!(
             file,
-            "{},{},\"{}\",\"{}\",\"{}\",\"{}\",\"\",{},\"{}\",\"{}\",{},{},{},{}",
+            "{},{},\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",{},\"{}\",\"{}\",{:.1},{},{},{}",
             csv_id,
             course.name,
             course.prefix,
             course.number,
             prereqs,
             coreqs,
+            strict_coreqs,
             course.credit_hours,
             institution,
             course.canonical_name.as_deref().unwrap_or(""),
-            complexity,
+            scaled_complexity,
             blocking,
             delay,
             centrality

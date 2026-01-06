@@ -34,6 +34,7 @@ pub struct CurriculumMetadata {
 ///
 /// # Panics
 /// Panics if a course's natural key is not found in the `natural_key_to_ids` map during deduplication
+#[allow(clippy::too_many_lines)]
 pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn Error>> {
     let content = fs::read_to_string(path)?;
     let lines: Vec<&str> = content.lines().collect();
@@ -51,6 +52,7 @@ pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn E
         curriculum_name.clone(),
         metadata.degree_type.clone(),
         metadata.cip_code,
+        metadata.system_type,
     );
     school.add_degree(degree);
 
@@ -139,6 +141,17 @@ pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn E
                         add_corequisites_with_mapping(
                             course,
                             &coreq_str,
+                            &course_id_to_storage_key,
+                        );
+                    }
+                }
+
+                // Parse strict corequisites
+                if let Some(strict_coreq_str) = get_field(line, "Strict-Corequisites", &headers) {
+                    if !strict_coreq_str.trim().is_empty() {
+                        add_strict_corequisites_with_mapping(
+                            course,
+                            &strict_coreq_str,
                             &course_id_to_storage_key,
                         );
                     }
@@ -303,6 +316,21 @@ fn add_corequisites_with_mapping(
             // (corequisites may be optional or electives that don't have explicit mappings)
             if let Some(key) = course_id_to_key.get(trimmed) {
                 course.add_corequisite(key.clone());
+            }
+        }
+    }
+}
+
+fn add_strict_corequisites_with_mapping(
+    course: &mut Course,
+    coreq_str: &str,
+    course_id_to_key: &HashMap<String, String>,
+) {
+    for coreq in coreq_str.split(';') {
+        let trimmed = coreq.trim();
+        if !trimmed.is_empty() {
+            if let Some(key) = course_id_to_key.get(trimmed) {
+                course.add_strict_corequisite(key.clone());
             }
         }
     }
