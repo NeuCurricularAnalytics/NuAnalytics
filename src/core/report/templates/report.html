@@ -4,39 +4,36 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Curriculum Report: {{plan_name}}</title>
-    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <style>
         :root {
             --primary-color: #2c3e50;
             --secondary-color: #3498db;
-            --success-color: #27ae60;
-            --warning-color: #f39c12;
-            --danger-color: #e74c3c;
+            --success-color: #4CAF50;
+            --warning-color: #FF9800;
+            --danger-color: #F44336;
             --light-bg: #f8f9fa;
+            --term-bg: #e8e8e8;
             --border-color: #dee2e6;
+            --node-color: #37474f;
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            line-height: 1.6;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.4;
             color: #333;
             background-color: var(--light-bg);
-            padding: 2rem;
+            padding: 1.5rem;
         }
 
         .container {
-            max-width: 1400px;
+            max-width: 100%;
             margin: 0 auto;
             background: white;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            padding: 2rem;
+            padding: 1.5rem;
         }
 
         h1 {
@@ -44,136 +41,208 @@
             border-bottom: 3px solid var(--secondary-color);
             padding-bottom: 0.5rem;
             margin-bottom: 1.5rem;
+            font-size: 1.5rem;
         }
 
         h2 {
             color: var(--primary-color);
-            margin-top: 2rem;
-            margin-bottom: 1rem;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
             border-left: 4px solid var(--secondary-color);
             padding-left: 0.75rem;
+            font-size: 1.2rem;
         }
 
         .overview-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-bottom: 2rem;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
         }
 
         .stat-card {
             background: var(--light-bg);
-            border-radius: 8px;
-            padding: 1rem;
+            border-radius: 6px;
+            padding: 0.75rem;
             text-align: center;
             border: 1px solid var(--border-color);
         }
 
         .stat-card .label {
-            font-size: 0.85rem;
+            font-size: 0.7rem;
             color: #666;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
         }
 
         .stat-card .value {
-            font-size: 1.5rem;
+            font-size: 1.2rem;
             font-weight: bold;
             color: var(--primary-color);
         }
 
         .stat-card .detail {
-            font-size: 0.9rem;
+            font-size: 0.75rem;
             color: #888;
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 1rem 0;
-        }
-
-        th, td {
+        .critical-path {
+            background: linear-gradient(90deg, var(--light-bg), white);
             padding: 0.75rem;
-            text-align: left;
-            border-bottom: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
         }
 
-        th {
-            background-color: var(--primary-color);
-            color: white;
+        /* Curriculum Graph */
+        .curriculum-graph-wrapper {
+            overflow-x: auto;
+            margin: 1rem 0;
+            position: relative;
+        }
+
+        .curriculum-graph {
+            display: flex;
+            gap: 0;
+            min-width: fit-content;
+            position: relative;
+        }
+
+        .term-column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 140px;
+            background: var(--term-bg);
+            border-radius: 4px;
+            margin: 0 2px;
+            padding: 8px 4px;
+        }
+
+        .term-header {
             font-weight: 600;
+            font-size: 0.75rem;
+            color: var(--primary-color);
+            margin-bottom: 8px;
+            padding: 4px 8px;
+            background: white;
+            border-radius: 4px;
+            width: 100%;
+            text-align: center;
         }
 
-        tr:hover {
-            background-color: var(--light-bg);
+        .term-courses {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
         }
+
+        .course-node {
+            position: relative;
+            background: white;
+            border-radius: 6px;
+            padding: 8px 6px 6px;
+            text-align: center;
+            border: 2px solid var(--node-color);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 8px;
+        }
+
+        .course-node:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        .course-node .complexity-badge {
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.6rem;
+            font-weight: bold;
+            color: white;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .course-node .course-id {
+            font-weight: 600;
+            font-size: 0.7rem;
+            color: var(--primary-color);
+            margin-top: 4px;
+        }
+
+        .course-node .course-name {
+            font-size: 0.6rem;
+            color: #666;
+            line-height: 1.2;
+            max-height: 2.4em;
+            overflow: hidden;
+        }
+
+        .complexity-low { background-color: var(--success-color); }
+        .complexity-medium { background-color: var(--warning-color); }
+        .complexity-high { background-color: var(--danger-color); }
+
+        /* SVG for connections */
+        .connections-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            overflow: visible;
+        }
+
+        .prereq-line { stroke: #666; stroke-width: 1.5; fill: none; }
+        .coreq-line { stroke: var(--secondary-color); stroke-width: 1.5; stroke-dasharray: 4,3; fill: none; }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            gap: 1.5rem;
+            margin: 0.75rem 0;
+            flex-wrap: wrap;
+            font-size: 0.8rem;
+        }
+
+        .legend-item { display: flex; align-items: center; gap: 0.4rem; }
+        .legend-color { width: 16px; height: 16px; border-radius: 50%; }
+        .legend-line { width: 30px; height: 2px; }
+        .legend-line.solid { background: #666; }
+        .legend-line.dashed { background: repeating-linear-gradient(90deg, var(--secondary-color), var(--secondary-color) 4px, transparent 4px, transparent 7px); }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.85rem; }
+        th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+        th { background-color: var(--primary-color); color: white; font-weight: 600; font-size: 0.75rem; }
+        tr:hover { background-color: var(--light-bg); }
 
         .course-badge {
             display: inline-block;
             background: var(--secondary-color);
             color: white;
-            padding: 0.15rem 0.4rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-            font-weight: 500;
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
         }
 
-        .complexity-low td:first-child { border-left: 4px solid var(--success-color); }
-        .complexity-medium td:first-child { border-left: 4px solid var(--warning-color); }
-        .complexity-high td:first-child { border-left: 4px solid var(--danger-color); }
+        .complexity-row-low td:first-child { border-left: 3px solid var(--success-color); }
+        .complexity-row-medium td:first-child { border-left: 3px solid var(--warning-color); }
+        .complexity-row-high td:first-child { border-left: 3px solid var(--danger-color); }
 
-        .unscheduled {
-            background-color: #fff3cd;
-        }
-
-        #graph-container {
-            width: 100%;
-            height: 600px;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            margin: 1rem 0;
-        }
-
-        .critical-path {
-            background: linear-gradient(90deg, var(--light-bg), white);
-            padding: 1rem;
-            border-radius: 8px;
-            font-family: monospace;
-            font-size: 1.1rem;
-            overflow-x: auto;
-        }
-
-        .legend {
-            display: flex;
-            gap: 1.5rem;
-            margin: 1rem 0;
-            flex-wrap: wrap;
-        }
-
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .legend-color {
-            width: 20px;
-            height: 20px;
-            border-radius: 4px;
-        }
-
-        footer {
-            margin-top: 2rem;
-            text-align: center;
-            color: #888;
-            font-size: 0.9rem;
-        }
+        footer { margin-top: 1.5rem; text-align: center; color: #888; font-size: 0.8rem; }
 
         @media print {
-            body { background: white; padding: 0; }
-            .container { box-shadow: none; }
-            #graph-container { height: 400px; }
+            body { background: white; padding: 0.5rem; }
+            .container { box-shadow: none; padding: 0.5rem; }
         }
     </style>
 </head>
@@ -183,169 +252,134 @@
 
         <h2>Overview</h2>
         <div class="overview-grid">
-            <div class="stat-card">
-                <div class="label">Institution</div>
-                <div class="value" style="font-size: 1.2rem;">{{institution}}</div>
-            </div>
-            <div class="stat-card">
-                <div class="label">Degree</div>
-                <div class="value" style="font-size: 1.2rem;">{{degree_name}}</div>
-            </div>
-            <div class="stat-card">
-                <div class="label">System</div>
-                <div class="value">{{system_type}}</div>
-            </div>
-            <div class="stat-card">
-                <div class="label">Years</div>
-                <div class="value">{{years}}</div>
-            </div>
-            <div class="stat-card">
-                <div class="label">CIP Code</div>
-                <div class="value">{{cip_code}}</div>
-            </div>
-            <div class="stat-card">
-                <div class="label">Total Credits</div>
-                <div class="value">{{total_credits}}</div>
-            </div>
-            <div class="stat-card">
-                <div class="label">Total Courses</div>
-                <div class="value">{{course_count}}</div>
-            </div>
+            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">{{institution}}</div></div>
+            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">{{degree_name}}</div></div>
+            <div class="stat-card"><div class="label">System</div><div class="value">{{system_type}}</div></div>
+            <div class="stat-card"><div class="label">Years</div><div class="value">{{years}}</div></div>
+            <div class="stat-card"><div class="label">CIP Code</div><div class="value">{{cip_code}}</div></div>
+            <div class="stat-card"><div class="label">Total Credits</div><div class="value">{{total_credits}}</div></div>
+            <div class="stat-card"><div class="label">Total Courses</div><div class="value">{{course_count}}</div></div>
         </div>
 
         <h2>Complexity Metrics</h2>
         <div class="overview-grid">
-            <div class="stat-card">
-                <div class="label">Total Structural Complexity</div>
-                <div class="value">{{total_complexity}}</div>
-            </div>
-            <div class="stat-card">
-                <div class="label">Longest Delay</div>
-                <div class="value">{{longest_delay}}</div>
-                <div class="detail">{{longest_delay_course}}</div>
-            </div>
-            <div class="stat-card">
-                <div class="label">Highest Centrality</div>
-                <div class="value">{{highest_centrality}}</div>
-                <div class="detail">{{highest_centrality_course}}</div>
-            </div>
+            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">{{total_complexity}}</div></div>
+            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">{{longest_delay}}</div><div class="detail">{{longest_delay_course}}</div></div>
+            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">{{highest_centrality}}</div><div class="detail">{{highest_centrality_course}}</div></div>
         </div>
 
-        <h3>Critical Path (Longest Delay)</h3>
-        <div class="critical-path">{{longest_delay_path}}</div>
+        <div class="critical-path"><strong>Critical Path:</strong> {{longest_delay_path}}</div>
 
         <h2>Curriculum Graph</h2>
         <div class="legend">
-            <div class="legend-item">
-                <div class="legend-color" style="background: #4CAF50;"></div>
-                <span>Low Complexity (0-5)</span>
-            </div>
-            <div class="legend-item">
-                <div class="legend-color" style="background: #FF9800;"></div>
-                <span>Medium Complexity (6-15)</span>
-            </div>
-            <div class="legend-item">
-                <div class="legend-color" style="background: #F44336;"></div>
-                <span>High Complexity (16+)</span>
-            </div>
-            <div class="legend-item">
-                <span>→ Prerequisite</span>
-            </div>
-            <div class="legend-item">
-                <span>⤍ Corequisite</span>
-            </div>
+            <div class="legend-item"><div class="legend-color complexity-low"></div><span>Low (1-5)</span></div>
+            <div class="legend-item"><div class="legend-color complexity-medium"></div><span>Medium (6-15)</span></div>
+            <div class="legend-item"><div class="legend-color complexity-high"></div><span>High (16+)</span></div>
+            <div class="legend-item"><div class="legend-line solid"></div><span>Prerequisite</span></div>
+            <div class="legend-item"><div class="legend-line dashed"></div><span>Corequisite</span></div>
         </div>
-        <div id="graph-container"></div>
 
-        <h2>Term-by-Term Schedule</h2>
+        <div class="curriculum-graph-wrapper">
+            <div class="curriculum-graph" id="curriculum-graph">
+                {{term_graph}}
+            </div>
+            <svg class="connections-svg" id="connections-svg"></svg>
+        </div>
+
+        <h2>Term Schedule</h2>
         <table>
-            <thead>
-                <tr>
-                    <th>Term</th>
-                    <th>Courses</th>
-                    <th>Credits</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{term_schedule}}
-            </tbody>
+            <thead><tr><th>Term</th><th>Courses</th><th>Credits</th></tr></thead>
+            <tbody>{{term_schedule}}</tbody>
         </table>
 
         <h2>Course Metrics</h2>
         <table>
-            <thead>
-                <tr>
-                    <th>Course</th>
-                    <th>Name</th>
-                    <th>Credits</th>
-                    <th>Complexity</th>
-                    <th>Blocking</th>
-                    <th>Delay</th>
-                    <th>Centrality</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{course_metrics}}
-            </tbody>
+            <thead><tr><th>Course</th><th>Name</th><th>Cr</th><th>Cplx</th><th>Blk</th><th>Dly</th><th>Ctr</th></tr></thead>
+            <tbody>{{course_metrics}}</tbody>
         </table>
 
-        <footer>
-            <p>Generated by NuAnalytics</p>
-        </footer>
+        <footer><p>Generated by NuAnalytics</p></footer>
     </div>
 
     <script>
-        // Initialize vis.js graph
-        const nodes = new vis.DataSet({{graph_nodes}});
-        const edges = new vis.DataSet({{graph_edges}});
+        const edges = {{graph_edges}};
 
-        const container = document.getElementById('graph-container');
-        const data = { nodes: nodes, edges: edges };
-        const options = {
-            layout: {
-                hierarchical: {
-                    enabled: true,
-                    direction: 'LR',
-                    sortMethod: 'hubsize',
-                    levelSeparation: 250,
-                    nodeSpacing: 80,
-                    treeSpacing: 100,
-                    blockShifting: true,
-                    edgeMinimization: true,
-                    parentCentralization: true
-                }
-            },
-            nodes: {
-                shape: 'box',
-                font: { size: 11, face: 'monospace' },
-                margin: 8,
-                widthConstraint: { minimum: 100, maximum: 140 },
-                borderWidth: 2
-            },
-            edges: {
-                arrows: { to: { enabled: true, scaleFactor: 0.6 } },
-                smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.4 },
-                color: { inherit: false, color: '#666' }
-            },
-            physics: false,
-            interaction: {
-                dragNodes: true,
-                zoomView: true,
-                dragView: true,
-                tooltipDelay: 200
-            }
-        };
-
-        const network = new vis.Network(container, data, options);
-
-        // Add term labels after network is stabilized
-        network.once('stabilized', function() {
-            // Get the canvas context for drawing term labels
-            const canvas = container.getElementsByTagName('canvas')[0];
-            if (canvas) {
-                network.fit({ animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
-            }
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(drawConnections, 100);
+            window.addEventListener('resize', drawConnections);
         });
+
+        function drawConnections() {
+            const svg = document.getElementById('connections-svg');
+            const graph = document.getElementById('curriculum-graph');
+            if (!svg || !graph) return;
+
+            svg.style.width = graph.scrollWidth + 'px';
+            svg.style.height = graph.scrollHeight + 'px';
+            svg.innerHTML = '';
+
+            const svgNS = 'http://www.w3.org/2000/svg';
+
+            // Arrow markers
+            const defs = document.createElementNS(svgNS, 'defs');
+
+            const marker = document.createElementNS(svgNS, 'marker');
+            marker.setAttribute('id', 'arrow');
+            marker.setAttribute('markerWidth', '6');
+            marker.setAttribute('markerHeight', '5');
+            marker.setAttribute('refX', '5');
+            marker.setAttribute('refY', '2.5');
+            marker.setAttribute('orient', 'auto');
+            const poly = document.createElementNS(svgNS, 'polygon');
+            poly.setAttribute('points', '0 0, 6 2.5, 0 5');
+            poly.setAttribute('fill', '#666');
+            marker.appendChild(poly);
+            defs.appendChild(marker);
+
+            const markerBlue = document.createElementNS(svgNS, 'marker');
+            markerBlue.setAttribute('id', 'arrow-blue');
+            markerBlue.setAttribute('markerWidth', '6');
+            markerBlue.setAttribute('markerHeight', '5');
+            markerBlue.setAttribute('refX', '5');
+            markerBlue.setAttribute('refY', '2.5');
+            markerBlue.setAttribute('orient', 'auto');
+            const polyBlue = document.createElementNS(svgNS, 'polygon');
+            polyBlue.setAttribute('points', '0 0, 6 2.5, 0 5');
+            polyBlue.setAttribute('fill', '#3498db');
+            markerBlue.appendChild(polyBlue);
+            defs.appendChild(markerBlue);
+
+            svg.appendChild(defs);
+
+            const graphRect = graph.getBoundingClientRect();
+
+            edges.forEach(edge => {
+                const fromEl = document.querySelector('[data-course-id="' + edge.from + '"]');
+                const toEl = document.querySelector('[data-course-id="' + edge.to + '"]');
+                if (!fromEl || !toEl) return;
+
+                const fromRect = fromEl.getBoundingClientRect();
+                const toRect = toEl.getBoundingClientRect();
+
+                const x1 = fromRect.right - graphRect.left;
+                const y1 = fromRect.top + fromRect.height/2 - graphRect.top;
+                const x2 = toRect.left - graphRect.left;
+                const y2 = toRect.top + toRect.height/2 - graphRect.top;
+
+                const path = document.createElementNS(svgNS, 'path');
+                const midX = (x1 + x2) / 2;
+                path.setAttribute('d', 'M ' + x1 + ' ' + y1 + ' C ' + midX + ' ' + y1 + ', ' + midX + ' ' + y2 + ', ' + x2 + ' ' + y2);
+
+                if (edge.dashes) {
+                    path.setAttribute('class', 'coreq-line');
+                    path.setAttribute('marker-end', 'url(#arrow-blue)');
+                } else {
+                    path.setAttribute('class', 'prereq-line');
+                    path.setAttribute('marker-end', 'url(#arrow)');
+                }
+                svg.appendChild(path);
+            });
+        }
     </script>
 </body>
 </html>

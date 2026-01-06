@@ -1,11 +1,10 @@
 //! HTML report generator
 //!
-//! Generates curriculum reports in HTML format with interactive vis.js graphs.
+//! Generates curriculum reports in HTML format with grid-based visualization.
 //! The generated HTML is self-contained with embedded CSS and JavaScript.
 
 use crate::core::metrics::CourseMetrics;
 use crate::core::report::{ReportContext, ReportGenerator};
-use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Write;
 use std::fs;
@@ -74,12 +73,99 @@ impl HtmlReporter {
         let metrics_html = Self::generate_metrics_html(ctx);
         output = output.replace("{{course_metrics}}", &metrics_html);
 
-        // Generate vis.js graph data
-        let (nodes, edges) = Self::generate_graph_data(ctx);
-        output = output.replace("{{graph_nodes}}", &nodes);
+        // Generate term graph HTML (grid-based visualization)
+        let term_graph = Self::generate_term_graph(ctx);
+        output = output.replace("{{term_graph}}", &term_graph);
+
+        // Generate edge data for SVG connections
+        let edges = Self::generate_edge_data(ctx);
         output = output.replace("{{graph_edges}}", &edges);
 
         output
+    }
+
+    /// Generate HTML for the grid-based term visualization
+    fn generate_term_graph(ctx: &ReportContext) -> String {
+        let mut html = String::new();
+
+        for term in &ctx.term_plan.terms {
+            let _ = writeln!(html, "<div class=\"term-column\">");
+            let _ = writeln!(
+                html,
+                "  <div class=\"term-header\">Semester {}</div>",
+                term.number
+            );
+            let _ = writeln!(html, "  <div class=\"term-courses\">");
+
+            for course_key in &term.courses {
+                let course = ctx.school.get_course(course_key);
+                let metrics = ctx.metrics.get(course_key);
+
+                let name = course.map_or("", |c| &c.name);
+                let short_name = if name.len() > 25 { &name[..22] } else { name };
+                let complexity = metrics.map_or(0, |m| m.complexity);
+
+                let complexity_class = match complexity {
+                    0..=5 => "complexity-low",
+                    6..=15 => "complexity-medium",
+                    _ => "complexity-high",
+                };
+
+                let _ = writeln!(
+                    html,
+                    "    <div class=\"course-node\" data-course-id=\"{course_key}\">"
+                );
+                let _ = writeln!(
+                    html,
+                    "      <span class=\"complexity-badge {complexity_class}\">{complexity}</span>"
+                );
+                let _ = writeln!(html, "      <div class=\"course-id\">{course_key}</div>");
+                let _ = writeln!(html, "      <div class=\"course-name\">{short_name}</div>");
+                let _ = writeln!(html, "    </div>");
+            }
+
+            let _ = writeln!(html, "  </div>");
+            let _ = writeln!(html, "</div>");
+        }
+
+        html
+    }
+
+    /// Generate edge data as JSON for SVG connections
+    fn generate_edge_data(ctx: &ReportContext) -> String {
+        let mut edges = Vec::new();
+
+        // Prerequisite edges
+        for (course, prereqs) in &ctx.dag.dependencies {
+            if !ctx.plan.courses.contains(course) {
+                continue;
+            }
+            for prereq in prereqs {
+                if !ctx.plan.courses.contains(prereq) {
+                    continue;
+                }
+                edges.push(format!(
+                    "{{ \"from\": \"{prereq}\", \"to\": \"{course}\", \"dashes\": false }}"
+                ));
+            }
+        }
+
+        // Corequisite edges (dashed)
+        for (course, coreqs) in &ctx.dag.corequisites {
+            if !ctx.plan.courses.contains(course) {
+                continue;
+            }
+            for coreq in coreqs {
+                if !ctx.plan.courses.contains(coreq) {
+                    continue;
+                }
+                edges.push(format!(
+                    "{{ \"from\": \"{coreq}\", \"to\": \"{course}\", \"dashes\": true }}"
+                ));
+            }
+        }
+
+        format!("[{}]", edges.join(", "))
     }
 
     /// Generate the term-by-term schedule as HTML table rows
@@ -160,105 +246,10 @@ impl HtmlReporter {
 
     /// Generate vis.js node and edge data as JSON arrays
     /// Nodes are positioned by term (x-axis) with courses stacked vertically within each term
-    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-    fn generate_graph_data(ctx: &ReportContext) -> (String, String) {
-        let mut nodes = Vec::new();
-        let mut edges = Vec::new();
-
-        // Track y-positions within each term (reset per term)
-        let mut term_y_count: HashMap<usize, usize> = HashMap::new();
-
-        // Horizontal spacing per term
-        let x_spacing = 250;
-        // Vertical spacing per course within a term
-        let y_spacing = 100;
-
-        // Create nodes grouped by term
-        for term in &ctx.term_plan.terms {
-            let term_num = term.number;
-            let x = (term_num as i32) * x_spacing;
-
-            for course_key in &term.courses {
-                let course = ctx.school.get_course(course_key);
-                let metrics = ctx.metrics.get(course_key);
-
-                // Use short label for readability
-                let label = course.map_or(course_key.as_str(), |c| {
-                    if c.name.len() > 20 {
-                        course_key.as_str()
-                    } else {
-                        &c.name
-                    }
-                });
-
-                let complexity = metrics.map_or(0, |m| m.complexity);
-
-                // Calculate y position within this term
-                let y_idx = term_y_count.entry(term_num).or_insert(0);
-                let y = (*y_idx as i32) * y_spacing;
-                *term_y_count.get_mut(&term_num).unwrap() += 1;
-
-                // Color based on complexity
-                let color = match complexity {
-                    0..=5 => "#4CAF50",  // Green - low complexity
-                    6..=15 => "#FF9800", // Orange - medium
-                    _ => "#F44336",      // Red - high
-                };
-
-                // Add term number to title for hover info
-                let title = format!("{course_key} - Term {term_num}\\nComplexity: {complexity}");
-
-                nodes.push(format!(
-                    "{{ id: '{course_key}', label: '{course_key}\\n{label}\\nC:{complexity}', x: {x}, y: {y}, color: {{ background: '{color}' }}, title: '{title}', level: {term_num} }}"
-                ));
-            }
-        }
-
-        // Handle unscheduled courses (if any)
-        if !ctx.term_plan.unscheduled.is_empty() {
-            let unscheduled_x = ((ctx.term_plan.terms.len() + 1) as i32) * x_spacing;
-            for (idx, course_key) in ctx.term_plan.unscheduled.iter().enumerate() {
-                let y = (idx as i32) * y_spacing;
-                nodes.push(format!(
-                    "{{ id: '{course_key}', label: '{course_key}\\n⚠️ Unscheduled', x: {unscheduled_x}, y: {y}, color: {{ background: '#9E9E9E' }}, level: 0 }}"
-                ));
-            }
-        }
-
-        // Create edges for prerequisites
-        for (course, prereqs) in &ctx.dag.dependencies {
-            if !ctx.plan.courses.contains(course) {
-                continue;
-            }
-            for prereq in prereqs {
-                if !ctx.plan.courses.contains(prereq) {
-                    continue;
-                }
-                edges.push(format!(
-                    "{{ from: '{prereq}', to: '{course}', arrows: 'to' }}"
-                ));
-            }
-        }
-
-        // Create edges for corequisites (dashed)
-        for (course, coreqs) in &ctx.dag.corequisites {
-            if !ctx.plan.courses.contains(course) {
-                continue;
-            }
-            for coreq in coreqs {
-                if !ctx.plan.courses.contains(coreq) {
-                    continue;
-                }
-                edges.push(format!(
-                    "{{ from: '{coreq}', to: '{course}', arrows: 'to', dashes: true, color: {{ color: '#2196F3' }} }}"
-                ));
-            }
-        }
-
-        (
-            format!("[{}]", nodes.join(",\n        ")),
-            format!("[{}]", edges.join(",\n        ")),
-        )
+    #[allow(dead_code)]
+    fn generate_graph_data(_ctx: &ReportContext) -> (String, String) {
+        // Deprecated - kept for potential future use
+        (String::from("[]"), String::from("[]"))
     }
 }
 
