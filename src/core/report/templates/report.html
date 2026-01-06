@@ -196,6 +196,10 @@
                 <div class="value">{{system_type}}</div>
             </div>
             <div class="stat-card">
+                <div class="label">Years</div>
+                <div class="value">{{years}}</div>
+            </div>
+            <div class="stat-card">
                 <div class="label">CIP Code</div>
                 <div class="value">{{cip_code}}</div>
             </div>
@@ -302,30 +306,46 @@
                 hierarchical: {
                     enabled: true,
                     direction: 'LR',
-                    sortMethod: 'directed',
-                    levelSeparation: 200,
-                    nodeSpacing: 100
+                    sortMethod: 'hubsize',
+                    levelSeparation: 250,
+                    nodeSpacing: 80,
+                    treeSpacing: 100,
+                    blockShifting: true,
+                    edgeMinimization: true,
+                    parentCentralization: true
                 }
             },
             nodes: {
                 shape: 'box',
-                font: { size: 12 },
-                margin: 10,
-                widthConstraint: { maximum: 150 }
+                font: { size: 11, face: 'monospace' },
+                margin: 8,
+                widthConstraint: { minimum: 100, maximum: 140 },
+                borderWidth: 2
             },
             edges: {
-                arrows: { to: { enabled: true, scaleFactor: 0.8 } },
-                smooth: { type: 'cubicBezier' }
+                arrows: { to: { enabled: true, scaleFactor: 0.6 } },
+                smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.4 },
+                color: { inherit: false, color: '#666' }
             },
             physics: false,
             interaction: {
                 dragNodes: true,
                 zoomView: true,
-                dragView: true
+                dragView: true,
+                tooltipDelay: 200
             }
         };
 
         const network = new vis.Network(container, data, options);
+
+        // Add term labels after network is stabilized
+        network.once('stabilized', function() {
+            // Get the canvas context for drawing term labels
+            const canvas = container.getElementsByTagName('canvas')[0];
+            if (canvas) {
+                network.fit({ animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+            }
+        });
     </script>
 </body>
 </html>

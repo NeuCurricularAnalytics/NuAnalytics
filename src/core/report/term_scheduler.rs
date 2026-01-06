@@ -75,6 +75,12 @@ impl TermPlan {
         }
     }
 
+    /// Add a new term to the plan
+    pub fn add_term(&mut self) {
+        let next_number = self.terms.len() + 1;
+        self.terms.push(Term::new(next_number));
+    }
+
     /// Get display name for terms (Semester/Quarter)
     #[must_use]
     pub const fn term_label(&self) -> &'static str {
@@ -208,24 +214,15 @@ impl<'a> TermScheduler<'a> {
                 .map(|c| c.credit_hours)
                 .sum();
 
-            // Find the best term to place this group
-            let target_term = self.find_best_term(&plan, min_term, group_credits);
+            // Find the best term to place this group (will expand plan if needed)
+            let term_idx = self.find_best_term(&mut plan, min_term, group_credits);
 
-            if let Some(term_idx) = target_term {
-                // Schedule all courses in the group to this term
-                for key in &group {
-                    if let Some(course) = self.school.get_course(key) {
-                        plan.terms[term_idx].add_course(key.clone(), course.credit_hours);
-                        scheduled.insert(key.clone());
-                        earliest_term.insert(key.clone(), term_idx);
-                    }
-                }
-            } else {
-                // Couldn't schedule - add to unscheduled list
-                for key in &group {
-                    if !scheduled.contains(key) {
-                        plan.unscheduled.push(key.clone());
-                    }
+            // Schedule all courses in the group to this term
+            for key in &group {
+                if let Some(course) = self.school.get_course(key) {
+                    plan.terms[term_idx].add_course(key.clone(), course.credit_hours);
+                    scheduled.insert(key.clone());
+                    earliest_term.insert(key.clone(), term_idx);
                 }
             }
         }
@@ -303,17 +300,18 @@ impl<'a> TermScheduler<'a> {
     }
 
     /// Find the best term to place a group, starting from `min_term`
-    fn find_best_term(
-        &self,
-        plan: &TermPlan,
-        min_term: usize,
-        group_credits: f32,
-    ) -> Option<usize> {
+    /// Expands the plan if needed to fit all courses
+    fn find_best_term(&self, plan: &mut TermPlan, min_term: usize, group_credits: f32) -> usize {
+        // Ensure we have enough terms
+        while min_term >= plan.terms.len() {
+            plan.add_term();
+        }
+
         // First, try to find a term at or after min_term that fits within target
         for term_idx in min_term..plan.terms.len() {
             let projected = plan.terms[term_idx].total_credits + group_credits;
             if projected <= self.config.target_credits {
-                return Some(term_idx);
+                return term_idx;
             }
         }
 
@@ -321,16 +319,13 @@ impl<'a> TermScheduler<'a> {
         for term_idx in min_term..plan.terms.len() {
             let projected = plan.terms[term_idx].total_credits + group_credits;
             if projected <= self.config.max_credits {
-                return Some(term_idx);
+                return term_idx;
             }
         }
 
-        // If still no fit, place in earliest available term (may overflow)
-        if min_term < plan.terms.len() {
-            Some(min_term)
-        } else {
-            None
-        }
+        // If still no fit, add a new term and place there
+        plan.add_term();
+        plan.terms.len() - 1
     }
 
     /// Get topological order of courses

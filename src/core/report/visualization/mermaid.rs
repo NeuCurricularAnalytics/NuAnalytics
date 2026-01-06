@@ -53,8 +53,9 @@ impl MermaidGenerator {
 
     /// Generate a term-organized diagram showing courses grouped by term
     ///
-    /// Creates a flowchart with subgraphs for each term, showing course
-    /// placement and prerequisite/corequisite relationships.
+    /// Creates a flowchart with subgraphs for each term (including empty terms
+    /// for visual continuity), showing course placement and prerequisite/corequisite
+    /// relationships. Layout is left-to-right with terms as columns.
     #[must_use]
     pub fn generate_term_diagram(
         term_plan: &TermPlan,
@@ -65,32 +66,49 @@ impl MermaidGenerator {
         let mut output = String::from("```mermaid\nflowchart LR\n");
         let term_label = term_plan.term_label();
 
-        // Create subgraphs for each term
-        for term in &term_plan.terms {
-            if term.courses.is_empty() {
-                continue;
-            }
+        // Create subgraphs for ALL terms (not just non-empty ones)
+        let max_term = term_plan.terms.len();
+        for term_num in 1..=max_term {
+            let term = term_plan.terms.get(term_num - 1);
 
-            let subgraph_id = format!("term{}", term.number);
-            let subgraph_label = format!("{term_label} {}", term.number);
+            let subgraph_id = format!("term{term_num}");
+            let subgraph_label = format!("{term_label} {term_num}");
             let _ = writeln!(output, "    subgraph {subgraph_id}[\"{subgraph_label}\"]");
 
-            for course_key in &term.courses {
-                let label = Self::get_node_label(course_key, school, metrics);
-                let safe_id = Self::sanitize_id(course_key);
-                let _ = writeln!(output, "        {safe_id}[\"{label}\"]");
+            if let Some(t) = term {
+                if t.courses.is_empty() {
+                    // Add a placeholder for empty terms to maintain column structure
+                    let _ = writeln!(output, "        empty{term_num}[\" \"]");
+                    let _ = writeln!(
+                        output,
+                        "        style empty{term_num} fill:none,stroke:none"
+                    );
+                } else {
+                    for course_key in &t.courses {
+                        let label = Self::get_node_label(course_key, school, metrics);
+                        let safe_id = Self::sanitize_id(course_key);
+                        let _ = writeln!(output, "        {safe_id}[\"{label}\"]");
+                    }
+                }
             }
 
             output.push_str("    end\n\n");
         }
 
-        // Add prerequisite edges between terms
+        // Add invisible edges between term subgraphs to enforce left-to-right ordering
+        for term_num in 1..max_term {
+            let _ = writeln!(output, "    term{} ~~~ term{}", term_num, term_num + 1);
+        }
+        output.push('\n');
+
+        // Collect all scheduled courses
         let all_scheduled: std::collections::HashSet<_> = term_plan
             .terms
             .iter()
             .flat_map(|t| t.courses.iter())
             .collect();
 
+        // Add prerequisite edges between terms
         for (course, prereqs) in &dag.dependencies {
             if !all_scheduled.contains(course) {
                 continue;

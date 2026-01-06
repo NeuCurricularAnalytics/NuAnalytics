@@ -7,6 +7,7 @@
 | **Institution** | {{institution}} |
 | **Degree** | {{degree_name}} |
 | **System** | {{system_type}} |
+| **Years** | {{years}} |
 | **CIP Code** | {{cip_code}} |
 | **Total Credits** | {{total_credits}} |
 | **Total Courses** | {{course_count}} |

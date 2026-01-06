@@ -106,6 +106,19 @@ impl<'a> ReportContext<'a> {
     pub const fn course_count(&self) -> usize {
         self.plan.courses.len()
     }
+
+    /// Calculate the number of years from the term plan
+    #[allow(clippy::cast_precision_loss)]
+    #[must_use]
+    pub fn years(&self) -> f32 {
+        let terms_used = self.term_plan.terms_used();
+        let terms_per_year = if self.term_plan.is_quarter_system {
+            3.0 // quarters per year
+        } else {
+            2.0 // semesters per year
+        };
+        (terms_used as f32 / terms_per_year).ceil()
+    }
 }
 
 /// Trait for report generators

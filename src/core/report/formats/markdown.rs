@@ -34,6 +34,7 @@ impl MarkdownReporter {
         output = output.replace("{{institution}}", ctx.institution_name());
         output = output.replace("{{degree_name}}", &ctx.degree_name());
         output = output.replace("{{system_type}}", ctx.system_type());
+        output = output.replace("{{years}}", &format!("{:.0}", ctx.years()));
         output = output.replace("{{cip_code}}", ctx.cip_code());
         output = output.replace("{{total_credits}}", &format!("{:.1}", ctx.total_credits()));
         output = output.replace("{{course_count}}", &ctx.course_count().to_string());

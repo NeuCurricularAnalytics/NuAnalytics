@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Curriculum Report: Colostate_CS Degree</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --success-color: #27ae60;
+            --warning-color: #f39c12;
+            --danger-color: #e74c3c;
+            --light-bg: #f8f9fa;
+            --border-color: #dee2e6;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: var(--light-bg);
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 2rem;
+        }
+
+        h1 {
+            color: var(--primary-color);
+            border-bottom: 3px solid var(--secondary-color);
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        h2 {
+            color: var(--primary-color);
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            border-left: 4px solid var(--secondary-color);
+            padding-left: 0.75rem;
+        }
+
+        .overview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--light-bg);
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .stat-card .label {
+            font-size: 0.85rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-card .value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .stat-card .detail {
+            font-size: 0.9rem;
+            color: #888;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background-color: var(--light-bg);
+        }
+
+        .course-badge {
+            display: inline-block;
+            background: var(--secondary-color);
+            color: white;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .complexity-low td:first-child { border-left: 4px solid var(--success-color); }
+        .complexity-medium td:first-child { border-left: 4px solid var(--warning-color); }
+        .complexity-high td:first-child { border-left: 4px solid var(--danger-color); }
+
+        .unscheduled {
+            background-color: #fff3cd;
+        }
+
+        #graph-container {
+            width: 100%;
+            height: 600px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+
+        .critical-path {
+            background: linear-gradient(90deg, var(--light-bg), white);
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 1.1rem;
+            overflow-x: auto;
+        }
+
+        .legend {
+            display: flex;
+            gap: 1.5rem;
+            margin: 1rem 0;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+
+        footer {
+            margin-top: 2rem;
+            text-align: center;
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        @media print {
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; }
+            #graph-container { height: 400px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📚 Curriculum Report: Colostate_CS Degree</h1>
+
+        <h2>Overview</h2>
+        <div class="overview-grid">
+            <div class="stat-card">
+                <div class="label">Institution</div>
+                <div class="value" style="font-size: 1.2rem;">Colorado State University</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Degree</div>
+                <div class="value" style="font-size: 1.2rem;">BS Colostate_CS Degree</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">System</div>
+                <div class="value">semester</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Years</div>
+                <div class="value">4</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">CIP Code</div>
+                <div class="value">11.0701</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Total Credits</div>
+                <div class="value">120.0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Total Courses</div>
+                <div class="value">37</div>
+            </div>
+        </div>
+
+        <h2>Complexity Metrics</h2>
+        <div class="overview-grid">
+            <div class="stat-card">
+                <div class="label">Total Structural Complexity</div>
+                <div class="value">175</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Longest Delay</div>
+                <div class="value">6</div>
+                <div class="detail">CS150B</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Highest Centrality</div>
+                <div class="value">44</div>
+                <div class="detail">CS164</div>
+            </div>
+        </div>
+
+        <h3>Critical Path (Longest Delay)</h3>
+        <div class="critical-path">CS150B → CS164 → CS165 → CS253 → CS314 → CS415</div>
+
+        <h2>Curriculum Graph</h2>
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #4CAF50;"></div>
+                <span>Low Complexity (0-5)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #FF9800;"></div>
+                <span>Medium Complexity (6-15)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #F44336;"></div>
+                <span>High Complexity (16+)</span>
+            </div>
+            <div class="legend-item">
+                <span>→ Prerequisite</span>
+            </div>
+            <div class="legend-item">
+                <span>⤍ Corequisite</span>
+            </div>
+        </div>
+        <div id="graph-container"></div>
+
+        <h2>Term-by-Term Schedule</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Term</th>
+                    <th>Courses</th>
+                    <th>Credits</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>1</td><td><span class="course-badge">elec3++_34</span> Elective<br><span class="course-badge">HIST1xx</span> History Elective<br><span class="course-badge">elec3++_37</span> Elective<br><span class="course-badge">CS201</span> Ethical Computing Systems (GT-AH3)<br><span class="course-badge">MATH156</span> Mathematics for Computational Science I<br><span class="course-badge">elec1xx_33</span> Elective<br><span class="course-badge">elec1xx_32</span> Elective</td><td>21.0</td></tr>
+<tr><td>2</td><td><span class="course-badge">STAT301</span> Introduction to Applied Statistical Methods<br><span class="course-badge">DSCI369</span> Linear Algebra for Data Science<br><span class="course-badge">elec3++_36</span> Elective<br><span class="course-badge">CHEM108</span> CS Science lab<br><span class="course-badge">CO150</span> Composition</td><td>15.0</td></tr>
+<tr><td>3</td><td><span class="course-badge">CO300</span> Advanced Writing<br><span class="course-badge">Soc1xx</span> Social Science Elective<br><span class="course-badge">CS150B</span> Culture and Coding: Python (GT-AH3)<br><span class="course-badge">elec3++_35</span> Elective<br><span class="course-badge">CHEM107</span> CS Science w/lab</td><td>15.0</td></tr>
+<tr><td>4</td><td><span class="course-badge">CS220</span> Discrete Structures and their Applications<br><span class="course-badge">CS164</span> CS1--Computational Thinking with Java<br><span class="course-badge">elec1xx_31</span> Elective<br><span class="course-badge">PH121</span> CS Science</td><td>14.0</td></tr>
+<tr><td>5</td><td><span class="course-badge">CS345</span> 300++ Course<br><span class="course-badge">CS270</span> Computer Organization<br><span class="course-badge">CS165</span> CS2--Data Structures<br><span class="course-badge">elec1xx_30</span> Elective</td><td>14.0</td></tr>
+<tr><td>6</td><td><span class="course-badge">CIS413</span> Tech Focus<br><span class="course-badge">CS370</span> Operating Systems<br><span class="course-badge">CS253</span> Software Development with C++<br><span class="course-badge">JTC372</span> Tech Focus</td><td>13.0</td></tr>
+<tr><td>7</td><td><span class="course-badge">CS455</span> 400+<br><span class="course-badge">CS356</span> 300++ Course<br><span class="course-badge">CS462</span> 400++ Course<br><span class="course-badge">CS314</span> Software Engineering</td><td>14.0</td></tr>
+<tr><td>8</td><td><span class="course-badge">CS415</span> 400++ Course<br><span class="course-badge">CS414</span> 400++ Course<br><span class="course-badge">CS320</span> Algorithms--Theory and Practice<br><span class="course-badge">DEI1xx</span> DEI Elective</td><td>14.0</td></tr>
+
+            </tbody>
+        </table>
+
+        <h2>Course Metrics</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Course</th>
+                    <th>Name</th>
+                    <th>Credits</th>
+                    <th>Complexity</th>
+                    <th>Blocking</th>
+                    <th>Delay</th>
+                    <th>Centrality</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="complexity-high"><td>CS150B</td><td>Culture and Coding: Python (GT-AH3)</td><td>3.0</td><td>22</td><td>16</td><td>6</td><td>0</td></tr>
+<tr class="complexity-high"><td>CS164</td><td>CS1--Computational Thinking with Java</td><td>4.0</td><td>19</td><td>13</td><td>6</td><td>44</td></tr>
+<tr class="complexity-high"><td>CS165</td><td>CS2--Data Structures</td><td>4.0</td><td>17</td><td>11</td><td>6</td><td>39</td></tr>
+<tr class="complexity-medium"><td>CS253</td><td>Software Development with C++</td><td>4.0</td><td>11</td><td>5</td><td>6</td><td>22</td></tr>
+<tr class="complexity-medium"><td>MATH156</td><td>Mathematics for Computational Science I</td><td>4.0</td><td>9</td><td>6</td><td>3</td><td>0</td></tr>
+<tr class="complexity-medium"><td>CS314</td><td>Software Engineering</td><td>3.0</td><td>8</td><td>2</td><td>6</td><td>12</td></tr>
+<tr class="complexity-medium"><td>CS270</td><td>Computer Organization</td><td>4.0</td><td>7</td><td>2</td><td>5</td><td>5</td></tr>
+<tr class="complexity-medium"><td>CS370</td><td>Operating Systems</td><td>3.0</td><td>6</td><td>1</td><td>5</td><td>10</td></tr>
+<tr class="complexity-medium"><td>CS414</td><td>400++ Course</td><td>4.0</td><td>6</td><td>0</td><td>6</td><td>0</td></tr>
+<tr class="complexity-medium"><td>CS415</td><td>400++ Course</td><td>4.0</td><td>6</td><td>0</td><td>6</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS220</td><td>Discrete Structures and their Applications</td><td>4.0</td><td>5</td><td>2</td><td>3</td><td>12</td></tr>
+<tr class="complexity-low"><td>CS356</td><td>300++ Course</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS462</td><td>400++ Course</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS455</td><td>400+</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>DSCI369</td><td>Linear Algebra for Data Science</td><td>4.0</td><td>4</td><td>1</td><td>3</td><td>3</td></tr>
+<tr class="complexity-low"><td>CS320</td><td>Algorithms--Theory and Practice</td><td>3.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>JTC372</td><td>Tech Focus</td><td>3.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>CIS413</td><td>Tech Focus</td><td>3.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS345</td><td>300++ Course</td><td>3.0</td><td>3</td><td>0</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>CO150</td><td>Composition</td><td>3.0</td><td>3</td><td>1</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>CHEM107</td><td>CS Science w/lab</td><td>3.0</td><td>3</td><td>1</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>STAT301</td><td>Introduction to Applied Statistical Methods</td><td>4.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>CO300</td><td>Advanced Writing</td><td>3.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>CHEM108</td><td>CS Science lab</td><td>1.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS201</td><td>Ethical Computing Systems (GT-AH3)</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>PH121</td><td>CS Science</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>DEI1xx</td><td>DEI Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>HIST1xx</td><td>History Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>Soc1xx</td><td>Social Science Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>elec1xx_30</td><td>Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>elec1xx_31</td><td>Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>elec1xx_32</td><td>Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>elec1xx_33</td><td>Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>elec3++_34</td><td>Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>elec3++_35</td><td>Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>elec3++_36</td><td>Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>elec3++_37</td><td>Elective</td><td>2.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+
+            </tbody>
+        </table>
+
+        <footer>
+            <p>Generated by NuAnalytics</p>
+        </footer>
+    </div>
+
+    <script>
+        // Initialize vis.js graph
+        const nodes = new vis.DataSet([{ id: 'elec3++_34', label: 'elec3++_34\nElective\nC:1', x: 250, y: 0, color: { background: '#4CAF50' }, title: 'elec3++_34 - Term 1\nComplexity: 1', level: 1 },
+        { id: 'HIST1xx', label: 'HIST1xx\nHistory Elective\nC:1', x: 250, y: 100, color: { background: '#4CAF50' }, title: 'HIST1xx - Term 1\nComplexity: 1', level: 1 },
+        { id: 'elec3++_37', label: 'elec3++_37\nElective\nC:1', x: 250, y: 200, color: { background: '#4CAF50' }, title: 'elec3++_37 - Term 1\nComplexity: 1', level: 1 },
+        { id: 'CS201', label: 'CS201\nCS201\nC:1', x: 250, y: 300, color: { background: '#4CAF50' }, title: 'CS201 - Term 1\nComplexity: 1', level: 1 },
+        { id: 'MATH156', label: 'MATH156\nMATH156\nC:9', x: 250, y: 400, color: { background: '#FF9800' }, title: 'MATH156 - Term 1\nComplexity: 9', level: 1 },
+        { id: 'elec1xx_33', label: 'elec1xx_33\nElective\nC:1', x: 250, y: 500, color: { background: '#4CAF50' }, title: 'elec1xx_33 - Term 1\nComplexity: 1', level: 1 },
+        { id: 'elec1xx_32', label: 'elec1xx_32\nElective\nC:1', x: 250, y: 600, color: { background: '#4CAF50' }, title: 'elec1xx_32 - Term 1\nComplexity: 1', level: 1 },
+        { id: 'STAT301', label: 'STAT301\nSTAT301\nC:2', x: 500, y: 0, color: { background: '#4CAF50' }, title: 'STAT301 - Term 2\nComplexity: 2', level: 2 },
+        { id: 'DSCI369', label: 'DSCI369\nDSCI369\nC:4', x: 500, y: 100, color: { background: '#4CAF50' }, title: 'DSCI369 - Term 2\nComplexity: 4', level: 2 },
+        { id: 'elec3++_36', label: 'elec3++_36\nElective\nC:1', x: 500, y: 200, color: { background: '#4CAF50' }, title: 'elec3++_36 - Term 2\nComplexity: 1', level: 2 },
+        { id: 'CHEM108', label: 'CHEM108\nCS Science lab\nC:2', x: 500, y: 300, color: { background: '#4CAF50' }, title: 'CHEM108 - Term 2\nComplexity: 2', level: 2 },
+        { id: 'CO150', label: 'CO150\nComposition\nC:3', x: 500, y: 400, color: { background: '#4CAF50' }, title: 'CO150 - Term 2\nComplexity: 3', level: 2 },
+        { id: 'CO300', label: 'CO300\nAdvanced Writing\nC:2', x: 750, y: 0, color: { background: '#4CAF50' }, title: 'CO300 - Term 3\nComplexity: 2', level: 3 },
+        { id: 'Soc1xx', label: 'Soc1xx\nSoc1xx\nC:1', x: 750, y: 100, color: { background: '#4CAF50' }, title: 'Soc1xx - Term 3\nComplexity: 1', level: 3 },
+        { id: 'CS150B', label: 'CS150B\nCS150B\nC:22', x: 750, y: 200, color: { background: '#F44336' }, title: 'CS150B - Term 3\nComplexity: 22', level: 3 },
+        { id: 'elec3++_35', label: 'elec3++_35\nElective\nC:1', x: 750, y: 300, color: { background: '#4CAF50' }, title: 'elec3++_35 - Term 3\nComplexity: 1', level: 3 },
+        { id: 'CHEM107', label: 'CHEM107\nCS Science w/lab\nC:3', x: 750, y: 400, color: { background: '#4CAF50' }, title: 'CHEM107 - Term 3\nComplexity: 3', level: 3 },
+        { id: 'CS220', label: 'CS220\nCS220\nC:5', x: 1000, y: 0, color: { background: '#4CAF50' }, title: 'CS220 - Term 4\nComplexity: 5', level: 4 },
+        { id: 'CS164', label: 'CS164\nCS164\nC:19', x: 1000, y: 100, color: { background: '#F44336' }, title: 'CS164 - Term 4\nComplexity: 19', level: 4 },
+        { id: 'elec1xx_31', label: 'elec1xx_31\nElective\nC:1', x: 1000, y: 200, color: { background: '#4CAF50' }, title: 'elec1xx_31 - Term 4\nComplexity: 1', level: 4 },
+        { id: 'PH121', label: 'PH121\nCS Science\nC:1', x: 1000, y: 300, color: { background: '#4CAF50' }, title: 'PH121 - Term 4\nComplexity: 1', level: 4 },
+        { id: 'CS345', label: 'CS345\n300++ Course\nC:3', x: 1250, y: 0, color: { background: '#4CAF50' }, title: 'CS345 - Term 5\nComplexity: 3', level: 5 },
+        { id: 'CS270', label: 'CS270\nCS270\nC:7', x: 1250, y: 100, color: { background: '#FF9800' }, title: 'CS270 - Term 5\nComplexity: 7', level: 5 },
+        { id: 'CS165', label: 'CS165\nCS2--Data Structures\nC:17', x: 1250, y: 200, color: { background: '#F44336' }, title: 'CS165 - Term 5\nComplexity: 17', level: 5 },
+        { id: 'elec1xx_30', label: 'elec1xx_30\nElective\nC:1', x: 1250, y: 300, color: { background: '#4CAF50' }, title: 'elec1xx_30 - Term 5\nComplexity: 1', level: 5 },
+        { id: 'CIS413', label: 'CIS413\nTech Focus\nC:4', x: 1500, y: 0, color: { background: '#4CAF50' }, title: 'CIS413 - Term 6\nComplexity: 4', level: 6 },
+        { id: 'CS370', label: 'CS370\nOperating Systems\nC:6', x: 1500, y: 100, color: { background: '#FF9800' }, title: 'CS370 - Term 6\nComplexity: 6', level: 6 },
+        { id: 'CS253', label: 'CS253\nCS253\nC:11', x: 1500, y: 200, color: { background: '#FF9800' }, title: 'CS253 - Term 6\nComplexity: 11', level: 6 },
+        { id: 'JTC372', label: 'JTC372\nTech Focus\nC:4', x: 1500, y: 300, color: { background: '#4CAF50' }, title: 'JTC372 - Term 6\nComplexity: 4', level: 6 },
+        { id: 'CS455', label: 'CS455\n400+\nC:5', x: 1750, y: 0, color: { background: '#4CAF50' }, title: 'CS455 - Term 7\nComplexity: 5', level: 7 },
+        { id: 'CS356', label: 'CS356\n300++ Course\nC:5', x: 1750, y: 100, color: { background: '#4CAF50' }, title: 'CS356 - Term 7\nComplexity: 5', level: 7 },
+        { id: 'CS462', label: 'CS462\n400++ Course\nC:5', x: 1750, y: 200, color: { background: '#4CAF50' }, title: 'CS462 - Term 7\nComplexity: 5', level: 7 },
+        { id: 'CS314', label: 'CS314\nSoftware Engineering\nC:8', x: 1750, y: 300, color: { background: '#FF9800' }, title: 'CS314 - Term 7\nComplexity: 8', level: 7 },
+        { id: 'CS415', label: 'CS415\n400++ Course\nC:6', x: 2000, y: 0, color: { background: '#FF9800' }, title: 'CS415 - Term 8\nComplexity: 6', level: 8 },
+        { id: 'CS414', label: 'CS414\n400++ Course\nC:6', x: 2000, y: 100, color: { background: '#FF9800' }, title: 'CS414 - Term 8\nComplexity: 6', level: 8 },
+        { id: 'CS320', label: 'CS320\nCS320\nC:4', x: 2000, y: 200, color: { background: '#4CAF50' }, title: 'CS320 - Term 8\nComplexity: 4', level: 8 },
+        { id: 'DEI1xx', label: 'DEI1xx\nDEI Elective\nC:1', x: 2000, y: 300, color: { background: '#4CAF50' }, title: 'DEI1xx - Term 8\nComplexity: 1', level: 8 }]);
+        const edges = new vis.DataSet([{ from: 'CS165', to: 'CIS413', arrows: 'to' },
+        { from: 'CS165', to: 'CS370', arrows: 'to' },
+        { from: 'CS270', to: 'CS370', arrows: 'to' },
+        { from: 'CS165', to: 'CS253', arrows: 'to' },
+        { from: 'CS164', to: 'CS270', arrows: 'to' },
+        { from: 'CS220', to: 'CS345', arrows: 'to' },
+        { from: 'MATH156', to: 'CS345', arrows: 'to' },
+        { from: 'CS314', to: 'CS414', arrows: 'to' },
+        { from: 'CS165', to: 'JTC372', arrows: 'to' },
+        { from: 'CS253', to: 'CS462', arrows: 'to' },
+        { from: 'DSCI369', to: 'CS462', arrows: 'to' },
+        { from: 'CS370', to: 'CS455', arrows: 'to' },
+        { from: 'CS253', to: 'CS356', arrows: 'to' },
+        { from: 'CS253', to: 'CS314', arrows: 'to' },
+        { from: 'MATH156', to: 'STAT301', arrows: 'to' },
+        { from: 'MATH156', to: 'DSCI369', arrows: 'to' },
+        { from: 'CO150', to: 'CO300', arrows: 'to' },
+        { from: 'CS165', to: 'CS320', arrows: 'to' },
+        { from: 'CS220', to: 'CS320', arrows: 'to' },
+        { from: 'CS164', to: 'CS165', arrows: 'to' },
+        { from: 'CS150B', to: 'CS164', arrows: 'to' },
+        { from: 'CS150B', to: 'CS220', arrows: 'to' },
+        { from: 'MATH156', to: 'CS220', arrows: 'to' },
+        { from: 'CS314', to: 'CS415', arrows: 'to' },
+        { from: 'CHEM107', to: 'CHEM108', arrows: 'to', dashes: true, color: { color: '#2196F3' } }]);
+
+        const container = document.getElementById('graph-container');
+        const data = { nodes: nodes, edges: edges };
+        const options = {
+            layout: {
+                hierarchical: {
+                    enabled: true,
+                    direction: 'LR',
+                    sortMethod: 'hubsize',
+                    levelSeparation: 250,
+                    nodeSpacing: 80,
+                    treeSpacing: 100,
+                    blockShifting: true,
+                    edgeMinimization: true,
+                    parentCentralization: true
+                }
+            },
+            nodes: {
+                shape: 'box',
+                font: { size: 11, face: 'monospace' },
+                margin: 8,
+                widthConstraint: { minimum: 100, maximum: 140 },
+                borderWidth: 2
+            },
+            edges: {
+                arrows: { to: { enabled: true, scaleFactor: 0.6 } },
+                smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.4 },
+                color: { inherit: false, color: '#666' }
+            },
+            physics: false,
+            interaction: {
+                dragNodes: true,
+                zoomView: true,
+                dragView: true,
+                tooltipDelay: 200
+            }
+        };
+
+        const network = new vis.Network(container, data, options);
+
+        // Add term labels after network is stabilized
+        network.once('stabilized', function() {
+            // Get the canvas context for drawing term labels
+            const canvas = container.getElementsByTagName('canvas')[0];
+            if (canvas) {
+                network.fit({ animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+            }
+        });
+    </script>
+</body>
+</html>

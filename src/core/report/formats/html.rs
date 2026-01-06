@@ -35,6 +35,7 @@ impl HtmlReporter {
         output = output.replace("{{degree_name}}", &ctx.degree_name());
         output = output.replace("{{system_type}}", ctx.system_type());
         output = output.replace("{{cip_code}}", ctx.cip_code());
+        output = output.replace("{{years}}", &format!("{:.0}", ctx.years()));
         output = output.replace("{{total_credits}}", &format!("{:.1}", ctx.total_credits()));
         output = output.replace("{{course_count}}", &ctx.course_count().to_string());
 
@@ -158,53 +159,70 @@ impl HtmlReporter {
     }
 
     /// Generate vis.js node and edge data as JSON arrays
+    /// Nodes are positioned by term (x-axis) with courses stacked vertically within each term
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     fn generate_graph_data(ctx: &ReportContext) -> (String, String) {
         let mut nodes = Vec::new();
         let mut edges = Vec::new();
 
-        // Build term lookup for x-position
-        let mut course_term: HashMap<&str, usize> = HashMap::new();
+        // Track y-positions within each term (reset per term)
+        let mut term_y_count: HashMap<usize, usize> = HashMap::new();
+
+        // Horizontal spacing per term
+        let x_spacing = 250;
+        // Vertical spacing per course within a term
+        let y_spacing = 100;
+
+        // Create nodes grouped by term
         for term in &ctx.term_plan.terms {
+            let term_num = term.number;
+            let x = (term_num as i32) * x_spacing;
+
             for course_key in &term.courses {
-                course_term.insert(course_key.as_str(), term.number);
+                let course = ctx.school.get_course(course_key);
+                let metrics = ctx.metrics.get(course_key);
+
+                // Use short label for readability
+                let label = course.map_or(course_key.as_str(), |c| {
+                    if c.name.len() > 20 {
+                        course_key.as_str()
+                    } else {
+                        &c.name
+                    }
+                });
+
+                let complexity = metrics.map_or(0, |m| m.complexity);
+
+                // Calculate y position within this term
+                let y_idx = term_y_count.entry(term_num).or_insert(0);
+                let y = (*y_idx as i32) * y_spacing;
+                *term_y_count.get_mut(&term_num).unwrap() += 1;
+
+                // Color based on complexity
+                let color = match complexity {
+                    0..=5 => "#4CAF50",  // Green - low complexity
+                    6..=15 => "#FF9800", // Orange - medium
+                    _ => "#F44336",      // Red - high
+                };
+
+                // Add term number to title for hover info
+                let title = format!("{course_key} - Term {term_num}\\nComplexity: {complexity}");
+
+                nodes.push(format!(
+                    "{{ id: '{course_key}', label: '{course_key}\\n{label}\\nC:{complexity}', x: {x}, y: {y}, color: {{ background: '{color}' }}, title: '{title}', level: {term_num} }}"
+                ));
             }
         }
 
-        // Track y-positions within each term
-        let mut term_y_count: HashMap<usize, usize> = HashMap::new();
-
-        // Create nodes
-        for course_key in &ctx.plan.courses {
-            let course = ctx.school.get_course(course_key);
-            let metrics = ctx.metrics.get(course_key);
-
-            let label = course.map_or(course_key.as_str(), |c| {
-                if c.name.len() > 25 {
-                    course_key.as_str()
-                } else {
-                    &c.name
-                }
-            });
-
-            let complexity = metrics.map_or(0, |m| m.complexity);
-            let term = course_term.get(course_key.as_str()).copied().unwrap_or(0);
-
-            // Calculate position (x based on term, y based on position in term)
-            let y_pos = term_y_count.entry(term).or_insert(0);
-            let x = term * 200;
-            let y = *y_pos * 120;
-            *term_y_count.get_mut(&term).unwrap() += 1;
-
-            // Color based on complexity
-            let color = match complexity {
-                0..=5 => "#4CAF50",  // Green - low complexity
-                6..=15 => "#FF9800", // Orange - medium
-                _ => "#F44336",      // Red - high
-            };
-
-            nodes.push(format!(
-                "{{ id: '{course_key}', label: '{label}\\n(C:{complexity})', x: {x}, y: {y}, color: {{ background: '{color}' }} }}"
-            ));
+        // Handle unscheduled courses (if any)
+        if !ctx.term_plan.unscheduled.is_empty() {
+            let unscheduled_x = ((ctx.term_plan.terms.len() + 1) as i32) * x_spacing;
+            for (idx, course_key) in ctx.term_plan.unscheduled.iter().enumerate() {
+                let y = (idx as i32) * y_spacing;
+                nodes.push(format!(
+                    "{{ id: '{course_key}', label: '{course_key}\\n⚠️ Unscheduled', x: {unscheduled_x}, y: {y}, color: {{ background: '#9E9E9E' }}, level: 0 }}"
+                ));
+            }
         }
 
         // Create edges for prerequisites
@@ -232,7 +250,7 @@ impl HtmlReporter {
                     continue;
                 }
                 edges.push(format!(
-                    "{{ from: '{coreq}', to: '{course}', arrows: 'to', dashes: true }}"
+                    "{{ from: '{coreq}', to: '{course}', arrows: 'to', dashes: true, color: {{ color: '#2196F3' }} }}"
                 ));
             }
         }
