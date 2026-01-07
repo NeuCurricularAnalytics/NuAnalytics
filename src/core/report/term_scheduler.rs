@@ -9,7 +9,27 @@
 
 use crate::core::metrics::compute_delay;
 use crate::core::models::{School, DAG};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
+
+#[derive(Eq, PartialEq)]
+struct GroupPQItem {
+    pri: usize,
+    name_hint: String,
+    idx: usize,
+}
+impl Ord for GroupPQItem {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.pri.cmp(&other.pri) {
+            std::cmp::Ordering::Equal => other.name_hint.cmp(&self.name_hint),
+            ord => ord,
+        }
+    }
+}
+impl PartialOrd for GroupPQItem {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 /// Default target credits per semester
 pub const DEFAULT_SEMESTER_CREDITS: f32 = 15.0;
@@ -183,17 +203,23 @@ impl<'a> TermScheduler<'a> {
         let chain_priority = self.compute_chain_priority(course_keys, &course_set, &delay_factors);
 
         let mut course_term: HashMap<String, usize> = HashMap::new();
-        let mut coreq_groups = self.build_corequisite_groups(course_keys);
-
-        // Sort groups by chain priority (descending) - chain starters first
-        self.sort_groups_by_priority(&mut coreq_groups, &chain_priority);
+        let coreq_groups = self.build_corequisite_groups(course_keys);
 
         // Separate filler courses (no prerequisites, no dependents in plan)
         let (filler_groups, priority_groups) =
             self.separate_filler_groups(coreq_groups, &course_set);
 
-        // Schedule priority groups first (courses with prerequisites/chains)
-        self.schedule_priority_groups(&priority_groups, &mut plan, &mut course_term, &course_set);
+        // Compute a dependency-respecting order of priority groups (topological by prerequisites)
+        let ordered_priority_groups =
+            self.order_groups_by_dependencies(&priority_groups, &course_set, &chain_priority);
+
+        // Schedule priority groups first (courses with prerequisites/chains) in dependency order
+        self.schedule_priority_groups(
+            &ordered_priority_groups,
+            &mut plan,
+            &mut course_term,
+            &course_set,
+        );
 
         // Now fill in filler courses to balance terms
         self.schedule_filler_groups(&filler_groups, &mut plan, &mut course_term);
@@ -268,6 +294,147 @@ impl<'a> TermScheduler<'a> {
                 other => other,
             }
         });
+    }
+
+    /// Compute a dependency-respecting order of groups using topological sort.
+    /// Ties (multiple groups with no incoming edges) are broken by group priority
+    /// derived from `chain_priority` (higher first), then lexicographically.
+    #[allow(clippy::too_many_lines)]
+    fn order_groups_by_dependencies(
+        &self,
+        groups: &[Vec<String>],
+        course_set: &HashSet<&String>,
+        chain_priority: &HashMap<String, usize>,
+    ) -> Vec<Vec<String>> {
+        if groups.is_empty() {
+            return Vec::new();
+        }
+
+        // Map each course to its group index
+        let mut course_to_group: HashMap<&str, usize> = HashMap::new();
+        for (idx, g) in groups.iter().enumerate() {
+            for k in g {
+                course_to_group.insert(k.as_str(), idx);
+            }
+        }
+
+        // Compute group priorities as max of member priorities
+        let mut group_priority: Vec<usize> = Vec::with_capacity(groups.len());
+        for g in groups {
+            let pri = g
+                .iter()
+                .map(|k| chain_priority.get(k).copied().unwrap_or(0))
+                .max()
+                .unwrap_or(0);
+            group_priority.push(pri);
+        }
+
+        // Build group dependency graph: edge A -> B if any course in B depends (transitively) on a course in A
+        let mut adj: Vec<Vec<usize>> = vec![Vec::new(); groups.len()];
+        let mut indeg: Vec<usize> = vec![0; groups.len()];
+
+        // Cache for transitive prerequisites restricted to `course_set`
+        let mut prereq_cache: HashMap<String, HashSet<String>> = HashMap::new();
+
+        for (b_idx, group) in groups.iter().enumerate() {
+            let mut prereq_groups: HashSet<usize> = HashSet::new();
+            for key in group {
+                let deps = self.collect_transitive_prereqs_in_set(
+                    key.as_str(),
+                    course_set,
+                    &mut prereq_cache,
+                );
+                for dep in deps {
+                    if let Some(&a_idx) = course_to_group.get(dep.as_str()) {
+                        if a_idx != b_idx {
+                            prereq_groups.insert(a_idx);
+                        }
+                    }
+                }
+            }
+
+            for a_idx in prereq_groups {
+                adj[a_idx].push(b_idx);
+                indeg[b_idx] += 1;
+            }
+        }
+
+        // Kahn's algorithm with priority queue to break ties by group_priority (desc), then by lexicographic min key
+        let mut heap = BinaryHeap::new();
+        for i in 0..groups.len() {
+            if indeg[i] == 0 {
+                let name_hint = groups[i].iter().min().cloned().unwrap_or_else(String::new);
+                heap.push(GroupPQItem {
+                    pri: group_priority[i],
+                    name_hint,
+                    idx: i,
+                });
+            }
+        }
+
+        let mut order: Vec<usize> = Vec::with_capacity(groups.len());
+        while let Some(GroupPQItem { idx, .. }) = heap.pop() {
+            order.push(idx);
+            for &v in &adj[idx] {
+                indeg[v] -= 1;
+                if indeg[v] == 0 {
+                    let name_hint = groups[v].iter().min().cloned().unwrap_or_else(String::new);
+                    heap.push(GroupPQItem {
+                        pri: group_priority[v],
+                        name_hint,
+                        idx: v,
+                    });
+                }
+            }
+        }
+
+        // If cycle detected (shouldn't happen in DAG), fall back to priority sort
+        if order.len() != groups.len() {
+            let mut fallback = groups.to_vec();
+            self.sort_groups_by_priority(&mut fallback, chain_priority);
+            return fallback;
+        }
+
+        // Reorder groups by computed order
+        let mut result = Vec::with_capacity(groups.len());
+        for i in order {
+            result.push(groups[i].clone());
+        }
+        result
+    }
+
+    /// Collect transitive prerequisites of `course` restricted to `course_set`.
+    /// Uses DFS with caching to avoid recomputation.
+    fn collect_transitive_prereqs_in_set(
+        &self,
+        course: &str,
+        course_set: &HashSet<&String>,
+        cache: &mut HashMap<String, HashSet<String>>,
+    ) -> HashSet<String> {
+        if let Some(cached) = cache.get(course) {
+            return cached.clone();
+        }
+
+        let mut visited: HashSet<String> = HashSet::new();
+        let mut stack: Vec<&str> = Vec::new();
+        stack.push(course);
+
+        while let Some(cur) = stack.pop() {
+            if let Some(prs) = self.dag.dependencies.get(cur) {
+                for p in prs {
+                    if !visited.contains(p) {
+                        // Only traverse within the plan's course set
+                        if course_set.contains(p) {
+                            stack.push(p);
+                        }
+                        visited.insert(p.to_string());
+                    }
+                }
+            }
+        }
+
+        cache.insert(course.to_string(), visited.clone());
+        visited
     }
 
     /// Separate groups into filler (isolated) and priority (connected) groups
