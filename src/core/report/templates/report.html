@@ -11,6 +11,7 @@
             --success-color: #4CAF50;
             --warning-color: #FF9800;
             --danger-color: #F44336;
+            --critical-color: #9C27B0;
             --light-bg: #f8f9fa;
             --term-bg: #e8e8e8;
             --border-color: #dee2e6;
@@ -94,7 +95,7 @@
             margin-bottom: 1rem;
         }
 
-        /* Curriculum Graph */
+        /* Curriculum Graph - scales to fill width */
         .curriculum-graph-wrapper {
             overflow-x: auto;
             margin: 1rem 0;
@@ -104,7 +105,7 @@
         .curriculum-graph {
             display: flex;
             gap: 0;
-            min-width: fit-content;
+            width: 100%;
             position: relative;
         }
 
@@ -112,18 +113,19 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            min-width: 140px;
+            flex: 1;
+            min-width: 100px;
             background: var(--term-bg);
             border-radius: 4px;
-            margin: 0 2px;
-            padding: 8px 4px;
+            margin: 0 4px;
+            padding: 10px 6px;
         }
 
         .term-header {
             font-weight: 600;
             font-size: 0.75rem;
             color: var(--primary-color);
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             padding: 4px 8px;
             background: white;
             border-radius: 4px;
@@ -134,7 +136,7 @@
         .term-courses {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 16px;
             width: 100%;
         }
 
@@ -142,12 +144,12 @@
             position: relative;
             background: white;
             border-radius: 6px;
-            padding: 8px 6px 6px;
+            padding: 10px 8px 8px;
             text-align: center;
             border: 2px solid var(--node-color);
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            margin-top: 8px;
+            transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+            margin-top: 10px;
         }
 
         .course-node:hover {
@@ -155,18 +157,34 @@
             box-shadow: 0 4px 8px rgba(0,0,0,0.15);
         }
 
+        .course-node.faded {
+            opacity: 0.25;
+        }
+
+        .course-node.highlighted {
+            border-color: var(--secondary-color);
+            border-width: 3px;
+            box-shadow: 0 0 8px rgba(52, 152, 219, 0.5);
+        }
+
+        .course-node.critical-highlight {
+            border-color: var(--critical-color);
+            border-width: 3px;
+            box-shadow: 0 0 8px rgba(156, 39, 176, 0.5);
+        }
+
         .course-node .complexity-badge {
             position: absolute;
-            top: -10px;
+            top: -12px;
             left: 50%;
             transform: translateX(-50%);
-            width: 20px;
-            height: 20px;
+            width: 22px;
+            height: 22px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.6rem;
+            font-size: 0.65rem;
             font-weight: bold;
             color: white;
             border: 2px solid white;
@@ -175,13 +193,13 @@
 
         .course-node .course-id {
             font-weight: 600;
-            font-size: 0.7rem;
+            font-size: 0.75rem;
             color: var(--primary-color);
-            margin-top: 4px;
+            margin-top: 6px;
         }
 
         .course-node .course-name {
-            font-size: 0.6rem;
+            font-size: 0.65rem;
             color: #666;
             line-height: 1.2;
             max-height: 2.4em;
@@ -201,8 +219,13 @@
             overflow: visible;
         }
 
-        .prereq-line { stroke: #666; stroke-width: 1.5; fill: none; }
-        .coreq-line { stroke: var(--secondary-color); stroke-width: 1.5; stroke-dasharray: 4,3; fill: none; }
+        .prereq-line { stroke: #666; stroke-width: 1.5; fill: none; transition: stroke 0.2s, stroke-width 0.2s, opacity 0.2s; }
+        .coreq-line { stroke: var(--secondary-color); stroke-width: 1.5; stroke-dasharray: 4,3; fill: none; transition: stroke 0.2s, stroke-width 0.2s, opacity 0.2s; }
+
+        .prereq-line.faded, .coreq-line.faded { opacity: 0.15; }
+        .prereq-line.highlighted { stroke: var(--secondary-color); stroke-width: 2.5; }
+        .coreq-line.highlighted { stroke: var(--secondary-color); stroke-width: 2.5; }
+        .prereq-line.critical, .coreq-line.critical { stroke: var(--critical-color); stroke-width: 3; }
 
         /* Legend */
         .legend {
@@ -218,6 +241,7 @@
         .legend-line { width: 30px; height: 2px; }
         .legend-line.solid { background: #666; }
         .legend-line.dashed { background: repeating-linear-gradient(90deg, var(--secondary-color), var(--secondary-color) 4px, transparent 4px, transparent 7px); }
+        .legend-line.critical { background: var(--critical-color); height: 3px; }
 
         /* Tables */
         table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.85rem; }
@@ -277,6 +301,7 @@
             <div class="legend-item"><div class="legend-color complexity-high"></div><span>High (16+)</span></div>
             <div class="legend-item"><div class="legend-line solid"></div><span>Prerequisite</span></div>
             <div class="legend-item"><div class="legend-line dashed"></div><span>Corequisite</span></div>
+            <div class="legend-item"><div class="legend-line critical"></div><span>Critical Path</span></div>
         </div>
 
         <div class="curriculum-graph-wrapper">
@@ -303,11 +328,120 @@
 
     <script>
         const edges = {{graph_edges}};
+        const criticalPath = {{critical_path_ids}};
+        const criticalPathSet = new Set(criticalPath);
+
+        // Build adjacency maps for path tracing
+        const forwardEdges = new Map(); // course -> courses it leads to
+        const backwardEdges = new Map(); // course -> courses that lead to it
+
+        edges.forEach(edge => {
+            if (!forwardEdges.has(edge.from)) forwardEdges.set(edge.from, []);
+            forwardEdges.get(edge.from).push(edge.to);
+
+            if (!backwardEdges.has(edge.to)) backwardEdges.set(edge.to, []);
+            backwardEdges.get(edge.to).push(edge.from);
+        });
+
+        // Get all connected courses (forward and backward)
+        function getAllConnected(courseId) {
+            const connected = new Set([courseId]);
+            const edgesInPath = new Set();
+
+            // Traverse forward (dependents)
+            function traverseForward(id) {
+                const next = forwardEdges.get(id) || [];
+                next.forEach(nextId => {
+                    edgesInPath.add(id + '->' + nextId);
+                    if (!connected.has(nextId)) {
+                        connected.add(nextId);
+                        traverseForward(nextId);
+                    }
+                });
+            }
+
+            // Traverse backward (prerequisites)
+            function traverseBackward(id) {
+                const prev = backwardEdges.get(id) || [];
+                prev.forEach(prevId => {
+                    edgesInPath.add(prevId + '->' + id);
+                    if (!connected.has(prevId)) {
+                        connected.add(prevId);
+                        traverseBackward(prevId);
+                    }
+                });
+            }
+
+            traverseForward(courseId);
+            traverseBackward(courseId);
+
+            return { courses: connected, edges: edgesInPath };
+        }
+
+        // Check if course is on critical path
+        function isOnCriticalPath(courseId) {
+            return criticalPathSet.has(courseId);
+        }
 
         document.addEventListener('DOMContentLoaded', function() {
             setTimeout(drawConnections, 100);
             window.addEventListener('resize', drawConnections);
+
+            // Add hover handlers to course nodes
+            document.querySelectorAll('.course-node').forEach(node => {
+                node.addEventListener('mouseenter', handleCourseHover);
+                node.addEventListener('mouseleave', handleCourseLeave);
+            });
         });
+
+        function handleCourseHover(e) {
+            const courseId = e.currentTarget.dataset.courseId;
+            const { courses: connected, edges: pathEdges } = getAllConnected(courseId);
+            const onCritical = isOnCriticalPath(courseId);
+
+            // Fade all courses and highlight connected ones
+            document.querySelectorAll('.course-node').forEach(node => {
+                const id = node.dataset.courseId;
+                if (connected.has(id)) {
+                    node.classList.remove('faded');
+                    if (onCritical && criticalPathSet.has(id)) {
+                        node.classList.add('critical-highlight');
+                    } else {
+                        node.classList.add('highlighted');
+                    }
+                } else {
+                    node.classList.add('faded');
+                    node.classList.remove('highlighted', 'critical-highlight');
+                }
+            });
+
+            // Fade/highlight edges
+            document.querySelectorAll('#connections-svg path').forEach(path => {
+                const edgeKey = path.dataset.from + '->' + path.dataset.to;
+                if (pathEdges.has(edgeKey)) {
+                    path.classList.remove('faded');
+                    // Check if this edge is part of critical path
+                    if (onCritical && criticalPathSet.has(path.dataset.from) && criticalPathSet.has(path.dataset.to)) {
+                        path.classList.add('critical');
+                    } else {
+                        path.classList.add('highlighted');
+                    }
+                } else {
+                    path.classList.add('faded');
+                    path.classList.remove('highlighted', 'critical');
+                }
+            });
+        }
+
+        function handleCourseLeave(e) {
+            // Remove all highlighting
+            document.querySelectorAll('.course-node').forEach(node => {
+                node.classList.remove('faded', 'highlighted', 'critical-highlight');
+            });
+            document.querySelectorAll('#connections-svg path').forEach(path => {
+                path.classList.remove('faded', 'highlighted', 'critical');
+            });
+        }
 
         function drawConnections() {
             const svg = document.getElementById('connections-svg');
@@ -323,6 +457,7 @@
             // Arrow markers
             const defs = document.createElementNS(svgNS, 'defs');
 
+            // Gray arrow for prerequisites
             const marker = document.createElementNS(svgNS, 'marker');
             marker.setAttribute('id', 'arrow');
             marker.setAttribute('markerWidth', '6');
@@ -336,6 +471,7 @@
             marker.appendChild(poly);
             defs.appendChild(marker);
 
+            // Blue arrow for corequisites / highlighted
             const markerBlue = document.createElementNS(svgNS, 'marker');
             markerBlue.setAttribute('id', 'arrow-blue');
             markerBlue.setAttribute('markerWidth', '6');
@@ -349,6 +485,20 @@
             markerBlue.appendChild(polyBlue);
             defs.appendChild(markerBlue);
 
+            // Purple arrow for critical path
+            const markerPurple = document.createElementNS(svgNS, 'marker');
+            markerPurple.setAttribute('id', 'arrow-purple');
+            markerPurple.setAttribute('markerWidth', '6');
+            markerPurple.setAttribute('markerHeight', '5');
+            markerPurple.setAttribute('refX', '5');
+            markerPurple.setAttribute('refY', '2.5');
+            markerPurple.setAttribute('orient', 'auto');
+            const polyPurple = document.createElementNS(svgNS, 'polygon');
+            polyPurple.setAttribute('points', '0 0, 6 2.5, 0 5');
+            polyPurple.setAttribute('fill', '#9C27B0');
+            markerPurple.appendChild(polyPurple);
+            defs.appendChild(markerPurple);
+
             svg.appendChild(defs);
 
             const graphRect = graph.getBoundingClientRect();
@@ -361,14 +511,39 @@
                 const fromRect = fromEl.getBoundingClientRect();
                 const toRect = toEl.getBoundingClientRect();
 
-                const x1 = fromRect.right - graphRect.left;
-                const y1 = fromRect.top + fromRect.height/2 - graphRect.top;
-                const x2 = toRect.left - graphRect.left;
-                const y2 = toRect.top + toRect.height/2 - graphRect.top;
+                // Check if courses are in the same column (corequisites in same term)
+                const fromCenterX = fromRect.left + fromRect.width / 2;
+                const toCenterX = toRect.left + toRect.width / 2;
+                const sameColumn = Math.abs(fromCenterX - toCenterX) < 50;
+
+                let x1, y1, x2, y2, pathD;
+
+                if (sameColumn) {
+                    // Vertical connection: from bottom of source to top of target
+                    x1 = fromRect.left + fromRect.width / 2 - graphRect.left;
+                    y1 = fromRect.bottom - graphRect.top;
+                    x2 = toRect.left + toRect.width / 2 - graphRect.left;
+                    y2 = toRect.top - graphRect.top;
+
+                    // Curved vertical path
+                    const midY = (y1 + y2) / 2;
+                    pathD = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + midY + ', ' + x2 + ' ' + midY + ', ' + x2 + ' ' + y2;
+                } else {
+                    // Horizontal connection: from right side to left side
+                    x1 = fromRect.right - graphRect.left;
+                    y1 = fromRect.top + fromRect.height / 2 - graphRect.top;
+                    x2 = toRect.left - graphRect.left;
+                    y2 = toRect.top + toRect.height / 2 - graphRect.top;
+
+                    // Curved horizontal path
+                    const midX = (x1 + x2) / 2;
+                    pathD = 'M ' + x1 + ' ' + y1 + ' C ' + midX + ' ' + y1 + ', ' + midX + ' ' + y2 + ', ' + x2 + ' ' + y2;
+                }
 
                 const path = document.createElementNS(svgNS, 'path');
-                const midX = (x1 + x2) / 2;
-                path.setAttribute('d', 'M ' + x1 + ' ' + y1 + ' C ' + midX + ' ' + y1 + ', ' + midX + ' ' + y2 + ', ' + x2 + ' ' + y2);
+                path.setAttribute('d', pathD);
+                path.dataset.from = edge.from;
+                path.dataset.to = edge.to;
 
                 if (edge.dashes) {
                     path.setAttribute('class', 'coreq-line');

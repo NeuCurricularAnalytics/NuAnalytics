@@ -1,10 +1,13 @@
 //! Term scheduler for distributing courses across semesters/quarters
 //!
-//! This module implements a greedy topological scheduling algorithm that:
-//! 1. Respects prerequisite constraints (prerequisites must come before dependents)
+//! This module implements a scheduling algorithm that:
+//! 1. Prioritizes courses with long prerequisite chains (high delay factor)
 //! 2. Groups corequisites and strict corequisites into the same term
-//! 3. Attempts to balance credit hours across terms (~15 credits/term for semesters)
+//! 3. Respects prerequisite constraints (prerequisites must come before dependents)
+//! 4. Balances credit hours across terms (~15 credits/term for semesters)
+//! 5. Fills in low-complexity courses to balance underloaded terms
 
+use crate::core::metrics::compute_delay;
 use crate::core::models::{School, DAG};
 use std::collections::{HashMap, HashSet};
 
@@ -161,13 +164,12 @@ impl<'a> TermScheduler<'a> {
 
     /// Schedule courses into terms
     ///
-    /// Uses a greedy topological approach:
-    /// 1. Build in-degree map from DAG
-    /// 2. Process courses in topological order
-    /// 3. Assign to earliest term that satisfies:
-    ///    - All prerequisites completed in earlier terms
-    ///    - Corequisites placed in same term
-    ///    - Credit limit not exceeded (soft target, hard max)
+    /// Algorithm:
+    /// 1. Compute delay factors and blocking factors for prioritization
+    /// 2. Build corequisite groups (courses that must be in the same term)
+    /// 3. Process groups in topological order, but prioritize chain starters
+    /// 4. Place each group in the earliest valid term respecting prerequisites
+    /// 5. Rebalance by moving low-complexity filler courses to underloaded terms
     #[must_use]
     pub fn schedule(&self, course_keys: &[String]) -> TermPlan {
         let mut plan = TermPlan::new(
@@ -176,65 +178,326 @@ impl<'a> TermScheduler<'a> {
             self.config.target_credits,
         );
 
-        // Build prerequisite and corequisite maps for the courses in this plan
         let course_set: HashSet<_> = course_keys.iter().collect();
+        let delay_factors = compute_delay(self.dag).unwrap_or_default();
+        let chain_priority = self.compute_chain_priority(course_keys, &course_set, &delay_factors);
 
-        // Map course -> earliest term it can be placed (based on prereqs)
-        let mut earliest_term: HashMap<String, usize> = HashMap::new();
+        let mut course_term: HashMap<String, usize> = HashMap::new();
+        let mut coreq_groups = self.build_corequisite_groups(course_keys);
 
-        // Group corequisites that must be scheduled together
-        let coreq_groups = self.build_corequisite_groups(course_keys);
+        // Sort groups by chain priority (descending) - chain starters first
+        self.sort_groups_by_priority(&mut coreq_groups, &chain_priority);
 
-        // Track which courses have been scheduled
-        let mut scheduled: HashSet<String> = HashSet::new();
+        // Separate filler courses (no prerequisites, no dependents in plan)
+        let (filler_groups, priority_groups) =
+            self.separate_filler_groups(coreq_groups, &course_set);
 
-        // Get topological order from DAG
-        let topo_order = self.topological_sort(course_keys);
+        // Schedule priority groups first (courses with prerequisites/chains)
+        self.schedule_priority_groups(&priority_groups, &mut plan, &mut course_term, &course_set);
 
-        // Process courses in topological order
-        for course_key in &topo_order {
-            if scheduled.contains(course_key) {
-                continue;
-            }
+        // Now fill in filler courses to balance terms
+        self.schedule_filler_groups(&filler_groups, &mut plan, &mut course_term);
 
-            // Find the corequisite group for this course
-            let group = coreq_groups
+        // Final rebalancing pass
+        self.rebalance_terms(&mut plan, &delay_factors);
+
+        plan
+    }
+
+    /// Compute chain priority scores for course scheduling
+    fn compute_chain_priority(
+        &self,
+        course_keys: &[String],
+        course_set: &HashSet<&String>,
+        delay_factors: &HashMap<String, usize>,
+    ) -> HashMap<String, usize> {
+        course_keys
+            .iter()
+            .map(|k| {
+                let delay = delay_factors.get(k).copied().unwrap_or(0);
+                let has_prereqs_in_plan = self
+                    .dag
+                    .dependencies
+                    .get(k)
+                    .is_some_and(|deps| deps.iter().any(|d| course_set.contains(d)));
+                let has_dependents_in_plan = self
+                    .dag
+                    .dependents
+                    .get(k)
+                    .is_some_and(|deps| deps.iter().any(|d| course_set.contains(d)));
+
+                // Chain starters: no prereqs in plan + have dependents + high delay = very important
+                let priority = if !has_prereqs_in_plan && has_dependents_in_plan {
+                    delay * 10 + 100 // Chain starters get big bonus
+                } else if has_dependents_in_plan {
+                    delay * 5 // Mid-chain courses
+                } else {
+                    delay // End-of-chain or standalone
+                };
+
+                (k.clone(), priority)
+            })
+            .collect()
+    }
+
+    /// Sort corequisite groups by chain priority (descending)
+    #[allow(clippy::unused_self)]
+    fn sort_groups_by_priority(
+        &self,
+        groups: &mut [Vec<String>],
+        chain_priority: &HashMap<String, usize>,
+    ) {
+        groups.sort_by(|a, b| {
+            let max_priority_a = a
                 .iter()
-                .find(|g| g.contains(course_key))
-                .cloned()
-                .unwrap_or_else(|| vec![course_key.clone()]);
+                .map(|k| chain_priority.get(k).copied().unwrap_or(0))
+                .max()
+                .unwrap_or(0);
+            let max_priority_b = b
+                .iter()
+                .map(|k| chain_priority.get(k).copied().unwrap_or(0))
+                .max()
+                .unwrap_or(0);
 
-            // Calculate the earliest term for this group
-            let min_term = self.calculate_earliest_term(&group, &earliest_term, &course_set);
+            match max_priority_b.cmp(&max_priority_a) {
+                std::cmp::Ordering::Equal => {
+                    let min_key_a = a.iter().min().cloned().unwrap_or_default();
+                    let min_key_b = b.iter().min().cloned().unwrap_or_default();
+                    min_key_a.cmp(&min_key_b)
+                }
+                other => other,
+            }
+        });
+    }
 
-            // Calculate total credits for the group
+    /// Separate groups into filler (isolated) and priority (connected) groups
+    fn separate_filler_groups(
+        &self,
+        groups: Vec<Vec<String>>,
+        course_set: &HashSet<&String>,
+    ) -> (Vec<Vec<String>>, Vec<Vec<String>>) {
+        let mut filler_groups = Vec::new();
+        let mut priority_groups = Vec::new();
+
+        for group in groups {
+            let is_filler = group.iter().all(|k| {
+                let has_prereqs = self
+                    .dag
+                    .dependencies
+                    .get(k)
+                    .is_some_and(|p| p.iter().any(|d| course_set.contains(d)));
+                let has_dependents = self
+                    .dag
+                    .dependents
+                    .get(k)
+                    .is_some_and(|d| d.iter().any(|dep| course_set.contains(dep)));
+                !has_prereqs && !has_dependents
+            });
+
+            if is_filler {
+                filler_groups.push(group);
+            } else {
+                priority_groups.push(group);
+            }
+        }
+
+        // Sort filler groups by course key
+        filler_groups.sort_by(|a, b| {
+            let min_a = a.iter().min().cloned().unwrap_or_default();
+            let min_b = b.iter().min().cloned().unwrap_or_default();
+            min_a.cmp(&min_b)
+        });
+
+        (filler_groups, priority_groups)
+    }
+
+    /// Schedule priority groups (courses with dependencies)
+    fn schedule_priority_groups(
+        &self,
+        groups: &[Vec<String>],
+        plan: &mut TermPlan,
+        course_term: &mut HashMap<String, usize>,
+        course_set: &HashSet<&String>,
+    ) {
+        for group in groups {
+            let min_term = self.calculate_earliest_term(group, course_term, course_set);
             let group_credits: f32 = group
                 .iter()
                 .filter_map(|k| self.school.get_course(k))
                 .map(|c| c.credit_hours)
                 .sum();
 
-            // Find the best term to place this group (will expand plan if needed)
-            let term_idx = self.find_best_term(&mut plan, min_term, group_credits);
+            let term_idx = self.find_best_term(plan, min_term, group_credits);
 
-            // Schedule all courses in the group to this term
-            for key in &group {
+            for key in group {
                 if let Some(course) = self.school.get_course(key) {
                     plan.terms[term_idx].add_course(key.clone(), course.credit_hours);
-                    scheduled.insert(key.clone());
-                    earliest_term.insert(key.clone(), term_idx);
+                    course_term.insert(key.clone(), term_idx);
                 }
             }
         }
+    }
 
-        plan
+    /// Schedule filler groups to balance term loads
+    fn schedule_filler_groups(
+        &self,
+        groups: &[Vec<String>],
+        plan: &mut TermPlan,
+        course_term: &mut HashMap<String, usize>,
+    ) {
+        for group in groups {
+            let group_credits: f32 = group
+                .iter()
+                .filter_map(|k| self.school.get_course(k))
+                .map(|c| c.credit_hours)
+                .sum();
+
+            let term_idx = self.find_underloaded_term(plan, group_credits);
+
+            for key in group {
+                if let Some(course) = self.school.get_course(key) {
+                    plan.terms[term_idx].add_course(key.clone(), course.credit_hours);
+                    course_term.insert(key.clone(), term_idx);
+                }
+            }
+        }
+    }
+
+    /// Find the term with lowest credits that can accommodate the group
+    fn find_underloaded_term(&self, plan: &mut TermPlan, group_credits: f32) -> usize {
+        // Find the term with minimum credits that won't exceed max
+        let mut best_term = 0;
+        let mut min_credits = f32::MAX;
+
+        for (idx, term) in plan.terms.iter().enumerate() {
+            let projected = term.total_credits + group_credits;
+            if projected <= self.config.max_credits && term.total_credits < min_credits {
+                min_credits = term.total_credits;
+                best_term = idx;
+            }
+        }
+
+        // If no term fits, add a new one
+        if min_credits == f32::MAX {
+            plan.add_term();
+            plan.terms.len() - 1
+        } else {
+            best_term
+        }
+    }
+
+    /// Rebalance terms by moving low-complexity courses from overloaded to underloaded terms
+    fn rebalance_terms(&self, plan: &mut TermPlan, delay_factors: &HashMap<String, usize>) {
+        let target = self.config.target_credits;
+
+        // Multiple passes to iteratively balance
+        for _ in 0..3 {
+            // Find overloaded and underloaded terms
+            let mut overloaded: Vec<usize> = Vec::new();
+            let mut underloaded: Vec<usize> = Vec::new();
+
+            for (idx, term) in plan.terms.iter().enumerate() {
+                if term.total_credits > target + 3.0 {
+                    overloaded.push(idx);
+                } else if term.total_credits < target - 3.0 && !term.courses.is_empty() {
+                    underloaded.push(idx);
+                }
+            }
+
+            // Try to move courses from overloaded to underloaded
+            for &over_idx in &overloaded {
+                if underloaded.is_empty() {
+                    break;
+                }
+
+                // Find movable courses (low delay, no prerequisite issues)
+                let movable: Vec<(String, f32)> = plan.terms[over_idx]
+                    .courses
+                    .iter()
+                    .filter_map(|k| {
+                        let delay = delay_factors.get(k).copied().unwrap_or(0);
+                        let credits = self.school.get_course(k).map_or(0.0, |c| c.credit_hours);
+                        // Only move low-complexity courses with no dependents in later terms
+                        if delay <= 1 && !self.has_dependents_in_later_terms(k, over_idx, plan) {
+                            Some((k.clone(), credits))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                for (course_key, credits) in movable {
+                    // Find an underloaded term that can accept this course
+                    for &under_idx in &underloaded {
+                        if under_idx == over_idx {
+                            continue;
+                        }
+
+                        let projected = plan.terms[under_idx].total_credits + credits;
+                        let over_projected = plan.terms[over_idx].total_credits - credits;
+
+                        // Only move if it improves balance
+                        if projected <= target + 1.0 && over_projected >= target - 3.0 {
+                            // Move the course
+                            plan.terms[over_idx].courses.retain(|k| k != &course_key);
+                            plan.terms[over_idx].total_credits -= credits;
+                            plan.terms[under_idx].add_course(course_key.clone(), credits);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check if a course has dependents scheduled in later terms
+    fn has_dependents_in_later_terms(
+        &self,
+        course_key: &str,
+        term_idx: usize,
+        plan: &TermPlan,
+    ) -> bool {
+        if let Some(dependents) = self.dag.dependents.get(course_key) {
+            for dep in dependents {
+                for (idx, term) in plan.terms.iter().enumerate() {
+                    if idx > term_idx && term.courses.contains(dep) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Build groups of courses that must be in the same term (corequisites/strict corequisites)
+    /// This performs bidirectional search: if A has B as coreq, or B has A as coreq, they're grouped
     fn build_corequisite_groups(&self, course_keys: &[String]) -> Vec<Vec<String>> {
         let course_set: HashSet<_> = course_keys.iter().cloned().collect();
         let mut visited: HashSet<String> = HashSet::new();
         let mut groups: Vec<Vec<String>> = Vec::new();
+
+        // Build reverse corequisite map: for each course, find courses that list it as corequisite
+        let mut reverse_coreqs: HashMap<String, Vec<String>> = HashMap::new();
+        for key in course_keys {
+            if let Some(course) = self.school.get_course(key) {
+                for coreq in &course.corequisites {
+                    if course_set.contains(coreq) {
+                        reverse_coreqs
+                            .entry(coreq.clone())
+                            .or_default()
+                            .push(key.clone());
+                    }
+                }
+                for coreq in &course.strict_corequisites {
+                    if course_set.contains(coreq) {
+                        reverse_coreqs
+                            .entry(coreq.clone())
+                            .or_default()
+                            .push(key.clone());
+                    }
+                }
+            }
+        }
 
         for key in course_keys {
             if visited.contains(key) {
@@ -245,8 +508,9 @@ impl<'a> TermScheduler<'a> {
             let mut to_check = vec![key.clone()];
             visited.insert(key.clone());
 
-            // BFS to find all connected corequisites
+            // BFS to find all connected corequisites (bidirectional)
             while let Some(current) = to_check.pop() {
+                // Forward direction: courses this one lists as corequisites
                 if let Some(course) = self.school.get_course(&current) {
                     // Add strict corequisites (must be same term)
                     for coreq in &course.strict_corequisites {
@@ -266,9 +530,22 @@ impl<'a> TermScheduler<'a> {
                         }
                     }
                 }
+
+                // Reverse direction: courses that list this one as corequisite
+                if let Some(rev_coreqs) = reverse_coreqs.get(&current) {
+                    for rev_coreq in rev_coreqs {
+                        if !visited.contains(rev_coreq) {
+                            group.push(rev_coreq.clone());
+                            to_check.push(rev_coreq.clone());
+                            visited.insert(rev_coreq.clone());
+                        }
+                    }
+                }
             }
 
             if !group.is_empty() {
+                // Sort group by course key for consistent ordering
+                group.sort();
                 groups.push(group);
             }
         }
@@ -326,61 +603,6 @@ impl<'a> TermScheduler<'a> {
         // If still no fit, add a new term and place there
         plan.add_term();
         plan.terms.len() - 1
-    }
-
-    /// Get topological order of courses
-    fn topological_sort(&self, course_keys: &[String]) -> Vec<String> {
-        let course_set: HashSet<_> = course_keys.iter().cloned().collect();
-
-        // Build in-degree map (only counting edges within our course set)
-        let mut in_degree: HashMap<String, usize> = HashMap::new();
-        for key in course_keys {
-            in_degree.insert(key.clone(), 0);
-        }
-
-        for key in course_keys {
-            if let Some(prereqs) = self.dag.dependencies.get(key) {
-                for prereq in prereqs {
-                    if course_set.contains(prereq) {
-                        *in_degree.entry(key.clone()).or_insert(0) += 1;
-                    }
-                }
-            }
-        }
-
-        // Kahn's algorithm
-        let mut queue: Vec<_> = in_degree
-            .iter()
-            .filter(|(_, &deg)| deg == 0)
-            .map(|(k, _)| k.clone())
-            .collect();
-
-        let mut result = Vec::new();
-
-        while let Some(course) = queue.pop() {
-            result.push(course.clone());
-
-            // Decrease in-degree of dependents
-            if let Some(dependents) = self.dag.dependents.get(&course) {
-                for dep in dependents {
-                    if let Some(deg) = in_degree.get_mut(dep) {
-                        *deg = deg.saturating_sub(1);
-                        if *deg == 0 && !result.contains(dep) {
-                            queue.push(dep.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Add any courses not in topo order (should not happen in valid DAG)
-        for key in course_keys {
-            if !result.contains(key) {
-                result.push(key.clone());
-            }
-        }
-
-        result
     }
 }
 

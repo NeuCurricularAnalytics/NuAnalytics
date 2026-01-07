@@ -81,7 +81,22 @@ impl HtmlReporter {
         let edges = Self::generate_edge_data(ctx);
         output = output.replace("{{graph_edges}}", &edges);
 
+        // Generate critical path IDs as JSON array for JavaScript highlighting
+        let critical_path_ids = Self::generate_critical_path_ids(ctx);
+        output = output.replace("{{critical_path_ids}}", &critical_path_ids);
+
         output
+    }
+
+    /// Generate critical path course IDs as a JSON array
+    fn generate_critical_path_ids(ctx: &ReportContext) -> String {
+        let ids: Vec<String> = ctx
+            .summary
+            .longest_delay_path
+            .iter()
+            .map(|s| format!("\"{s}\""))
+            .collect();
+        format!("[{}]", ids.join(", "))
     }
 
     /// Generate HTML for the grid-based term visualization
