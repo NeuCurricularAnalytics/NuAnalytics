@@ -13,7 +13,7 @@ use crate::core::models::{Degree, Plan, School, DAG};
 use std::error::Error;
 use std::path::Path;
 
-pub use formats::{HtmlReporter, MarkdownReporter, ReportFormat};
+pub use formats::{HtmlReporter, MarkdownReporter, PdfReporter, ReportFormat};
 pub use term_scheduler::{SchedulerConfig, TermPlan, TermScheduler};
 pub use visualization::MermaidGenerator;
 

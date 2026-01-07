@@ -15,8 +15,8 @@ use nu_analytics::core::{
     models::{Degree, Plan, School, DAG},
     planner::parse_curriculum_csv,
     report::{
-        formats::ReportFormat, HtmlReporter, MarkdownReporter, ReportContext, ReportGenerator,
-        SchedulerConfig, TermPlan, TermScheduler,
+        formats::ReportFormat, HtmlReporter, MarkdownReporter, PdfReporter, ReportContext,
+        ReportGenerator, SchedulerConfig, TermPlan, TermScheduler,
     },
 };
 use std::path::{Path, PathBuf};
@@ -128,17 +128,10 @@ fn write_report(data: &ReportData, format: ReportFormat, output_path: &Path) -> 
                 .map_err(|e| format!("✗ Failed to generate HTML report: {e}"))?;
         }
         ReportFormat::Pdf => {
-            // For now, generate HTML and suggest conversion
-            let html_path = output_path.with_extension("html");
-            let reporter = HtmlReporter::new();
+            let reporter = PdfReporter::new();
             reporter
-                .generate(&ctx, &html_path)
-                .map_err(|e| format!("✗ Failed to generate HTML for PDF: {e}"))?;
-            println!(
-                "ℹ PDF generation not yet implemented. HTML generated at: {}",
-                html_path.display()
-            );
-            println!("  Use a browser or wkhtmltopdf to convert to PDF.");
+                .generate(&ctx, output_path)
+                .map_err(|e| format!("✗ Failed to generate PDF report: {e}"))?;
         }
     }
 

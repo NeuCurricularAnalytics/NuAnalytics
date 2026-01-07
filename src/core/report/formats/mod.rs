@@ -4,9 +4,11 @@
 
 pub mod html;
 pub mod markdown;
+pub mod pdf;
 
 pub use html::HtmlReporter;
 pub use markdown::MarkdownReporter;
+pub use pdf::PdfReporter;
 
 use std::fmt;
 use std::str::FromStr;
