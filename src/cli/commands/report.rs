@@ -1,10 +1,15 @@
-//! Report command handler
+//! Report generation utilities for CLI commands.
 //!
-//! Generates curriculum reports in various formats (Markdown, HTML, PDF)
-//! with metrics visualization and term scheduling.
+//! This module provides shared report generation functionality used by
+//! multiple CLI commands. It handles loading curriculum data, computing
+//! metrics, scheduling terms, and rendering reports in various formats
+//! (Markdown, HTML, PDF).
+//!
+//! The main entry point is [`generate_report_file`], which orchestrates
+//! the full report generation pipeline from an input CSV file.
 
+use crate::args::ReportFormatArg;
 use logger::{error, info};
-use nu_analytics::config::Config;
 use nu_analytics::core::{
     metrics, metrics_export,
     models::{Degree, Plan, School, DAG},
@@ -15,34 +20,9 @@ use nu_analytics::core::{
     },
 };
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 /// Default target credits per term
 const DEFAULT_TERM_CREDITS: f32 = 15.0;
-
-/// Run the report command.
-///
-/// # Arguments
-/// * `input_file` - Path to input CSV file
-/// * `output_file` - Optional output path
-/// * `format_str` - Report format (markdown, html, pdf)
-/// * `term_credits` - Optional target credits per term
-/// * `config` - Configuration containing default output directory
-pub fn run(
-    input_file: &Path,
-    output_file: Option<&Path>,
-    format_str: &str,
-    term_credits: Option<f32>,
-    config: &Config,
-) {
-    if let Err(err) = generate_report(input_file, output_file, format_str, term_credits, config) {
-        error!(
-            "Report generation failed for {}: {err}",
-            input_file.display()
-        );
-        eprintln!("{err}");
-    }
-}
 
 /// Prepared report data ready for rendering
 struct ReportData {
@@ -165,7 +145,7 @@ fn write_report(data: &ReportData, format: ReportFormat, output_path: &Path) -> 
     Ok(())
 }
 
-/// Print a summary of the report
+/// Print a summary of the report to stdout
 fn print_summary(data: &ReportData) {
     println!("\n=== Summary ===");
     println!("Plan: {}", data.plan.name);
@@ -193,29 +173,58 @@ fn print_summary(data: &ReportData) {
     }
 }
 
-fn generate_report(
+/// Convert CLI format arg to internal `ReportFormat`
+const fn to_report_format(fmt: ReportFormatArg) -> ReportFormat {
+    match fmt {
+        ReportFormatArg::Html => ReportFormat::Html,
+        ReportFormatArg::Md => ReportFormat::Markdown,
+        ReportFormatArg::Pdf => ReportFormat::Pdf,
+    }
+}
+
+/// Generate a report file from an input curriculum CSV
+///
+/// # Arguments
+/// * `input_file` - Path to input CSV file
+/// * `output_file` - Optional explicit output path (overrides `reports_dir`)
+/// * `format` - Report format (Html, Md, Pdf)
+/// * `reports_dir` - Directory for output when `output_file` is None
+/// * `term_credits` - Optional target credits per term
+///
+/// # Returns
+/// Path to the generated report file
+pub fn generate_report_file(
     input_file: &Path,
     output_file: Option<&Path>,
-    format_str: &str,
+    format: ReportFormatArg,
+    reports_dir: &str,
     term_credits: Option<f32>,
-    config: &Config,
-) -> Result<(), String> {
-    // Parse the format
-    let format = ReportFormat::from_str(format_str)
-        .map_err(|e| format!("✗ {e}. Use: markdown, html, or pdf"))?;
+) -> Result<PathBuf, String> {
+    // Convert to internal format type
+    let report_format = to_report_format(format);
 
     // Prepare report data
     let data = prepare_report_data(input_file, term_credits)?;
 
     // Determine output path
-    let final_output_path: PathBuf = if let Some(output) = output_file {
-        output.to_path_buf()
+    let output_path: PathBuf = if let Some(explicit_path) = output_file {
+        // Ensure parent directory exists
+        if let Some(parent) = explicit_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                format!(
+                    "✗ Failed to create output directory {}: {e}",
+                    parent.display()
+                )
+            })?;
+        }
+        explicit_path.to_path_buf()
     } else {
-        let reports_dir = PathBuf::from(&config.paths.reports_dir);
-        std::fs::create_dir_all(&reports_dir).map_err(|e| {
+        // Use reports_dir with generated filename
+        let reports_path = PathBuf::from(reports_dir);
+        std::fs::create_dir_all(&reports_path).map_err(|e| {
             format!(
                 "✗ Failed to create reports directory {}: {e}",
-                reports_dir.display()
+                reports_path.display()
             )
         })?;
 
@@ -225,49 +234,14 @@ fn generate_report(
             .unwrap_or("curriculum")
             .to_string();
         let output_filename = format!("{filename}_report.{}", format.extension());
-        reports_dir.join(output_filename)
+        reports_path.join(output_filename)
     };
 
     // Write the report
-    write_report(&data, format, &final_output_path)?;
+    write_report(&data, report_format, &output_path)?;
 
-    if format != ReportFormat::Pdf {
-        println!("✓ Report generated: {}", final_output_path.display());
-        info!("Report exported to: {}", final_output_path.display());
-    }
-
+    info!("Report exported to: {}", output_path.display());
     print_summary(&data);
-
-    Ok(())
-}
-
-/// Generate a report as part of the planner command
-///
-/// This is called when `--report` is passed to the planner command.
-pub fn generate_from_planner(
-    input_file: &Path,
-    output_dir: &Path,
-    format_str: &str,
-    term_credits: Option<f32>,
-) -> Result<PathBuf, String> {
-    // Parse the format
-    let format = ReportFormat::from_str(format_str)
-        .map_err(|e| format!("✗ {e}. Use: markdown, html, or pdf"))?;
-
-    // Prepare report data
-    let data = prepare_report_data(input_file, term_credits)?;
-
-    // Build output path
-    let filename = input_file
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("curriculum")
-        .to_string();
-    let output_filename = format!("{filename}_report.{}", format.extension());
-    let output_path = output_dir.join(output_filename);
-
-    // Write the report
-    write_report(&data, format, &output_path)?;
 
     Ok(output_path)
 }

@@ -45,6 +45,48 @@ impl std::fmt::Display for LogLevelArg {
     }
 }
 
+/// Report format argument for CLI
+///
+/// Specifies the output format for curriculum reports.
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
+pub enum ReportFormatArg {
+    /// HTML format with interactive visualizations
+    Html,
+    /// Markdown format for documentation
+    Md,
+    /// PDF format (not yet implemented)
+    Pdf,
+}
+
+impl ReportFormatArg {
+    /// Get the file extension for this format
+    #[must_use]
+    pub const fn extension(self) -> &'static str {
+        match self {
+            Self::Html => "html",
+            Self::Md => "md",
+            Self::Pdf => "pdf",
+        }
+    }
+
+    /// Try to infer format from a file extension
+    #[must_use]
+    pub fn from_extension(ext: &str) -> Option<Self> {
+        match ext.to_lowercase().as_str() {
+            "html" | "htm" => Some(Self::Html),
+            "md" | "markdown" => Some(Self::Md),
+            "pdf" => Some(Self::Pdf),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for ReportFormatArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.extension())
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum ConfigSubcommand {
     /// Display configuration values.
@@ -86,49 +128,64 @@ pub enum Command {
     },
     /// Plan and analyze curricula.
     ///
-    /// Load one or more curriculum CSV files and analyze the plan.
+    /// Load one or more curriculum CSV files, compute metrics, and generate reports.
+    /// By default, generates both CSV metrics files and HTML reports.
+    ///
+    /// # Examples
+    /// ```sh
+    /// # Generate both CSV and HTML for multiple files
+    /// nuanalytics planner course1.csv course2.csv
+    ///
+    /// # Generate only HTML report with explicit output
+    /// nuanalytics planner course.csv -o report.html
+    ///
+    /// # Generate only CSV metrics
+    /// nuanalytics planner course.csv --no-report
+    ///
+    /// # Generate Markdown report to custom directory
+    /// nuanalytics planner course.csv --report-format md --report-dir ./docs
+    /// ```
     Planner {
         /// Paths to curriculum CSV files (supports multiple)
         #[arg(value_name = "FILES", num_args = 1..)]
         input_files: Vec<std::path::PathBuf>,
 
-        /// Output file paths (optional; defaults to config `out_dir` when omitted)
+        /// Explicit output file paths (1:1 mapping with input files, space-separated)
         ///
-        /// When provided, must match the number of input files 1:1.
+        /// When provided, the extension determines output type:
+        /// - `.csv` → generates only CSV metrics (implies --no-report)
+        /// - `.html`, `.md`, `.pdf` → generates only report (implies --no-csv)
+        ///
+        /// Must match the number of input files when provided.
         #[arg(short, long, value_name = "FILES", num_args = 1..)]
         output: Vec<std::path::PathBuf>,
 
-        /// Generate a report in the specified format (markdown, html, pdf)
-        #[arg(long, value_name = "FORMAT")]
-        report: Option<String>,
+        /// Report format when generating reports (html, md, pdf)
+        ///
+        /// Used when -o is not provided or when -o extension conflicts (with warning).
+        /// Defaults to html if not specified.
+        #[arg(long, value_enum, value_name = "FORMAT")]
+        report_format: Option<ReportFormatArg>,
+
+        /// Override reports output directory (from config)
+        #[arg(long, value_name = "DIR")]
+        report_dir: Option<std::path::PathBuf>,
+
+        /// Override metrics output directory (from config)
+        #[arg(long, value_name = "DIR")]
+        metrics_dir: Option<std::path::PathBuf>,
 
         /// Target credits per term for scheduling (default: 15.0)
         #[arg(long, value_name = "CREDITS")]
         term_credits: Option<f32>,
 
-        /// Skip CSV metrics export (only generate report when --report is used)
+        /// Skip CSV metrics generation
         #[arg(long)]
         no_csv: bool,
-    },
-    /// Generate a curriculum report from a CSV file.
-    ///
-    /// Creates a formatted report with metrics, term scheduling, and visualizations.
-    Report {
-        /// Path to curriculum CSV file
-        #[arg(value_name = "FILE")]
-        input_file: std::path::PathBuf,
 
-        /// Output file path (optional; defaults to input name with format extension)
-        #[arg(short, long, value_name = "FILE")]
-        output: Option<std::path::PathBuf>,
-
-        /// Report format: markdown (md), html, or pdf
-        #[arg(short, long, value_name = "FORMAT", default_value = "html")]
-        format: String,
-
-        /// Target credits per term for scheduling (default: 15.0)
-        #[arg(long, value_name = "CREDITS")]
-        term_credits: Option<f32>,
+        /// Skip report generation
+        #[arg(long)]
+        no_report: bool,
     },
 }
 
