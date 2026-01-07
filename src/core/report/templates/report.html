@@ -334,6 +334,7 @@
         // Build adjacency maps for path tracing
         const forwardEdges = new Map(); // course -> courses it leads to
         const backwardEdges = new Map(); // course -> courses that lead to it
+        const corequisites = new Map(); // course -> set of its corequisites
 
         edges.forEach(edge => {
             if (!forwardEdges.has(edge.from)) forwardEdges.set(edge.from, []);
@@ -341,39 +342,67 @@
 
             if (!backwardEdges.has(edge.to)) backwardEdges.set(edge.to, []);
             backwardEdges.get(edge.to).push(edge.from);
+
+            // Track corequisite relationships (bidirectional)
+            if (edge.dashes) {
+                if (!corequisites.has(edge.from)) corequisites.set(edge.from, new Set());
+                if (!corequisites.has(edge.to)) corequisites.set(edge.to, new Set());
+                corequisites.get(edge.from).add(edge.to);
+                corequisites.get(edge.to).add(edge.from);
+            }
         });
 
-        // Get all connected courses (full bidirectional traversal)
-        function getAllConnected(courseId) {
-            const connected = new Set([courseId]);
-            const edgesInPath = new Set();
+        // Get full chains through a course (both prerequisites and dependents)
+        // - Backward: all courses that are prerequisites (transitive)
+        // - Forward: all courses that depend on it (transitive)
+        // - Plus: corequisites of all courses in the chain
+        function getChainsThrough(courseId) {
+            const inChain = new Set([courseId]);
+            const edgesInChain = new Set();
 
-            // Full traversal - for each node, explore both directions
-            function traverse(id) {
-                // Forward edges (courses that depend on this one)
-                const next = forwardEdges.get(id) || [];
-                next.forEach(nextId => {
-                    edgesInPath.add(id + '->' + nextId);
-                    if (!connected.has(nextId)) {
-                        connected.add(nextId);
-                        traverse(nextId);
-                    }
-                });
-
-                // Backward edges (prerequisites and corequisites)
+            // Traverse backward for full prerequisite chain (follows all edges, including coreqs)
+            function traceBackward(id) {
                 const prev = backwardEdges.get(id) || [];
                 prev.forEach(prevId => {
-                    edgesInPath.add(prevId + '->' + id);
-                    if (!connected.has(prevId)) {
-                        connected.add(prevId);
-                        traverse(prevId);
+                    edgesInChain.add(prevId + '->' + id);
+                    if (!inChain.has(prevId)) {
+                        inChain.add(prevId);
+                        traceBackward(prevId);
                     }
                 });
             }
 
-            traverse(courseId);
+            // Traverse forward for full dependent chain (follows all edges, including coreqs)
+            function traceForward(id) {
+                const next = forwardEdges.get(id) || [];
+                next.forEach(nextId => {
+                    edgesInChain.add(id + '->' + nextId);
+                    if (!inChain.has(nextId)) {
+                        inChain.add(nextId);
+                        traceForward(nextId);
+                    }
+                });
+            }
 
-            return { courses: connected, edges: edgesInPath };
+            traceBackward(courseId);
+            traceForward(courseId);
+
+            // Now add all corequisites of courses in the chain and their edges
+            // (but don't traverse from corequisites - they're already included via the chains)
+            const chainCourses = Array.from(inChain);
+            chainCourses.forEach(course => {
+                const coreqs = corequisites.get(course);
+                if (coreqs) {
+                    coreqs.forEach(coreq => {
+                        inChain.add(coreq);
+                        // Add corequisite edges in both directions
+                        edgesInChain.add(course + '->' + coreq);
+                        edgesInChain.add(coreq + '->' + course);
+                    });
+                }
+            });
+
+            return { courses: inChain, edges: edgesInChain };
         }
 
         // Check if course is on critical path
@@ -394,13 +423,13 @@
 
         function handleCourseHover(e) {
             const courseId = e.currentTarget.dataset.courseId;
-            const { courses: connected, edges: pathEdges } = getAllConnected(courseId);
+            const { courses: inChain, edges: chainEdges } = getChainsThrough(courseId);
             const onCritical = isOnCriticalPath(courseId);
 
-            // Fade all courses and highlight connected ones
+            // Fade all courses and highlight those in the chains through this course
             document.querySelectorAll('.course-node').forEach(node => {
                 const id = node.dataset.courseId;
-                if (connected.has(id)) {
+                if (inChain.has(id)) {
                     node.classList.remove('faded');
                     if (onCritical && criticalPathSet.has(id)) {
                         node.classList.add('critical-highlight');
@@ -413,10 +442,10 @@
                 }
             });
 
-            // Fade/highlight edges
+            // Fade/highlight edges in the chains
             document.querySelectorAll('#connections-svg path').forEach(path => {
                 const edgeKey = path.dataset.from + '->' + path.dataset.to;
-                if (pathEdges.has(edgeKey)) {
+                if (chainEdges.has(edgeKey)) {
                     path.classList.remove('faded');
                     // Check if this edge is part of critical path
                     if (onCritical && criticalPathSet.has(path.dataset.from) && criticalPathSet.has(path.dataset.to)) {
