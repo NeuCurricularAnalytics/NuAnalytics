@@ -47,9 +47,12 @@ pub struct DatabaseConfig {
 /// Paths configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PathsConfig {
-    /// Directory for output files
+    /// Directory for metrics CSV output files
     #[serde(default)]
-    pub out_dir: String,
+    pub metrics_dir: String,
+    /// Directory for report output files
+    #[serde(default)]
+    pub reports_dir: String,
 }
 
 /// Main configuration structure
@@ -78,8 +81,10 @@ pub struct ConfigOverrides {
     pub db_token: Option<String>,
     /// Override database endpoint
     pub db_endpoint: Option<String>,
-    /// Override output directory
-    pub out_dir: Option<String>,
+    /// Override metrics output directory
+    pub metrics_dir: Option<String>,
+    /// Override reports output directory
+    pub reports_dir: Option<String>,
 }
 
 impl Config {
@@ -143,8 +148,16 @@ impl Config {
         }
 
         // Merge paths fields
-        if self.paths.out_dir.is_empty() && !defaults.paths.out_dir.is_empty() {
-            self.paths.out_dir.clone_from(&defaults.paths.out_dir);
+        if self.paths.metrics_dir.is_empty() && !defaults.paths.metrics_dir.is_empty() {
+            self.paths
+                .metrics_dir
+                .clone_from(&defaults.paths.metrics_dir);
+            changed = true;
+        }
+        if self.paths.reports_dir.is_empty() && !defaults.paths.reports_dir.is_empty() {
+            self.paths
+                .reports_dir
+                .clone_from(&defaults.paths.reports_dir);
             changed = true;
         }
 
@@ -190,8 +203,11 @@ impl Config {
             self.database.endpoint.clone_from(endpoint);
         }
 
-        if let Some(out_dir) = &overrides.out_dir {
-            self.paths.out_dir.clone_from(out_dir);
+        if let Some(metrics_dir) = &overrides.metrics_dir {
+            self.paths.metrics_dir.clone_from(metrics_dir);
+        }
+        if let Some(reports_dir) = &overrides.reports_dir {
+            self.paths.reports_dir.clone_from(reports_dir);
         }
     }
 
@@ -269,7 +285,8 @@ impl Config {
         config.logging.file = Self::expand_variables(&config.logging.file);
         config.database.token = Self::expand_variables(&config.database.token);
         config.database.endpoint = Self::expand_variables(&config.database.endpoint);
-        config.paths.out_dir = Self::expand_variables(&config.paths.out_dir);
+        config.paths.metrics_dir = Self::expand_variables(&config.paths.metrics_dir);
+        config.paths.reports_dir = Self::expand_variables(&config.paths.reports_dir);
 
         Ok(config)
     }
@@ -367,7 +384,8 @@ impl Config {
     /// endpoint = "https://api.example.com"
     ///
     /// [Paths]
-    /// out_dir = "$NU_ANALYTICS/output"
+    /// metrics_dir = "$NU_ANALYTICS/metrics"
+    /// reports_dir = "$NU_ANALYTICS/reports"
     /// ```
     ///
     /// # Errors
@@ -403,7 +421,8 @@ impl Config {
     /// - `verbose`: Verbose logging boolean
     /// - `token`: Database authentication token
     /// - `endpoint`: Database API endpoint
-    /// - `out_dir`: Output directory path
+    /// - `metrics_dir`: Metrics output directory path
+    /// - `reports_dir`: Reports output directory path
     ///
     /// # Arguments
     /// - `key`: The configuration key to retrieve
@@ -427,7 +446,8 @@ impl Config {
             "verbose" => Some(self.logging.verbose.to_string()),
             "token" => Some(self.database.token.clone()),
             "endpoint" => Some(self.database.endpoint.clone()),
-            "out_dir" => Some(self.paths.out_dir.clone()),
+            "metrics_dir" | "metrics-dir" => Some(self.paths.metrics_dir.clone()),
+            "reports_dir" | "reports-dir" => Some(self.paths.reports_dir.clone()),
             _ => None,
         }
     }
@@ -443,7 +463,8 @@ impl Config {
     /// - `verbose`: Boolean ("true" or "false")
     /// - `token`: String (any value)
     /// - `endpoint`: String (typically a URL)
-    /// - `out_dir`: String (directory path)
+    /// - `metrics_dir`: String (directory path for metrics CSV files)
+    /// - `reports_dir`: String (directory path for report files)
     ///
     /// Note: This method updates the in-memory config. Call [`save()`](Config::save) to persist changes.
     ///
@@ -474,7 +495,8 @@ impl Config {
             }
             "token" => self.database.token = value.to_string(),
             "endpoint" => self.database.endpoint = value.to_string(),
-            "out_dir" => self.paths.out_dir = value.to_string(),
+            "metrics_dir" | "metrics-dir" => self.paths.metrics_dir = value.to_string(),
+            "reports_dir" | "reports-dir" => self.paths.reports_dir = value.to_string(),
             _ => return Err(format!("Unknown config key: '{key}'")),
         }
         Ok(())
@@ -516,7 +538,14 @@ impl Config {
                 .database
                 .endpoint
                 .clone_from(&defaults.database.endpoint),
-            "out_dir" => self.paths.out_dir.clone_from(&defaults.paths.out_dir),
+            "metrics_dir" | "metrics-dir" => self
+                .paths
+                .metrics_dir
+                .clone_from(&defaults.paths.metrics_dir),
+            "reports_dir" | "reports-dir" => self
+                .paths
+                .reports_dir
+                .clone_from(&defaults.paths.reports_dir),
             _ => return Err(format!("Unknown config key: '{key}'")),
         }
         Ok(())
@@ -568,7 +597,8 @@ impl fmt::Display for Config {
         writeln!(f, "  endpoint = \"{}\"", self.database.endpoint)?;
 
         writeln!(f, "\n[paths]")?;
-        writeln!(f, "  out_dir = \"{}\"", self.paths.out_dir)?;
+        writeln!(f, "  metrics_dir = \"{}\"", self.paths.metrics_dir)?;
+        writeln!(f, "  reports_dir = \"{}\"", self.paths.reports_dir)?;
 
         Ok(())
     }

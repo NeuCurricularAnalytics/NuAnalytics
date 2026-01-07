@@ -75,16 +75,19 @@ fn main() {
 
             // Generate report if requested
             if let Some(format) = report {
-                let out_dir = std::path::PathBuf::from(&config.paths.out_dir);
-                if std::fs::create_dir_all(&out_dir).is_err() {
-                    eprintln!("✗ Failed to create output directory: {}", out_dir.display());
+                let reports_dir = std::path::PathBuf::from(&config.paths.reports_dir);
+                if std::fs::create_dir_all(&reports_dir).is_err() {
+                    eprintln!(
+                        "✗ Failed to create reports directory: {}",
+                        reports_dir.display()
+                    );
                     return;
                 }
 
                 for input_file in &input_files {
                     match commands::report::generate_from_planner(
                         input_file,
-                        &out_dir,
+                        &reports_dir,
                         &format,
                         term_credits,
                     ) {

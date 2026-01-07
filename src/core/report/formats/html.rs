@@ -89,14 +89,28 @@ impl HtmlReporter {
     }
 
     /// Generate critical path course IDs as a JSON array
+    ///
+    /// Handles corequisite groups in the path (e.g., "(CSE1321+CSE1321L)") by
+    /// extracting all individual course IDs for JavaScript highlighting.
     fn generate_critical_path_ids(ctx: &ReportContext) -> String {
-        let ids: Vec<String> = ctx
-            .summary
-            .longest_delay_path
-            .iter()
-            .map(|s| format!("\"{s}\""))
-            .collect();
-        format!("[{}]", ids.join(", "))
+        let mut all_ids: Vec<String> = Vec::new();
+
+        for entry in &ctx.summary.longest_delay_path {
+            // Check if this is a grouped corequisite entry like "(A+B+C)"
+            let trimmed = entry.trim();
+            if trimmed.starts_with('(') && trimmed.ends_with(')') {
+                // Extract individual course IDs from the group
+                let inner = &trimmed[1..trimmed.len() - 1]; // Remove parens
+                for id in inner.split('+') {
+                    all_ids.push(format!("\"{}\"", id.trim()));
+                }
+            } else {
+                // Regular single course ID
+                all_ids.push(format!("\"{trimmed}\""));
+            }
+        }
+
+        format!("[{}]", all_ids.join(", "))
     }
 
     /// Generate HTML for the grid-based term visualization

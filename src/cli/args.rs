@@ -184,13 +184,13 @@ pub struct Cli {
     #[arg(long = "db-endpoint", value_name = "URL")]
     pub db_endpoint: Option<String>,
 
-    /// Override config output directory
-    #[arg(long = "config-out-dir", value_name = "DIR")]
-    pub config_out_dir: Option<PathBuf>,
+    /// Override config metrics output directory
+    #[arg(long = "metrics-dir", value_name = "DIR")]
+    pub metrics_dir: Option<PathBuf>,
 
-    /// Override config output directory (short form)
-    #[arg(long = "out-dir", value_name = "DIR")]
-    pub out_dir: Option<PathBuf>,
+    /// Override config reports output directory
+    #[arg(long = "reports-dir", value_name = "DIR")]
+    pub reports_dir: Option<PathBuf>,
 
     /// Subcommand to execute.
     /// A subcommand is required to run the CLI.
@@ -230,15 +230,14 @@ impl Cli {
                 .db_endpoint
                 .clone()
                 .or_else(|| self.config_db_endpoint.clone()),
-            out_dir: self
-                .out_dir
+            metrics_dir: self
+                .metrics_dir
                 .as_ref()
-                .map(|p| p.to_string_lossy().to_string())
-                .or_else(|| {
-                    self.config_out_dir
-                        .as_ref()
-                        .map(|p| p.to_string_lossy().to_string())
-                }),
+                .map(|p| p.to_string_lossy().to_string()),
+            reports_dir: self
+                .reports_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string()),
         }
     }
 }
@@ -277,8 +276,8 @@ mod tests {
             db_token: None,
             config_db_endpoint: None,
             db_endpoint: None,
-            config_out_dir: None,
-            out_dir: None,
+            metrics_dir: None,
+            reports_dir: None,
             command: Command::Config { subcommand: None },
         };
 
@@ -288,7 +287,8 @@ mod tests {
         assert!(overrides.verbose.is_none());
         assert!(overrides.db_token.is_none());
         assert!(overrides.db_endpoint.is_none());
-        assert!(overrides.out_dir.is_none());
+        assert!(overrides.metrics_dir.is_none());
+        assert!(overrides.reports_dir.is_none());
     }
 
     #[test]
@@ -305,8 +305,8 @@ mod tests {
             db_token: Some("test-token".to_string()),
             config_db_endpoint: None,
             db_endpoint: Some("https://test.com".to_string()),
-            config_out_dir: None,
-            out_dir: Some(PathBuf::from("/output")),
+            metrics_dir: Some(PathBuf::from("/metrics")),
+            reports_dir: Some(PathBuf::from("/reports")),
             command: Command::Config { subcommand: None },
         };
 
@@ -316,7 +316,8 @@ mod tests {
         assert_eq!(overrides.verbose, Some(true));
         assert_eq!(overrides.db_token, Some("test-token".to_string()));
         assert_eq!(overrides.db_endpoint, Some("https://test.com".to_string()));
-        assert_eq!(overrides.out_dir, Some("/output".to_string()));
+        assert_eq!(overrides.metrics_dir, Some("/metrics".to_string()));
+        assert_eq!(overrides.reports_dir, Some("/reports".to_string()));
     }
 
     #[test]
@@ -334,15 +335,16 @@ mod tests {
             db_token: Some("short-token".to_string()),
             config_db_endpoint: Some("https://long.com".to_string()),
             db_endpoint: Some("https://short.com".to_string()),
-            config_out_dir: Some(PathBuf::from("/long/out")),
-            out_dir: Some(PathBuf::from("/short/out")),
+            metrics_dir: Some(PathBuf::from("/metrics")),
+            reports_dir: Some(PathBuf::from("/reports")),
             command: Command::Config { subcommand: None },
         };
 
         let overrides = cli.to_config_overrides();
         assert_eq!(overrides.db_token, Some("short-token".to_string()));
         assert_eq!(overrides.db_endpoint, Some("https://short.com".to_string()));
-        assert_eq!(overrides.out_dir, Some("/short/out".to_string()));
+        assert_eq!(overrides.metrics_dir, Some("/metrics".to_string()));
+        assert_eq!(overrides.reports_dir, Some("/reports".to_string()));
     }
 
     #[test]
@@ -360,14 +362,15 @@ mod tests {
             db_token: None,
             config_db_endpoint: Some("https://long.com".to_string()),
             db_endpoint: None,
-            config_out_dir: Some(PathBuf::from("/long/out")),
-            out_dir: None,
+            metrics_dir: None,
+            reports_dir: None,
             command: Command::Config { subcommand: None },
         };
 
         let overrides = cli.to_config_overrides();
         assert_eq!(overrides.db_token, Some("long-token".to_string()));
         assert_eq!(overrides.db_endpoint, Some("https://long.com".to_string()));
-        assert_eq!(overrides.out_dir, Some("/long/out".to_string()));
+        assert!(overrides.metrics_dir.is_none());
+        assert!(overrides.reports_dir.is_none());
     }
 }

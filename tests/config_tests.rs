@@ -22,8 +22,12 @@ fn test_config_from_defaults() {
         "Default log level should not be empty"
     );
     assert!(
-        !config.paths.out_dir.is_empty(),
-        "Default out_dir should not be empty"
+        !config.paths.metrics_dir.is_empty(),
+        "Default metrics_dir should not be empty"
+    );
+    assert!(
+        !config.paths.reports_dir.is_empty(),
+        "Default reports_dir should not be empty"
     );
 }
 
@@ -40,7 +44,8 @@ token = "test_token"
 endpoint = "https://example.com"
 
 [paths]
-out_dir = "./output"
+metrics_dir = "./metrics"
+reports_dir = "./reports"
 "#;
 
     let config = Config::from_toml(toml_str).expect("Failed to parse TOML");
@@ -50,7 +55,8 @@ out_dir = "./output"
     assert!(config.logging.verbose);
     assert_eq!(config.database.token, "test_token");
     assert_eq!(config.database.endpoint, "https://example.com");
-    assert_eq!(config.paths.out_dir, "./output");
+    assert_eq!(config.paths.metrics_dir, "./metrics");
+    assert_eq!(config.paths.reports_dir, "./reports");
 }
 
 #[test]
@@ -165,7 +171,8 @@ fn test_config_overrides_apply() {
         verbose: Some(true),
         db_token: Some("override_token".to_string()),
         db_endpoint: Some("https://override.com".to_string()),
-        out_dir: Some("./custom_out".to_string()),
+        metrics_dir: Some("./custom_metrics".to_string()),
+        reports_dir: Some("./custom_reports".to_string()),
     };
 
     config.apply_overrides(&overrides);
@@ -175,7 +182,8 @@ fn test_config_overrides_apply() {
     assert!(config.logging.verbose);
     assert_eq!(config.database.token, "override_token");
     assert_eq!(config.database.endpoint, "https://override.com");
-    assert_eq!(config.paths.out_dir, "./custom_out");
+    assert_eq!(config.paths.metrics_dir, "./custom_metrics");
+    assert_eq!(config.paths.reports_dir, "./custom_reports");
 }
 
 #[test]
@@ -189,7 +197,8 @@ fn test_config_overrides_partial() {
         verbose: None,
         db_token: None,
         db_endpoint: None,
-        out_dir: None,
+        metrics_dir: None,
+        reports_dir: None,
     };
 
     config.apply_overrides(&overrides);
@@ -227,7 +236,8 @@ token = ""
 endpoint = ""
 
 [paths]
-out_dir = ""
+metrics_dir = ""
+reports_dir = ""
 "#;
 
     let mut config = Config::from_toml(toml_str).expect("Failed to parse minimal config");
@@ -257,7 +267,8 @@ token = ""
 endpoint = ""
 
 [paths]
-out_dir = ""
+metrics_dir = ""
+reports_dir = ""
 "#;
 
     let mut config = Config::from_toml(toml_str).expect("Failed to parse config");

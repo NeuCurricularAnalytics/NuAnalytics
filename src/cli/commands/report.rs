@@ -211,11 +211,11 @@ fn generate_report(
     let final_output_path: PathBuf = if let Some(output) = output_file {
         output.to_path_buf()
     } else {
-        let out_dir = PathBuf::from(&config.paths.out_dir);
-        std::fs::create_dir_all(&out_dir).map_err(|e| {
+        let reports_dir = PathBuf::from(&config.paths.reports_dir);
+        std::fs::create_dir_all(&reports_dir).map_err(|e| {
             format!(
-                "✗ Failed to create output directory {}: {e}",
-                out_dir.display()
+                "✗ Failed to create reports directory {}: {e}",
+                reports_dir.display()
             )
         })?;
 
@@ -225,7 +225,7 @@ fn generate_report(
             .unwrap_or("curriculum")
             .to_string();
         let output_filename = format!("{filename}_report.{}", format.extension());
-        out_dir.join(output_filename)
+        reports_dir.join(output_filename)
     };
 
     // Write the report

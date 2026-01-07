@@ -117,7 +117,7 @@
             min-width: 100px;
             background: var(--term-bg);
             border-radius: 4px;
-            margin: 0 4px;
+            margin: 0 16px;
             padding: 10px 6px;
         }
 
@@ -343,37 +343,35 @@
             backwardEdges.get(edge.to).push(edge.from);
         });
 
-        // Get all connected courses (forward and backward)
+        // Get all connected courses (full bidirectional traversal)
         function getAllConnected(courseId) {
             const connected = new Set([courseId]);
             const edgesInPath = new Set();
 
-            // Traverse forward (dependents)
-            function traverseForward(id) {
+            // Full traversal - for each node, explore both directions
+            function traverse(id) {
+                // Forward edges (courses that depend on this one)
                 const next = forwardEdges.get(id) || [];
                 next.forEach(nextId => {
                     edgesInPath.add(id + '->' + nextId);
                     if (!connected.has(nextId)) {
                         connected.add(nextId);
-                        traverseForward(nextId);
+                        traverse(nextId);
                     }
                 });
-            }
 
-            // Traverse backward (prerequisites)
-            function traverseBackward(id) {
+                // Backward edges (prerequisites and corequisites)
                 const prev = backwardEdges.get(id) || [];
                 prev.forEach(prevId => {
                     edgesInPath.add(prevId + '->' + id);
                     if (!connected.has(prevId)) {
                         connected.add(prevId);
-                        traverseBackward(prevId);
+                        traverse(prevId);
                     }
                 });
             }
 
-            traverseForward(courseId);
-            traverseBackward(courseId);
+            traverse(courseId);
 
             return { courses: connected, edges: edgesInPath };
         }
@@ -453,54 +451,6 @@
             svg.innerHTML = '';
 
             const svgNS = 'http://www.w3.org/2000/svg';
-
-            // Arrow markers
-            const defs = document.createElementNS(svgNS, 'defs');
-
-            // Gray arrow for prerequisites
-            const marker = document.createElementNS(svgNS, 'marker');
-            marker.setAttribute('id', 'arrow');
-            marker.setAttribute('markerWidth', '6');
-            marker.setAttribute('markerHeight', '5');
-            marker.setAttribute('refX', '5');
-            marker.setAttribute('refY', '2.5');
-            marker.setAttribute('orient', 'auto');
-            const poly = document.createElementNS(svgNS, 'polygon');
-            poly.setAttribute('points', '0 0, 6 2.5, 0 5');
-            poly.setAttribute('fill', '#666');
-            marker.appendChild(poly);
-            defs.appendChild(marker);
-
-            // Blue arrow for corequisites / highlighted
-            const markerBlue = document.createElementNS(svgNS, 'marker');
-            markerBlue.setAttribute('id', 'arrow-blue');
-            markerBlue.setAttribute('markerWidth', '6');
-            markerBlue.setAttribute('markerHeight', '5');
-            markerBlue.setAttribute('refX', '5');
-            markerBlue.setAttribute('refY', '2.5');
-            markerBlue.setAttribute('orient', 'auto');
-            const polyBlue = document.createElementNS(svgNS, 'polygon');
-            polyBlue.setAttribute('points', '0 0, 6 2.5, 0 5');
-            polyBlue.setAttribute('fill', '#3498db');
-            markerBlue.appendChild(polyBlue);
-            defs.appendChild(markerBlue);
-
-            // Purple arrow for critical path
-            const markerPurple = document.createElementNS(svgNS, 'marker');
-            markerPurple.setAttribute('id', 'arrow-purple');
-            markerPurple.setAttribute('markerWidth', '6');
-            markerPurple.setAttribute('markerHeight', '5');
-            markerPurple.setAttribute('refX', '5');
-            markerPurple.setAttribute('refY', '2.5');
-            markerPurple.setAttribute('orient', 'auto');
-            const polyPurple = document.createElementNS(svgNS, 'polygon');
-            polyPurple.setAttribute('points', '0 0, 6 2.5, 0 5');
-            polyPurple.setAttribute('fill', '#9C27B0');
-            markerPurple.appendChild(polyPurple);
-            defs.appendChild(markerPurple);
-
-            svg.appendChild(defs);
-
             const graphRect = graph.getBoundingClientRect();
 
             edges.forEach(edge => {
@@ -518,14 +468,39 @@
 
                 let x1, y1, x2, y2, pathD;
 
-                if (sameColumn) {
-                    // Vertical connection: from bottom of source to top of target
+                if (sameColumn && edge.dashes) {
+                    // Corequisite in same term: always connect bottom to top
+                    // Determine which course is higher (smaller top value)
+                    const fromTop = fromRect.top;
+                    const toTop = toRect.top;
+
+                    let upperRect, lowerRect;
+                    if (fromTop < toTop) {
+                        // 'from' is higher, 'to' is lower
+                        upperRect = fromRect;
+                        lowerRect = toRect;
+                    } else {
+                        // 'to' is higher, 'from' is lower
+                        upperRect = toRect;
+                        lowerRect = fromRect;
+                    }
+
+                    // Connect from bottom of upper to top of lower
+                    x1 = upperRect.left + upperRect.width / 2 - graphRect.left;
+                    y1 = upperRect.bottom - graphRect.top;
+                    x2 = lowerRect.left + lowerRect.width / 2 - graphRect.left;
+                    y2 = lowerRect.top - graphRect.top;
+
+                    // Curved vertical path
+                    const midY = (y1 + y2) / 2;
+                    pathD = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + midY + ', ' + x2 + ' ' + midY + ', ' + x2 + ' ' + y2;
+                } else if (sameColumn) {
+                    // Non-coreq in same column (rare) - standard bottom to top
                     x1 = fromRect.left + fromRect.width / 2 - graphRect.left;
                     y1 = fromRect.bottom - graphRect.top;
                     x2 = toRect.left + toRect.width / 2 - graphRect.left;
                     y2 = toRect.top - graphRect.top;
 
-                    // Curved vertical path
                     const midY = (y1 + y2) / 2;
                     pathD = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + midY + ', ' + x2 + ' ' + midY + ', ' + x2 + ' ' + y2;
                 } else {
@@ -547,10 +522,8 @@
 
                 if (edge.dashes) {
                     path.setAttribute('class', 'coreq-line');
-                    path.setAttribute('marker-end', 'url(#arrow-blue)');
                 } else {
                     path.setAttribute('class', 'prereq-line');
-                    path.setAttribute('marker-end', 'url(#arrow)');
                 }
                 svg.appendChild(path);
             });

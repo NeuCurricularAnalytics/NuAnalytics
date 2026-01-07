@@ -93,11 +93,11 @@ fn export_single(
     let final_output_path: PathBuf = if let Some(output) = output_file {
         output.to_path_buf()
     } else {
-        let out_dir = PathBuf::from(&config.paths.out_dir);
-        std::fs::create_dir_all(&out_dir).map_err(|e| {
+        let metrics_dir = PathBuf::from(&config.paths.metrics_dir);
+        std::fs::create_dir_all(&metrics_dir).map_err(|e| {
             format!(
-                "✗ Failed to create output directory {}: {e}",
-                out_dir.display()
+                "✗ Failed to create metrics directory {}: {e}",
+                metrics_dir.display()
             )
         })?;
 
@@ -107,7 +107,7 @@ fn export_single(
             .unwrap_or("curriculum")
             .to_string();
         let output_filename = format!("{filename}_w_metrics.csv");
-        out_dir.join(output_filename)
+        metrics_dir.join(output_filename)
     };
 
     let plan_name = plan.name.clone();

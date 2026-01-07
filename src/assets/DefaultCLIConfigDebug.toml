@@ -2,7 +2,7 @@
 
 [logging]
 level = "debug"
-file = "/tmp/nuanalytics.debug.log"
+file = ".debug/nuanalytics.debug.log"
 verbose = true
 
 [database]
@@ -10,4 +10,5 @@ token = ""
 endpoint = ""
 
 [paths]
-out_dir = "/tmp/nuanalytics/plans"
+metrics_dir = ".debug/metrics"
+reports_dir = ".debug/reports"
