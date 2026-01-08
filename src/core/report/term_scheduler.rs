@@ -11,12 +11,21 @@ use crate::core::metrics::compute_delay;
 use crate::core::models::{School, DAG};
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
+/// Priority queue item for topological group ordering
+///
+/// Used in Kahn's algorithm to order corequisite groups by priority.
+/// Higher priority groups (longer chains) are processed first, with
+/// lexicographic ordering as a tiebreaker for deterministic results.
 #[derive(Eq, PartialEq)]
 struct GroupPQItem {
+    /// Priority score (higher = more important)
     pri: usize,
+    /// Lexicographically smallest course key in the group (for tiebreaking)
     name_hint: String,
+    /// Index into the groups array
     idx: usize,
 }
+
 impl Ord for GroupPQItem {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match self.pri.cmp(&other.pri) {
@@ -25,6 +34,7 @@ impl Ord for GroupPQItem {
         }
     }
 }
+
 impl PartialOrd for GroupPQItem {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -872,5 +882,207 @@ mod tests {
         assert_eq!(plan.terms.len(), 8);
         assert_eq!(plan.term_label(), "Semester");
         assert_eq!(plan.terms_used(), 0);
+    }
+
+    #[test]
+    fn test_term_plan_quarter_system() {
+        let plan = TermPlan::new(12, true, 15.0);
+        assert_eq!(plan.terms.len(), 12);
+        assert_eq!(plan.term_label(), "Quarter");
+        assert!(plan.is_quarter_system);
+    }
+
+    #[test]
+    fn test_term_add_course() {
+        let mut term = Term::new(1);
+        assert_eq!(term.courses.len(), 0);
+        assert!((term.total_credits - 0.0).abs() < f32::EPSILON);
+
+        term.add_course("CS101".to_string(), 3.0);
+        assert_eq!(term.courses.len(), 1);
+        assert!((term.total_credits - 3.0).abs() < f32::EPSILON);
+
+        term.add_course("CS102".to_string(), 4.0);
+        assert_eq!(term.courses.len(), 2);
+        assert!((term.total_credits - 7.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_term_plan_add_term() {
+        let mut plan = TermPlan::new(2, false, 15.0);
+        assert_eq!(plan.terms.len(), 2);
+
+        plan.add_term();
+        assert_eq!(plan.terms.len(), 3);
+        assert_eq!(plan.terms[2].number, 3);
+    }
+
+    #[test]
+    fn test_terms_used_counts_nonempty() {
+        let mut plan = TermPlan::new(4, false, 15.0);
+        assert_eq!(plan.terms_used(), 0);
+
+        plan.terms[0].add_course("CS101".to_string(), 3.0);
+        assert_eq!(plan.terms_used(), 1);
+
+        plan.terms[2].add_course("CS201".to_string(), 3.0);
+        assert_eq!(plan.terms_used(), 2);
+    }
+
+    #[test]
+    fn test_scheduler_config_semester() {
+        let config = SchedulerConfig::semester(15.0);
+        assert!((config.target_credits - 15.0).abs() < f32::EPSILON);
+        assert!((config.max_credits - 21.0).abs() < f32::EPSILON); // 15 + 6
+        assert_eq!(config.num_terms, 8);
+        assert!(!config.is_quarter_system);
+    }
+
+    #[test]
+    fn test_scheduler_config_quarter() {
+        let config = SchedulerConfig::quarter(15.0);
+        assert!((config.target_credits - 15.0).abs() < f32::EPSILON);
+        assert!((config.max_credits - 19.0).abs() < f32::EPSILON); // 15 + 4
+        assert_eq!(config.num_terms, 12);
+        assert!(config.is_quarter_system);
+    }
+
+    #[test]
+    fn test_corequisites_same_term() {
+        let mut school = School::new("Test".to_string());
+
+        let cs101 = Course::new(
+            "Intro".to_string(),
+            "CS".to_string(),
+            "101".to_string(),
+            3.0,
+        );
+        let mut cs101l = Course::new(
+            "Intro Lab".to_string(),
+            "CS".to_string(),
+            "101L".to_string(),
+            1.0,
+        );
+        cs101l.add_strict_corequisite("CS101".to_string());
+
+        school.add_course(cs101);
+        school.add_course(cs101l);
+
+        let mut dag = DAG::new();
+        dag.add_course("CS101".to_string());
+        dag.add_course("CS101L".to_string());
+        dag.add_corequisite("CS101L".to_string(), "CS101");
+
+        let config = SchedulerConfig::semester(15.0);
+        let scheduler = TermScheduler::new(&school, &dag, config);
+
+        let courses = vec!["CS101".to_string(), "CS101L".to_string()];
+        let plan = scheduler.schedule(&courses);
+
+        // Both should be in the same term
+        let main_course_term = plan
+            .terms
+            .iter()
+            .position(|t| t.courses.contains(&"CS101".to_string()));
+        let lab_course_term = plan
+            .terms
+            .iter()
+            .position(|t| t.courses.contains(&"CS101L".to_string()));
+
+        assert_eq!(main_course_term, lab_course_term);
+    }
+
+    #[test]
+    fn test_schedule_respects_credit_limits() {
+        let mut school = School::new("Test".to_string());
+
+        // Create 6 courses, each 4 credits
+        for i in 1..=6 {
+            let course = Course::new(
+                format!("Course {i}"),
+                "CS".to_string(),
+                format!("{i}00"),
+                4.0,
+            );
+            school.add_course(course);
+        }
+
+        let mut dag = DAG::new();
+        for i in 1..=6 {
+            dag.add_course(format!("CS{i}00"));
+        }
+
+        let config = SchedulerConfig::semester(15.0); // max ~21
+        let max_credits = config.max_credits;
+        let scheduler = TermScheduler::new(&school, &dag, config);
+
+        let courses: Vec<String> = (1..=6).map(|i| format!("CS{i}00")).collect();
+        let plan = scheduler.schedule(&courses);
+
+        // No term should exceed max credits
+        for term in &plan.terms {
+            assert!(term.total_credits <= max_credits + 0.01);
+        }
+    }
+
+    #[test]
+    fn test_filler_courses_balanced() {
+        let mut school = School::new("Test".to_string());
+
+        // Create a chain course and several standalone courses
+        let cs101 = Course::new(
+            "Intro".to_string(),
+            "CS".to_string(),
+            "101".to_string(),
+            3.0,
+        );
+        let mut cs201 = Course::new(
+            "Advanced".to_string(),
+            "CS".to_string(),
+            "201".to_string(),
+            3.0,
+        );
+        cs201.add_prerequisite("CS101".to_string());
+
+        // Filler courses (no prereqs or dependents)
+        let gen_ed1 = Course::new(
+            "Gen Ed 1".to_string(),
+            "GEN".to_string(),
+            "101".to_string(),
+            3.0,
+        );
+        let gen_ed2 = Course::new(
+            "Gen Ed 2".to_string(),
+            "GEN".to_string(),
+            "102".to_string(),
+            3.0,
+        );
+
+        school.add_course(cs101);
+        school.add_course(cs201);
+        school.add_course(gen_ed1);
+        school.add_course(gen_ed2);
+
+        let mut dag = DAG::new();
+        dag.add_course("CS101".to_string());
+        dag.add_course("CS201".to_string());
+        dag.add_course("GEN101".to_string());
+        dag.add_course("GEN102".to_string());
+        dag.add_prerequisite("CS201".to_string(), "CS101");
+
+        let config = SchedulerConfig::semester(15.0);
+        let scheduler = TermScheduler::new(&school, &dag, config);
+
+        let courses = vec![
+            "CS101".to_string(),
+            "CS201".to_string(),
+            "GEN101".to_string(),
+            "GEN102".to_string(),
+        ];
+        let plan = scheduler.schedule(&courses);
+
+        // All courses should be scheduled
+        let total_scheduled: usize = plan.terms.iter().map(|t| t.courses.len()).sum();
+        assert_eq!(total_scheduled, 4);
     }
 }

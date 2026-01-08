@@ -1,4 +1,7 @@
 //! Command-line interface entry point for `NuAnalytics`
+//!
+//! This module provides the main entry point for the CLI application.
+//! It handles argument parsing, configuration loading, and command dispatch.
 
 mod args;
 mod commands;
@@ -9,6 +12,10 @@ use logger::{enable_debug, enable_verbose, info, init_file_logging, set_level, w
 use nu_analytics::config::Config;
 use std::path::{Path, PathBuf};
 
+/// Main entry point for the `NuAnalytics` CLI
+///
+/// Parses command-line arguments, loads configuration, sets up logging,
+/// and dispatches to the appropriate subcommand handler.
 fn main() {
     let args = Cli::parse();
 
@@ -73,110 +80,164 @@ fn main() {
             no_csv,
             no_report,
         } => {
-            run_planner(
-                &config,
-                &input_files,
-                &output,
+            let opts = PlannerOptions {
+                input_files: &input_files,
+                output: &output,
                 report_format,
-                pdf_converter.as_deref(),
+                pdf_converter: pdf_converter.as_deref(),
                 report_dir,
                 metrics_dir,
                 term_credits,
                 no_csv,
                 no_report,
                 verbose,
-            );
+            };
+            run_planner(&config, &opts);
         }
     }
 }
 
-/// Run the planner command with the given arguments
-#[allow(clippy::too_many_arguments)]
-fn run_planner(
-    config: &Config,
-    input_files: &[PathBuf],
-    output: &[PathBuf],
+/// Options for the planner command
+///
+/// Collects all planner-related options into a single struct to avoid
+/// passing many individual arguments to functions.
+struct PlannerOptions<'a> {
+    /// Input CSV files to process
+    input_files: &'a [PathBuf],
+    /// Optional explicit output paths (must match input count)
+    output: &'a [PathBuf],
+    /// Report format override
     report_format: Option<ReportFormatArg>,
-    pdf_converter: Option<&str>,
+    /// Custom PDF converter command
+    pdf_converter: Option<&'a str>,
+    /// Override reports output directory
     report_dir: Option<PathBuf>,
+    /// Override metrics output directory
     metrics_dir: Option<PathBuf>,
+    /// Target credits per term for scheduling
     term_credits: Option<f32>,
+    /// Skip CSV metrics export
     no_csv: bool,
+    /// Skip report generation
     no_report: bool,
+    /// Enable verbose output
     verbose: bool,
-) {
+}
+
+/// Runs the planner command with the given options
+///
+/// Processes each input file, generating CSV metrics and/or reports
+/// based on the provided options. Output paths are determined by either:
+/// - Explicit `-o` arguments (must match input count)
+/// - Configured directories with auto-generated filenames
+fn run_planner(config: &Config, opts: &PlannerOptions<'_>) {
     // Apply command-level directory overrides (these take precedence over global flags)
-    let effective_metrics_dir = metrics_dir.map_or_else(
+    let effective_metrics_dir = opts.metrics_dir.as_ref().map_or_else(
         || config.paths.metrics_dir.clone(),
         |p| p.to_string_lossy().to_string(),
     );
-    let effective_reports_dir = report_dir.map_or_else(
+    let effective_reports_dir = opts.report_dir.as_ref().map_or_else(
         || config.paths.reports_dir.clone(),
         |p| p.to_string_lossy().to_string(),
     );
 
     // Validate output count matches input count if provided
-    if !output.is_empty() && output.len() != input_files.len() {
+    if !opts.output.is_empty() && opts.output.len() != opts.input_files.len() {
         eprintln!(
             "✗ Output file count ({}) must match input file count ({})",
-            output.len(),
-            input_files.len()
+            opts.output.len(),
+            opts.input_files.len()
         );
         return;
     }
 
     // Process each input file
-    for (idx, input_file) in input_files.iter().enumerate() {
-        let explicit_output = output.get(idx);
+    for (idx, input_file) in opts.input_files.iter().enumerate() {
+        process_single_input(
+            input_file,
+            opts.output.get(idx),
+            opts,
+            &effective_metrics_dir,
+            &effective_reports_dir,
+        );
+    }
+}
 
-        // Determine what to generate based on -o extension or flags
-        let (generate_csv, generate_report, output_path, effective_format) =
-            determine_output_type(explicit_output, report_format, no_csv, no_report);
+/// Processes a single input file, generating CSV and/or report output
+fn process_single_input(
+    input_file: &Path,
+    explicit_output: Option<&PathBuf>,
+    opts: &PlannerOptions<'_>,
+    metrics_dir: &str,
+    reports_dir: &str,
+) {
+    // Determine what to generate based on -o extension or flags
+    let (generate_csv, generate_report, output_path, effective_format) = determine_output_type(
+        explicit_output,
+        opts.report_format,
+        opts.no_csv,
+        opts.no_report,
+    );
 
-        // Generate CSV metrics
-        if generate_csv {
-            let csv_output = output_path.clone().filter(|p| {
-                p.extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
-            });
-            commands::planner::run_single(
-                input_file,
-                csv_output.as_deref(),
-                &effective_metrics_dir,
-                verbose,
-            );
-        }
+    // Generate CSV metrics
+    if generate_csv {
+        let csv_output = output_path.clone().filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
+        });
+        commands::planner::run_single(input_file, csv_output.as_deref(), metrics_dir, opts.verbose);
+    }
 
-        // Generate report
-        if generate_report {
-            if let Some(fmt) = effective_format {
-                let report_output = output_path.filter(|p| {
-                    p.extension()
-                        .and_then(|e| e.to_str())
-                        .is_some_and(|e| !e.eq_ignore_ascii_case("csv"))
-                });
-                match commands::report::generate_report_file(
-                    input_file,
-                    report_output.as_deref(),
-                    fmt,
-                    &effective_reports_dir,
-                    term_credits,
-                    pdf_converter,
-                ) {
-                    Ok(path) => {
-                        println!("✓ Report generated: {}", path.display());
-                    }
-                    Err(e) => {
-                        eprintln!("{e}");
-                    }
-                }
-            }
+    // Generate report
+    if generate_report {
+        if let Some(fmt) = effective_format {
+            generate_report_output(input_file, output_path, fmt, reports_dir, opts);
         }
     }
 }
 
-/// Determine output type based on explicit path or flags
+/// Generates a report file for the given input
+fn generate_report_output(
+    input_file: &Path,
+    output_path: Option<PathBuf>,
+    format: ReportFormatArg,
+    reports_dir: &str,
+    opts: &PlannerOptions<'_>,
+) {
+    let report_output = output_path.filter(|p| {
+        p.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| !e.eq_ignore_ascii_case("csv"))
+    });
+
+    match commands::report::generate_report_file(
+        input_file,
+        report_output.as_deref(),
+        format,
+        reports_dir,
+        opts.term_credits,
+        opts.pdf_converter,
+    ) {
+        Ok(path) => {
+            println!("✓ Report generated: {}", path.display());
+        }
+        Err(e) => {
+            eprintln!("{e}");
+        }
+    }
+}
+
+/// Determines output type and format based on explicit path or flags
+///
+/// Logic:
+/// - If no explicit output: use configured directories, respect `--no-csv`/`--no-report` flags
+/// - If explicit output with `.csv` extension: CSV only
+/// - If explicit output with report extension (`.html`, `.md`, `.pdf`): report only
+/// - Unknown extension: treat as report with default HTML format
+///
+/// # Returns
+/// Tuple containing: generate CSV flag, generate report flag, output path, format
 fn determine_output_type(
     explicit_output: Option<&PathBuf>,
     report_format: Option<ReportFormatArg>,
@@ -214,7 +275,14 @@ fn determine_output_type(
     )
 }
 
-/// Handle potential conflict between output extension and --report-format flag
+/// Handles conflict between output file extension and `--report-format` flag
+///
+/// When the output path extension (e.g., `.html`) doesn't match the
+/// `--report-format` flag (e.g., `pdf`), the flag takes precedence and
+/// a warning is printed.
+///
+/// # Returns
+/// Tuple containing: generate CSV flag, generate report flag, output path, format
 fn handle_report_format_conflict(
     out_path: &Path,
     ext: &str,
@@ -242,6 +310,12 @@ fn handle_report_format_conflict(
     )
 }
 
+/// Parses a log level string into a `Level` enum
+///
+/// Supported values (case-insensitive): "error", "warn", "info", "debug"
+///
+/// # Returns
+/// `Some(Level)` if the string is valid, `None` otherwise
 fn parse_level(val: &str) -> Option<Level> {
     match val.to_ascii_lowercase().as_str() {
         "error" => Some(Level::Error),

@@ -382,3 +382,206 @@ impl ReportGenerator for HtmlReporter {
         Ok(self.render_template(ctx))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::metrics::CourseMetrics;
+    use crate::core::metrics_export::CurriculumSummary;
+    use crate::core::models::{Course, Degree, Plan, School, DAG};
+    use crate::core::report::term_scheduler::TermPlan;
+    use std::collections::HashMap;
+
+    fn create_test_context() -> (
+        School,
+        Plan,
+        Degree,
+        HashMap<String, CourseMetrics>,
+        CurriculumSummary,
+        DAG,
+        TermPlan,
+    ) {
+        let mut school = School::new("Test University".to_string());
+
+        let cs101 = Course::new(
+            "Intro to CS".to_string(),
+            "CS".to_string(),
+            "101".to_string(),
+            3.0,
+        );
+        let mut cs201 = Course::new(
+            "Data Structures".to_string(),
+            "CS".to_string(),
+            "201".to_string(),
+            4.0,
+        );
+        cs201.add_prerequisite("CS101".to_string());
+
+        school.add_course(cs101);
+        school.add_course(cs201);
+
+        let degree = Degree::new(
+            "Computer Science".to_string(),
+            "BS".to_string(),
+            "11.0701".to_string(),
+            "semester".to_string(),
+        );
+
+        let mut plan = Plan::new("CS Plan".to_string(), degree.id());
+        plan.add_course("CS101".to_string());
+        plan.add_course("CS201".to_string());
+
+        let mut metrics = HashMap::new();
+        metrics.insert(
+            "CS101".to_string(),
+            CourseMetrics {
+                complexity: 3,
+                blocking: 1,
+                delay: 1,
+                centrality: 1,
+            },
+        );
+        metrics.insert(
+            "CS201".to_string(),
+            CourseMetrics {
+                complexity: 5,
+                blocking: 0,
+                delay: 2,
+                centrality: 1,
+            },
+        );
+
+        let summary = CurriculumSummary {
+            total_complexity: 8,
+            highest_centrality: 1,
+            highest_centrality_course: "CS101".to_string(),
+            longest_delay: 2,
+            longest_delay_course: "CS201".to_string(),
+            longest_delay_path: vec!["CS101".to_string(), "CS201".to_string()],
+        };
+
+        let mut dag = DAG::new();
+        dag.add_course("CS101".to_string());
+        dag.add_course("CS201".to_string());
+        dag.add_prerequisite("CS201".to_string(), "CS101");
+
+        let mut term_plan = TermPlan::new(8, false, 15.0);
+        term_plan.terms[0].add_course("CS101".to_string(), 3.0);
+        term_plan.terms[1].add_course("CS201".to_string(), 4.0);
+
+        (school, plan, degree, metrics, summary, dag, term_plan)
+    }
+
+    #[test]
+    fn test_html_reporter_new() {
+        let reporter = HtmlReporter::new();
+        // Verifies construction works - use in actual render test
+        let (school, plan, degree, metrics, summary, dag, term_plan) = create_test_context();
+        let ctx = ReportContext::new(
+            &school,
+            &plan,
+            Some(&degree),
+            &metrics,
+            &summary,
+            &dag,
+            &term_plan,
+        );
+        let result = reporter.render(&ctx);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_html_reporter_default() {
+        let reporter = HtmlReporter;
+        let (school, plan, degree, metrics, summary, dag, term_plan) = create_test_context();
+        let ctx = ReportContext::new(
+            &school,
+            &plan,
+            Some(&degree),
+            &metrics,
+            &summary,
+            &dag,
+            &term_plan,
+        );
+        let result = reporter.render(&ctx);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_render_produces_html() {
+        let (school, plan, degree, metrics, summary, dag, term_plan) = create_test_context();
+
+        let ctx = ReportContext::new(
+            &school,
+            &plan,
+            Some(&degree),
+            &metrics,
+            &summary,
+            &dag,
+            &term_plan,
+        );
+
+        let reporter = HtmlReporter::new();
+        let html = reporter.render(&ctx).unwrap();
+
+        // Verify key elements are present
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("Test University"));
+        assert!(html.contains("CS Plan"));
+        assert!(html.contains("CS101"));
+        assert!(html.contains("CS201"));
+    }
+
+    #[test]
+    fn test_generate_critical_path_ids() {
+        let (school, plan, degree, metrics, summary, dag, term_plan) = create_test_context();
+
+        let ctx = ReportContext::new(
+            &school,
+            &plan,
+            Some(&degree),
+            &metrics,
+            &summary,
+            &dag,
+            &term_plan,
+        );
+
+        let ids = HtmlReporter::generate_critical_path_ids(&ctx);
+
+        assert!(ids.contains("CS101"));
+        assert!(ids.contains("CS201"));
+        assert!(ids.starts_with('['));
+        assert!(ids.ends_with(']'));
+    }
+
+    #[test]
+    fn test_generate_critical_path_ids_with_corequisite_group() {
+        let summary = CurriculumSummary {
+            total_complexity: 10,
+            highest_centrality: 1,
+            highest_centrality_course: "CS101".to_string(),
+            longest_delay: 2,
+            longest_delay_course: "CS201".to_string(),
+            longest_delay_path: vec!["(CS101+CS101L)".to_string(), "CS201".to_string()],
+        };
+
+        let (school, plan, degree, metrics, _, dag, term_plan) = create_test_context();
+
+        let ctx = ReportContext::new(
+            &school,
+            &plan,
+            Some(&degree),
+            &metrics,
+            &summary,
+            &dag,
+            &term_plan,
+        );
+
+        let ids = HtmlReporter::generate_critical_path_ids(&ctx);
+
+        // Should extract both courses from the group
+        assert!(ids.contains("CS101"));
+        assert!(ids.contains("CS101L"));
+        assert!(ids.contains("CS201"));
+    }
+}

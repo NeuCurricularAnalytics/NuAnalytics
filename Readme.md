@@ -10,6 +10,11 @@ NuAnalytics is a Rust-based tool for analyzing computer science curricula. It co
   - **Blocking**: Count of courses directly blocked by a given course
   - **Delay**: Longest path from a course to course with no prerequisites
   - **Centrality**: Importance of a course in the curriculum network
+- **Report Generation**: Create visual reports in multiple formats:
+  - **HTML**: Interactive web-based reports with dependency graphs
+  - **PDF**: Print-ready reports via Chrome/Chromium conversion
+  - **Markdown**: Text-based reports for documentation
+- **Term Scheduling**: Automatic course scheduling respecting prerequisites and credit limits
 - **Configuration Management**: Flexible configuration system with CLI overrides
 
 ## Quick Start
@@ -24,10 +29,22 @@ The executable will be at `target/release/nuanalytics`.
 
 ### Running
 
-Analyze a curriculum CSV file:
+Analyze a curriculum CSV file and generate both metrics CSV and HTML report:
 
 ```bash
-./nuanalytics planner path/to/curriculum.csv -o result.csv
+./nuanalytics planner path/to/curriculum.csv
+```
+
+Generate only a PDF report:
+
+```bash
+./nuanalytics planner path/to/curriculum.csv --no-csv --report-format pdf
+```
+
+Generate only CSV metrics (no report):
+
+```bash
+./nuanalytics planner path/to/curriculum.csv --no-report
 ```
 
 Manage configuration:
@@ -40,7 +57,7 @@ Manage configuration:
 ## Documentation
 
 - **[Config Command](docs/config.md)** - Configure NuAnalytics settings (logging, database, output directories)
-- **[Planner Command](docs/planner.md)** - Analyze curricula and compute metrics for a single degree plan
+- **[Planner Command](docs/planner.md)** - Analyze curricula, compute metrics, and generate reports
 
 ## Development
 
@@ -51,18 +68,46 @@ For development setup and detailed development information, see [Development.md]
 ```
 ├── src/
 │   ├── cli/              # Command-line interface
+│   │   ├── main.rs       # CLI entry point
+│   │   ├── args.rs       # Argument definitions (clap)
+│   │   └── commands/     # Command handlers
 │   ├── core/             # Core analysis engine
-│   │   ├── metrics/      # Metric computation
+│   │   ├── config.rs     # Configuration management
+│   │   ├── metrics.rs    # Metric computation algorithms
+│   │   ├── metrics_export.rs  # CSV export functionality
 │   │   ├── models/       # Data structures (Course, Degree, Plan, School, DAG)
-│   │   ├── planner/      # Curriculum planning and CSV parsing
-│   │   └── config.rs     # Configuration management
+│   │   ├── planner/      # CSV parsing and planning
+│   │   └── report/       # Report generation
+│   │       ├── formats/  # HTML, PDF, Markdown reporters
+│   │       └── term_scheduler.rs  # Course scheduling algorithm
 │   └── lib.rs            # Library exports
+├── crates/
+│   └── logger/           # Custom logging crate
 ├── tests/                # Integration and unit tests
-├── samples/              # Sample curriculum files
-│   ├── plans/            # Input curriculum CSV files
-│   └── correct/          # Reference metric outputs for validation
+├── docs/                 # Documentation
 └── Cargo.toml           # Project manifest
 ```
+
+## Report Formats
+
+### HTML Reports
+Self-contained HTML files with:
+- Interactive course dependency visualization
+- Color-coded complexity indicators
+- Term-by-term schedule view
+- Detailed metrics table
+
+### PDF Reports
+Generated via headless Chrome/Chromium:
+- Same content as HTML reports
+- Print-optimized layout
+- Requires Chrome, Chromium, or custom converter
+
+### Markdown Reports
+Simple text-based reports suitable for:
+- Documentation systems
+- Version control diffing
+- Email attachments
 
 ## License
 

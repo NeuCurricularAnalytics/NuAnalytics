@@ -44,7 +44,8 @@ nuanalytics config get out_dir
   endpoint = ""
 
 [paths]
-  out_dir = "./output"
+  metrics_dir = "metrics"
+  reports_dir = "reports"
 ```
 
 ### `config set <KEY> <VALUE>`
@@ -64,7 +65,8 @@ nuanalytics config set token your-api-token
 - `level` - Set logging verbosity (error, warn, info, debug)
 - `verbose` - Enable verbose output (true/false)
 - `file` - Path to log file
-- `out_dir` - Default output directory for planner results
+- `metrics_dir` - Default output directory for CSV metrics files
+- `reports_dir` - Default output directory for report files (HTML, PDF, Markdown)
 - `token` - API token for database integration  (Does nothing at this point - future update)
 - `endpoint` - Database API endpoint URL        (Does nothing at this point - future update)
 
@@ -170,14 +172,15 @@ When you first run NuAnalytics, it uses these defaults (which depend on build mo
 [logging]
 level = "warn"
 verbose = false
-file = ""
+file = "$NU_ANALYTICS/nuanalytics.log"
 
 [database]
 token = ""
 endpoint = ""
 
 [paths]
-out_dir = "./output"
+metrics_dir = "./metrics"
+reports_dir = "./reports"
 ```
 
 **Debug Mode:**
@@ -185,14 +188,15 @@ out_dir = "./output"
 [logging]
 level = "debug"
 verbose = true
-file = "/tmp/nuanalytics.debug.log"
+file = ".debug/nuanalytics.debug.log"
 
 [database]
 token = ""
 endpoint = ""
 
 [paths]
-out_dir = "/tmp/nuanalytics/plans"
+metrics_dir = ".debug/metrics"
+reports_dir = ".debug/reports"
 ```
 
 ## Common Workflows
@@ -204,10 +208,14 @@ nuanalytics config set file ~/.logs/nuanalytics.log
 nuanalytics config set level debug
 ```
 
-### Configure Default Output Directory
+### Configure Default Output Directories
 
 ```bash
-nuanalytics config set out_dir /home/user/analysis-results
+# Set metrics output directory
+nuanalytics config set metrics_dir /home/user/analysis/metrics
+
+# Set reports output directory
+nuanalytics config set reports_dir /home/user/analysis/reports
 ```
 
 ### Set Database Credentials
