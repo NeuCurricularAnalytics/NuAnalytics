@@ -29,7 +29,7 @@ and more report options.
 Install the CLI via Cargo:
 
 ```bash
-cargo install nu_analytics
+cargo install nu-analytics
 ```
 
 This provides the `nuanalytics` binary globally.
