@@ -6,7 +6,7 @@ authors = ["Albert Lionelle <a.lionelle@northeastern.edu>"]
 description = "A CLI tool for computing Curricular Analytics metrics. Based off metrics from CurricularAnalytics.org. Currently, only basic metrics and additional reporting features."
 license = "MIT"
 repository = "https://github.com/NeuCurricularAnalytics/NuAnalytics"
-keywords = ["Curricular Analytics", "Curriculum", "Research"]
+keywords = ["curricular-analytics", "curriculum", "research", "cli", "metrics"]
 readme = "Readme.md"
 categories = ["command-line-utilities", "science"]
 
