@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Level"],"fn":["disable_debug","disable_verbose","enable_debug","enable_verbose","init_file_logging","is_debug_enabled","is_verbose_enabled","log_impl","set_level","set_level_from_str"]};

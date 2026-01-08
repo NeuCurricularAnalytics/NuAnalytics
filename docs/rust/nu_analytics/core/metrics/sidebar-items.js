@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["compute_all_metrics","compute_blocking","compute_centrality","compute_complexity","compute_delay"],"struct":["CourseMetrics"],"type":["BlockingByCourse","CentralityByCourse","ComplexityByCourse","CurriculumMetrics","DelayByCourse"]};
