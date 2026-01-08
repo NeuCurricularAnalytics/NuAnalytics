@@ -1,7 +1,6 @@
-//! Planner command handler
+//! Planner command handler - CSV metrics export
 
 use logger::{error, info};
-use nu_analytics::config::Config;
 use nu_analytics::core::{
     metrics, metrics_export,
     models::{Degree, Plan},
@@ -9,41 +8,24 @@ use nu_analytics::core::{
 };
 use std::path::{Path, PathBuf};
 
-/// Run the planner command for one or more input files.
+/// Run CSV export for a single input file
 ///
 /// # Arguments
-/// * `input_files` - Paths to input CSV files
-/// * `output_files` - Optional output paths; must match inputs 1:1 when provided
-/// * `config` - Configuration containing default output directory
+/// * `input_file` - Path to input CSV file
+/// * `output_file` - Optional explicit output path
+/// * `metrics_dir` - Directory for output when `output_file` is None
 /// * `verbose` - Whether to show detailed metrics output
-pub fn run(input_files: &[PathBuf], output_files: &[PathBuf], config: &Config, verbose: bool) {
-    if input_files.is_empty() {
-        eprintln!("✗ No input files provided.");
-        return;
-    }
-
-    if !output_files.is_empty() && output_files.len() != input_files.len() {
-        eprintln!(
-            "✗ When using -o/--output, provide one output path per input file ({} inputs, {} outputs).",
-            input_files.len(),
-            output_files.len()
-        );
-        return;
-    }
-
-    for (idx, input_file) in input_files.iter().enumerate() {
-        let output_file = output_files.get(idx).map(PathBuf::as_path);
-        if let Err(err) = export_single(input_file, output_file, config, verbose) {
-            error!("Planner failed for {}: {err}", input_file.display());
-            eprintln!("{err}");
-        }
+pub fn run_single(input_file: &Path, output_file: Option<&Path>, metrics_dir: &str, verbose: bool) {
+    if let Err(err) = export_csv(input_file, output_file, metrics_dir, verbose) {
+        error!("Planner failed for {}: {err}", input_file.display());
+        eprintln!("{err}");
     }
 }
 
-fn export_single(
+fn export_csv(
     input_file: &Path,
     output_file: Option<&Path>,
-    config: &Config,
+    metrics_dir: &str,
     verbose: bool,
 ) -> Result<(), String> {
     let school = parse_curriculum_csv(input_file).map_err(|e| {
@@ -91,13 +73,22 @@ fn export_single(
     };
 
     let final_output_path: PathBuf = if let Some(output) = output_file {
+        // Ensure parent directory exists
+        if let Some(parent) = output.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                format!(
+                    "✗ Failed to create output directory {}: {e}",
+                    parent.display()
+                )
+            })?;
+        }
         output.to_path_buf()
     } else {
-        let out_dir = PathBuf::from(&config.paths.out_dir);
-        std::fs::create_dir_all(&out_dir).map_err(|e| {
+        let metrics_path = PathBuf::from(metrics_dir);
+        std::fs::create_dir_all(&metrics_path).map_err(|e| {
             format!(
-                "✗ Failed to create output directory {}: {e}",
-                out_dir.display()
+                "✗ Failed to create metrics directory {}: {e}",
+                metrics_path.display()
             )
         })?;
 
@@ -107,7 +98,7 @@ fn export_single(
             .unwrap_or("curriculum")
             .to_string();
         let output_filename = format!("{filename}_w_metrics.csv");
-        out_dir.join(output_filename)
+        metrics_path.join(output_filename)
     };
 
     let plan_name = plan.name.clone();

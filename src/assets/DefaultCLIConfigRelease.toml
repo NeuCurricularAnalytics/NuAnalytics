@@ -10,4 +10,5 @@ token = ""
 endpoint = ""
 
 [paths]
-out_dir = "./plans"
+metrics_dir = "./metrics"
+reports_dir = "./reports"

@@ -137,7 +137,8 @@ mod tests {
         config.logging.verbose = true;
         config.database.token = "test_token".to_string();
         config.database.endpoint = "https://test.com".to_string();
-        config.paths.out_dir = "/test/output".to_string();
+        config.paths.metrics_dir = "/test/metrics".to_string();
+        config.paths.reports_dir = "/test/reports".to_string();
         config
     }
 
@@ -151,7 +152,8 @@ mod tests {
         assert_eq!(config.get("verbose"), Some("true".to_string()));
         assert_eq!(config.get("token"), Some("test_token".to_string()));
         assert_eq!(config.get("endpoint"), Some("https://test.com".to_string()));
-        assert_eq!(config.get("out_dir"), Some("/test/output".to_string()));
+        assert_eq!(config.get("metrics_dir"), Some("/test/metrics".to_string()));
+        assert_eq!(config.get("reports_dir"), Some("/test/reports".to_string()));
     }
 
     #[test]
@@ -249,7 +251,10 @@ mod tests {
         assert!(config.unset("endpoint", &defaults).is_ok());
         assert_eq!(config.database.endpoint, defaults.database.endpoint);
 
-        assert!(config.unset("out_dir", &defaults).is_ok());
-        assert_eq!(config.paths.out_dir, defaults.paths.out_dir);
+        assert!(config.unset("metrics_dir", &defaults).is_ok());
+        assert_eq!(config.paths.metrics_dir, defaults.paths.metrics_dir);
+
+        assert!(config.unset("reports_dir", &defaults).is_ok());
+        assert_eq!(config.paths.reports_dir, defaults.paths.reports_dir);
     }
 }

@@ -88,12 +88,16 @@ impl CurriculumSummary {
 /// prerequisites by following the chain of courses with the highest delay values.
 /// This represents the critical path through the curriculum.
 ///
+/// Corequisites are included in each step of the path using `+` notation.
+/// For example: `(CS1800+CS1802)->(CS2500+CS2501)->CS3500`
+///
 /// # Arguments
 /// * `dag` - The directed acyclic graph of course prerequisites
 /// * `metrics` - Computed metrics for all courses
 ///
 /// # Returns
-/// A vector of course keys representing the path from start to end, or empty if no courses
+/// A vector of course keys representing the path from start to end.
+/// Each element may contain multiple courses joined by `+` for corequisites.
 fn compute_longest_path(dag: &DAG, metrics: &CurriculumMetrics) -> Vec<String> {
     // Find all courses with the maximum delay value
     let max_delay = metrics.values().map(|m| m.delay).max().unwrap_or(0);
@@ -120,7 +124,64 @@ fn compute_longest_path(dag: &DAG, metrics: &CurriculumMetrics) -> Vec<String> {
         }
     }
 
-    longest_path
+    // Now expand each step to include corequisites
+    expand_path_with_corequisites(&longest_path, dag)
+}
+
+/// Expand a path to include corequisites for each course
+///
+/// Takes a simple path like `[A, B, C]` and expands it to include corequisites,
+/// resulting in something like `[(A+A_coreq), (B+B_coreq), C]` where courses
+/// with corequisites are grouped together.
+fn expand_path_with_corequisites(path: &[String], dag: &DAG) -> Vec<String> {
+    let mut expanded = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for course in path {
+        if seen.contains(course) {
+            continue; // Skip if already included as a corequisite
+        }
+
+        // Get corequisites for this course (both regular and strict)
+        let mut group = vec![course.clone()];
+        seen.insert(course.clone());
+
+        if let Some(coreqs) = dag.get_corequisites(course) {
+            for coreq in coreqs {
+                if !seen.contains(coreq) && dag.courses.contains(coreq) {
+                    group.push(coreq.clone());
+                    seen.insert(coreq.clone());
+                }
+            }
+        }
+
+        // Also check if this course is listed as a corequisite by another course on the path
+        if let Some(coreq_parents) = dag.get_coreq_dependents(course) {
+            for parent in coreq_parents {
+                if path.contains(parent) && !seen.contains(parent) {
+                    // This course is a coreq of another course on the path
+                    // They should be grouped together
+                    group.push(parent.clone());
+                    seen.insert(parent.clone());
+                }
+            }
+        }
+
+        // Sort for consistent output (main course first if possible)
+        group.sort();
+        // But keep the original course first
+        if let Some(pos) = group.iter().position(|c| c == course) {
+            group.swap(0, pos);
+        }
+
+        if group.len() > 1 {
+            expanded.push(format!("({})", group.join("+")));
+        } else {
+            expanded.push(course.clone());
+        }
+    }
+
+    expanded
 }
 
 /// Trace back through prerequisites to build a path.

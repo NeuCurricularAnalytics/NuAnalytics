@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Curriculum Report: Computer Science</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --success-color: #4CAF50;
+            --warning-color: #FF9800;
+            --danger-color: #F44336;
+            --critical-color: #9C27B0;
+            --light-bg: #f8f9fa;
+            --term-bg: #e8e8e8;
+            --border-color: #dee2e6;
+            --node-color: #37474f;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.4;
+            color: #333;
+            background-color: var(--light-bg);
+            padding: 1.5rem;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+        }
+
+        h1 {
+            color: var(--primary-color);
+            border-bottom: 3px solid var(--secondary-color);
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+        }
+
+        h2 {
+            color: var(--primary-color);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            border-left: 4px solid var(--secondary-color);
+            padding-left: 0.75rem;
+            font-size: 1.2rem;
+        }
+
+        .overview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-card {
+            background: var(--light-bg);
+            border-radius: 6px;
+            padding: 0.75rem;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .stat-card .label {
+            font-size: 0.7rem;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .stat-card .value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .stat-card .detail {
+            font-size: 0.75rem;
+            color: #888;
+        }
+
+        .critical-path {
+            background: linear-gradient(90deg, var(--light-bg), white);
+            padding: 0.75rem;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Curriculum Graph - scales to fill width */
+        .curriculum-graph-wrapper {
+            overflow-x: auto;
+            margin: 1rem 0;
+            position: relative;
+        }
+
+        .curriculum-graph {
+            display: flex;
+            gap: 0;
+            width: 100%;
+            position: relative;
+        }
+
+        .term-column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            min-width: 100px;
+            background: var(--term-bg);
+            border-radius: 4px;
+            margin: 0 16px;
+            padding: 10px 6px;
+        }
+
+        .term-header {
+            font-weight: 600;
+            font-size: 0.75rem;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+            padding: 4px 8px;
+            background: white;
+            border-radius: 4px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .term-courses {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            width: 100%;
+        }
+
+        .course-node {
+            position: relative;
+            background: white;
+            border-radius: 6px;
+            padding: 10px 8px 8px;
+            text-align: center;
+            border: 2px solid var(--node-color);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+            margin-top: 10px;
+        }
+
+        .course-node:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        .course-node.faded {
+            opacity: 0.25;
+        }
+
+        .course-node.highlighted {
+            border-color: var(--secondary-color);
+            border-width: 3px;
+            box-shadow: 0 0 8px rgba(52, 152, 219, 0.5);
+        }
+
+        .course-node.critical-highlight {
+            border-color: var(--critical-color);
+            border-width: 3px;
+            box-shadow: 0 0 8px rgba(156, 39, 176, 0.5);
+        }
+
+        .course-node .complexity-badge {
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.65rem;
+            font-weight: bold;
+            color: white;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .course-node .course-id {
+            font-weight: 600;
+            font-size: 0.75rem;
+            color: var(--primary-color);
+            margin-top: 6px;
+        }
+
+        .course-node .course-name {
+            font-size: 0.65rem;
+            color: #666;
+            line-height: 1.2;
+            max-height: 2.4em;
+            overflow: hidden;
+        }
+
+        .complexity-low { background-color: var(--success-color); }
+        .complexity-medium { background-color: var(--warning-color); }
+        .complexity-high { background-color: var(--danger-color); }
+
+        /* SVG for connections */
+        .connections-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            width: 100%;
+            height: 100%;
+            min-height: 600px;
+        }
+
+        .prereq-line { stroke: #666; stroke-width: 1.5; fill: none; transition: stroke 0.2s, stroke-width 0.2s, opacity 0.2s; }
+        .coreq-line { stroke: var(--secondary-color); stroke-width: 1.5; stroke-dasharray: 4,3; fill: none; transition: stroke 0.2s, stroke-width 0.2s, opacity 0.2s; }
+
+        .prereq-line.faded, .coreq-line.faded { opacity: 0.15; }
+        .prereq-line.highlighted { stroke: var(--secondary-color); stroke-width: 2.5; }
+        .coreq-line.highlighted { stroke: var(--secondary-color); stroke-width: 2.5; }
+        .prereq-line.critical, .coreq-line.critical { stroke: var(--critical-color); stroke-width: 3; }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            gap: 1.5rem;
+            margin: 0.75rem 0;
+            flex-wrap: wrap;
+            font-size: 0.8rem;
+        }
+
+        .legend-item { display: flex; align-items: center; gap: 0.4rem; }
+        .legend-color { width: 16px; height: 16px; border-radius: 50%; }
+        .legend-line { width: 30px; height: 2px; }
+        .legend-line.solid { background: #666; }
+        .legend-line.dashed { background: repeating-linear-gradient(90deg, var(--secondary-color), var(--secondary-color) 4px, transparent 4px, transparent 7px); }
+        .legend-line.critical { background: var(--critical-color); height: 3px; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.85rem; }
+        th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+        th { background-color: var(--primary-color); color: white; font-weight: 600; font-size: 0.75rem; }
+        tr:hover { background-color: var(--light-bg); }
+
+        .course-badge {
+            display: inline-block;
+            background: var(--secondary-color);
+            color: white;
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+        }
+
+        .complexity-row-low td:first-child { border-left: 3px solid var(--success-color); }
+        .complexity-row-medium td:first-child { border-left: 3px solid var(--warning-color); }
+        .complexity-row-high td:first-child { border-left: 3px solid var(--danger-color); }
+
+        footer { margin-top: 1.5rem; text-align: center; color: #888; font-size: 0.8rem; }
+
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+                margin: 0;
+            }
+
+            .container {
+                box-shadow: none;
+                padding: 0;
+                margin: 0;
+                max-width: 100%;
+            }
+
+            h1, h2 {
+                page-break-after: avoid;
+            }
+
+            .overview-grid {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 0.25rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .stat-card {
+                padding: 0.25rem;
+                font-size: 0.65rem;
+            }
+
+            .stat-card .label {
+                font-size: 0.55rem;
+            }
+
+            .stat-card .value {
+                font-size: 0.9rem;
+            }
+
+            .critical-path {
+                padding: 0.5rem;
+                margin-bottom: 0.5rem;
+                font-size: 0.8rem;
+            }
+
+            /* Scale graph to fit page width */
+            .curriculum-graph-wrapper {
+                overflow: hidden;
+                margin: 0.5rem 0;
+                page-break-inside: avoid;
+            }
+
+            .curriculum-graph {
+                display: flex;
+                gap: 0;
+                width: 100%;
+            }
+
+            .term-column {
+                min-width: 70px;
+                margin: 0 6px;
+                padding: 6px 4px;
+                flex: 1;
+            }
+
+            .term-header {
+                font-size: 0.65rem;
+                margin-bottom: 6px;
+                padding: 2px 4px;
+            }
+
+            .term-courses {
+                gap: 8px;
+            }
+
+            .course-node {
+                padding: 5px 3px 3px;
+                border: 1.5px solid var(--node-color);
+                margin-top: 6px;
+                font-size: 0.65rem;
+            }
+
+            .course-node .complexity-badge {
+                width: 16px;
+                height: 16px;
+                font-size: 0.55rem;
+                top: -8px;
+            }
+
+            .course-node .course-id {
+                font-size: 0.6rem;
+                margin-top: 3px;
+            }
+
+            .course-node .course-name {
+                font-size: 0.5rem;
+            }
+
+            /* Ensure lines render in print */
+            .prereq-line, .coreq-line {
+                stroke-width: 1.5 !important;
+            }
+
+            .prereq-line.critical, .coreq-line.critical {
+                stroke-width: 2.5 !important;
+            }
+
+            .connections-svg {
+                filter: contrast(1.1);
+            }
+
+            .legend {
+                gap: 1rem;
+                margin: 0.5rem 0;
+                font-size: 0.7rem;
+                page-break-after: avoid;
+            }
+
+            table {
+                margin: 0.5rem 0;
+                font-size: 0.75rem;
+                page-break-inside: avoid;
+            }
+
+            th, td {
+                padding: 0.3rem 0.25rem;
+            }
+
+            th {
+                font-size: 0.65rem;
+            }
+
+            footer {
+                margin-top: 1rem;
+                font-size: 0.7rem;
+                page-break-before: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📚 Curriculum Report: Computer Science</h1>
+
+        <h2>Overview</h2>
+        <div class="overview-grid">
+            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">Kennesaw State University</div></div>
+            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">BS Computer Science</div></div>
+            <div class="stat-card"><div class="label">System</div><div class="value">semster</div></div>
+            <div class="stat-card"><div class="label">Years</div><div class="value">4</div></div>
+            <div class="stat-card"><div class="label">CIP Code</div><div class="value">11.07</div></div>
+            <div class="stat-card"><div class="label">Total Credits</div><div class="value">120.0</div></div>
+            <div class="stat-card"><div class="label">Total Courses</div><div class="value">43</div></div>
+        </div>
+
+        <h2>Complexity Metrics</h2>
+        <div class="overview-grid">
+            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">280</div></div>
+            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">7</div><div class="detail">CSE1321</div></div>
+            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">167</div><div class="detail">CSE1322</div></div>
+        </div>
+
+        <div class="critical-path"><strong>Critical Path:</strong> (CSE1321+CSE1321L) → (CSE1322+CSE1322L) → CS3503 → (CS4504+CS3502) → CS4524</div>
+
+        <h2>Curriculum Graph</h2>
+        <div class="legend">
+            <div class="legend-item"><div class="legend-color complexity-low"></div><span>Low (1-5)</span></div>
+            <div class="legend-item"><div class="legend-color complexity-medium"></div><span>Medium (6-15)</span></div>
+            <div class="legend-item"><div class="legend-color complexity-high"></div><span>High (16+)</span></div>
+            <div class="legend-item"><div class="legend-line solid"></div><span>Prerequisite</span></div>
+            <div class="legend-item"><div class="legend-line dashed"></div><span>Corequisite</span></div>
+            <div class="legend-item"><div class="legend-line critical"></div><span>Critical Path</span></div>
+        </div>
+
+        <div class="curriculum-graph-wrapper">
+            <div class="curriculum-graph" id="curriculum-graph">
+                <div class="term-column">
+  <div class="term-header">Semester 1</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSE1321">
+      <span class="complexity-badge complexity-high">24</span>
+      <div class="course-id">CSE1321</div>
+      <div class="course-name">Programming and Proble</div>
+    </div>
+    <div class="course-node" data-course-id="CSE1321L">
+      <span class="complexity-badge complexity-high">25</span>
+      <div class="course-id">CSE1321L</div>
+      <div class="course-name">Programming and Proble</div>
+    </div>
+    <div class="course-node" data-course-id="MATH1190">
+      <span class="complexity-badge complexity-high">19</span>
+      <div class="course-id">MATH1190</div>
+      <div class="course-name">Calculus I</div>
+    </div>
+    <div class="course-node" data-course-id="ENGL1101">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ENGL1101</div>
+      <div class="course-name">Composistion I</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_39">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_39</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_43">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_43</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 2</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSE1322">
+      <span class="complexity-badge complexity-high">23</span>
+      <div class="course-id">CSE1322</div>
+      <div class="course-name">Programming and Proble</div>
+    </div>
+    <div class="course-node" data-course-id="CSE1322L">
+      <span class="complexity-badge complexity-high">23</span>
+      <div class="course-id">CSE1322L</div>
+      <div class="course-name">Programming and Proble</div>
+    </div>
+    <div class="course-node" data-course-id="MATH2345">
+      <span class="complexity-badge complexity-medium">15</span>
+      <div class="course-id">MATH2345</div>
+      <div class="course-name">Discrete Mathematics</div>
+    </div>
+    <div class="course-node" data-course-id="ENGL1102">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">ENGL1102</div>
+      <div class="course-name">Composition II</div>
+    </div>
+    <div class="course-node" data-course-id="MATH2202">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">MATH2202</div>
+      <div class="course-name">Calculus II</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 3</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CS3503">
+      <span class="complexity-badge complexity-medium">13</span>
+      <div class="course-id">CS3503</div>
+      <div class="course-name">Computer Organization </div>
+    </div>
+    <div class="course-node" data-course-id="CS3305">
+      <span class="complexity-badge complexity-medium">15</span>
+      <div class="course-id">CS3305</div>
+      <div class="course-name">Data Structures</div>
+    </div>
+    <div class="course-node" data-course-id="CS3410">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">CS3410</div>
+      <div class="course-name">Introduction to Databs</div>
+    </div>
+    <div class="course-node" data-course-id="CS3622">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">CS3622</div>
+      <div class="course-name">Fundamentals of Data C</div>
+    </div>
+    <div class="course-node" data-course-id="SWE3313">
+      <span class="complexity-badge complexity-medium">7</span>
+      <div class="course-id">SWE3313</div>
+      <div class="course-name">Introductrion to Softw</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 4</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CS3502">
+      <span class="complexity-badge complexity-medium">10</span>
+      <div class="course-id">CS3502</div>
+      <div class="course-name">Operating Systems</div>
+    </div>
+    <div class="course-node" data-course-id="CS4504">
+      <span class="complexity-badge complexity-medium">8</span>
+      <div class="course-id">CS4504</div>
+      <div class="course-name">Parallel and Distrubte</div>
+    </div>
+    <div class="course-node" data-course-id="CS3642">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CS3642</div>
+      <div class="course-name">Artifical Intelligence</div>
+    </div>
+    <div class="course-node" data-course-id="CS4265">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CS4265</div>
+      <div class="course-name">Big Data Analytics (CS</div>
+    </div>
+    <div class="course-node" data-course-id="CS4306">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CS4306</div>
+      <div class="course-name">Algorithm Analysis</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 5</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CS4524">
+      <span class="complexity-badge complexity-medium">7</span>
+      <div class="course-id">CS4524</div>
+      <div class="course-name">Cloud Computing (CS El</div>
+    </div>
+    <div class="course-node" data-course-id="CS4850">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">CS4850</div>
+      <div class="course-name">Computer Science Senio</div>
+    </div>
+    <div class="course-node" data-course-id="CS4308">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CS4308</div>
+      <div class="course-name">Concepts of Programmin</div>
+    </div>
+    <div class="course-node" data-course-id="CS4622">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CS4622</div>
+      <div class="course-name">Computer Networks (CS </div>
+    </div>
+    <div class="course-node" data-course-id="SWE3633">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">SWE3633</div>
+      <div class="course-name">Software Architecture </div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 6</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSE3801">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">CSE3801</div>
+      <div class="course-name">Professional Practices</div>
+    </div>
+    <div class="course-node" data-course-id="TCOM2010">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">TCOM2010</div>
+      <div class="course-name">Technical Writing</div>
+    </div>
+    <div class="course-node" data-course-id="MATH2332">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">MATH2332</div>
+      <div class="course-name">Probability and Data A</div>
+    </div>
+    <div class="course-node" data-course-id="MATH3260">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">MATH3260</div>
+      <div class="course-name">Linear Algebra I</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_40">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_40</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 7</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="XXXX_24">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_24</div>
+      <div class="course-name">Instiutional Options B-1</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_31">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">XXXX_31</div>
+      <div class="course-name">Science and Tech D-2</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_32">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">XXXX_32</div>
+      <div class="course-name">Science and Tech D-2 Lab</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_35">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_35</div>
+      <div class="course-name">Social Science E-1</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_37">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_37</div>
+      <div class="course-name">Social Science E-3</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_41">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_41</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 8</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="XXXX_25">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_25</div>
+      <div class="course-name">Instiutional Options B-2</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_33">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">XXXX_33</div>
+      <div class="course-name">Science and Tech D-2</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_34">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">XXXX_34</div>
+      <div class="course-name">Science and Tech D-2 Lab</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_36">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_36</div>
+      <div class="course-name">Social Science E-2</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_38">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_38</div>
+      <div class="course-name">Social Science E-4</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_42">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_42</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+  </div>
+</div>
+
+            </div>
+            <svg class="connections-svg" id="connections-svg"></svg>
+        </div>
+
+        <h2>Term Schedule</h2>
+        <table>
+            <thead><tr><th>Term</th><th>Courses</th><th>Credits</th></tr></thead>
+            <tbody><tr><td>1</td><td><span class="course-badge">CSE1321</span> Programming and Problem Solving I<br><span class="course-badge">CSE1321L</span> Programming and Problem Solving I Lab<br><span class="course-badge">MATH1190</span> Calculus I<br><span class="course-badge">ENGL1101</span> Composistion I<br><span class="course-badge">XXXX_39</span> Free Elective<br><span class="course-badge">XXXX_43</span> Free Elective</td><td>16.0</td></tr>
+<tr><td>2</td><td><span class="course-badge">CSE1322</span> Programming and Problem Solving II<br><span class="course-badge">CSE1322L</span> Programming and Problem Solving II Lab<br><span class="course-badge">MATH2345</span> Discrete Mathematics<br><span class="course-badge">ENGL1102</span> Composition II<br><span class="course-badge">MATH2202</span> Calculus II</td><td>14.0</td></tr>
+<tr><td>3</td><td><span class="course-badge">CS3503</span> Computer Organization and Architecture<br><span class="course-badge">CS3305</span> Data Structures<br><span class="course-badge">CS3410</span> Introduction to Databse Systems<br><span class="course-badge">CS3622</span> Fundamentals of Data Communication<br><span class="course-badge">SWE3313</span> Introductrion to Software Engineering</td><td>15.0</td></tr>
+<tr><td>4</td><td><span class="course-badge">CS3502</span> Operating Systems<br><span class="course-badge">CS4504</span> Parallel and Distrubted Computing<br><span class="course-badge">CS3642</span> Artifical Intelligence (CS Elective)<br><span class="course-badge">CS4265</span> Big Data Analytics (CS Elective)<br><span class="course-badge">CS4306</span> Algorithm Analysis</td><td>15.0</td></tr>
+<tr><td>5</td><td><span class="course-badge">CS4524</span> Cloud Computing (CS Elective)<br><span class="course-badge">CS4850</span> Computer Science Senior Project<br><span class="course-badge">CS4308</span> Concepts of Programming Languages<br><span class="course-badge">CS4622</span> Computer Networks (CS Elective)<br><span class="course-badge">SWE3633</span> Software Architecture and Design (CS Elective)</td><td>15.0</td></tr>
+<tr><td>6</td><td><span class="course-badge">CSE3801</span> Professional Practices and Ethics<br><span class="course-badge">TCOM2010</span> Technical Writing<br><span class="course-badge">MATH2332</span> Probability and Data Analysis<br><span class="course-badge">MATH3260</span> Linear Algebra I<br><span class="course-badge">XXXX_40</span> Free Elective</td><td>14.0</td></tr>
+<tr><td>7</td><td><span class="course-badge">XXXX_24</span> Instiutional Options B-1<br><span class="course-badge">XXXX_31</span> Science and Tech D-2<br><span class="course-badge">XXXX_32</span> Science and Tech D-2 Lab<br><span class="course-badge">XXXX_35</span> Social Science E-1<br><span class="course-badge">XXXX_37</span> Social Science E-3<br><span class="course-badge">XXXX_41</span> Free Elective</td><td>15.0</td></tr>
+<tr><td>8</td><td><span class="course-badge">XXXX_25</span> Instiutional Options B-2<br><span class="course-badge">XXXX_33</span> Science and Tech D-2<br><span class="course-badge">XXXX_34</span> Science and Tech D-2 Lab<br><span class="course-badge">XXXX_36</span> Social Science E-2<br><span class="course-badge">XXXX_38</span> Social Science E-4<br><span class="course-badge">XXXX_42</span> Free Elective</td><td>16.0</td></tr>
+</tbody>
+        </table>
+
+        <h2>Course Metrics</h2>
+        <table>
+            <thead><tr><th>Course</th><th>Name</th><th>Cr</th><th>Cplx</th><th>Blk</th><th>Dly</th><th>Ctr</th></tr></thead>
+            <tbody><tr class="complexity-high"><td>CSE1321L</td><td>Programming and Problem Solving I Lab</td><td>1.0</td><td>25</td><td>18</td><td>7</td><td>0</td></tr>
+<tr class="complexity-high"><td>CSE1321</td><td>Programming and Problem Solving I</td><td>3.0</td><td>24</td><td>17</td><td>7</td><td>92</td></tr>
+<tr class="complexity-high"><td>CSE1322</td><td>Programming and Problem Solving II</td><td>3.0</td><td>23</td><td>16</td><td>7</td><td>167</td></tr>
+<tr class="complexity-high"><td>CSE1322L</td><td>Programming and Problem Solving II Lab</td><td>1.0</td><td>23</td><td>17</td><td>6</td><td>0</td></tr>
+<tr class="complexity-high"><td>MATH1190</td><td>Calculus I</td><td>4.0</td><td>19</td><td>13</td><td>6</td><td>0</td></tr>
+<tr class="complexity-medium"><td>MATH2345</td><td>Discrete Mathematics</td><td>3.0</td><td>15</td><td>9</td><td>6</td><td>32</td></tr>
+<tr class="complexity-medium"><td>CS3305</td><td>Data Structures</td><td>3.0</td><td>15</td><td>8</td><td>7</td><td>128</td></tr>
+<tr class="complexity-medium"><td>CS3503</td><td>Computer Organization and Architecture</td><td>3.0</td><td>13</td><td>6</td><td>7</td><td>72</td></tr>
+<tr class="complexity-medium"><td>CS3502</td><td>Operating Systems</td><td>3.0</td><td>10</td><td>3</td><td>7</td><td>77</td></tr>
+<tr class="complexity-medium"><td>CS4504</td><td>Parallel and Distrubted Computing</td><td>3.0</td><td>8</td><td>1</td><td>7</td><td>77</td></tr>
+<tr class="complexity-medium"><td>SWE3313</td><td>Introductrion to Software Engineering</td><td>3.0</td><td>7</td><td>2</td><td>5</td><td>24</td></tr>
+<tr class="complexity-medium"><td>CS4524</td><td>Cloud Computing (CS Elective)</td><td>3.0</td><td>7</td><td>0</td><td>7</td><td>0</td></tr>
+<tr class="complexity-medium"><td>CS3410</td><td>Introduction to Databse Systems</td><td>3.0</td><td>6</td><td>1</td><td>5</td><td>12</td></tr>
+<tr class="complexity-medium"><td>CS3622</td><td>Fundamentals of Data Communication</td><td>3.0</td><td>6</td><td>1</td><td>5</td><td>12</td></tr>
+<tr class="complexity-medium"><td>CS4850</td><td>Computer Science Senior Project</td><td>3.0</td><td>6</td><td>0</td><td>6</td><td>0</td></tr>
+<tr class="complexity-low"><td>ENGL1101</td><td>Composistion I</td><td>3.0</td><td>5</td><td>2</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS4306</td><td>Algorithm Analysis</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS4308</td><td>Concepts of Programming Languages</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS4265</td><td>Big Data Analytics (CS Elective)</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS4622</td><td>Computer Networks (CS Elective)</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS3642</td><td>Artifical Intelligence (CS Elective)</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>SWE3633</td><td>Software Architecture and Design (CS Elective)</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ENGL1102</td><td>Composition II</td><td>3.0</td><td>4</td><td>1</td><td>3</td><td>3</td></tr>
+<tr class="complexity-low"><td>CSE3801</td><td>Professional Practices and Ethics</td><td>2.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>TCOM2010</td><td>Technical Writing</td><td>3.0</td><td>3</td><td>0</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_32</td><td>Science and Tech D-2 Lab</td><td>1.0</td><td>3</td><td>1</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_34</td><td>Science and Tech D-2 Lab</td><td>1.0</td><td>3</td><td>1</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>MATH2202</td><td>Calculus II</td><td>4.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>MATH2332</td><td>Probability and Data Analysis</td><td>3.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>MATH3260</td><td>Linear Algebra I</td><td>3.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_31</td><td>Science and Tech D-2</td><td>3.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_33</td><td>Science and Tech D-2</td><td>3.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_24</td><td>Instiutional Options B-1</td><td>2.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_25</td><td>Instiutional Options B-2</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_35</td><td>Social Science E-1</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_36</td><td>Social Science E-2</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_37</td><td>Social Science E-3</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_38</td><td>Social Science E-4</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_39</td><td>Free Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_40</td><td>Free Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_41</td><td>Free Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_42</td><td>Free Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_43</td><td>Free Elective</td><td>2.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+</tbody>
+        </table>
+
+        <footer><p>Generated by NuAnalytics</p></footer>
+    </div>
+
+    <script>
+        const edges = [{ "from": "MATH1190", "to": "MATH2345", "dashes": false }, { "from": "SWE3313", "to": "SWE3633", "dashes": false }, { "from": "CS4504", "to": "CS4524", "dashes": false }, { "from": "CS3502", "to": "CS4850", "dashes": false }, { "from": "SWE3313", "to": "CS4850", "dashes": false }, { "from": "CS3305", "to": "CS4306", "dashes": false }, { "from": "CS3305", "to": "CS3642", "dashes": false }, { "from": "CSE1322", "to": "CS3410", "dashes": false }, { "from": "CSE1322L", "to": "CS3410", "dashes": false }, { "from": "MATH1190", "to": "MATH3260", "dashes": false }, { "from": "CSE1321", "to": "CSE1322", "dashes": false }, { "from": "ENGL1101", "to": "ENGL1102", "dashes": false }, { "from": "CS3503", "to": "CS4622", "dashes": false }, { "from": "CS3622", "to": "CS4622", "dashes": false }, { "from": "CS3305", "to": "CS4265", "dashes": false }, { "from": "CS3410", "to": "CS4265", "dashes": false }, { "from": "MATH1190", "to": "MATH2202", "dashes": false }, { "from": "CSE1322", "to": "CS3503", "dashes": false }, { "from": "CSE1322L", "to": "CS3503", "dashes": false }, { "from": "ENGL1102", "to": "TCOM2010", "dashes": false }, { "from": "MATH1190", "to": "MATH2332", "dashes": false }, { "from": "CSE1322", "to": "CS3622", "dashes": false }, { "from": "CSE1322L", "to": "CS3622", "dashes": false }, { "from": "CS3305", "to": "CS4308", "dashes": false }, { "from": "CS3503", "to": "CS4308", "dashes": false }, { "from": "CS3305", "to": "CS3502", "dashes": false }, { "from": "CS3503", "to": "CS3502", "dashes": false }, { "from": "MATH2345", "to": "CS3305", "dashes": false }, { "from": "CSE1322", "to": "CS3305", "dashes": false }, { "from": "CSE1322L", "to": "CS3305", "dashes": false }, { "from": "CSE1322", "to": "CSE3801", "dashes": false }, { "from": "CSE1322L", "to": "CSE3801", "dashes": false }, { "from": "CSE1322", "to": "SWE3313", "dashes": false }, { "from": "CSE1322L", "to": "SWE3313", "dashes": false }, { "from": "CS3305", "to": "CS4504", "dashes": false }, { "from": "CS3503", "to": "CS4504", "dashes": false }, { "from": "XXXX_32", "to": "XXXX_31", "dashes": true }, { "from": "XXXX_34", "to": "XXXX_33", "dashes": true }, { "from": "CSE1322L", "to": "CSE1322", "dashes": true }, { "from": "CSE1321L", "to": "CSE1321", "dashes": true }, { "from": "CS3502", "to": "CS4504", "dashes": true }];
+        const criticalPath = ["CSE1321", "CSE1321L", "CSE1322", "CSE1322L", "CS3503", "CS4504", "CS3502", "CS4524"];
+        const criticalPathSet = new Set(criticalPath);
+
+        // Build adjacency maps for path tracing
+        const forwardEdges = new Map(); // course -> courses it leads to
+        const backwardEdges = new Map(); // course -> courses that lead to it
+        const corequisites = new Map(); // course -> set of its corequisites
+
+        edges.forEach(edge => {
+            if (!forwardEdges.has(edge.from)) forwardEdges.set(edge.from, []);
+            forwardEdges.get(edge.from).push(edge.to);
+
+            if (!backwardEdges.has(edge.to)) backwardEdges.set(edge.to, []);
+            backwardEdges.get(edge.to).push(edge.from);
+
+            // Track corequisite relationships (bidirectional)
+            if (edge.dashes) {
+                if (!corequisites.has(edge.from)) corequisites.set(edge.from, new Set());
+                if (!corequisites.has(edge.to)) corequisites.set(edge.to, new Set());
+                corequisites.get(edge.from).add(edge.to);
+                corequisites.get(edge.to).add(edge.from);
+            }
+        });
+
+        // Get full chains through a course (both prerequisites and dependents)
+        // - Backward: all courses that are prerequisites (transitive)
+        // - Forward: all courses that depend on it (transitive)
+        // - Plus: corequisites of all courses in the chain
+        function getChainsThrough(courseId) {
+            const inChain = new Set([courseId]);
+            const edgesInChain = new Set();
+
+            // Traverse backward for full prerequisite chain (follows all edges, including coreqs)
+            function traceBackward(id) {
+                const prev = backwardEdges.get(id) || [];
+                prev.forEach(prevId => {
+                    edgesInChain.add(prevId + '->' + id);
+                    if (!inChain.has(prevId)) {
+                        inChain.add(prevId);
+                        traceBackward(prevId);
+                    }
+                });
+            }
+
+            // Traverse forward for full dependent chain (follows all edges, including coreqs)
+            function traceForward(id) {
+                const next = forwardEdges.get(id) || [];
+                next.forEach(nextId => {
+                    edgesInChain.add(id + '->' + nextId);
+                    if (!inChain.has(nextId)) {
+                        inChain.add(nextId);
+                        traceForward(nextId);
+                    }
+                });
+            }
+
+            traceBackward(courseId);
+            traceForward(courseId);
+
+            // Now add all corequisites of courses in the chain and their edges
+            // (but don't traverse from corequisites - they're already included via the chains)
+            const chainCourses = Array.from(inChain);
+            chainCourses.forEach(course => {
+                const coreqs = corequisites.get(course);
+                if (coreqs) {
+                    coreqs.forEach(coreq => {
+                        inChain.add(coreq);
+                        // Add corequisite edges in both directions
+                        edgesInChain.add(course + '->' + coreq);
+                        edgesInChain.add(coreq + '->' + course);
+                    });
+                }
+            });
+
+            return { courses: inChain, edges: edgesInChain };
+        }
+
+        // Check if course is on critical path
+        function isOnCriticalPath(courseId) {
+            return criticalPathSet.has(courseId);
+        }
+
+        // Ensure SVG paths are drawn before printing/PDF generation
+        window.addEventListener('beforeprint', function() {
+            drawConnections();
+        });
+
+        // Detect when Chrome starts printing/generating PDF
+        if (matchMedia('print').matches) {
+            // Print mode detected - ensure SVG is drawn immediately
+            drawConnections();
+            setTimeout(drawConnections, 100);
+        }
+        matchMedia('print').addEventListener('change', (mq) => {
+            if (mq.matches) {
+                drawConnections();
+                setTimeout(drawConnections, 100);
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Force layout calculation before drawing
+            const graph = document.getElementById('curriculum-graph');
+            if (graph) {
+                void graph.offsetHeight; // Force reflow
+            }
+
+            // Use requestAnimationFrame for proper timing
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    drawConnections();
+                    markSvgReady();
+                    // Additional draws for headless chrome
+                    setTimeout(() => { drawConnections(); markSvgReady(); }, 200);
+                    setTimeout(() => { drawConnections(); markSvgReady(); }, 500);
+                    setTimeout(() => { drawConnections(); markSvgReady(); }, 1000);
+                    setTimeout(() => { drawConnections(); markSvgReady(); }, 2000);
+                });
+            });
+
+            window.addEventListener('resize', drawConnections);
+
+            // Add hover handlers to course nodes
+            document.querySelectorAll('.course-node').forEach(node => {
+                node.addEventListener('mouseenter', handleCourseHover);
+                node.addEventListener('mouseleave', handleCourseLeave);
+            });
+        });
+
+        function handleCourseHover(e) {
+            const courseId = e.currentTarget.dataset.courseId;
+            const { courses: inChain, edges: chainEdges } = getChainsThrough(courseId);
+            const onCritical = isOnCriticalPath(courseId);
+
+            // Fade all courses and highlight those in the chains through this course
+            document.querySelectorAll('.course-node').forEach(node => {
+                const id = node.dataset.courseId;
+                if (inChain.has(id)) {
+                    node.classList.remove('faded');
+                    if (onCritical && criticalPathSet.has(id)) {
+                        node.classList.add('critical-highlight');
+                    } else {
+                        node.classList.add('highlighted');
+                    }
+                } else {
+                    node.classList.add('faded');
+                    node.classList.remove('highlighted', 'critical-highlight');
+                }
+            });
+
+            // Fade/highlight edges in the chains
+            document.querySelectorAll('#connections-svg path').forEach(path => {
+                const edgeKey = path.dataset.from + '->' + path.dataset.to;
+                if (chainEdges.has(edgeKey)) {
+                    path.classList.remove('faded');
+                    // Check if this edge is part of critical path
+                    if (onCritical && criticalPathSet.has(path.dataset.from) && criticalPathSet.has(path.dataset.to)) {
+                        path.classList.add('critical');
+                    } else {
+                        path.classList.add('highlighted');
+                    }
+                } else {
+                    path.classList.add('faded');
+                    path.classList.remove('highlighted', 'critical');
+                }
+            });
+        }
+
+        function handleCourseLeave(e) {
+            // Remove all highlighting
+            document.querySelectorAll('.course-node').forEach(node => {
+                node.classList.remove('faded', 'highlighted', 'critical-highlight');
+            });
+            document.querySelectorAll('#connections-svg path').forEach(path => {
+                path.classList.remove('faded', 'highlighted', 'critical');
+            });
+        }
+
+        function markSvgReady() {
+            const svg = document.getElementById('connections-svg');
+            if (svg && svg.childElementCount > 0) {
+                svg.setAttribute('data-ready', 'true');
+            }
+        }
+
+        function drawConnections() {
+            const svg = document.getElementById('connections-svg');
+            const graph = document.getElementById('curriculum-graph');
+            const wrapper = document.querySelector('.curriculum-graph-wrapper');
+            if (!svg || !graph || !wrapper) return;
+
+            // Force layout recalculation
+            void graph.offsetHeight;
+
+            // Get actual rendered positions
+            const wrapperRect = wrapper.getBoundingClientRect();
+            const graphRect = graph.getBoundingClientRect();
+
+            // Calculate the graph's offset within the wrapper
+            const graphOffsetX = graphRect.left - wrapperRect.left;
+            const graphOffsetY = graphRect.top - wrapperRect.top;
+
+            // Size SVG to match wrapper
+            svg.style.width = wrapper.offsetWidth + 'px';
+            svg.style.height = wrapper.offsetHeight + 'px';
+            svg.setAttribute('width', wrapper.offsetWidth);
+            svg.setAttribute('height', wrapper.offsetHeight);
+            svg.innerHTML = '';
+
+            const svgNS = 'http://www.w3.org/2000/svg';
+
+            edges.forEach(edge => {
+                const fromEl = document.querySelector('[data-course-id="' + edge.from + '"]');
+                const toEl = document.querySelector('[data-course-id="' + edge.to + '"]');
+                if (!fromEl || !toEl) return;
+
+                // Get positions relative to viewport
+                const fromRect = fromEl.getBoundingClientRect();
+                const toRect = toEl.getBoundingClientRect();
+
+                // Calculate positions relative to wrapper (where SVG is positioned)
+                const offsetX = wrapperRect.left;
+                const offsetY = wrapperRect.top;
+
+                // Check if courses are in the same column (corequisites in same term)
+                const fromCenterX = fromRect.left + fromRect.width / 2;
+                const toCenterX = toRect.left + toRect.width / 2;
+                const sameColumn = Math.abs(fromCenterX - toCenterX) < 50;
+
+                let x1, y1, x2, y2, pathD;
+
+                if (sameColumn && edge.dashes) {
+                    // Corequisite in same term: always connect bottom to top
+                    // Determine which course is higher (smaller top value)
+                    const fromTop = fromRect.top;
+                    const toTop = toRect.top;
+
+                    let upperRect, lowerRect;
+                    if (fromTop < toTop) {
+                        // 'from' is higher, 'to' is lower
+                        upperRect = fromRect;
+                        lowerRect = toRect;
+                    } else {
+                        // 'to' is higher, 'from' is lower
+                        upperRect = toRect;
+                        lowerRect = fromRect;
+                    }
+
+                    // Connect from bottom of upper to top of lower
+                    x1 = upperRect.left + upperRect.width / 2 - offsetX;
+                    y1 = upperRect.bottom - offsetY;
+                    x2 = lowerRect.left + lowerRect.width / 2 - offsetX;
+                    y2 = lowerRect.top - offsetY;
+
+                    // Curved vertical path
+                    const midY = (y1 + y2) / 2;
+                    pathD = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + midY + ', ' + x2 + ' ' + midY + ', ' + x2 + ' ' + y2;
+                } else if (sameColumn) {
+                    // Non-coreq in same column (rare) - standard bottom to top
+                    x1 = fromRect.left + fromRect.width / 2 - offsetX;
+                    y1 = fromRect.bottom - offsetY;
+                    x2 = toRect.left + toRect.width / 2 - offsetX;
+                    y2 = toRect.top - offsetY;
+
+                    const midY = (y1 + y2) / 2;
+                    pathD = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + midY + ', ' + x2 + ' ' + midY + ', ' + x2 + ' ' + y2;
+                } else {
+                    // Horizontal connection: from right side to left side
+                    x1 = fromRect.right - offsetX;
+                    y1 = fromRect.top + fromRect.height / 2 - offsetY;
+                    x2 = toRect.left - offsetX;
+                    y2 = toRect.top + toRect.height / 2 - offsetY;
+
+                    // Curved horizontal path
+                    const midX = (x1 + x2) / 2;
+                    pathD = 'M ' + x1 + ' ' + y1 + ' C ' + midX + ' ' + y1 + ', ' + midX + ' ' + y2 + ', ' + x2 + ' ' + y2;
+                }
+
+                const path = document.createElementNS(svgNS, 'path');
+                path.setAttribute('d', pathD);
+                path.dataset.from = edge.from;
+                path.dataset.to = edge.to;
+
+                if (edge.dashes) {
+                    path.setAttribute('class', 'coreq-line');
+                } else {
+                    path.setAttribute('class', 'prereq-line');
+                }
+                svg.appendChild(path);
+            });
+        }
+    </script>
+</body>
+</html>

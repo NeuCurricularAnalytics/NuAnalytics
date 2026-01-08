@@ -45,6 +45,48 @@ impl std::fmt::Display for LogLevelArg {
     }
 }
 
+/// Report format argument for CLI
+///
+/// Specifies the output format for curriculum reports.
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
+pub enum ReportFormatArg {
+    /// HTML format with interactive visualizations
+    Html,
+    /// Markdown format for documentation
+    Md,
+    /// PDF format (not yet implemented)
+    Pdf,
+}
+
+impl ReportFormatArg {
+    /// Get the file extension for this format
+    #[must_use]
+    pub const fn extension(self) -> &'static str {
+        match self {
+            Self::Html => "html",
+            Self::Md => "md",
+            Self::Pdf => "pdf",
+        }
+    }
+
+    /// Try to infer format from a file extension
+    #[must_use]
+    pub fn from_extension(ext: &str) -> Option<Self> {
+        match ext.to_lowercase().as_str() {
+            "html" | "htm" => Some(Self::Html),
+            "md" | "markdown" => Some(Self::Md),
+            "pdf" => Some(Self::Pdf),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for ReportFormatArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.extension())
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum ConfigSubcommand {
     /// Display configuration values.
@@ -86,17 +128,71 @@ pub enum Command {
     },
     /// Plan and analyze curricula.
     ///
-    /// Load one or more curriculum CSV files and analyze the plan.
+    /// Load one or more curriculum CSV files, compute metrics, and generate reports.
+    /// By default, generates both CSV metrics files and HTML reports.
+    ///
+    /// # Examples
+    /// ```sh
+    /// # Generate both CSV and HTML for multiple files
+    /// nuanalytics planner course1.csv course2.csv
+    ///
+    /// # Generate only HTML report with explicit output
+    /// nuanalytics planner course.csv -o report.html
+    ///
+    /// # Generate only CSV metrics
+    /// nuanalytics planner course.csv --no-report
+    ///
+    /// # Generate Markdown report to custom directory
+    /// nuanalytics planner course.csv --report-format md --report-dir ./docs
+    /// ```
     Planner {
         /// Paths to curriculum CSV files (supports multiple)
         #[arg(value_name = "FILES", num_args = 1..)]
         input_files: Vec<std::path::PathBuf>,
 
-        /// Output file paths (optional; defaults to config `out_dir` when omitted)
+        /// Explicit output file paths (1:1 mapping with input files, space-separated)
         ///
-        /// When provided, must match the number of input files 1:1.
+        /// When provided, the extension determines output type:
+        /// - `.csv` → generates only CSV metrics (implies --no-report)
+        /// - `.html`, `.md`, `.pdf` → generates only report (implies --no-csv)
+        ///
+        /// Must match the number of input files when provided.
         #[arg(short, long, value_name = "FILES", num_args = 1..)]
         output: Vec<std::path::PathBuf>,
+
+        /// Report format when generating reports (html, md, pdf)
+        ///
+        /// Used when -o is not provided or when -o extension conflicts (with warning).
+        /// Defaults to html if not specified.
+        #[arg(long, value_enum, value_name = "FORMAT")]
+        report_format: Option<ReportFormatArg>,
+
+        /// Custom PDF converter command (e.g., chrome, chromium, wkhtmltopdf)
+        ///
+        /// When generating PDF reports, specifies which tool to use for HTML-to-PDF conversion.
+        /// If not provided, will auto-detect Chrome/Chromium.
+        #[arg(long, value_name = "COMMAND")]
+        pdf_converter: Option<String>,
+
+        /// Override reports output directory (from config)
+        #[arg(long, value_name = "DIR")]
+        report_dir: Option<std::path::PathBuf>,
+
+        /// Override metrics output directory (from config)
+        #[arg(long, value_name = "DIR")]
+        metrics_dir: Option<std::path::PathBuf>,
+
+        /// Target credits per term for scheduling (default: 15.0)
+        #[arg(long, value_name = "CREDITS")]
+        term_credits: Option<f32>,
+
+        /// Skip CSV metrics generation
+        #[arg(long)]
+        no_csv: bool,
+
+        /// Skip report generation
+        #[arg(long)]
+        no_report: bool,
     },
 }
 
@@ -152,13 +248,13 @@ pub struct Cli {
     #[arg(long = "db-endpoint", value_name = "URL")]
     pub db_endpoint: Option<String>,
 
-    /// Override config output directory
-    #[arg(long = "config-out-dir", value_name = "DIR")]
-    pub config_out_dir: Option<PathBuf>,
+    /// Override config metrics output directory
+    #[arg(long = "metrics-dir", value_name = "DIR")]
+    pub metrics_dir: Option<PathBuf>,
 
-    /// Override config output directory (short form)
-    #[arg(long = "out-dir", value_name = "DIR")]
-    pub out_dir: Option<PathBuf>,
+    /// Override config reports output directory
+    #[arg(long = "reports-dir", value_name = "DIR")]
+    pub reports_dir: Option<PathBuf>,
 
     /// Subcommand to execute.
     /// A subcommand is required to run the CLI.
@@ -198,15 +294,14 @@ impl Cli {
                 .db_endpoint
                 .clone()
                 .or_else(|| self.config_db_endpoint.clone()),
-            out_dir: self
-                .out_dir
+            metrics_dir: self
+                .metrics_dir
                 .as_ref()
-                .map(|p| p.to_string_lossy().to_string())
-                .or_else(|| {
-                    self.config_out_dir
-                        .as_ref()
-                        .map(|p| p.to_string_lossy().to_string())
-                }),
+                .map(|p| p.to_string_lossy().to_string()),
+            reports_dir: self
+                .reports_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string()),
         }
     }
 }
@@ -245,8 +340,8 @@ mod tests {
             db_token: None,
             config_db_endpoint: None,
             db_endpoint: None,
-            config_out_dir: None,
-            out_dir: None,
+            metrics_dir: None,
+            reports_dir: None,
             command: Command::Config { subcommand: None },
         };
 
@@ -256,7 +351,8 @@ mod tests {
         assert!(overrides.verbose.is_none());
         assert!(overrides.db_token.is_none());
         assert!(overrides.db_endpoint.is_none());
-        assert!(overrides.out_dir.is_none());
+        assert!(overrides.metrics_dir.is_none());
+        assert!(overrides.reports_dir.is_none());
     }
 
     #[test]
@@ -273,8 +369,8 @@ mod tests {
             db_token: Some("test-token".to_string()),
             config_db_endpoint: None,
             db_endpoint: Some("https://test.com".to_string()),
-            config_out_dir: None,
-            out_dir: Some(PathBuf::from("/output")),
+            metrics_dir: Some(PathBuf::from("/metrics")),
+            reports_dir: Some(PathBuf::from("/reports")),
             command: Command::Config { subcommand: None },
         };
 
@@ -284,7 +380,8 @@ mod tests {
         assert_eq!(overrides.verbose, Some(true));
         assert_eq!(overrides.db_token, Some("test-token".to_string()));
         assert_eq!(overrides.db_endpoint, Some("https://test.com".to_string()));
-        assert_eq!(overrides.out_dir, Some("/output".to_string()));
+        assert_eq!(overrides.metrics_dir, Some("/metrics".to_string()));
+        assert_eq!(overrides.reports_dir, Some("/reports".to_string()));
     }
 
     #[test]
@@ -302,15 +399,16 @@ mod tests {
             db_token: Some("short-token".to_string()),
             config_db_endpoint: Some("https://long.com".to_string()),
             db_endpoint: Some("https://short.com".to_string()),
-            config_out_dir: Some(PathBuf::from("/long/out")),
-            out_dir: Some(PathBuf::from("/short/out")),
+            metrics_dir: Some(PathBuf::from("/metrics")),
+            reports_dir: Some(PathBuf::from("/reports")),
             command: Command::Config { subcommand: None },
         };
 
         let overrides = cli.to_config_overrides();
         assert_eq!(overrides.db_token, Some("short-token".to_string()));
         assert_eq!(overrides.db_endpoint, Some("https://short.com".to_string()));
-        assert_eq!(overrides.out_dir, Some("/short/out".to_string()));
+        assert_eq!(overrides.metrics_dir, Some("/metrics".to_string()));
+        assert_eq!(overrides.reports_dir, Some("/reports".to_string()));
     }
 
     #[test]
@@ -328,14 +426,15 @@ mod tests {
             db_token: None,
             config_db_endpoint: Some("https://long.com".to_string()),
             db_endpoint: None,
-            config_out_dir: Some(PathBuf::from("/long/out")),
-            out_dir: None,
+            metrics_dir: None,
+            reports_dir: None,
             command: Command::Config { subcommand: None },
         };
 
         let overrides = cli.to_config_overrides();
         assert_eq!(overrides.db_token, Some("long-token".to_string()));
         assert_eq!(overrides.db_endpoint, Some("https://long.com".to_string()));
-        assert_eq!(overrides.out_dir, Some("/long/out".to_string()));
+        assert!(overrides.metrics_dir.is_none());
+        assert!(overrides.reports_dir.is_none());
     }
 }
