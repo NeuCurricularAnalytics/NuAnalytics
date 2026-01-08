@@ -437,7 +437,7 @@ impl<'a> TermScheduler<'a> {
                         if course_set.contains(p) {
                             stack.push(p);
                         }
-                        visited.insert(p.to_string());
+                        visited.insert(p.clone());
                     }
                 }
             }
@@ -544,7 +544,7 @@ impl<'a> TermScheduler<'a> {
     fn find_underloaded_term(&self, plan: &mut TermPlan, group_credits: f32) -> usize {
         // Find the term with minimum credits that won't exceed max
         let mut best_term = 0;
-        let mut min_credits = f32::MAX;
+        let mut min_credits = f32::INFINITY;
 
         for (idx, term) in plan.terms.iter().enumerate() {
             let projected = term.total_credits + group_credits;
@@ -555,7 +555,7 @@ impl<'a> TermScheduler<'a> {
         }
 
         // If no term fits, add a new one
-        if min_credits == f32::MAX {
+        if min_credits == f32::INFINITY {
             plan.add_term();
             plan.terms.len() - 1
         } else {
