@@ -9,7 +9,6 @@
 //! the full report generation pipeline from an input CSV file.
 
 use crate::args::ReportFormatArg;
-use logger::{error, info};
 use nu_analytics::core::{
     metrics, metrics_export,
     models::{Degree, Plan, School, DAG},
@@ -19,6 +18,7 @@ use nu_analytics::core::{
         ReportGenerator, SchedulerConfig, TermPlan, TermScheduler,
     },
 };
+use nu_analytics::{error, info};
 use std::path::{Path, PathBuf};
 
 /// Default target credits per term

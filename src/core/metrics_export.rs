@@ -360,10 +360,10 @@ pub fn export_metrics_csv_with_summary(
     )?;
 
     // Write course data
-    logger::debug!("Exporting {} courses from plan", plan.courses.len());
+    crate::debug!("Exporting {} courses from plan", plan.courses.len());
 
     for (csv_id, storage_key, course) in &courses_by_csv_id {
-        logger::debug!(
+        crate::debug!(
             "Exporting course {} ({}) - storage key: {}",
             csv_id,
             course.name,

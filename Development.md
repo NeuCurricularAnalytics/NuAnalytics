@@ -28,6 +28,56 @@ Ensure you have the following installed:
    pre-commit install --hook-type commit-msg
    ```
 
+### Developer Workflow
+
+For contributors and local development, prefer `cargo run` so code rebuilds automatically:
+
+```bash
+# Run the CLI
+cargo run  -- planner path/to/curriculum.csv
+
+# Run config commands
+cargo run  -- config get level
+cargo run  -- config set level debug
+```
+
+If you want to install the CLI from Git for testing the installed binary:
+
+```bash
+cargo install --git https://github.com/NeuCurricularAnalytics/NuAnalytics --bin nuanalytics
+nuanalytics --help
+```
+
+### Recommended Git Flow (for newer contributors)
+
+1. Fork the repository on GitHub
+2. Clone your fork locally:
+   ```bash
+   git clone https://github.com/<your-username>/NuAnalytics.git
+   cd NuAnalytics
+   ```
+3. Create a feature branch:
+   ```bash
+   git checkout -b feat/short-description
+   ```
+4. Make changes and run locally:
+   ```bash
+   cargo fmt --all
+   cargo clippy --all-targets -- -D warnings
+   cargo test
+   cargo run --package nu_analytics --bin nuanalytics -- planner ./samples/plans/* --report-format pdf
+   ```
+5. Commit with a conventional message:
+   ```bash
+   git add .
+   git commit -m "feat(cli): add new option"
+   ```
+6. Push and open a PR:
+   ```bash
+   git push origin feat/short-description
+   ```
+7. Address review feedback, ensure CI passes.
+
    This ensures code quality checks run automatically before each commit. If you don't have pre-commit installed, you need to install it via pip or pip3 `pip install pre-commit`.
 
 ## Common Development Actions

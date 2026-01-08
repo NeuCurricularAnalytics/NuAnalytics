@@ -2,6 +2,9 @@
 
 NuAnalytics is a Rust-based tool for analyzing computer science curricula. It computes detailed metrics about curriculum structure including complexity, blocking relationships, delay paths, and centrality measures to help understand how courses are organized and their impact on students.
 
+It is based off the work of Greg Heileman, and CurricularAnalytics.org. Current version just provides a command line batch capability
+and more report options.
+
 ## Features
 
 - **Curriculum Analysis**: Parse CSV-formatted curriculum files and analyze course dependencies
@@ -19,6 +22,26 @@ NuAnalytics is a Rust-based tool for analyzing computer science curricula. It co
 
 ## Quick Start
 
+## Installation
+
+### Stable (crates.io) - Recommended
+
+Install the CLI via Cargo:
+
+```bash
+cargo install nu_analytics
+```
+
+This provides the `nuanalytics` binary globally.
+
+### From Git (for latest)
+
+Install directly from Git:
+
+```bash
+cargo install --git https://github.com/NeuCurricularAnalytics/NuAnalytics --bin nuanalytics
+```
+
 ### Building
 
 ```bash
@@ -27,41 +50,41 @@ cargo build --release
 
 The executable will be at `target/release/nuanalytics`.
 
-### Running
+### Running (installed)
 
 Analyze a curriculum CSV file and generate both metrics CSV and HTML report:
 
 ```bash
-./nuanalytics planner path/to/curriculum.csv
+nuanalytics planner path/to/curriculum.csv
 ```
 
 Generate only a PDF report:
 
 ```bash
-./nuanalytics planner path/to/curriculum.csv --no-csv --report-format pdf
+nuanalytics planner path/to/curriculum.csv --no-csv --report-format pdf
 ```
 
 Generate only CSV metrics (no report):
 
 ```bash
-./nuanalytics planner path/to/curriculum.csv --no-report
+nuanalytics planner path/to/curriculum.csv --no-report
 ```
 
 Manage configuration:
 
 ```bash
-./nuanalytics config get level
-./nuanalytics config set level debug
+nuanalytics config get level
+nuanalytics config set level debug
 ```
 
 ## Documentation
 
 - **[Config Command](docs/config.md)** - Configure NuAnalytics settings (logging, database, output directories)
-- **[Planner Command](docs/planner.md)** - Analyze curricula, compute metrics, and generate reports
+- **[Planner Command](docs/planner.md)** - Analyze curricula for a degree plan, compute metrics, and generate reports
 
 ## Development
 
-For development setup and detailed development information, see [Development.md](Development.md).
+If you are contributing or working locally, see [Development.md](Development.md) for `cargo run` workflows and setup.
 
 ## Project Structure
 
@@ -80,12 +103,11 @@ For development setup and detailed development information, see [Development.md]
 │   │   └── report/       # Report generation
 │   │       ├── formats/  # HTML, PDF, Markdown reporters
 │   │       └── term_scheduler.rs  # Course scheduling algorithm
+│   ├── logger/           # Internal logging module
 │   └── lib.rs            # Library exports
-├── crates/
-│   └── logger/           # Custom logging crate
 ├── tests/                # Integration and unit tests
 ├── docs/                 # Documentation
-└── Cargo.toml           # Project manifest
+└── Cargo.toml            # Project manifest
 ```
 
 ## Report Formats

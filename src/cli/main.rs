@@ -8,8 +8,9 @@ mod commands;
 
 use args::{Cli, Command, ReportFormatArg};
 use clap::Parser;
-use logger::{enable_debug, enable_verbose, info, init_file_logging, set_level, warn, Level};
 use nu_analytics::config::Config;
+use nu_analytics::logger::{enable_debug, enable_verbose, init_file_logging, set_level, Level};
+use nu_analytics::{info, warn};
 use std::path::{Path, PathBuf};
 
 /// Main entry point for the `NuAnalytics` CLI

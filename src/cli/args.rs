@@ -3,13 +3,13 @@
 use clap::{builder::BoolishValueParser, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
-use logger::Level;
 use nu_analytics::config::ConfigOverrides;
+use nu_analytics::logger::Level;
 
 /// CLI log level argument
 ///
 /// Represents log levels that can be passed via CLI arguments. Converts to lowercase
-/// strings for config storage and to `logger::Level` for runtime use.
+/// strings for config storage and to `nu_analytics::logger::Level` for runtime use.
 #[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
 pub enum LogLevelArg {
     /// Error-level logging

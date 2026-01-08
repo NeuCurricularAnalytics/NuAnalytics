@@ -1,11 +1,11 @@
 //! Planner command handler - CSV metrics export
 
-use logger::{error, info};
 use nu_analytics::core::{
     metrics, metrics_export,
     models::{Degree, Plan},
     planner::parse_curriculum_csv,
 };
+use nu_analytics::{error, info};
 use std::path::{Path, PathBuf};
 
 /// Run CSV export for a single input file

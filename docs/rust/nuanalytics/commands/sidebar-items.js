@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["config","planner"]};
+window.SIDEBAR_ITEMS = {"mod":["config","planner","report"]};

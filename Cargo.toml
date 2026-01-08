@@ -1,7 +1,14 @@
 [package]
-name = "nu_analytics"
+name = "nu-analytics"
 version = "0.1.0"
 edition = "2021"
+authors = ["Albert Lionelle <a.lionelle@northeastern.edu>"]
+description = "A CLI tool for computing Curricular Analytics metrics. Based off metrics from CurricularAnalytics.org. Currently, only basic metrics and additional reporting features."
+license = "MIT"
+repository = "https://github.com/NeuCurricularAnalytics/NuAnalytics"
+keywords = ["Curricular Analytics", "Curriculum", "Research"]
+readme = "Readme.md"
+categories = ["command-line-utilities", "science"]
 
 [lib]
 name = "nu_analytics"
@@ -15,7 +22,6 @@ path = "src/cli/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
-logger = { path = "crates/logger" }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 dirs = "5.0"
@@ -28,11 +34,10 @@ tempfile = "3.10"
 
 [features]
 default = ["log-info", "log-debug", "verbose", "file-logging"]
-# Forward feature flags to the logger crate
-log-info = ["logger/log-info"]
-log-debug = ["logger/log-debug"]
-verbose = ["logger/verbose"]
-file-logging = ["logger/file-logging"]
+log-info = []
+log-debug = []
+verbose = []
+file-logging = []
 
 [profile.release]
 opt-level = "z"  # Optimize for size
@@ -50,7 +55,4 @@ nursery = "warn"
 correctness = "deny"
 perf = "deny"
 
-[workspace]
-members = [
-	"crates/logger",
-]
+# Note: logger is now an internal module; no workspace members required.
