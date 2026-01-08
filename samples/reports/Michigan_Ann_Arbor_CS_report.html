@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Curriculum Report: {{plan_name}}</title>
+    <title>Curriculum Report: Computer Science - LSA</title>
     <style>
         :root {
             --primary-color: #2c3e50;
@@ -407,27 +407,27 @@
 </head>
 <body>
     <div class="container">
-        <h1>📚 Curriculum Report: {{plan_name}}</h1>
+        <h1>📚 Curriculum Report: Computer Science - LSA</h1>
 
         <h2>Overview</h2>
         <div class="overview-grid">
-            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">{{institution}}</div></div>
-            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">{{degree_name}}</div></div>
-            <div class="stat-card"><div class="label">System</div><div class="value">{{system_type}}</div></div>
-            <div class="stat-card"><div class="label">Years</div><div class="value">{{years}}</div></div>
-            <div class="stat-card"><div class="label">CIP Code</div><div class="value">{{cip_code}}</div></div>
-            <div class="stat-card"><div class="label">Total Credits</div><div class="value">{{total_credits}}</div></div>
-            <div class="stat-card"><div class="label">Total Courses</div><div class="value">{{course_count}}</div></div>
+            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">University of Michigan-Ann Arbor</div></div>
+            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">BS Computer Science - LSA</div></div>
+            <div class="stat-card"><div class="label">System</div><div class="value">quarter</div></div>
+            <div class="stat-card"><div class="label">Years</div><div class="value">4</div></div>
+            <div class="stat-card"><div class="label">CIP Code</div><div class="value">11.07</div></div>
+            <div class="stat-card"><div class="label">Total Credits</div><div class="value">128.0</div></div>
+            <div class="stat-card"><div class="label">Total Courses</div><div class="value">38</div></div>
         </div>
 
         <h2>Complexity Metrics</h2>
         <div class="overview-grid">
-            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">{{total_complexity}}</div></div>
-            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">{{longest_delay}}</div><div class="detail">{{longest_delay_course}}</div></div>
-            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">{{highest_centrality}}</div><div class="detail">{{highest_centrality_course}}</div></div>
+            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">173</div></div>
+            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">5</div><div class="detail">Engineering101</div></div>
+            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">36</div><div class="detail">EECS281</div></div>
         </div>
 
-        <div class="critical-path"><strong>Critical Path:</strong> {{longest_delay_path}}</div>
+        <div class="critical-path"><strong>Critical Path:</strong> (Engineering101+Math115) → EECS280 → EECS370 → EECS482</div>
 
         <h2>Curriculum Graph</h2>
         <div class="legend">
@@ -441,7 +441,257 @@
 
         <div class="curriculum-graph-wrapper">
             <div class="curriculum-graph" id="curriculum-graph">
-                {{term_graph}}
+                <div class="term-column">
+  <div class="term-header">Semester 1</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="Engineering101">
+      <span class="complexity-badge complexity-medium">13</span>
+      <div class="course-id">Engineering101</div>
+      <div class="course-name">Introduction to Computers</div>
+    </div>
+    <div class="course-node" data-course-id="Math115">
+      <span class="complexity-badge complexity-high">20</span>
+      <div class="course-id">Math115</div>
+      <div class="course-name">Calculus I</div>
+    </div>
+    <div class="course-node" data-course-id="Engineering100">
+      <span class="complexity-badge complexity-medium">7</span>
+      <div class="course-id">Engineering100</div>
+      <div class="course-name">Introduction to Engine</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 2</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="EECS280">
+      <span class="complexity-badge complexity-medium">12</span>
+      <div class="course-id">EECS280</div>
+      <div class="course-name">Programming and Elemen</div>
+    </div>
+    <div class="course-node" data-course-id="EECS203">
+      <span class="complexity-badge complexity-medium">11</span>
+      <div class="course-id">EECS203</div>
+      <div class="course-name">Discrete Mathematics</div>
+    </div>
+    <div class="course-node" data-course-id="Math116">
+      <span class="complexity-badge complexity-medium">8</span>
+      <div class="course-id">Math116</div>
+      <div class="course-name">Calculus II</div>
+    </div>
+    <div class="course-node" data-course-id="TCHNCLCM300">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">TCHNCLCM300</div>
+      <div class="course-name">Technical Communicatio</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 3</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="EECS281">
+      <span class="complexity-badge complexity-medium">9</span>
+      <div class="course-id">EECS281</div>
+      <div class="course-name">Data Structures and Al</div>
+    </div>
+    <div class="course-node" data-course-id="EECS370">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">EECS370</div>
+      <div class="course-name">Introduction to Comput</div>
+    </div>
+    <div class="course-node" data-course-id="Math214">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">Math214</div>
+      <div class="course-name">Applied Linear Algebra</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 4</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="Physics140">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">Physics140</div>
+      <div class="course-name">General Physics I</div>
+    </div>
+    <div class="course-node" data-course-id="Physics141">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">Physics141</div>
+      <div class="course-name">Elementary Laboratory I</div>
+    </div>
+    <div class="course-node" data-course-id="EECS445">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">EECS445</div>
+      <div class="course-name">Intorudction to Machin</div>
+    </div>
+    <div class="course-node" data-course-id="EECS482">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">EECS482</div>
+      <div class="course-name">Introduction to Operat</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 5</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="EECS484">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">EECS484</div>
+      <div class="course-name">Database Management Sy</div>
+    </div>
+    <div class="course-node" data-course-id="EECS485">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">EECS485</div>
+      <div class="course-name">Web Datavase and Infor</div>
+    </div>
+    <div class="course-node" data-course-id="EECS376">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">EECS376</div>
+      <div class="course-name">Foundation of Computer</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 6</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="EECSXX">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">EECSXX</div>
+      <div class="course-name">Approved CS MDE course</div>
+    </div>
+    <div class="course-node" data-course-id="TCHNCLCM497">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">TCHNCLCM497</div>
+      <div class="course-name">Advanced Technical Com</div>
+    </div>
+    <div class="course-node" data-course-id="Math215">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">Math215</div>
+      <div class="course-name">Multivariable & Vector</div>
+    </div>
+    <div class="course-node" data-course-id="Physics240">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">Physics240</div>
+      <div class="course-name">General Physics II</div>
+    </div>
+    <div class="course-node" data-course-id="Physics241">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">Physics241</div>
+      <div class="course-name">Elementary Laboratory II</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 7</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="Chemistry125">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">Chemistry125</div>
+      <div class="course-name">General Chemistry Labo</div>
+    </div>
+    <div class="course-node" data-course-id="Chemistry126">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">Chemistry126</div>
+      <div class="course-name">General Chemistry Laba</div>
+    </div>
+    <div class="course-node" data-course-id="Chemistry130">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">Chemistry130</div>
+      <div class="course-name">General Chemistry</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_36">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_36</div>
+      <div class="course-name">(General Elective)</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 8</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="EECS496">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">EECS496</div>
+      <div class="course-name">Major Design Experince</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_31">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_31</div>
+      <div class="course-name">(Intellectual Breadth)</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_37">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_37</div>
+      <div class="course-name">(General Elective)</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 9</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="STATS250">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">STATS250</div>
+      <div class="course-name">Introduction to Statis</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_32">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_32</div>
+      <div class="course-name">(Intellectual Breadth)</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_38">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_38</div>
+      <div class="course-name">(General Elective)</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 10</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="XXXX_26">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_26</div>
+      <div class="course-name">(Technical Elective)</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_35">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_35</div>
+      <div class="course-name">(General Elective)</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 11</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="XXXX_27">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_27</div>
+      <div class="course-name">(Technical Elective)</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_33">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_33</div>
+      <div class="course-name">(Intellectual Breadth)</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 12</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="XXXX_28">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_28</div>
+      <div class="course-name">(Technical Elective)</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_34">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_34</div>
+      <div class="course-name">(Intellectual Breadth)</div>
+    </div>
+  </div>
+</div>
+
             </div>
             <svg class="connections-svg" id="connections-svg"></svg>
         </div>
@@ -449,21 +699,71 @@
         <h2>Term Schedule</h2>
         <table>
             <thead><tr><th>Term</th><th>Courses</th><th>Credits</th></tr></thead>
-            <tbody>{{term_schedule}}</tbody>
+            <tbody><tr><td>1</td><td><span class="course-badge">Engineering101</span> Introduction to Computers<br><span class="course-badge">Math115</span> Calculus I<br><span class="course-badge">Engineering100</span> Introduction to Engineering</td><td>12.0</td></tr>
+<tr><td>2</td><td><span class="course-badge">EECS280</span> Programming and Elementary Data Structures<br><span class="course-badge">EECS203</span> Discrete Mathematics<br><span class="course-badge">Math116</span> Calculus II<br><span class="course-badge">TCHNCLCM300</span> Technical Communication for Electrical and Computer Science</td><td>13.0</td></tr>
+<tr><td>3</td><td><span class="course-badge">EECS281</span> Data Structures and Algorithms<br><span class="course-badge">EECS370</span> Introduction to Computer Organization<br><span class="course-badge">Math214</span> Applied Linear Algebra</td><td>12.0</td></tr>
+<tr><td>4</td><td><span class="course-badge">Physics140</span> General Physics I<br><span class="course-badge">Physics141</span> Elementary Laboratory I<br><span class="course-badge">EECS445</span> Intorudction to Machine Learning (CS Elective)<br><span class="course-badge">EECS482</span> Introduction to Operating Systems (CS Elective)</td><td>13.0</td></tr>
+<tr><td>5</td><td><span class="course-badge">EECS484</span> Database Management Systems (CS Elective)<br><span class="course-badge">EECS485</span> Web Datavase and Information Systems (CS Elective)<br><span class="course-badge">EECS376</span> Foundation of Computer Science</td><td>12.0</td></tr>
+<tr><td>6</td><td><span class="course-badge">EECSXX</span> Approved CS MDE course<br><span class="course-badge">TCHNCLCM497</span> Advanced Technical Communication for Computer Science<br><span class="course-badge">Math215</span> Multivariable & Vector Calculus<br><span class="course-badge">Physics240</span> General Physics II<br><span class="course-badge">Physics241</span> Elementary Laboratory II</td><td>15.0</td></tr>
+<tr><td>7</td><td><span class="course-badge">Chemistry125</span> General Chemistry Laboratory I<br><span class="course-badge">Chemistry126</span> General Chemistry Labatory II<br><span class="course-badge">Chemistry130</span> General Chemistry<br><span class="course-badge">XXXX_36</span> (General Elective)</td><td>9.0</td></tr>
+<tr><td>8</td><td><span class="course-badge">EECS496</span> Major Design Experince Professionalism<br><span class="course-badge">XXXX_31</span> (Intellectual Breadth)<br><span class="course-badge">XXXX_37</span> (General Elective)</td><td>10.0</td></tr>
+<tr><td>9</td><td><span class="course-badge">STATS250</span> Introduction to Statistics and Data Analysis<br><span class="course-badge">XXXX_32</span> (Intellectual Breadth)<br><span class="course-badge">XXXX_38</span> (General Elective)</td><td>11.0</td></tr>
+<tr><td>10</td><td><span class="course-badge">XXXX_26</span> (Technical Elective)<br><span class="course-badge">XXXX_35</span> (General Elective)</td><td>7.0</td></tr>
+<tr><td>11</td><td><span class="course-badge">XXXX_27</span> (Technical Elective)<br><span class="course-badge">XXXX_33</span> (Intellectual Breadth)</td><td>7.0</td></tr>
+<tr><td>12</td><td><span class="course-badge">XXXX_28</span> (Technical Elective)<br><span class="course-badge">XXXX_34</span> (Intellectual Breadth)</td><td>7.0</td></tr>
+</tbody>
         </table>
 
         <h2>Course Metrics</h2>
         <table>
             <thead><tr><th>Course</th><th>Name</th><th>Cr</th><th>Cplx</th><th>Blk</th><th>Dly</th><th>Ctr</th></tr></thead>
-            <tbody>{{course_metrics}}</tbody>
+            <tbody><tr class="complexity-high"><td>Math115</td><td>Calculus I</td><td>4.0</td><td>20</td><td>15</td><td>5</td><td>0</td></tr>
+<tr class="complexity-medium"><td>Engineering101</td><td>Introduction to Computers</td><td>4.0</td><td>13</td><td>8</td><td>5</td><td>29</td></tr>
+<tr class="complexity-medium"><td>EECS280</td><td>Programming and Elementary Data Structures</td><td>4.0</td><td>12</td><td>7</td><td>5</td><td>29</td></tr>
+<tr class="complexity-medium"><td>EECS203</td><td>Discrete Mathematics</td><td>4.0</td><td>11</td><td>7</td><td>4</td><td>23</td></tr>
+<tr class="complexity-medium"><td>EECS281</td><td>Data Structures and Algorithms</td><td>4.0</td><td>9</td><td>4</td><td>5</td><td>36</td></tr>
+<tr class="complexity-medium"><td>Math116</td><td>Calculus II</td><td>4.0</td><td>8</td><td>4</td><td>4</td><td>10</td></tr>
+<tr class="complexity-medium"><td>Engineering100</td><td>Introduction to Engineering</td><td>4.0</td><td>7</td><td>3</td><td>4</td><td>0</td></tr>
+<tr class="complexity-medium"><td>EECS370</td><td>Introduction to Computer Organization</td><td>4.0</td><td>6</td><td>1</td><td>5</td><td>9</td></tr>
+<tr class="complexity-medium"><td>TCHNCLCM300</td><td>Technical Communication for Electrical and Computer Science</td><td>1.0</td><td>6</td><td>2</td><td>4</td><td>4</td></tr>
+<tr class="complexity-low"><td>Chemistry126</td><td>General Chemistry Labatory II</td><td>1.0</td><td>5</td><td>2</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>Physics141</td><td>Elementary Laboratory I</td><td>1.0</td><td>5</td><td>2</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>Math214</td><td>Applied Linear Algebra</td><td>4.0</td><td>5</td><td>1</td><td>4</td><td>4</td></tr>
+<tr class="complexity-low"><td>EECS482</td><td>Introduction to Operating Systems (CS Elective)</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>EECS484</td><td>Database Management Systems (CS Elective)</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>EECS485</td><td>Web Datavase and Information Systems (CS Elective)</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>EECS445</td><td>Intorudction to Machine Learning (CS Elective)</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>TCHNCLCM497</td><td>Advanced Technical Communication for Computer Science</td><td>2.0</td><td>5</td><td>1</td><td>4</td><td>4</td></tr>
+<tr class="complexity-low"><td>Chemistry125</td><td>General Chemistry Laboratory I</td><td>1.0</td><td>4</td><td>1</td><td>3</td><td>3</td></tr>
+<tr class="complexity-low"><td>Physics140</td><td>General Physics I</td><td>4.0</td><td>4</td><td>1</td><td>3</td><td>6</td></tr>
+<tr class="complexity-low"><td>EECS376</td><td>Foundation of Computer Science</td><td>4.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>EECSXX</td><td>Approved CS MDE course</td><td>4.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>Chemistry130</td><td>General Chemistry</td><td>3.0</td><td>3</td><td>0</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>Physics240</td><td>General Physics II</td><td>4.0</td><td>3</td><td>0</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>Physics241</td><td>Elementary Laboratory II</td><td>1.0</td><td>3</td><td>1</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>Math215</td><td>Multivariable & Vector Calculus</td><td>4.0</td><td>3</td><td>0</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>EECS496</td><td>Major Design Experince Professionalism</td><td>2.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>STATS250</td><td>Introduction to Statistics and Data Analysis</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_26</td><td>(Technical Elective)</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_27</td><td>(Technical Elective)</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_28</td><td>(Technical Elective)</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_31</td><td>(Intellectual Breadth)</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_32</td><td>(Intellectual Breadth)</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_33</td><td>(Intellectual Breadth)</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_34</td><td>(Intellectual Breadth)</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_35</td><td>(General Elective)</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_36</td><td>(General Elective)</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_37</td><td>(General Elective)</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_38</td><td>(General Elective)</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+</tbody>
         </table>
 
         <footer><p>Generated by NuAnalytics</p></footer>
     </div>
 
     <script>
-        const edges = {{graph_edges}};
-        const criticalPath = {{critical_path_ids}};
+        const edges = [{ "from": "Math115", "to": "Physics140", "dashes": false }, { "from": "Math115", "to": "EECS203", "dashes": false }, { "from": "TCHNCLCM300", "to": "TCHNCLCM497", "dashes": false }, { "from": "EECS203", "to": "EECS376", "dashes": false }, { "from": "EECS280", "to": "EECS376", "dashes": false }, { "from": "EECS281", "to": "EECS484", "dashes": false }, { "from": "Engineering100", "to": "TCHNCLCM300", "dashes": false }, { "from": "Math116", "to": "Math214", "dashes": false }, { "from": "EECS203", "to": "EECS370", "dashes": false }, { "from": "EECS280", "to": "EECS370", "dashes": false }, { "from": "Physics140", "to": "Physics240", "dashes": false }, { "from": "Math116", "to": "Physics240", "dashes": false }, { "from": "Engineering101", "to": "EECS280", "dashes": false }, { "from": "EECS281", "to": "EECS485", "dashes": false }, { "from": "EECS281", "to": "EECS445", "dashes": false }, { "from": "Math214", "to": "EECS445", "dashes": false }, { "from": "EECS281", "to": "EECS482", "dashes": false }, { "from": "EECS370", "to": "EECS482", "dashes": false }, { "from": "Math115", "to": "Math116", "dashes": false }, { "from": "Math116", "to": "Math215", "dashes": false }, { "from": "EECS203", "to": "EECS281", "dashes": false }, { "from": "EECS280", "to": "EECS281", "dashes": false }, { "from": "Physics141", "to": "Physics140", "dashes": true }, { "from": "TCHNCLCM497", "to": "EECSXX", "dashes": true }, { "from": "Chemistry125", "to": "Chemistry130", "dashes": true }, { "from": "Chemistry126", "to": "Chemistry125", "dashes": true }, { "from": "Physics241", "to": "Physics240", "dashes": true }, { "from": "Math115", "to": "Engineering101", "dashes": true }];
+        const criticalPath = ["Engineering101", "Math115", "EECS280", "EECS370", "EECS482"];
         const criticalPathSet = new Set(criticalPath);
 
         // Build adjacency maps for path tracing

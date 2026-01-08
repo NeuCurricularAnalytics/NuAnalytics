@@ -102,7 +102,12 @@ fn prepare_report_data(input_file: &Path, term_credits: Option<f32>) -> Result<R
 }
 
 /// Write the report to a file in the specified format
-fn write_report(data: &ReportData, format: ReportFormat, output_path: &Path) -> Result<(), String> {
+fn write_report(
+    data: &ReportData,
+    format: ReportFormat,
+    output_path: &Path,
+    pdf_converter: Option<&str>,
+) -> Result<(), String> {
     let degree = data.school.degrees.first();
     let ctx = ReportContext::new(
         &data.school,
@@ -128,7 +133,7 @@ fn write_report(data: &ReportData, format: ReportFormat, output_path: &Path) -> 
                 .map_err(|e| format!("✗ Failed to generate HTML report: {e}"))?;
         }
         ReportFormat::Pdf => {
-            let reporter = PdfReporter::new();
+            let reporter = pdf_converter.map_or_else(PdfReporter::new, PdfReporter::with_converter);
             reporter
                 .generate(&ctx, output_path)
                 .map_err(|e| format!("✗ Failed to generate PDF report: {e}"))?;
@@ -183,6 +188,7 @@ const fn to_report_format(fmt: ReportFormatArg) -> ReportFormat {
 /// * `format` - Report format (Html, Md, Pdf)
 /// * `reports_dir` - Directory for output when `output_file` is None
 /// * `term_credits` - Optional target credits per term
+/// * `pdf_converter` - Optional custom PDF converter command
 ///
 /// # Returns
 /// Path to the generated report file
@@ -192,6 +198,7 @@ pub fn generate_report_file(
     format: ReportFormatArg,
     reports_dir: &str,
     term_credits: Option<f32>,
+    pdf_converter: Option<&str>,
 ) -> Result<PathBuf, String> {
     // Convert to internal format type
     let report_format = to_report_format(format);
@@ -231,7 +238,7 @@ pub fn generate_report_file(
     };
 
     // Write the report
-    write_report(&data, report_format, &output_path)?;
+    write_report(&data, report_format, &output_path, pdf_converter)?;
 
     info!("Report exported to: {}", output_path.display());
     print_summary(&data);

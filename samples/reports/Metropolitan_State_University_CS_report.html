@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Curriculum Report: {{plan_name}}</title>
+    <title>Curriculum Report: Computer Science</title>
     <style>
         :root {
             --primary-color: #2c3e50;
@@ -407,27 +407,27 @@
 </head>
 <body>
     <div class="container">
-        <h1>📚 Curriculum Report: {{plan_name}}</h1>
+        <h1>📚 Curriculum Report: Computer Science</h1>
 
         <h2>Overview</h2>
         <div class="overview-grid">
-            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">{{institution}}</div></div>
-            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">{{degree_name}}</div></div>
-            <div class="stat-card"><div class="label">System</div><div class="value">{{system_type}}</div></div>
-            <div class="stat-card"><div class="label">Years</div><div class="value">{{years}}</div></div>
-            <div class="stat-card"><div class="label">CIP Code</div><div class="value">{{cip_code}}</div></div>
-            <div class="stat-card"><div class="label">Total Credits</div><div class="value">{{total_credits}}</div></div>
-            <div class="stat-card"><div class="label">Total Courses</div><div class="value">{{course_count}}</div></div>
+            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">Metro State University</div></div>
+            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">BS Computer Science</div></div>
+            <div class="stat-card"><div class="label">System</div><div class="value">semster</div></div>
+            <div class="stat-card"><div class="label">Years</div><div class="value">4</div></div>
+            <div class="stat-card"><div class="label">CIP Code</div><div class="value">11.07</div></div>
+            <div class="stat-card"><div class="label">Total Credits</div><div class="value">120.0</div></div>
+            <div class="stat-card"><div class="label">Total Courses</div><div class="value">34</div></div>
         </div>
 
         <h2>Complexity Metrics</h2>
         <div class="overview-grid">
-            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">{{total_complexity}}</div></div>
-            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">{{longest_delay}}</div><div class="detail">{{longest_delay_course}}</div></div>
-            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">{{highest_centrality}}</div><div class="detail">{{highest_centrality_course}}</div></div>
+            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">172</div></div>
+            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">6</div><div class="detail">ICS140</div></div>
+            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">58</div><div class="detail">ICS240</div></div>
         </div>
 
-        <div class="critical-path"><strong>Critical Path:</strong> {{longest_delay_path}}</div>
+        <div class="critical-path"><strong>Critical Path:</strong> MATH120 → ICS140 → ICS141 → ICS240 → ICS372 → ICS499</div>
 
         <h2>Curriculum Graph</h2>
         <div class="legend">
@@ -441,7 +441,217 @@
 
         <div class="curriculum-graph-wrapper">
             <div class="curriculum-graph" id="curriculum-graph">
-                {{term_graph}}
+                <div class="term-column">
+  <div class="term-header">Semester 1</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="MATH120">
+      <span class="complexity-badge complexity-high">22</span>
+      <div class="course-id">MATH120</div>
+      <div class="course-name">Precalculus</div>
+    </div>
+    <div class="course-node" data-course-id="WRITXX_18">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">WRITXX_18</div>
+      <div class="course-name">Goal 1 - Communication</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_24">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_24</div>
+      <div class="course-name">Goal 5 - History and B</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_27">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_27</div>
+      <div class="course-name">Goal 7 - Human Diversity</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_34">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_34</div>
+      <div class="course-name">Upper Division Liberal</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 2</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="ICS140">
+      <span class="complexity-badge complexity-high">19</span>
+      <div class="course-id">ICS140</div>
+      <div class="course-name">Computational Thinking</div>
+    </div>
+    <div class="course-node" data-course-id="MATH215">
+      <span class="complexity-badge complexity-high">16</span>
+      <div class="course-id">MATH215</div>
+      <div class="course-name">Discrete Mathematics</div>
+    </div>
+    <div class="course-node" data-course-id="MATH210">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">MATH210</div>
+      <div class="course-name">Calculus I</div>
+    </div>
+    <div class="course-node" data-course-id="WRITXX_19">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">WRITXX_19</div>
+      <div class="course-name">Goal 1 - Intermediate </div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 3</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="ICS141">
+      <span class="complexity-badge complexity-high">18</span>
+      <div class="course-id">ICS141</div>
+      <div class="course-name">Problem Solving with P</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_23">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_23</div>
+      <div class="course-name">Goal 5 - History and B</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_25">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_25</div>
+      <div class="course-name">Goal 6 - Humanities an</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_28">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_28</div>
+      <div class="course-name">Goal 8 - Global Perspe</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 4</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="ICS240">
+      <span class="complexity-badge complexity-medium">14</span>
+      <div class="course-id">ICS240</div>
+      <div class="course-name">Introduction to Data S</div>
+    </div>
+    <div class="course-node" data-course-id="ICS232">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">ICS232</div>
+      <div class="course-name">Computer Orgination an</div>
+    </div>
+    <div class="course-node" data-course-id="ICS311">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">ICS311</div>
+      <div class="course-name">Database Management Sy</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_30">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_30</div>
+      <div class="course-name">Goal 10 - People and t</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 5</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="ICS340">
+      <span class="complexity-badge complexity-medium">7</span>
+      <div class="course-id">ICS340</div>
+      <div class="course-name">Algorithms and Data St</div>
+    </div>
+    <div class="course-node" data-course-id="ICS372">
+      <span class="complexity-badge complexity-medium">7</span>
+      <div class="course-id">ICS372</div>
+      <div class="course-name">Object Oriented Design</div>
+    </div>
+    <div class="course-node" data-course-id="ICS352">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS352</div>
+      <div class="course-name">Machine Learning (CS E</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_31">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_31</div>
+      <div class="course-name">GELS Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 6</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="ICS440">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">ICS440</div>
+      <div class="course-name">Parallel and Distibute</div>
+    </div>
+    <div class="course-node" data-course-id="ICS499">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">ICS499</div>
+      <div class="course-name">Software Engineering a</div>
+    </div>
+    <div class="course-node" data-course-id="ICS365">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS365</div>
+      <div class="course-name">Organization of Progra</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_32">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_32</div>
+      <div class="course-name">Racial Issues Graduati</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 7</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="ICS460">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS460</div>
+      <div class="course-name">Networks and Security</div>
+    </div>
+    <div class="course-node" data-course-id="ICS462">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS462</div>
+      <div class="course-name">Operating Systems</div>
+    </div>
+    <div class="course-node" data-course-id="ICS342">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">ICS342</div>
+      <div class="course-name">Mobile Application Dev</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_33">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_33</div>
+      <div class="course-name">Upper Division Liberal</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 8</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="WRITXX_20">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">WRITXX_20</div>
+      <div class="course-name">Goal 1 - Oral and Visu</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_21">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">XXXX_21</div>
+      <div class="course-name">Goal 3 - Natural Science</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_22">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">XXXX_22</div>
+      <div class="course-name">Goal 3 - Natural Scien</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_26">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_26</div>
+      <div class="course-name">Goal 6 - Humanities an</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_29">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_29</div>
+      <div class="course-name">Goal 9 - Ethical and C</div>
+    </div>
+  </div>
+</div>
+
             </div>
             <svg class="connections-svg" id="connections-svg"></svg>
         </div>
@@ -449,21 +659,63 @@
         <h2>Term Schedule</h2>
         <table>
             <thead><tr><th>Term</th><th>Courses</th><th>Credits</th></tr></thead>
-            <tbody>{{term_schedule}}</tbody>
+            <tbody><tr><td>1</td><td><span class="course-badge">MATH120</span> Precalculus<br><span class="course-badge">WRITXX_18</span> Goal 1 - Communication Introductory<br><span class="course-badge">XXXX_24</span> Goal 5 - History and Behavioral Science<br><span class="course-badge">XXXX_27</span> Goal 7 - Human Diversity<br><span class="course-badge">XXXX_34</span> Upper Division Liberal Studies</td><td>17.0</td></tr>
+<tr><td>2</td><td><span class="course-badge">ICS140</span> Computational Thinking with Programming<br><span class="course-badge">MATH215</span> Discrete Mathematics<br><span class="course-badge">MATH210</span> Calculus I<br><span class="course-badge">WRITXX_19</span> Goal 1 - Intermediate Writing'</td><td>15.0</td></tr>
+<tr><td>3</td><td><span class="course-badge">ICS141</span> Problem Solving with Programming<br><span class="course-badge">XXXX_23</span> Goal 5 - History and Behavioral Science<br><span class="course-badge">XXXX_25</span> Goal 6 - Humanities and Fine Arts<br><span class="course-badge">XXXX_28</span> Goal 8 - Global Perspective</td><td>13.0</td></tr>
+<tr><td>4</td><td><span class="course-badge">ICS240</span> Introduction to Data Structures<br><span class="course-badge">ICS232</span> Computer Orgination and Architecture<br><span class="course-badge">ICS311</span> Database Management Systems<br><span class="course-badge">XXXX_30</span> Goal 10 - People and the Environment</td><td>15.0</td></tr>
+<tr><td>5</td><td><span class="course-badge">ICS340</span> Algorithms and Data Structures<br><span class="course-badge">ICS372</span> Object Oriented Design and Implementation<br><span class="course-badge">ICS352</span> Machine Learning (CS Elective)<br><span class="course-badge">XXXX_31</span> GELS Elective</td><td>16.0</td></tr>
+<tr><td>6</td><td><span class="course-badge">ICS440</span> Parallel and Distibuted Algorithms<br><span class="course-badge">ICS499</span> Software Engineering and Capstone Project<br><span class="course-badge">ICS365</span> Organization of Programming Languages<br><span class="course-badge">XXXX_32</span> Racial Issues Graduation Requirment</td><td>15.0</td></tr>
+<tr><td>7</td><td><span class="course-badge">ICS460</span> Networks and Security<br><span class="course-badge">ICS462</span> Operating Systems<br><span class="course-badge">ICS342</span> Mobile Application Development (CS Elective)<br><span class="course-badge">XXXX_33</span> Upper Division Liberal Studies</td><td>16.0</td></tr>
+<tr><td>8</td><td><span class="course-badge">WRITXX_20</span> Goal 1 - Oral and Visual Communication<br><span class="course-badge">XXXX_21</span> Goal 3 - Natural Science<br><span class="course-badge">XXXX_22</span> Goal 3 - Natural Science Lab<br><span class="course-badge">XXXX_26</span> Goal 6 - Humanities and Fine Arts<br><span class="course-badge">XXXX_29</span> Goal 9 - Ethical and Civic Responsibility</td><td>13.0</td></tr>
+</tbody>
         </table>
 
         <h2>Course Metrics</h2>
         <table>
             <thead><tr><th>Course</th><th>Name</th><th>Cr</th><th>Cplx</th><th>Blk</th><th>Dly</th><th>Ctr</th></tr></thead>
-            <tbody>{{course_metrics}}</tbody>
+            <tbody><tr class="complexity-high"><td>MATH120</td><td>Precalculus</td><td>4.0</td><td>22</td><td>16</td><td>6</td><td>0</td></tr>
+<tr class="complexity-high"><td>ICS140</td><td>Computational Thinking with Programming</td><td>4.0</td><td>19</td><td>13</td><td>6</td><td>44</td></tr>
+<tr class="complexity-high"><td>ICS141</td><td>Problem Solving with Programming</td><td>4.0</td><td>18</td><td>12</td><td>6</td><td>44</td></tr>
+<tr class="complexity-high"><td>MATH215</td><td>Discrete Mathematics</td><td>4.0</td><td>16</td><td>11</td><td>5</td><td>52</td></tr>
+<tr class="complexity-medium"><td>ICS240</td><td>Introduction to Data Structures</td><td>4.0</td><td>14</td><td>8</td><td>6</td><td>58</td></tr>
+<tr class="complexity-medium"><td>ICS340</td><td>Algorithms and Data Structures</td><td>4.0</td><td>7</td><td>1</td><td>6</td><td>15</td></tr>
+<tr class="complexity-medium"><td>ICS372</td><td>Object Oriented Design and Implementation</td><td>4.0</td><td>7</td><td>1</td><td>6</td><td>15</td></tr>
+<tr class="complexity-medium"><td>ICS440</td><td>Parallel and Distibuted Algorithms</td><td>4.0</td><td>6</td><td>0</td><td>6</td><td>0</td></tr>
+<tr class="complexity-medium"><td>ICS499</td><td>Software Engineering and Capstone Project</td><td>4.0</td><td>6</td><td>0</td><td>6</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS365</td><td>Organization of Programming Languages</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS460</td><td>Networks and Security</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS462</td><td>Operating Systems</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS352</td><td>Machine Learning (CS Elective)</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS232</td><td>Computer Orgination and Architecture</td><td>4.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS311</td><td>Database Management Systems</td><td>4.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS342</td><td>Mobile Application Development (CS Elective)</td><td>4.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>WRITXX_18</td><td>Goal 1 - Communication Introductory</td><td>3.0</td><td>3</td><td>1</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_22</td><td>Goal 3 - Natural Science Lab</td><td>1.0</td><td>3</td><td>1</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>MATH210</td><td>Calculus I</td><td>4.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>WRITXX_19</td><td>Goal 1 - Intermediate Writing'</td><td>3.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_21</td><td>Goal 3 - Natural Science</td><td>3.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>WRITXX_20</td><td>Goal 1 - Oral and Visual Communication</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_23</td><td>Goal 5 - History and Behavioral Science</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_24</td><td>Goal 5 - History and Behavioral Science</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_25</td><td>Goal 6 - Humanities and Fine Arts</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_26</td><td>Goal 6 - Humanities and Fine Arts</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_27</td><td>Goal 7 - Human Diversity</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_28</td><td>Goal 8 - Global Perspective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_29</td><td>Goal 9 - Ethical and Civic Responsibility</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_30</td><td>Goal 10 - People and the Environment</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_31</td><td>GELS Elective</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_32</td><td>Racial Issues Graduation Requirment</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_33</td><td>Upper Division Liberal Studies</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_34</td><td>Upper Division Liberal Studies</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+</tbody>
         </table>
 
         <footer><p>Generated by NuAnalytics</p></footer>
     </div>
 
     <script>
-        const edges = {{graph_edges}};
-        const criticalPath = {{critical_path_ids}};
+        const edges = [{ "from": "ICS140", "to": "ICS141", "dashes": false }, { "from": "MATH120", "to": "MATH215", "dashes": false }, { "from": "WRITXX_18", "to": "WRITXX_19", "dashes": false }, { "from": "ICS141", "to": "ICS342", "dashes": false }, { "from": "ICS141", "to": "ICS240", "dashes": false }, { "from": "MATH215", "to": "ICS240", "dashes": false }, { "from": "ICS240", "to": "ICS372", "dashes": false }, { "from": "MATH215", "to": "ICS372", "dashes": false }, { "from": "ICS240", "to": "ICS462", "dashes": false }, { "from": "MATH215", "to": "ICS462", "dashes": false }, { "from": "MATH120", "to": "MATH210", "dashes": false }, { "from": "ICS240", "to": "ICS352", "dashes": false }, { "from": "ICS372", "to": "ICS499", "dashes": false }, { "from": "ICS240", "to": "ICS365", "dashes": false }, { "from": "MATH215", "to": "ICS365", "dashes": false }, { "from": "ICS240", "to": "ICS340", "dashes": false }, { "from": "MATH215", "to": "ICS340", "dashes": false }, { "from": "ICS240", "to": "ICS460", "dashes": false }, { "from": "MATH215", "to": "ICS460", "dashes": false }, { "from": "ICS141", "to": "ICS232", "dashes": false }, { "from": "MATH215", "to": "ICS232", "dashes": false }, { "from": "ICS141", "to": "ICS311", "dashes": false }, { "from": "MATH215", "to": "ICS311", "dashes": false }, { "from": "ICS340", "to": "ICS440", "dashes": false }, { "from": "MATH215", "to": "ICS440", "dashes": false }, { "from": "MATH120", "to": "ICS140", "dashes": false }, { "from": "XXXX_22", "to": "XXXX_21", "dashes": true }];
+        const criticalPath = ["MATH120", "ICS140", "ICS141", "ICS240", "ICS372", "ICS499"];
         const criticalPathSet = new Set(criticalPath);
 
         // Build adjacency maps for path tracing

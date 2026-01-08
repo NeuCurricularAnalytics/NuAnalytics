@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Curriculum Report: {{plan_name}}</title>
+    <title>Curriculum Report: Computer Science</title>
     <style>
         :root {
             --primary-color: #2c3e50;
@@ -407,27 +407,27 @@
 </head>
 <body>
     <div class="container">
-        <h1>📚 Curriculum Report: {{plan_name}}</h1>
+        <h1>📚 Curriculum Report: Computer Science</h1>
 
         <h2>Overview</h2>
         <div class="overview-grid">
-            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">{{institution}}</div></div>
-            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">{{degree_name}}</div></div>
-            <div class="stat-card"><div class="label">System</div><div class="value">{{system_type}}</div></div>
-            <div class="stat-card"><div class="label">Years</div><div class="value">{{years}}</div></div>
-            <div class="stat-card"><div class="label">CIP Code</div><div class="value">{{cip_code}}</div></div>
-            <div class="stat-card"><div class="label">Total Credits</div><div class="value">{{total_credits}}</div></div>
-            <div class="stat-card"><div class="label">Total Courses</div><div class="value">{{course_count}}</div></div>
+            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">California Berkeley</div></div>
+            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">BA Computer Science</div></div>
+            <div class="stat-card"><div class="label">System</div><div class="value">semester</div></div>
+            <div class="stat-card"><div class="label">Years</div><div class="value">4</div></div>
+            <div class="stat-card"><div class="label">CIP Code</div><div class="value">11.07</div></div>
+            <div class="stat-card"><div class="label">Total Credits</div><div class="value">113.0</div></div>
+            <div class="stat-card"><div class="label">Total Courses</div><div class="value">30</div></div>
         </div>
 
         <h2>Complexity Metrics</h2>
         <div class="overview-grid">
-            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">{{total_complexity}}</div></div>
-            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">{{longest_delay}}</div><div class="detail">{{longest_delay_course}}</div></div>
-            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">{{highest_centrality}}</div><div class="detail">{{highest_centrality_course}}</div></div>
+            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">100</div></div>
+            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">5</div><div class="detail">COMPSCI61A</div></div>
+            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">52</div><div class="detail">COMPSCI61A</div></div>
         </div>
 
-        <div class="critical-path"><strong>Critical Path:</strong> {{longest_delay_path}}</div>
+        <div class="critical-path"><strong>Critical Path:</strong> (COMPSCI61A+MATH1A) → COMPSCI61B → COMPSCI61C → COMPSCI164</div>
 
         <h2>Curriculum Graph</h2>
         <div class="legend">
@@ -441,7 +441,197 @@
 
         <div class="curriculum-graph-wrapper">
             <div class="curriculum-graph" id="curriculum-graph">
-                {{term_graph}}
+                <div class="term-column">
+  <div class="term-header">Semester 1</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="COMPSCI61A">
+      <span class="complexity-badge complexity-medium">12</span>
+      <div class="course-id">COMPSCI61A</div>
+      <div class="course-name">The Structure and Inte</div>
+    </div>
+    <div class="course-node" data-course-id="MATH1A">
+      <span class="complexity-badge complexity-medium">15</span>
+      <div class="course-id">MATH1A</div>
+      <div class="course-name">Calculus</div>
+    </div>
+    <div class="course-node" data-course-id="COMPSCI70">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">COMPSCI70</div>
+      <div class="course-name">Discrete Mathematics a</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_28">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_28</div>
+      <div class="course-name">UD L&S Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 2</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="COMPSCI61B">
+      <span class="complexity-badge complexity-medium">11</span>
+      <div class="course-id">COMPSCI61B</div>
+      <div class="course-name">Data Structures</div>
+    </div>
+    <div class="course-node" data-course-id="MATH1B">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">MATH1B</div>
+      <div class="course-name">Calculus</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_19">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_19</div>
+      <div class="course-name">Elective</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_24">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_24</div>
+      <div class="course-name">L&S Breadth</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 3</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="COMPSCI61C">
+      <span class="complexity-badge complexity-medium">9</span>
+      <div class="course-id">COMPSCI61C</div>
+      <div class="course-name">Great Ideas of Compute</div>
+    </div>
+    <div class="course-node" data-course-id="COMPSCI160">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">COMPSCI160</div>
+      <div class="course-name">User Interface Design </div>
+    </div>
+    <div class="course-node" data-course-id="MATH54">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">MATH54</div>
+      <div class="course-name">Linear Algebra and Dif</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_29">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_29</div>
+      <div class="course-name">UD L&S Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 4</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="COMPSCI152">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">COMPSCI152</div>
+      <div class="course-name">Computer Architecture </div>
+    </div>
+    <div class="course-node" data-course-id="COMPSCI162">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">COMPSCI162</div>
+      <div class="course-name">Operating Systems and </div>
+    </div>
+    <div class="course-node" data-course-id="COMPSCI164">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">COMPSCI164</div>
+      <div class="course-name">Programming Languages </div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 5</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="COMPSCI169">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">COMPSCI169</div>
+      <div class="course-name">Software Engineering (</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_13">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_13</div>
+      <div class="course-name">Reading and Composition B</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_22">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_22</div>
+      <div class="course-name">L&S Breadth</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 6</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="ARCH129">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">ARCH129</div>
+      <div class="course-name">Principles of Computer</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_14">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_14</div>
+      <div class="course-name">L&S Breadth</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_23">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_23</div>
+      <div class="course-name">Elective</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_25">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_25</div>
+      <div class="course-name">Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 7</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="COMPSCI10">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">COMPSCI10</div>
+      <div class="course-name">The Beauty and Joy of </div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_15">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_15</div>
+      <div class="course-name">L&S Breadth</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_17">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_17</div>
+      <div class="course-name">American Culuters Req</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_26">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_26</div>
+      <div class="course-name">Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 8</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="XXXX_12">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_12</div>
+      <div class="course-name">Reading and Composition A</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_16">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_16</div>
+      <div class="course-name">L&S Breadth</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_18">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_18</div>
+      <div class="course-name">Elective</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_27">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_27</div>
+      <div class="course-name">Elective</div>
+    </div>
+  </div>
+</div>
+
             </div>
             <svg class="connections-svg" id="connections-svg"></svg>
         </div>
@@ -449,21 +639,59 @@
         <h2>Term Schedule</h2>
         <table>
             <thead><tr><th>Term</th><th>Courses</th><th>Credits</th></tr></thead>
-            <tbody>{{term_schedule}}</tbody>
+            <tbody><tr><td>1</td><td><span class="course-badge">COMPSCI61A</span> The Structure and Interpretation of Computer Programs<br><span class="course-badge">MATH1A</span> Calculus<br><span class="course-badge">COMPSCI70</span> Discrete Mathematics and Probaility Theory<br><span class="course-badge">XXXX_28</span> UD L&S Elective</td><td>16.0</td></tr>
+<tr><td>2</td><td><span class="course-badge">COMPSCI61B</span> Data Structures<br><span class="course-badge">MATH1B</span> Calculus<br><span class="course-badge">XXXX_19</span> Elective<br><span class="course-badge">XXXX_24</span> L&S Breadth</td><td>15.0</td></tr>
+<tr><td>3</td><td><span class="course-badge">COMPSCI61C</span> Great Ideas of Computer Architecture<br><span class="course-badge">COMPSCI160</span> User Interface Design and Development (Upper Division CS Elective)<br><span class="course-badge">MATH54</span> Linear Algebra and Differntial Equations<br><span class="course-badge">XXXX_29</span> UD L&S Elective</td><td>15.0</td></tr>
+<tr><td>4</td><td><span class="course-badge">COMPSCI152</span> Computer Architecture and Engineering (Upper Division CS Elective)<br><span class="course-badge">COMPSCI162</span> Operating Systems and System Programming (Upper Division CS Elective)<br><span class="course-badge">COMPSCI164</span> Programming Languages and Compilers (Upper Division CS Elective)</td><td>12.0</td></tr>
+<tr><td>5</td><td><span class="course-badge">COMPSCI169</span> Software Engineering (Upper Division CS Elective)<br><span class="course-badge">XXXX_13</span> Reading and Composition B<br><span class="course-badge">XXXX_22</span> L&S Breadth</td><td>12.0</td></tr>
+<tr><td>6</td><td><span class="course-badge">ARCH129</span> Principles of Computer Aided Architectural Design (Non CS Technical Elective)<br><span class="course-badge">XXXX_14</span> L&S Breadth<br><span class="course-badge">XXXX_23</span> Elective<br><span class="course-badge">XXXX_25</span> Elective</td><td>14.0</td></tr>
+<tr><td>7</td><td><span class="course-badge">COMPSCI10</span> The Beauty and Joy of Computing<br><span class="course-badge">XXXX_15</span> L&S Breadth<br><span class="course-badge">XXXX_17</span> American Culuters Req<br><span class="course-badge">XXXX_26</span> Elective</td><td>14.0</td></tr>
+<tr><td>8</td><td><span class="course-badge">XXXX_12</span> Reading and Composition A<br><span class="course-badge">XXXX_16</span> L&S Breadth<br><span class="course-badge">XXXX_18</span> Elective<br><span class="course-badge">XXXX_27</span> Elective</td><td>15.0</td></tr>
+</tbody>
         </table>
 
         <h2>Course Metrics</h2>
         <table>
             <thead><tr><th>Course</th><th>Name</th><th>Cr</th><th>Cplx</th><th>Blk</th><th>Dly</th><th>Ctr</th></tr></thead>
-            <tbody>{{course_metrics}}</tbody>
+            <tbody><tr class="complexity-medium"><td>MATH1A</td><td>Calculus</td><td>4.0</td><td>15</td><td>10</td><td>5</td><td>0</td></tr>
+<tr class="complexity-medium"><td>COMPSCI61A</td><td>The Structure and Interpretation of Computer Programs</td><td>4.0</td><td>12</td><td>7</td><td>5</td><td>52</td></tr>
+<tr class="complexity-medium"><td>COMPSCI61B</td><td>Data Structures</td><td>4.0</td><td>11</td><td>6</td><td>5</td><td>36</td></tr>
+<tr class="complexity-medium"><td>COMPSCI61C</td><td>Great Ideas of Computer Architecture</td><td>4.0</td><td>9</td><td>4</td><td>5</td><td>36</td></tr>
+<tr class="complexity-low"><td>COMPSCI169</td><td>Software Engineering (Upper Division CS Elective)</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>COMPSCI164</td><td>Programming Languages and Compilers (Upper Division CS Elective)</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>COMPSCI152</td><td>Computer Architecture and Engineering (Upper Division CS Elective)</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>COMPSCI162</td><td>Operating Systems and System Programming (Upper Division CS Elective)</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>COMPSCI70</td><td>Discrete Mathematics and Probaility Theory</td><td>4.0</td><td>4</td><td>2</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>MATH1B</td><td>Calculus</td><td>4.0</td><td>4</td><td>1</td><td>3</td><td>3</td></tr>
+<tr class="complexity-low"><td>COMPSCI160</td><td>User Interface Design and Development (Upper Division CS Elective)</td><td>4.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>MATH54</td><td>Linear Algebra and Differntial Equations</td><td>4.0</td><td>3</td><td>0</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>ARCH129</td><td>Principles of Computer Aided Architectural Design (Non CS Technical Elective)</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_12</td><td>Reading and Composition A</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_13</td><td>Reading and Composition B</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_14</td><td>L&S Breadth</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_15</td><td>L&S Breadth</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_16</td><td>L&S Breadth</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_17</td><td>American Culuters Req</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_18</td><td>Elective</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_19</td><td>Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_22</td><td>L&S Breadth</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_23</td><td>Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_24</td><td>L&S Breadth</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_25</td><td>Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_26</td><td>Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_27</td><td>Elective</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_28</td><td>UD L&S Elective</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_29</td><td>UD L&S Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>COMPSCI10</td><td>The Beauty and Joy of Computing</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+</tbody>
         </table>
 
         <footer><p>Generated by NuAnalytics</p></footer>
     </div>
 
     <script>
-        const edges = {{graph_edges}};
-        const criticalPath = {{critical_path_ids}};
+        const edges = [{ "from": "MATH1B", "to": "MATH54", "dashes": false }, { "from": "COMPSCI61B", "to": "COMPSCI160", "dashes": false }, { "from": "COMPSCI61B", "to": "COMPSCI169", "dashes": false }, { "from": "COMPSCI61C", "to": "COMPSCI169", "dashes": false }, { "from": "COMPSCI70", "to": "COMPSCI169", "dashes": false }, { "from": "COMPSCI61A", "to": "COMPSCI61B", "dashes": false }, { "from": "COMPSCI61A", "to": "COMPSCI61C", "dashes": false }, { "from": "COMPSCI61B", "to": "COMPSCI61C", "dashes": false }, { "from": "COMPSCI61B", "to": "COMPSCI162", "dashes": false }, { "from": "COMPSCI61C", "to": "COMPSCI162", "dashes": false }, { "from": "COMPSCI70", "to": "COMPSCI162", "dashes": false }, { "from": "COMPSCI61C", "to": "COMPSCI152", "dashes": false }, { "from": "COMPSCI61B", "to": "COMPSCI164", "dashes": false }, { "from": "COMPSCI61C", "to": "COMPSCI164", "dashes": false }, { "from": "MATH1A", "to": "MATH1B", "dashes": false }, { "from": "MATH1A", "to": "COMPSCI61A", "dashes": true }];
+        const criticalPath = ["COMPSCI61A", "MATH1A", "COMPSCI61B", "COMPSCI61C", "COMPSCI164"];
         const criticalPathSet = new Set(criticalPath);
 
         // Build adjacency maps for path tracing

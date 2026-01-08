@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Curriculum Report: {{plan_name}}</title>
+    <title>Curriculum Report: Computer Science</title>
     <style>
         :root {
             --primary-color: #2c3e50;
@@ -407,27 +407,27 @@
 </head>
 <body>
     <div class="container">
-        <h1>📚 Curriculum Report: {{plan_name}}</h1>
+        <h1>📚 Curriculum Report: Computer Science</h1>
 
         <h2>Overview</h2>
         <div class="overview-grid">
-            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">{{institution}}</div></div>
-            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">{{degree_name}}</div></div>
-            <div class="stat-card"><div class="label">System</div><div class="value">{{system_type}}</div></div>
-            <div class="stat-card"><div class="label">Years</div><div class="value">{{years}}</div></div>
-            <div class="stat-card"><div class="label">CIP Code</div><div class="value">{{cip_code}}</div></div>
-            <div class="stat-card"><div class="label">Total Credits</div><div class="value">{{total_credits}}</div></div>
-            <div class="stat-card"><div class="label">Total Courses</div><div class="value">{{course_count}}</div></div>
+            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">University of Hawaii - Manoa</div></div>
+            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">BS Computer Science</div></div>
+            <div class="stat-card"><div class="label">System</div><div class="value">semester</div></div>
+            <div class="stat-card"><div class="label">Years</div><div class="value">4</div></div>
+            <div class="stat-card"><div class="label">CIP Code</div><div class="value">11.0701</div></div>
+            <div class="stat-card"><div class="label">Total Credits</div><div class="value">120.0</div></div>
+            <div class="stat-card"><div class="label">Total Courses</div><div class="value">41</div></div>
         </div>
 
         <h2>Complexity Metrics</h2>
         <div class="overview-grid">
-            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">{{total_complexity}}</div></div>
-            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">{{longest_delay}}</div><div class="detail">{{longest_delay_course}}</div></div>
-            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">{{highest_centrality}}</div><div class="detail">{{highest_centrality_course}}</div></div>
+            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">236</div></div>
+            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">5</div><div class="detail">ICS141</div></div>
+            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">84</div><div class="detail">ICS311</div></div>
         </div>
 
-        <div class="critical-path"><strong>Critical Path:</strong> {{longest_delay_path}}</div>
+        <div class="critical-path"><strong>Critical Path:</strong> MATH241 → ICS141 → ICS241 → ICS314 → ICS313</div>
 
         <h2>Curriculum Graph</h2>
         <div class="legend">
@@ -441,7 +441,252 @@
 
         <div class="curriculum-graph-wrapper">
             <div class="curriculum-graph" id="curriculum-graph">
-                {{term_graph}}
+                <div class="term-column">
+  <div class="term-header">Semester 1</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="MATH241">
+      <span class="complexity-badge complexity-high">21</span>
+      <div class="course-id">MATH241</div>
+      <div class="course-name">Calculus 1</div>
+    </div>
+    <div class="course-node" data-course-id="HSL101">
+      <span class="complexity-badge complexity-medium">7</span>
+      <div class="course-id">HSL101</div>
+      <div class="course-name">Hawaiian SL</div>
+    </div>
+    <div class="course-node" data-course-id="ICS111">
+      <span class="complexity-badge complexity-high">18</span>
+      <div class="course-id">ICS111</div>
+      <div class="course-name">Introduction to Comput</div>
+    </div>
+    <div class="course-node" data-course-id="PHYS151">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">PHYS151</div>
+      <div class="course-name">Physics 1</div>
+    </div>
+    <div class="course-node" data-course-id="PHYS151L">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">PHYS151L</div>
+      <div class="course-name">Physics 1 -lab</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 2</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CHEM161">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">CHEM161</div>
+      <div class="course-name">Chemistry 1</div>
+    </div>
+    <div class="course-node" data-course-id="CHEM161L">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">CHEM161L</div>
+      <div class="course-name">Chemistry 1 - lab</div>
+    </div>
+    <div class="course-node" data-course-id="ICS141">
+      <span class="complexity-badge complexity-high">18</span>
+      <div class="course-id">ICS141</div>
+      <div class="course-name">Discrete Math 1</div>
+    </div>
+    <div class="course-node" data-course-id="HSL102">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">HSL102</div>
+      <div class="course-name">Hawaiian SL</div>
+    </div>
+    <div class="course-node" data-course-id="ICS211">
+      <span class="complexity-badge complexity-high">17</span>
+      <div class="course-id">ICS211</div>
+      <div class="course-name">Introduction to Comput</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 3</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="ICS241">
+      <span class="complexity-badge complexity-high">17</span>
+      <div class="course-id">ICS241</div>
+      <div class="course-name">Discrete Math 2</div>
+    </div>
+    <div class="course-node" data-course-id="HSL201">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">HSL201</div>
+      <div class="course-name">Hawaiian SL</div>
+    </div>
+    <div class="course-node" data-course-id="ICS212">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">ICS212</div>
+      <div class="course-name">Program Structure</div>
+    </div>
+    <div class="course-node" data-course-id="MATH242">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">MATH242</div>
+      <div class="course-name">Calculus 2</div>
+    </div>
+    <div class="course-node" data-course-id="FG102">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">FG102</div>
+      <div class="course-name">Gen Ed FG 2</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 4</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="ICS311">
+      <span class="complexity-badge complexity-medium">12</span>
+      <div class="course-id">ICS311</div>
+      <div class="course-name">Algorithms</div>
+    </div>
+    <div class="course-node" data-course-id="ICS314">
+      <span class="complexity-badge complexity-medium">12</span>
+      <div class="course-id">ICS314</div>
+      <div class="course-name">Software Engineering</div>
+    </div>
+    <div class="course-node" data-course-id="ICS321">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">ICS321</div>
+      <div class="course-name">Database Systems</div>
+    </div>
+    <div class="course-node" data-course-id="HSL202">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">HSL202</div>
+      <div class="course-name">Hawaiian SL</div>
+    </div>
+    <div class="course-node" data-course-id="FQ101">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">FQ101</div>
+      <div class="course-name">Gen Ed FQ</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 5</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="ICS312">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS312</div>
+      <div class="course-name">Machine-Level and Syst</div>
+    </div>
+    <div class="course-node" data-course-id="ICS313">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS313</div>
+      <div class="course-name">Programming Language T</div>
+    </div>
+    <div class="course-node" data-course-id="ICS332">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS332</div>
+      <div class="course-name">Operating Systems</div>
+    </div>
+    <div class="course-node" data-course-id="ICS355">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS355</div>
+      <div class="course-name">Security and Trust I</div>
+    </div>
+    <div class="course-node" data-course-id="ICS414">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS414</div>
+      <div class="course-name">Upper division CS elec</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 6</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="ICS415">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS415</div>
+      <div class="course-name">Upper division CS elec</div>
+    </div>
+    <div class="course-node" data-course-id="ICS421">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS421</div>
+      <div class="course-name">Upper division CS elec</div>
+    </div>
+    <div class="course-node" data-course-id="ICS461">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS461</div>
+      <div class="course-name">Upper division CS elec</div>
+    </div>
+    <div class="course-node" data-course-id="ICS496">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ICS496</div>
+      <div class="course-name">Capstone Project</div>
+    </div>
+    <div class="course-node" data-course-id="MATH307">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">MATH307</div>
+      <div class="course-name">Linear Algebra</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 7</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="PHYS152">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">PHYS152</div>
+      <div class="course-name">Physcis 2</div>
+    </div>
+    <div class="course-node" data-course-id="PHYS152L">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">PHYS152L</div>
+      <div class="course-name">Physcis 2 - Lab</div>
+    </div>
+    <div class="course-node" data-course-id="CHEM162">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">CHEM162</div>
+      <div class="course-name">Chemistry 2</div>
+    </div>
+    <div class="course-node" data-course-id="DS101">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">DS101</div>
+      <div class="course-name">Gen Ed DS</div>
+    </div>
+    <div class="course-node" data-course-id="Elec301">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">Elec301</div>
+      <div class="course-name">Elective 300+</div>
+    </div>
+    <div class="course-node" data-course-id="FW101">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">FW101</div>
+      <div class="course-name">Gen Ed FW</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 8</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CHEM162L">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">CHEM162L</div>
+      <div class="course-name">Chemistry 2 - lab</div>
+    </div>
+    <div class="course-node" data-course-id="DA301">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">DA301</div>
+      <div class="course-name">Gen Ed DA/DH/DL 300</div>
+    </div>
+    <div class="course-node" data-course-id="DB101">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">DB101</div>
+      <div class="course-name">Gen Ed DB</div>
+    </div>
+    <div class="course-node" data-course-id="DS102">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">DS102</div>
+      <div class="course-name">Gen Ed DS 2</div>
+    </div>
+    <div class="course-node" data-course-id="FG101">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">FG101</div>
+      <div class="course-name">Gen Ed FG</div>
+    </div>
+  </div>
+</div>
+
             </div>
             <svg class="connections-svg" id="connections-svg"></svg>
         </div>
@@ -449,21 +694,70 @@
         <h2>Term Schedule</h2>
         <table>
             <thead><tr><th>Term</th><th>Courses</th><th>Credits</th></tr></thead>
-            <tbody>{{term_schedule}}</tbody>
+            <tbody><tr><td>1</td><td><span class="course-badge">MATH241</span> Calculus 1<br><span class="course-badge">HSL101</span> Hawaiian SL<br><span class="course-badge">ICS111</span> Introduction to Computer Science I<br><span class="course-badge">PHYS151</span> Physics 1<br><span class="course-badge">PHYS151L</span> Physics 1 -lab</td><td>15.0</td></tr>
+<tr><td>2</td><td><span class="course-badge">CHEM161</span> Chemistry 1<br><span class="course-badge">CHEM161L</span> Chemistry 1 - lab<br><span class="course-badge">ICS141</span> Discrete Math 1<br><span class="course-badge">HSL102</span> Hawaiian SL<br><span class="course-badge">ICS211</span> Introduction to Computer Science 2</td><td>14.0</td></tr>
+<tr><td>3</td><td><span class="course-badge">ICS241</span> Discrete Math 2<br><span class="course-badge">HSL201</span> Hawaiian SL<br><span class="course-badge">ICS212</span> Program Structure<br><span class="course-badge">MATH242</span> Calculus 2<br><span class="course-badge">FG102</span> Gen Ed FG 2</td><td>16.0</td></tr>
+<tr><td>4</td><td><span class="course-badge">ICS311</span> Algorithms<br><span class="course-badge">ICS314</span> Software Engineering<br><span class="course-badge">ICS321</span> Database Systems<br><span class="course-badge">HSL202</span> Hawaiian SL<br><span class="course-badge">FQ101</span> Gen Ed FQ</td><td>16.0</td></tr>
+<tr><td>5</td><td><span class="course-badge">ICS312</span> Machine-Level and System Programming<br><span class="course-badge">ICS313</span> Programming Language Theory<br><span class="course-badge">ICS332</span> Operating Systems<br><span class="course-badge">ICS355</span> Security and Trust I<br><span class="course-badge">ICS414</span> Upper division CS elective</td><td>15.0</td></tr>
+<tr><td>6</td><td><span class="course-badge">ICS415</span> Upper division CS elective<br><span class="course-badge">ICS421</span> Upper division CS elective<br><span class="course-badge">ICS461</span> Upper division CS elective<br><span class="course-badge">ICS496</span> Capstone Project<br><span class="course-badge">MATH307</span> Linear Algebra</td><td>15.0</td></tr>
+<tr><td>7</td><td><span class="course-badge">PHYS152</span> Physcis 2<br><span class="course-badge">PHYS152L</span> Physcis 2 - Lab<br><span class="course-badge">CHEM162</span> Chemistry 2<br><span class="course-badge">DS101</span> Gen Ed DS<br><span class="course-badge">Elec301</span> Elective 300+<br><span class="course-badge">FW101</span> Gen Ed FW</td><td>16.0</td></tr>
+<tr><td>8</td><td><span class="course-badge">CHEM162L</span> Chemistry 2 - lab<br><span class="course-badge">DA301</span> Gen Ed DA/DH/DL 300<br><span class="course-badge">DB101</span> Gen Ed DB<br><span class="course-badge">DS102</span> Gen Ed DS 2<br><span class="course-badge">FG101</span> Gen Ed FG</td><td>13.0</td></tr>
+</tbody>
         </table>
 
         <h2>Course Metrics</h2>
         <table>
             <thead><tr><th>Course</th><th>Name</th><th>Cr</th><th>Cplx</th><th>Blk</th><th>Dly</th><th>Ctr</th></tr></thead>
-            <tbody>{{course_metrics}}</tbody>
+            <tbody><tr class="complexity-high"><td>MATH241</td><td>Calculus 1</td><td>4.0</td><td>21</td><td>16</td><td>5</td><td>0</td></tr>
+<tr class="complexity-high"><td>ICS111</td><td>Introduction to Computer Science I</td><td>4.0</td><td>18</td><td>14</td><td>4</td><td>0</td></tr>
+<tr class="complexity-high"><td>ICS141</td><td>Discrete Math 1</td><td>3.0</td><td>18</td><td>13</td><td>5</td><td>75</td></tr>
+<tr class="complexity-high"><td>ICS211</td><td>Introduction to Computer Science 2</td><td>4.0</td><td>17</td><td>13</td><td>4</td><td>68</td></tr>
+<tr class="complexity-high"><td>ICS241</td><td>Discrete Math 2</td><td>3.0</td><td>17</td><td>12</td><td>5</td><td>75</td></tr>
+<tr class="complexity-medium"><td>ICS311</td><td>Algorithms</td><td>4.0</td><td>12</td><td>7</td><td>5</td><td>84</td></tr>
+<tr class="complexity-medium"><td>ICS314</td><td>Software Engineering</td><td>3.0</td><td>12</td><td>7</td><td>5</td><td>63</td></tr>
+<tr class="complexity-medium"><td>HSL101</td><td>Hawaiian SL</td><td>3.0</td><td>7</td><td>3</td><td>4</td><td>0</td></tr>
+<tr class="complexity-medium"><td>ICS212</td><td>Program Structure</td><td>3.0</td><td>6</td><td>2</td><td>4</td><td>8</td></tr>
+<tr class="complexity-medium"><td>ICS321</td><td>Database Systems</td><td>3.0</td><td>6</td><td>1</td><td>5</td><td>9</td></tr>
+<tr class="complexity-medium"><td>PHYS151</td><td>Physics 1</td><td>3.0</td><td>6</td><td>3</td><td>3</td><td>0</td></tr>
+<tr class="complexity-medium"><td>HSL102</td><td>Hawaiian SL</td><td>3.0</td><td>6</td><td>2</td><td>4</td><td>4</td></tr>
+<tr class="complexity-low"><td>ICS332</td><td>Operating Systems</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS355</td><td>Security and Trust I</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS496</td><td>Capstone Project</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS312</td><td>Machine-Level and System Programming</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS313</td><td>Programming Language Theory</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS414</td><td>Upper division CS elective</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS415</td><td>Upper division CS elective</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS421</td><td>Upper division CS elective</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ICS461</td><td>Upper division CS elective</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>HSL201</td><td>Hawaiian SL</td><td>3.0</td><td>5</td><td>1</td><td>4</td><td>4</td></tr>
+<tr class="complexity-low"><td>MATH242</td><td>Calculus 2</td><td>4.0</td><td>4</td><td>1</td><td>3</td><td>3</td></tr>
+<tr class="complexity-low"><td>PHYS151L</td><td>Physics 1 -lab</td><td>1.0</td><td>4</td><td>1</td><td>3</td><td>3</td></tr>
+<tr class="complexity-low"><td>PHYS152</td><td>Physcis 2</td><td>3.0</td><td>4</td><td>1</td><td>3</td><td>3</td></tr>
+<tr class="complexity-low"><td>HSL202</td><td>Hawaiian SL</td><td>3.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>CHEM161</td><td>Chemistry 1</td><td>3.0</td><td>4</td><td>2</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>MATH307</td><td>Linear Algebra</td><td>3.0</td><td>3</td><td>0</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>PHYS152L</td><td>Physcis 2 - Lab</td><td>1.0</td><td>3</td><td>0</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>CHEM161L</td><td>Chemistry 1 - lab</td><td>1.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>CHEM162</td><td>Chemistry 2</td><td>3.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>CHEM162L</td><td>Chemistry 2 - lab</td><td>1.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>FG101</td><td>Gen Ed FG</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>FW101</td><td>Gen Ed FW</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>FG102</td><td>Gen Ed FG 2</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>DS101</td><td>Gen Ed DS</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>DS102</td><td>Gen Ed DS 2</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>DB101</td><td>Gen Ed DB</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>DA301</td><td>Gen Ed DA/DH/DL 300</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>Elec301</td><td>Elective 300+</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>FQ101</td><td>Gen Ed FQ</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+</tbody>
         </table>
 
         <footer><p>Generated by NuAnalytics</p></footer>
     </div>
 
     <script>
-        const edges = {{graph_edges}};
-        const criticalPath = {{critical_path_ids}};
+        const edges = [{ "from": "HSL201", "to": "HSL202", "dashes": false }, { "from": "PHYS151", "to": "PHYS152", "dashes": false }, { "from": "ICS211", "to": "ICS311", "dashes": false }, { "from": "ICS241", "to": "ICS311", "dashes": false }, { "from": "MATH241", "to": "ICS311", "dashes": false }, { "from": "MATH241", "to": "MATH242", "dashes": false }, { "from": "HSL102", "to": "HSL201", "dashes": false }, { "from": "ICS211", "to": "ICS314", "dashes": false }, { "from": "ICS241", "to": "ICS314", "dashes": false }, { "from": "ICS212", "to": "ICS312", "dashes": false }, { "from": "ICS311", "to": "ICS312", "dashes": false }, { "from": "ICS314", "to": "ICS312", "dashes": false }, { "from": "HSL101", "to": "HSL102", "dashes": false }, { "from": "ICS141", "to": "ICS241", "dashes": false }, { "from": "ICS311", "to": "ICS414", "dashes": false }, { "from": "ICS314", "to": "ICS414", "dashes": false }, { "from": "ICS311", "to": "ICS415", "dashes": false }, { "from": "ICS314", "to": "ICS415", "dashes": false }, { "from": "ICS311", "to": "ICS461", "dashes": false }, { "from": "ICS311", "to": "ICS496", "dashes": false }, { "from": "ICS314", "to": "ICS496", "dashes": false }, { "from": "MATH242", "to": "MATH307", "dashes": false }, { "from": "ICS212", "to": "ICS313", "dashes": false }, { "from": "ICS311", "to": "ICS313", "dashes": false }, { "from": "ICS314", "to": "ICS313", "dashes": false }, { "from": "ICS111", "to": "ICS211", "dashes": false }, { "from": "ICS211", "to": "ICS212", "dashes": false }, { "from": "CHEM161", "to": "CHEM162", "dashes": false }, { "from": "PHYS151L", "to": "PHYS152L", "dashes": false }, { "from": "ICS311", "to": "ICS332", "dashes": false }, { "from": "ICS314", "to": "ICS332", "dashes": false }, { "from": "ICS211", "to": "ICS321", "dashes": false }, { "from": "ICS241", "to": "ICS321", "dashes": false }, { "from": "ICS321", "to": "ICS421", "dashes": false }, { "from": "MATH241", "to": "ICS141", "dashes": false }, { "from": "ICS314", "to": "ICS355", "dashes": false }, { "from": "PHYS151", "to": "PHYS151L", "dashes": true }, { "from": "PHYS152", "to": "PHYS152L", "dashes": true }, { "from": "CHEM161", "to": "CHEM161L", "dashes": true }];
+        const criticalPath = ["MATH241", "ICS141", "ICS241", "ICS314", "ICS313"];
         const criticalPathSet = new Set(criticalPath);
 
         // Build adjacency maps for path tracing

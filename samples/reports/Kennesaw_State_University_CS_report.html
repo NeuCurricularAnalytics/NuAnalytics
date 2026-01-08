@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Curriculum Report: {{plan_name}}</title>
+    <title>Curriculum Report: Computer Science</title>
     <style>
         :root {
             --primary-color: #2c3e50;
@@ -407,27 +407,27 @@
 </head>
 <body>
     <div class="container">
-        <h1>📚 Curriculum Report: {{plan_name}}</h1>
+        <h1>📚 Curriculum Report: Computer Science</h1>
 
         <h2>Overview</h2>
         <div class="overview-grid">
-            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">{{institution}}</div></div>
-            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">{{degree_name}}</div></div>
-            <div class="stat-card"><div class="label">System</div><div class="value">{{system_type}}</div></div>
-            <div class="stat-card"><div class="label">Years</div><div class="value">{{years}}</div></div>
-            <div class="stat-card"><div class="label">CIP Code</div><div class="value">{{cip_code}}</div></div>
-            <div class="stat-card"><div class="label">Total Credits</div><div class="value">{{total_credits}}</div></div>
-            <div class="stat-card"><div class="label">Total Courses</div><div class="value">{{course_count}}</div></div>
+            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">Kennesaw State University</div></div>
+            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">BS Computer Science</div></div>
+            <div class="stat-card"><div class="label">System</div><div class="value">semster</div></div>
+            <div class="stat-card"><div class="label">Years</div><div class="value">4</div></div>
+            <div class="stat-card"><div class="label">CIP Code</div><div class="value">11.07</div></div>
+            <div class="stat-card"><div class="label">Total Credits</div><div class="value">120.0</div></div>
+            <div class="stat-card"><div class="label">Total Courses</div><div class="value">43</div></div>
         </div>
 
         <h2>Complexity Metrics</h2>
         <div class="overview-grid">
-            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">{{total_complexity}}</div></div>
-            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">{{longest_delay}}</div><div class="detail">{{longest_delay_course}}</div></div>
-            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">{{highest_centrality}}</div><div class="detail">{{highest_centrality_course}}</div></div>
+            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">280</div></div>
+            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">7</div><div class="detail">CSE1321</div></div>
+            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">167</div><div class="detail">CSE1322</div></div>
         </div>
 
-        <div class="critical-path"><strong>Critical Path:</strong> {{longest_delay_path}}</div>
+        <div class="critical-path"><strong>Critical Path:</strong> (CSE1321+CSE1321L) → (CSE1322+CSE1322L) → CS3503 → (CS4504+CS3502) → CS4524</div>
 
         <h2>Curriculum Graph</h2>
         <div class="legend">
@@ -441,7 +441,262 @@
 
         <div class="curriculum-graph-wrapper">
             <div class="curriculum-graph" id="curriculum-graph">
-                {{term_graph}}
+                <div class="term-column">
+  <div class="term-header">Semester 1</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSE1321">
+      <span class="complexity-badge complexity-high">24</span>
+      <div class="course-id">CSE1321</div>
+      <div class="course-name">Programming and Proble</div>
+    </div>
+    <div class="course-node" data-course-id="CSE1321L">
+      <span class="complexity-badge complexity-high">25</span>
+      <div class="course-id">CSE1321L</div>
+      <div class="course-name">Programming and Proble</div>
+    </div>
+    <div class="course-node" data-course-id="MATH1190">
+      <span class="complexity-badge complexity-high">19</span>
+      <div class="course-id">MATH1190</div>
+      <div class="course-name">Calculus I</div>
+    </div>
+    <div class="course-node" data-course-id="ENGL1101">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">ENGL1101</div>
+      <div class="course-name">Composistion I</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_39">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_39</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_43">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_43</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 2</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSE1322">
+      <span class="complexity-badge complexity-high">23</span>
+      <div class="course-id">CSE1322</div>
+      <div class="course-name">Programming and Proble</div>
+    </div>
+    <div class="course-node" data-course-id="CSE1322L">
+      <span class="complexity-badge complexity-high">23</span>
+      <div class="course-id">CSE1322L</div>
+      <div class="course-name">Programming and Proble</div>
+    </div>
+    <div class="course-node" data-course-id="MATH2345">
+      <span class="complexity-badge complexity-medium">15</span>
+      <div class="course-id">MATH2345</div>
+      <div class="course-name">Discrete Mathematics</div>
+    </div>
+    <div class="course-node" data-course-id="ENGL1102">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">ENGL1102</div>
+      <div class="course-name">Composition II</div>
+    </div>
+    <div class="course-node" data-course-id="MATH2202">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">MATH2202</div>
+      <div class="course-name">Calculus II</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 3</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CS3503">
+      <span class="complexity-badge complexity-medium">13</span>
+      <div class="course-id">CS3503</div>
+      <div class="course-name">Computer Organization </div>
+    </div>
+    <div class="course-node" data-course-id="CS3305">
+      <span class="complexity-badge complexity-medium">15</span>
+      <div class="course-id">CS3305</div>
+      <div class="course-name">Data Structures</div>
+    </div>
+    <div class="course-node" data-course-id="CS3410">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">CS3410</div>
+      <div class="course-name">Introduction to Databs</div>
+    </div>
+    <div class="course-node" data-course-id="CS3622">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">CS3622</div>
+      <div class="course-name">Fundamentals of Data C</div>
+    </div>
+    <div class="course-node" data-course-id="SWE3313">
+      <span class="complexity-badge complexity-medium">7</span>
+      <div class="course-id">SWE3313</div>
+      <div class="course-name">Introductrion to Softw</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 4</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CS3502">
+      <span class="complexity-badge complexity-medium">10</span>
+      <div class="course-id">CS3502</div>
+      <div class="course-name">Operating Systems</div>
+    </div>
+    <div class="course-node" data-course-id="CS4504">
+      <span class="complexity-badge complexity-medium">8</span>
+      <div class="course-id">CS4504</div>
+      <div class="course-name">Parallel and Distrubte</div>
+    </div>
+    <div class="course-node" data-course-id="CS3642">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CS3642</div>
+      <div class="course-name">Artifical Intelligence</div>
+    </div>
+    <div class="course-node" data-course-id="CS4265">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CS4265</div>
+      <div class="course-name">Big Data Analytics (CS</div>
+    </div>
+    <div class="course-node" data-course-id="CS4306">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CS4306</div>
+      <div class="course-name">Algorithm Analysis</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 5</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CS4524">
+      <span class="complexity-badge complexity-medium">7</span>
+      <div class="course-id">CS4524</div>
+      <div class="course-name">Cloud Computing (CS El</div>
+    </div>
+    <div class="course-node" data-course-id="CS4850">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">CS4850</div>
+      <div class="course-name">Computer Science Senio</div>
+    </div>
+    <div class="course-node" data-course-id="CS4308">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CS4308</div>
+      <div class="course-name">Concepts of Programmin</div>
+    </div>
+    <div class="course-node" data-course-id="CS4622">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CS4622</div>
+      <div class="course-name">Computer Networks (CS </div>
+    </div>
+    <div class="course-node" data-course-id="SWE3633">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">SWE3633</div>
+      <div class="course-name">Software Architecture </div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 6</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSE3801">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">CSE3801</div>
+      <div class="course-name">Professional Practices</div>
+    </div>
+    <div class="course-node" data-course-id="TCOM2010">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">TCOM2010</div>
+      <div class="course-name">Technical Writing</div>
+    </div>
+    <div class="course-node" data-course-id="MATH2332">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">MATH2332</div>
+      <div class="course-name">Probability and Data A</div>
+    </div>
+    <div class="course-node" data-course-id="MATH3260">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">MATH3260</div>
+      <div class="course-name">Linear Algebra I</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_40">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_40</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 7</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="XXXX_24">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_24</div>
+      <div class="course-name">Instiutional Options B-1</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_31">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">XXXX_31</div>
+      <div class="course-name">Science and Tech D-2</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_32">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">XXXX_32</div>
+      <div class="course-name">Science and Tech D-2 Lab</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_35">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_35</div>
+      <div class="course-name">Social Science E-1</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_37">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_37</div>
+      <div class="course-name">Social Science E-3</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_41">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_41</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 8</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="XXXX_25">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_25</div>
+      <div class="course-name">Instiutional Options B-2</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_33">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">XXXX_33</div>
+      <div class="course-name">Science and Tech D-2</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_34">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">XXXX_34</div>
+      <div class="course-name">Science and Tech D-2 Lab</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_36">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_36</div>
+      <div class="course-name">Social Science E-2</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_38">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_38</div>
+      <div class="course-name">Social Science E-4</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_42">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_42</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+  </div>
+</div>
+
             </div>
             <svg class="connections-svg" id="connections-svg"></svg>
         </div>
@@ -449,21 +704,72 @@
         <h2>Term Schedule</h2>
         <table>
             <thead><tr><th>Term</th><th>Courses</th><th>Credits</th></tr></thead>
-            <tbody>{{term_schedule}}</tbody>
+            <tbody><tr><td>1</td><td><span class="course-badge">CSE1321</span> Programming and Problem Solving I<br><span class="course-badge">CSE1321L</span> Programming and Problem Solving I Lab<br><span class="course-badge">MATH1190</span> Calculus I<br><span class="course-badge">ENGL1101</span> Composistion I<br><span class="course-badge">XXXX_39</span> Free Elective<br><span class="course-badge">XXXX_43</span> Free Elective</td><td>16.0</td></tr>
+<tr><td>2</td><td><span class="course-badge">CSE1322</span> Programming and Problem Solving II<br><span class="course-badge">CSE1322L</span> Programming and Problem Solving II Lab<br><span class="course-badge">MATH2345</span> Discrete Mathematics<br><span class="course-badge">ENGL1102</span> Composition II<br><span class="course-badge">MATH2202</span> Calculus II</td><td>14.0</td></tr>
+<tr><td>3</td><td><span class="course-badge">CS3503</span> Computer Organization and Architecture<br><span class="course-badge">CS3305</span> Data Structures<br><span class="course-badge">CS3410</span> Introduction to Databse Systems<br><span class="course-badge">CS3622</span> Fundamentals of Data Communication<br><span class="course-badge">SWE3313</span> Introductrion to Software Engineering</td><td>15.0</td></tr>
+<tr><td>4</td><td><span class="course-badge">CS3502</span> Operating Systems<br><span class="course-badge">CS4504</span> Parallel and Distrubted Computing<br><span class="course-badge">CS3642</span> Artifical Intelligence (CS Elective)<br><span class="course-badge">CS4265</span> Big Data Analytics (CS Elective)<br><span class="course-badge">CS4306</span> Algorithm Analysis</td><td>15.0</td></tr>
+<tr><td>5</td><td><span class="course-badge">CS4524</span> Cloud Computing (CS Elective)<br><span class="course-badge">CS4850</span> Computer Science Senior Project<br><span class="course-badge">CS4308</span> Concepts of Programming Languages<br><span class="course-badge">CS4622</span> Computer Networks (CS Elective)<br><span class="course-badge">SWE3633</span> Software Architecture and Design (CS Elective)</td><td>15.0</td></tr>
+<tr><td>6</td><td><span class="course-badge">CSE3801</span> Professional Practices and Ethics<br><span class="course-badge">TCOM2010</span> Technical Writing<br><span class="course-badge">MATH2332</span> Probability and Data Analysis<br><span class="course-badge">MATH3260</span> Linear Algebra I<br><span class="course-badge">XXXX_40</span> Free Elective</td><td>14.0</td></tr>
+<tr><td>7</td><td><span class="course-badge">XXXX_24</span> Instiutional Options B-1<br><span class="course-badge">XXXX_31</span> Science and Tech D-2<br><span class="course-badge">XXXX_32</span> Science and Tech D-2 Lab<br><span class="course-badge">XXXX_35</span> Social Science E-1<br><span class="course-badge">XXXX_37</span> Social Science E-3<br><span class="course-badge">XXXX_41</span> Free Elective</td><td>15.0</td></tr>
+<tr><td>8</td><td><span class="course-badge">XXXX_25</span> Instiutional Options B-2<br><span class="course-badge">XXXX_33</span> Science and Tech D-2<br><span class="course-badge">XXXX_34</span> Science and Tech D-2 Lab<br><span class="course-badge">XXXX_36</span> Social Science E-2<br><span class="course-badge">XXXX_38</span> Social Science E-4<br><span class="course-badge">XXXX_42</span> Free Elective</td><td>16.0</td></tr>
+</tbody>
         </table>
 
         <h2>Course Metrics</h2>
         <table>
             <thead><tr><th>Course</th><th>Name</th><th>Cr</th><th>Cplx</th><th>Blk</th><th>Dly</th><th>Ctr</th></tr></thead>
-            <tbody>{{course_metrics}}</tbody>
+            <tbody><tr class="complexity-high"><td>CSE1321L</td><td>Programming and Problem Solving I Lab</td><td>1.0</td><td>25</td><td>18</td><td>7</td><td>0</td></tr>
+<tr class="complexity-high"><td>CSE1321</td><td>Programming and Problem Solving I</td><td>3.0</td><td>24</td><td>17</td><td>7</td><td>92</td></tr>
+<tr class="complexity-high"><td>CSE1322</td><td>Programming and Problem Solving II</td><td>3.0</td><td>23</td><td>16</td><td>7</td><td>167</td></tr>
+<tr class="complexity-high"><td>CSE1322L</td><td>Programming and Problem Solving II Lab</td><td>1.0</td><td>23</td><td>17</td><td>6</td><td>0</td></tr>
+<tr class="complexity-high"><td>MATH1190</td><td>Calculus I</td><td>4.0</td><td>19</td><td>13</td><td>6</td><td>0</td></tr>
+<tr class="complexity-medium"><td>MATH2345</td><td>Discrete Mathematics</td><td>3.0</td><td>15</td><td>9</td><td>6</td><td>32</td></tr>
+<tr class="complexity-medium"><td>CS3305</td><td>Data Structures</td><td>3.0</td><td>15</td><td>8</td><td>7</td><td>128</td></tr>
+<tr class="complexity-medium"><td>CS3503</td><td>Computer Organization and Architecture</td><td>3.0</td><td>13</td><td>6</td><td>7</td><td>72</td></tr>
+<tr class="complexity-medium"><td>CS3502</td><td>Operating Systems</td><td>3.0</td><td>10</td><td>3</td><td>7</td><td>77</td></tr>
+<tr class="complexity-medium"><td>CS4504</td><td>Parallel and Distrubted Computing</td><td>3.0</td><td>8</td><td>1</td><td>7</td><td>77</td></tr>
+<tr class="complexity-medium"><td>SWE3313</td><td>Introductrion to Software Engineering</td><td>3.0</td><td>7</td><td>2</td><td>5</td><td>24</td></tr>
+<tr class="complexity-medium"><td>CS4524</td><td>Cloud Computing (CS Elective)</td><td>3.0</td><td>7</td><td>0</td><td>7</td><td>0</td></tr>
+<tr class="complexity-medium"><td>CS3410</td><td>Introduction to Databse Systems</td><td>3.0</td><td>6</td><td>1</td><td>5</td><td>12</td></tr>
+<tr class="complexity-medium"><td>CS3622</td><td>Fundamentals of Data Communication</td><td>3.0</td><td>6</td><td>1</td><td>5</td><td>12</td></tr>
+<tr class="complexity-medium"><td>CS4850</td><td>Computer Science Senior Project</td><td>3.0</td><td>6</td><td>0</td><td>6</td><td>0</td></tr>
+<tr class="complexity-low"><td>ENGL1101</td><td>Composistion I</td><td>3.0</td><td>5</td><td>2</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS4306</td><td>Algorithm Analysis</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS4308</td><td>Concepts of Programming Languages</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS4265</td><td>Big Data Analytics (CS Elective)</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS4622</td><td>Computer Networks (CS Elective)</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CS3642</td><td>Artifical Intelligence (CS Elective)</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>SWE3633</td><td>Software Architecture and Design (CS Elective)</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>ENGL1102</td><td>Composition II</td><td>3.0</td><td>4</td><td>1</td><td>3</td><td>3</td></tr>
+<tr class="complexity-low"><td>CSE3801</td><td>Professional Practices and Ethics</td><td>2.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>TCOM2010</td><td>Technical Writing</td><td>3.0</td><td>3</td><td>0</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_32</td><td>Science and Tech D-2 Lab</td><td>1.0</td><td>3</td><td>1</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_34</td><td>Science and Tech D-2 Lab</td><td>1.0</td><td>3</td><td>1</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>MATH2202</td><td>Calculus II</td><td>4.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>MATH2332</td><td>Probability and Data Analysis</td><td>3.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>MATH3260</td><td>Linear Algebra I</td><td>3.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_31</td><td>Science and Tech D-2</td><td>3.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_33</td><td>Science and Tech D-2</td><td>3.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_24</td><td>Instiutional Options B-1</td><td>2.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_25</td><td>Instiutional Options B-2</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_35</td><td>Social Science E-1</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_36</td><td>Social Science E-2</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_37</td><td>Social Science E-3</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_38</td><td>Social Science E-4</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_39</td><td>Free Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_40</td><td>Free Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_41</td><td>Free Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_42</td><td>Free Elective</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_43</td><td>Free Elective</td><td>2.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+</tbody>
         </table>
 
         <footer><p>Generated by NuAnalytics</p></footer>
     </div>
 
     <script>
-        const edges = {{graph_edges}};
-        const criticalPath = {{critical_path_ids}};
+        const edges = [{ "from": "MATH1190", "to": "MATH2345", "dashes": false }, { "from": "SWE3313", "to": "SWE3633", "dashes": false }, { "from": "CS4504", "to": "CS4524", "dashes": false }, { "from": "CS3502", "to": "CS4850", "dashes": false }, { "from": "SWE3313", "to": "CS4850", "dashes": false }, { "from": "CS3305", "to": "CS4306", "dashes": false }, { "from": "CS3305", "to": "CS3642", "dashes": false }, { "from": "CSE1322", "to": "CS3410", "dashes": false }, { "from": "CSE1322L", "to": "CS3410", "dashes": false }, { "from": "MATH1190", "to": "MATH3260", "dashes": false }, { "from": "CSE1321", "to": "CSE1322", "dashes": false }, { "from": "ENGL1101", "to": "ENGL1102", "dashes": false }, { "from": "CS3503", "to": "CS4622", "dashes": false }, { "from": "CS3622", "to": "CS4622", "dashes": false }, { "from": "CS3305", "to": "CS4265", "dashes": false }, { "from": "CS3410", "to": "CS4265", "dashes": false }, { "from": "MATH1190", "to": "MATH2202", "dashes": false }, { "from": "CSE1322", "to": "CS3503", "dashes": false }, { "from": "CSE1322L", "to": "CS3503", "dashes": false }, { "from": "ENGL1102", "to": "TCOM2010", "dashes": false }, { "from": "MATH1190", "to": "MATH2332", "dashes": false }, { "from": "CSE1322", "to": "CS3622", "dashes": false }, { "from": "CSE1322L", "to": "CS3622", "dashes": false }, { "from": "CS3305", "to": "CS4308", "dashes": false }, { "from": "CS3503", "to": "CS4308", "dashes": false }, { "from": "CS3305", "to": "CS3502", "dashes": false }, { "from": "CS3503", "to": "CS3502", "dashes": false }, { "from": "MATH2345", "to": "CS3305", "dashes": false }, { "from": "CSE1322", "to": "CS3305", "dashes": false }, { "from": "CSE1322L", "to": "CS3305", "dashes": false }, { "from": "CSE1322", "to": "CSE3801", "dashes": false }, { "from": "CSE1322L", "to": "CSE3801", "dashes": false }, { "from": "CSE1322", "to": "SWE3313", "dashes": false }, { "from": "CSE1322L", "to": "SWE3313", "dashes": false }, { "from": "CS3305", "to": "CS4504", "dashes": false }, { "from": "CS3503", "to": "CS4504", "dashes": false }, { "from": "XXXX_32", "to": "XXXX_31", "dashes": true }, { "from": "XXXX_34", "to": "XXXX_33", "dashes": true }, { "from": "CSE1322L", "to": "CSE1322", "dashes": true }, { "from": "CSE1321L", "to": "CSE1321", "dashes": true }, { "from": "CS3502", "to": "CS4504", "dashes": true }];
+        const criticalPath = ["CSE1321", "CSE1321L", "CSE1322", "CSE1322L", "CS3503", "CS4504", "CS3502", "CS4524"];
         const criticalPathSet = new Set(criticalPath);
 
         // Build adjacency maps for path tracing

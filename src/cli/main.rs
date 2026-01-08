@@ -66,6 +66,7 @@ fn main() {
             input_files,
             output,
             report_format,
+            pdf_converter,
             report_dir,
             metrics_dir,
             term_credits,
@@ -77,6 +78,7 @@ fn main() {
                 &input_files,
                 &output,
                 report_format,
+                pdf_converter.as_deref(),
                 report_dir,
                 metrics_dir,
                 term_credits,
@@ -95,6 +97,7 @@ fn run_planner(
     input_files: &[PathBuf],
     output: &[PathBuf],
     report_format: Option<ReportFormatArg>,
+    pdf_converter: Option<&str>,
     report_dir: Option<PathBuf>,
     metrics_dir: Option<PathBuf>,
     term_credits: Option<f32>,
@@ -159,6 +162,7 @@ fn run_planner(
                     fmt,
                     &effective_reports_dir,
                     term_credits,
+                    pdf_converter,
                 ) {
                     Ok(path) => {
                         println!("✓ Report generated: {}", path.display());

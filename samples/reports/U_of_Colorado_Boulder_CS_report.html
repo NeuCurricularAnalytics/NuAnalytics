@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Curriculum Report: {{plan_name}}</title>
+    <title>Curriculum Report: Computer Science</title>
     <style>
         :root {
             --primary-color: #2c3e50;
@@ -407,27 +407,27 @@
 </head>
 <body>
     <div class="container">
-        <h1>📚 Curriculum Report: {{plan_name}}</h1>
+        <h1>📚 Curriculum Report: Computer Science</h1>
 
         <h2>Overview</h2>
         <div class="overview-grid">
-            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">{{institution}}</div></div>
-            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">{{degree_name}}</div></div>
-            <div class="stat-card"><div class="label">System</div><div class="value">{{system_type}}</div></div>
-            <div class="stat-card"><div class="label">Years</div><div class="value">{{years}}</div></div>
-            <div class="stat-card"><div class="label">CIP Code</div><div class="value">{{cip_code}}</div></div>
-            <div class="stat-card"><div class="label">Total Credits</div><div class="value">{{total_credits}}</div></div>
-            <div class="stat-card"><div class="label">Total Courses</div><div class="value">{{course_count}}</div></div>
+            <div class="stat-card"><div class="label">Institution</div><div class="value" style="font-size:1rem">University of Colorado Boulder</div></div>
+            <div class="stat-card"><div class="label">Degree</div><div class="value" style="font-size:1rem">BS Computer Science</div></div>
+            <div class="stat-card"><div class="label">System</div><div class="value">semester</div></div>
+            <div class="stat-card"><div class="label">Years</div><div class="value">4</div></div>
+            <div class="stat-card"><div class="label">CIP Code</div><div class="value">11.07</div></div>
+            <div class="stat-card"><div class="label">Total Credits</div><div class="value">128.0</div></div>
+            <div class="stat-card"><div class="label">Total Courses</div><div class="value">38</div></div>
         </div>
 
         <h2>Complexity Metrics</h2>
         <div class="overview-grid">
-            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">{{total_complexity}}</div></div>
-            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">{{longest_delay}}</div><div class="detail">{{longest_delay_course}}</div></div>
-            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">{{highest_centrality}}</div><div class="detail">{{highest_centrality_course}}</div></div>
+            <div class="stat-card"><div class="label">Total Complexity</div><div class="value">193</div></div>
+            <div class="stat-card"><div class="label">Longest Delay</div><div class="value">5</div><div class="detail">CSCI1300</div></div>
+            <div class="stat-card"><div class="label">Highest Centrality</div><div class="value">98</div><div class="detail">CSCI2270</div></div>
         </div>
 
-        <div class="critical-path"><strong>Critical Path:</strong> {{longest_delay_path}}</div>
+        <div class="critical-path"><strong>Critical Path:</strong> APPM1350 → CSCI2824 → CSCI3104 → CSCI4114</div>
 
         <h2>Curriculum Graph</h2>
         <div class="legend">
@@ -441,7 +441,237 @@
 
         <div class="curriculum-graph-wrapper">
             <div class="curriculum-graph" id="curriculum-graph">
-                {{term_graph}}
+                <div class="term-column">
+  <div class="term-header">Semester 1</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="APPM1350">
+      <span class="complexity-badge complexity-high">25</span>
+      <div class="course-id">APPM1350</div>
+      <div class="course-name">Calculus 1 for Engineers</div>
+    </div>
+    <div class="course-node" data-course-id="CSCI4308">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">CSCI4308</div>
+      <div class="course-name">Software Engineering P</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_26">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_26</div>
+      <div class="course-name">Humanities/Social Scie</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_28">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_28</div>
+      <div class="course-name">Humanities/Social Scie</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_38">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_38</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 2</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSCI1300">
+      <span class="complexity-badge complexity-high">21</span>
+      <div class="course-id">CSCI1300</div>
+      <div class="course-name">Computer Science 1: St</div>
+    </div>
+    <div class="course-node" data-course-id="APPM1360">
+      <span class="complexity-badge complexity-medium">12</span>
+      <div class="course-id">APPM1360</div>
+      <div class="course-name">Calculus 2 for Engineers</div>
+    </div>
+    <div class="course-node" data-course-id="PHYS1110">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">PHYS1110</div>
+      <div class="course-name">General Physics 1</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_30">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_30</div>
+      <div class="course-name">Humanities/Social Scie</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 3</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSCI2270">
+      <span class="complexity-badge complexity-high">19</span>
+      <div class="course-id">CSCI2270</div>
+      <div class="course-name">Computer Science 2: Da</div>
+    </div>
+    <div class="course-node" data-course-id="CSCI2824">
+      <span class="complexity-badge complexity-medium">12</span>
+      <div class="course-id">CSCI2824</div>
+      <div class="course-name">Discrete Structures</div>
+    </div>
+    <div class="course-node" data-course-id="PHYS1120">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">PHYS1120</div>
+      <div class="course-name">General Physics 2 (Sci</div>
+    </div>
+    <div class="course-node" data-course-id="PHYS1140">
+      <span class="complexity-badge complexity-low">3</span>
+      <div class="course-id">PHYS1140</div>
+      <div class="course-name">Experimental Physics 1</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_34">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_34</div>
+      <div class="course-name">Natural Science Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 4</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSCI2400">
+      <span class="complexity-badge complexity-medium">7</span>
+      <div class="course-id">CSCI2400</div>
+      <div class="course-name">Computer Systems</div>
+    </div>
+    <div class="course-node" data-course-id="CSCI3308">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">CSCI3308</div>
+      <div class="course-name">Software Development M</div>
+    </div>
+    <div class="course-node" data-course-id="CSCI2820">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">CSCI2820</div>
+      <div class="course-name">Linear Algebra with Co</div>
+    </div>
+    <div class="course-node" data-course-id="CSCI3022">
+      <span class="complexity-badge complexity-medium">6</span>
+      <div class="course-id">CSCI3022</div>
+      <div class="course-name">Introduction to Data S</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_35">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_35</div>
+      <div class="course-name">Natural Science Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 5</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSCI3104">
+      <span class="complexity-badge complexity-medium">7</span>
+      <div class="course-id">CSCI3104</div>
+      <div class="course-name">Algorithms</div>
+    </div>
+    <div class="course-node" data-course-id="CSCI3155">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CSCI3155</div>
+      <div class="course-name">Principles of Programm</div>
+    </div>
+    <div class="course-node" data-course-id="CSCI3202">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CSCI3202</div>
+      <div class="course-name">Introduction to Artifi</div>
+    </div>
+    <div class="course-node" data-course-id="CSCI3302">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CSCI3302</div>
+      <div class="course-name">Introduction to Roboti</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 6</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSCI3403">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CSCI3403</div>
+      <div class="course-name">Introduction to Cybers</div>
+    </div>
+    <div class="course-node" data-course-id="CSCI3434">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CSCI3434</div>
+      <div class="course-name">Theory of Computation </div>
+    </div>
+    <div class="course-node" data-course-id="CSCI4114">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CSCI4114</div>
+      <div class="course-name">Practical Algorithm Co</div>
+    </div>
+    <div class="course-node" data-course-id="CSCI4448">
+      <span class="complexity-badge complexity-low">5</span>
+      <div class="course-id">CSCI4448</div>
+      <div class="course-name">Object Orinted Analysi</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_36">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_36</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 7</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSCI3002">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">CSCI3002</div>
+      <div class="course-name">Fundamentals of Human </div>
+    </div>
+    <div class="course-node" data-course-id="CSCI3287">
+      <span class="complexity-badge complexity-low">4</span>
+      <div class="course-id">CSCI3287</div>
+      <div class="course-name">Design and Analysis of</div>
+    </div>
+    <div class="course-node" data-course-id="CSCI4318">
+      <span class="complexity-badge complexity-low">2</span>
+      <div class="course-id">CSCI4318</div>
+      <div class="course-name">Software Engineering P</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_29">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_29</div>
+      <div class="course-name">Humanities/Social Scie</div>
+    </div>
+  </div>
+</div>
+<div class="term-column">
+  <div class="term-header">Semester 8</div>
+  <div class="term-courses">
+    <div class="course-node" data-course-id="CSCI1000">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">CSCI1000</div>
+      <div class="course-name">Computer Science as a </div>
+    </div>
+    <div class="course-node" data-course-id="ENES1010">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">ENES1010</div>
+      <div class="course-name">Writing</div>
+    </div>
+    <div class="course-node" data-course-id="PHIL1100">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">PHIL1100</div>
+      <div class="course-name">Ethics</div>
+    </div>
+    <div class="course-node" data-course-id="PHIL1440">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">PHIL1440</div>
+      <div class="course-name">Critical Thinking</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_27">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_27</div>
+      <div class="course-name">Humanities/Social Scie</div>
+    </div>
+    <div class="course-node" data-course-id="XXXX_37">
+      <span class="complexity-badge complexity-low">1</span>
+      <div class="course-id">XXXX_37</div>
+      <div class="course-name">Free Elective</div>
+    </div>
+  </div>
+</div>
+
             </div>
             <svg class="connections-svg" id="connections-svg"></svg>
         </div>
@@ -449,21 +679,67 @@
         <h2>Term Schedule</h2>
         <table>
             <thead><tr><th>Term</th><th>Courses</th><th>Credits</th></tr></thead>
-            <tbody>{{term_schedule}}</tbody>
+            <tbody><tr><td>1</td><td><span class="course-badge">APPM1350</span> Calculus 1 for Engineers<br><span class="course-badge">CSCI4308</span> Software Engineering Project 1<br><span class="course-badge">XXXX_26</span> Humanities/Social Sciences<br><span class="course-badge">XXXX_28</span> Humanities/Social Sciences<br><span class="course-badge">XXXX_38</span> Free Elective</td><td>18.0</td></tr>
+<tr><td>2</td><td><span class="course-badge">CSCI1300</span> Computer Science 1: Starting Computing<br><span class="course-badge">APPM1360</span> Calculus 2 for Engineers<br><span class="course-badge">PHYS1110</span> General Physics 1<br><span class="course-badge">XXXX_30</span> Humanities/Social Sciences</td><td>15.0</td></tr>
+<tr><td>3</td><td><span class="course-badge">CSCI2270</span> Computer Science 2: Data Structure<br><span class="course-badge">CSCI2824</span> Discrete Structures<br><span class="course-badge">PHYS1120</span> General Physics 2 (Science Elective)<br><span class="course-badge">PHYS1140</span> Experimental Physics 1 (Science Elective)<br><span class="course-badge">XXXX_34</span> Natural Science Elective</td><td>16.0</td></tr>
+<tr><td>4</td><td><span class="course-badge">CSCI2400</span> Computer Systems<br><span class="course-badge">CSCI3308</span> Software Development Methods and Tools<br><span class="course-badge">CSCI2820</span> Linear Algebra with Computer Science Applications<br><span class="course-badge">CSCI3022</span> Introduction to Data Science with Probability and Statistics<br><span class="course-badge">XXXX_35</span> Natural Science Elective</td><td>17.0</td></tr>
+<tr><td>5</td><td><span class="course-badge">CSCI3104</span> Algorithms<br><span class="course-badge">CSCI3155</span> Principles of Programming Languages<br><span class="course-badge">CSCI3202</span> Introduction to Artifical Intelligence (Computer Science Core Elective)<br><span class="course-badge">CSCI3302</span> Introduction to Robotics (Computer Science Core Elective)</td><td>14.0</td></tr>
+<tr><td>6</td><td><span class="course-badge">CSCI3403</span> Introduction to Cybersecuirty for a Converged World (Computer Science Core Elective)<br><span class="course-badge">CSCI3434</span> Theory of Computation (CS Elective)<br><span class="course-badge">CSCI4114</span> Practical Algorithm Complexity (CS Elective)<br><span class="course-badge">CSCI4448</span> Object Orinted Analysis and Design<br><span class="course-badge">XXXX_36</span> Free Elective</td><td>17.0</td></tr>
+<tr><td>7</td><td><span class="course-badge">CSCI3002</span> Fundamentals of Human Computer Interaction (Computer Science Core Elective)<br><span class="course-badge">CSCI3287</span> Design and Analysis of Database Systems (Computer Science Core Elective)<br><span class="course-badge">CSCI4318</span> Software Engineering Project 2<br><span class="course-badge">XXXX_29</span> Humanities/Social Sciences</td><td>14.0</td></tr>
+<tr><td>8</td><td><span class="course-badge">CSCI1000</span> Computer Science as a Field of Work and Study<br><span class="course-badge">ENES1010</span> Writing<br><span class="course-badge">PHIL1100</span> Ethics<br><span class="course-badge">PHIL1440</span> Critical Thinking<br><span class="course-badge">XXXX_27</span> Humanities/Social Sciences<br><span class="course-badge">XXXX_37</span> Free Elective</td><td>17.0</td></tr>
+</tbody>
         </table>
 
         <h2>Course Metrics</h2>
         <table>
             <thead><tr><th>Course</th><th>Name</th><th>Cr</th><th>Cplx</th><th>Blk</th><th>Dly</th><th>Ctr</th></tr></thead>
-            <tbody>{{course_metrics}}</tbody>
+            <tbody><tr class="complexity-high"><td>APPM1350</td><td>Calculus 1 for Engineers</td><td>4.0</td><td>25</td><td>20</td><td>5</td><td>0</td></tr>
+<tr class="complexity-high"><td>CSCI1300</td><td>Computer Science 1: Starting Computing</td><td>4.0</td><td>21</td><td>16</td><td>5</td><td>82</td></tr>
+<tr class="complexity-high"><td>CSCI2270</td><td>Computer Science 2: Data Structure</td><td>4.0</td><td>19</td><td>14</td><td>5</td><td>98</td></tr>
+<tr class="complexity-medium"><td>APPM1360</td><td>Calculus 2 for Engineers</td><td>4.0</td><td>12</td><td>8</td><td>4</td><td>19</td></tr>
+<tr class="complexity-medium"><td>CSCI2824</td><td>Discrete Structures</td><td>3.0</td><td>12</td><td>7</td><td>5</td><td>48</td></tr>
+<tr class="complexity-medium"><td>CSCI2400</td><td>Computer Systems</td><td>4.0</td><td>7</td><td>2</td><td>5</td><td>18</td></tr>
+<tr class="complexity-medium"><td>CSCI3104</td><td>Algorithms</td><td>4.0</td><td>7</td><td>2</td><td>5</td><td>44</td></tr>
+<tr class="complexity-medium"><td>CSCI3308</td><td>Software Development Methods and Tools</td><td>3.0</td><td>6</td><td>1</td><td>5</td><td>9</td></tr>
+<tr class="complexity-medium"><td>CSCI2820</td><td>Linear Algebra with Computer Science Applications</td><td>3.0</td><td>6</td><td>1</td><td>5</td><td>13</td></tr>
+<tr class="complexity-medium"><td>CSCI3022</td><td>Introduction to Data Science with Probability and Statistics</td><td>3.0</td><td>6</td><td>1</td><td>5</td><td>22</td></tr>
+<tr class="complexity-low"><td>CSCI3155</td><td>Principles of Programming Languages</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CSCI3202</td><td>Introduction to Artifical Intelligence (Computer Science Core Elective)</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CSCI3302</td><td>Introduction to Robotics (Computer Science Core Elective)</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CSCI3403</td><td>Introduction to Cybersecuirty for a Converged World (Computer Science Core Elective)</td><td>4.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CSCI3434</td><td>Theory of Computation (CS Elective)</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CSCI4114</td><td>Practical Algorithm Complexity (CS Elective)</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CSCI4448</td><td>Object Orinted Analysis and Design</td><td>3.0</td><td>5</td><td>0</td><td>5</td><td>0</td></tr>
+<tr class="complexity-low"><td>CSCI3002</td><td>Fundamentals of Human Computer Interaction (Computer Science Core Elective)</td><td>4.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>CSCI3287</td><td>Design and Analysis of Database Systems (Computer Science Core Elective)</td><td>3.0</td><td>4</td><td>0</td><td>4</td><td>0</td></tr>
+<tr class="complexity-low"><td>PHYS1110</td><td>General Physics 1</td><td>4.0</td><td>4</td><td>1</td><td>3</td><td>3</td></tr>
+<tr class="complexity-low"><td>CSCI4308</td><td>Software Engineering Project 1</td><td>4.0</td><td>3</td><td>1</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>PHYS1120</td><td>General Physics 2 (Science Elective)</td><td>4.0</td><td>3</td><td>0</td><td>3</td><td>0</td></tr>
+<tr class="complexity-low"><td>PHYS1140</td><td>Experimental Physics 1 (Science Elective)</td><td>1.0</td><td>3</td><td>1</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>CSCI4318</td><td>Software Engineering Project 2</td><td>4.0</td><td>2</td><td>0</td><td>2</td><td>0</td></tr>
+<tr class="complexity-low"><td>CSCI1000</td><td>Computer Science as a Field of Work and Study</td><td>1.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>PHIL1440</td><td>Critical Thinking</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>PHIL1100</td><td>Ethics</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>ENES1010</td><td>Writing</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_26</td><td>Humanities/Social Sciences</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_27</td><td>Humanities/Social Sciences</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_28</td><td>Humanities/Social Sciences</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_29</td><td>Humanities/Social Sciences</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_30</td><td>Humanities/Social Sciences</td><td>3.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_34</td><td>Natural Science Elective</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_35</td><td>Natural Science Elective</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_36</td><td>Free Elective</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_37</td><td>Free Elective</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+<tr class="complexity-low"><td>XXXX_38</td><td>Free Elective</td><td>4.0</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+</tbody>
         </table>
 
         <footer><p>Generated by NuAnalytics</p></footer>
     </div>
 
     <script>
-        const edges = {{graph_edges}};
-        const criticalPath = {{critical_path_ids}};
+        const edges = [{ "from": "CSCI2270", "to": "CSCI3202", "dashes": false }, { "from": "CSCI2824", "to": "CSCI3202", "dashes": false }, { "from": "CSCI3022", "to": "CSCI3202", "dashes": false }, { "from": "CSCI2270", "to": "CSCI2820", "dashes": false }, { "from": "APPM1360", "to": "CSCI2820", "dashes": false }, { "from": "CSCI3104", "to": "CSCI3434", "dashes": false }, { "from": "CSCI2270", "to": "CSCI3308", "dashes": false }, { "from": "CSCI1300", "to": "CSCI2824", "dashes": false }, { "from": "APPM1350", "to": "CSCI2824", "dashes": false }, { "from": "APPM1350", "to": "CSCI1300", "dashes": false }, { "from": "APPM1350", "to": "APPM1360", "dashes": false }, { "from": "CSCI2270", "to": "CSCI3302", "dashes": false }, { "from": "CSCI2824", "to": "CSCI3302", "dashes": false }, { "from": "CSCI2820", "to": "CSCI3302", "dashes": false }, { "from": "CSCI1300", "to": "CSCI2270", "dashes": false }, { "from": "APPM1350", "to": "CSCI2270", "dashes": false }, { "from": "CSCI2270", "to": "CSCI3104", "dashes": false }, { "from": "APPM1360", "to": "CSCI3104", "dashes": false }, { "from": "CSCI2824", "to": "CSCI3104", "dashes": false }, { "from": "CSCI3308", "to": "CSCI4448", "dashes": false }, { "from": "CSCI2270", "to": "CSCI2400", "dashes": false }, { "from": "APPM1360", "to": "PHYS1120", "dashes": false }, { "from": "PHYS1110", "to": "PHYS1120", "dashes": false }, { "from": "CSCI2270", "to": "CSCI3022", "dashes": false }, { "from": "APPM1360", "to": "CSCI3022", "dashes": false }, { "from": "CSCI2824", "to": "CSCI3022", "dashes": false }, { "from": "CSCI3104", "to": "CSCI4114", "dashes": false }, { "from": "CSCI4308", "to": "CSCI4318", "dashes": false }, { "from": "CSCI2400", "to": "CSCI3403", "dashes": false }, { "from": "CSCI2270", "to": "CSCI3155", "dashes": false }, { "from": "CSCI2400", "to": "CSCI3155", "dashes": false }, { "from": "CSCI2824", "to": "CSCI3155", "dashes": false }, { "from": "CSCI2270", "to": "CSCI3287", "dashes": false }, { "from": "APPM1350", "to": "PHYS1110", "dashes": false }, { "from": "CSCI2270", "to": "CSCI3002", "dashes": false }, { "from": "PHYS1140", "to": "PHYS1120", "dashes": true }];
+        const criticalPath = ["APPM1350", "CSCI2824", "CSCI3104", "CSCI4114"];
         const criticalPathSet = new Set(criticalPath);
 
         // Build adjacency maps for path tracing

@@ -77,7 +77,11 @@ impl HtmlReporter {
         let term_graph = Self::generate_term_graph(ctx);
         output = output.replace("{{term_graph}}", &term_graph);
 
-        // Generate edge data for SVG connections
+        // Generate SVG paths with baked coordinates (server-side calculation)
+        let svg_paths = Self::generate_svg_paths(ctx);
+        output = output.replace("{{svg_paths}}", &svg_paths);
+
+        // Generate edge data for legacy JavaScript (kept for compatibility)
         let edges = Self::generate_edge_data(ctx);
         output = output.replace("{{graph_edges}}", &edges);
 
@@ -271,6 +275,85 @@ impl HtmlReporter {
         }
 
         html
+    }
+
+    /// Generate SVG paths with baked coordinates (server-side calculation)
+    /// This avoids JavaScript positioning issues when printing to PDF
+    fn generate_svg_paths(ctx: &ReportContext) -> String {
+        // Grid layout constants
+        const TERM_WIDTH: f32 = 130.0;
+        const TERM_X_OFFSET: f32 = 20.0;
+        const COURSE_HEIGHT: f32 = 115.0;
+        const COURSE_Y_OFFSET: f32 = 50.0;
+        const COURSE_CENTER_X: f32 = 65.0;
+        const COURSE_CENTER_Y: f32 = 30.0;
+
+        // Build position map: course_id -> (x, y)
+        let mut positions = std::collections::HashMap::new();
+        for (term_idx, term) in ctx.term_plan.terms.iter().enumerate() {
+            #[allow(clippy::cast_precision_loss)]
+            let term_x = (term_idx as f32).mul_add(TERM_WIDTH, TERM_X_OFFSET);
+            for (course_idx, course_key) in term.courses.iter().enumerate() {
+                #[allow(clippy::cast_precision_loss)]
+                let course_y = (course_idx as f32).mul_add(COURSE_HEIGHT, COURSE_Y_OFFSET);
+                positions.insert(
+                    course_key.clone(),
+                    (term_x + COURSE_CENTER_X, course_y + COURSE_CENTER_Y),
+                );
+            }
+        }
+
+        let mut paths = Vec::new();
+
+        // Generate prerequisite paths
+        for (course, prereqs) in &ctx.dag.dependencies {
+            if !ctx.plan.courses.contains(course) || !positions.contains_key(course) {
+                continue;
+            }
+            for prereq in prereqs {
+                if !ctx.plan.courses.contains(prereq) || !positions.contains_key(prereq) {
+                    continue;
+                }
+
+                if let (Some(&(x1, y1)), Some(&(x2, y2))) =
+                    (positions.get(prereq), positions.get(course))
+                {
+                    // Curved path: quadratic Bezier from prereq to course
+                    let mid_x = f32::midpoint(x1, x2);
+                    let mid_y = f32::midpoint(y1, y2);
+                    let path = format!(
+                        "<path class=\"prereq-line\" d=\"M {x1:.1} {y1:.1} Q {mid_x:.1} {mid_y:.1} {x2:.1} {y2:.1}\" data-from=\"{prereq}\" data-to=\"{course}\"></path>"
+                    );
+                    paths.push(path);
+                }
+            }
+        }
+
+        // Generate corequisite paths (dashed)
+        for (course, coreqs) in &ctx.dag.corequisites {
+            if !ctx.plan.courses.contains(course) || !positions.contains_key(course) {
+                continue;
+            }
+            for coreq in coreqs {
+                if !ctx.plan.courses.contains(coreq) || !positions.contains_key(coreq) {
+                    continue;
+                }
+
+                if let (Some(&(x1, y1)), Some(&(x2, y2))) =
+                    (positions.get(coreq), positions.get(course))
+                {
+                    // Curved path for corequisites
+                    let mid_x = f32::midpoint(x1, x2);
+                    let mid_y = f32::midpoint(y1, y2);
+                    let path = format!(
+                        "<path class=\"coreq-line\" d=\"M {x1:.1} {y1:.1} Q {mid_x:.1} {mid_y:.1} {x2:.1} {y2:.1}\" data-from=\"{coreq}\" data-to=\"{course}\"></path>"
+                    );
+                    paths.push(path);
+                }
+            }
+        }
+
+        paths.join("\n")
     }
 
     /// Generate vis.js node and edge data as JSON arrays

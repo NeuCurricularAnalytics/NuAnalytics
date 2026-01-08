@@ -8,8 +8,8 @@ dist
 .debug
 
 # since we should store in samples, adding these so we don't accidentally commit tests
-metrics
-reports
+/metrics
+/reports
 
 server.log
 

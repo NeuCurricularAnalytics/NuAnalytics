@@ -167,6 +167,13 @@ pub enum Command {
         #[arg(long, value_enum, value_name = "FORMAT")]
         report_format: Option<ReportFormatArg>,
 
+        /// Custom PDF converter command (e.g., chrome, chromium, wkhtmltopdf)
+        ///
+        /// When generating PDF reports, specifies which tool to use for HTML-to-PDF conversion.
+        /// If not provided, will auto-detect Chrome/Chromium.
+        #[arg(long, value_name = "COMMAND")]
+        pdf_converter: Option<String>,
+
         /// Override reports output directory (from config)
         #[arg(long, value_name = "DIR")]
         report_dir: Option<std::path::PathBuf>,
