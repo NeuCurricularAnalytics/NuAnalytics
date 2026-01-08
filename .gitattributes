@@ -1,0 +1,20 @@
+# Auto detect text files and normalize line endings to LF in repository
+* text=auto
+
+# Explicitly declare text files you want to always be normalized and converted
+# to native line endings on checkout
+*.rs text
+*.toml text
+*.md text
+*.yml text
+*.yaml text
+*.txt text
+*.csv text
+
+# Declare files that should stay in LF (even on Windows)
+*.sh text eol=lf
+
+# Denote binary files
+*.png binary
+*.jpg binary
+*.pdf binary
