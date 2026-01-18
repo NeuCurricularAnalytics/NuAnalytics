@@ -1,0 +1,645 @@
+# =============================================================================
+# University of Hawaii at Manoa - Bachelor of Science in Computer Science (General)
+# Schema v5.1 | Catalog 2024-2025
+# =============================================================================
+
+degree:
+  id: uhm-ics-bscs-general
+  institution: University of Hawaii at Manoa
+  program: Bachelor of Science in Computer Science - General Track
+  catalog_year: "2024-2025"
+  source_url: https://www.ics.hawaii.edu/academics/undergraduate-programs/bs/
+  total_credits: 120
+  upper_division_credits: null
+  in_major_credits: 57
+  gpa_minimum: 2.0
+  gpa_major: null
+  grade_minimum: "C"
+  grade_minimum_note: "C means C, not C-. B (not B-) required in ICS 111 and ICS 211."
+  major_subjects: [ICS]
+  allow_double_counting: false
+
+# =============================================================================
+# REQUIREMENTS
+# =============================================================================
+
+requirements:
+
+  # ---------------------------------------------------------------------------
+  # Supporting Math Requirements (Required for all BA and BS degrees)
+  # ---------------------------------------------------------------------------
+  calculus_sequence:
+    name: Calculus Sequence
+    type: all
+    category: supporting
+    courses:
+      - "{MATH215, MATH241, MATH251A}"  # Calculus I - pick one
+      - "{MATH216, MATH242, MATH252A}"  # Calculus II - pick one
+
+  # ---------------------------------------------------------------------------
+  # Math/Statistics Requirement
+  # ---------------------------------------------------------------------------
+  math_statistics:
+    name: Math/Statistics Requirement
+    type: select
+    category: supporting
+    from:
+      courses:
+        - MATH307  # Linear Algebra
+        - MATH372  # Elementary Probability and Statistics
+    count: 1
+
+  # ---------------------------------------------------------------------------
+  # ICS Core Courses
+  # ---------------------------------------------------------------------------
+  ics_intro:
+    name: Introduction to Computer Science I
+    type: all
+    category: major
+    courses:
+      - ICS111
+    constraints:
+      grade_minimum: "B"
+
+  ics_intro_2:
+    name: Introduction to Computer Science II
+    type: all
+    category: major
+    courses:
+      - ICS211
+    constraints:
+      grade_minimum: "B"
+
+  discrete_math:
+    name: Discrete Mathematics Sequence
+    type: one_of
+    category: major
+    options:
+      - id: ics_path
+        name: ICS Discrete Math
+        requirements:
+          - type: all
+            courses:
+              - ICS141
+              - ICS241
+      - id: math_substitution
+        name: Math Substitution (requires MATH307)
+        requirements:
+          - type: all
+            courses:
+              - MATH301  # Introduction to Discrete Mathematics
+              - MATH372  # Elementary Probability and Statistics
+
+  program_structure:
+    name: Program Structure
+    type: select
+    category: major
+    from:
+      courses:
+        - ICS212  # Program Structure
+        - ICS215  # Introduction to Scripting
+    count: 1
+
+  algorithms:
+    name: Algorithms
+    type: select
+    category: major
+    from:
+      courses:
+        - ICS311  # Algorithms
+        - ECE367  # Algorithms (substitution allowed)
+    count: 1
+
+  software_engineering:
+    name: Software Engineering
+    type: all
+    category: major
+    courses:
+      - ICS314  # Software Engineering
+
+  database_systems:
+    name: Database Systems
+    type: all
+    category: major
+    courses:
+      - ICS321  # Database Systems
+
+  operating_systems:
+    name: Operating Systems
+    type: all
+    category: major
+    courses:
+      - ICS332  # Operating Systems
+
+  security:
+    name: Security and Trust I
+    type: all
+    category: major
+    courses:
+      - ICS355  # Security and Trust I
+
+  capstone:
+    name: Capstone Project
+    type: all
+    category: major
+    courses:
+      - ICS496  # Capstone Project
+
+  # ---------------------------------------------------------------------------
+  # Breadth Requirements (Two of three pairs)
+  # ---------------------------------------------------------------------------
+  breadth_requirements:
+    name: Breadth Requirements
+    type: select
+    category: major
+    from:
+      groups:
+        - id: systems_programming
+          name: Systems Programming / Logic Design
+          courses:
+            - ICS312  # Machine-Level and Systems Programming
+            - ICS331  # Logic Design and Microprocessors
+        - id: languages_ai
+          name: Languages / AI
+          courses:
+            - ICS313  # Programming Language Theory
+            - ICS361  # Introduction to AI Programming
+        - id: networking
+          name: Networking
+          courses:
+            - ICS351  # Network Design and Management
+            - ICS451  # Data Networks
+      groups_required: 2
+      per_group: 1
+
+  # ---------------------------------------------------------------------------
+  # 400-Level Electives
+  # ---------------------------------------------------------------------------
+  upper_electives:
+    name: 400-Level Electives
+    type: select
+    category: major
+    from:
+      pattern: "ICS:400+"
+    count: 4
+    constraints:
+      exclude_used: true
+
+# =============================================================================
+# COURSES
+# =============================================================================
+
+courses:
+  # Calculus
+  MATH215:
+    subject: MATH
+    number: "215"
+    title: Applied Calculus I
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  MATH241:
+    subject: MATH
+    number: "241"
+    title: Calculus I
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  MATH251A:
+    subject: MATH
+    number: "251A"
+    title: Calculus I
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  MATH216:
+    subject: MATH
+    number: "216"
+    title: Applied Calculus II
+    credits: 4
+    prerequisites: "MATH215"
+    typically_offered: [fall, spring]
+
+  MATH242:
+    subject: MATH
+    number: "242"
+    title: Calculus II
+    credits: 4
+    prerequisites: "MATH241"
+    typically_offered: [fall, spring]
+
+  MATH252A:
+    subject: MATH
+    number: "252A"
+    title: Calculus II
+    credits: 3
+    prerequisites: "MATH251A"
+    typically_offered: [fall, spring]
+
+  # Math/Statistics
+  MATH301:
+    subject: MATH
+    number: "301"
+    title: Introduction to Discrete Mathematics
+    credits: 3
+    prerequisites: "MATH241"
+    typically_offered: [fall, spring]
+
+  MATH307:
+    subject: MATH
+    number: "307"
+    title: Linear Algebra
+    credits: 3
+    prerequisites: "MATH242"
+    typically_offered: [fall, spring]
+
+  MATH372:
+    subject: MATH
+    number: "372"
+    title: Elementary Probability and Statistics
+    credits: 3
+    prerequisites: "MATH242"
+    typically_offered: [fall, spring]
+
+  # ICS Core
+  ICS111:
+    subject: ICS
+    number: "111"
+    title: Introduction to Computer Science I
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    grade_minimum: "B"
+
+  ICS141:
+    subject: ICS
+    number: "141"
+    title: Discrete Mathematics for Computer Science I
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  ICS211:
+    subject: ICS
+    number: "211"
+    title: Introduction to Computer Science II
+    credits: 4
+    prerequisites: "ICS111[B]"
+    typically_offered: [fall, spring]
+    grade_minimum: "B"
+
+  ICS212:
+    subject: ICS
+    number: "212"
+    title: Program Structure
+    credits: 3
+    prerequisites: "ICS211"
+    typically_offered: [fall, spring]
+
+  ICS215:
+    subject: ICS
+    number: "215"
+    title: Introduction to Scripting
+    credits: 3
+    prerequisites: "ICS211"
+    typically_offered: [fall, spring]
+
+  ICS241:
+    subject: ICS
+    number: "241"
+    title: Discrete Mathematics for Computer Science II
+    credits: 3
+    prerequisites: "ICS141"
+    typically_offered: [fall, spring]
+
+  ICS311:
+    subject: ICS
+    number: "311"
+    title: Algorithms
+    credits: 4
+    prerequisites: "(ICS211 & (ICS241 | ECE362) & (MATH216 | MATH242 | MATH252A)) | (MATH301 & MATH372)"
+    typically_offered: [fall, spring]
+
+  ECE367:
+    subject: ECE
+    number: "367"
+    title: Algorithms
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  ICS312:
+    subject: ICS
+    number: "312"
+    title: Machine-Level and Systems Programming
+    credits: 3
+    prerequisites: "ICS212"
+    typically_offered: [fall, spring]
+
+  ICS313:
+    subject: ICS
+    number: "313"
+    title: Programming Language Theory
+    credits: 3
+    prerequisites: "ICS212"
+    typically_offered: [fall, spring]
+
+  ICS314:
+    subject: ICS
+    number: "314"
+    title: Software Engineering
+    credits: 4
+    prerequisites: "ICS211"
+    typically_offered: [fall, spring]
+
+  ICS321:
+    subject: ICS
+    number: "321"
+    title: Database Systems
+    credits: 3
+    prerequisites: "ICS211"
+    typically_offered: [fall, spring]
+
+  ICS331:
+    subject: ICS
+    number: "331"
+    title: Logic Design and Microprocessors
+    credits: 3
+    prerequisites: "ICS212"
+    typically_offered: [fall, spring]
+
+  ICS332:
+    subject: ICS
+    number: "332"
+    title: Operating Systems
+    credits: 3
+    prerequisites: "ICS212"
+    typically_offered: [fall, spring]
+
+  ICS351:
+    subject: ICS
+    number: "351"
+    title: Network Design and Management
+    credits: 3
+    prerequisites: "ICS211"
+    typically_offered: [fall, spring]
+
+  ICS355:
+    subject: ICS
+    number: "355"
+    title: Security and Trust I - Resource Protections
+    credits: 3
+    prerequisites: "ICS211"
+    typically_offered: [fall, spring]
+
+  ICS361:
+    subject: ICS
+    number: "361"
+    title: Introduction to Artificial Intelligence Programming
+    credits: 3
+    prerequisites: "ICS212"
+    typically_offered: [fall, spring]
+
+  # 400-Level Electives (representative selection)
+  ICS414:
+    subject: ICS
+    number: "414"
+    title: Software Engineering II
+    credits: 3
+    prerequisites: "ICS314"
+    typically_offered: [fall, spring]
+
+  ICS421:
+    subject: ICS
+    number: "421"
+    title: Database Systems II
+    credits: 3
+    prerequisites: "ICS321"
+    typically_offered: [fall, spring]
+
+  ICS422:
+    subject: ICS
+    number: "422"
+    title: Network Science Methodology
+    credits: 3
+    prerequisites: "ICS311"
+    typically_offered: [fall, spring]
+
+  ICS423:
+    subject: ICS
+    number: "423"
+    title: Data Security and Cryptography I
+    credits: 3
+    prerequisites: "ICS311"
+    typically_offered: [fall, spring]
+
+  ICS425:
+    subject: ICS
+    number: "425"
+    title: Computer Security and Ethics
+    credits: 3
+    prerequisites: "ICS355"
+    typically_offered: [fall, spring]
+
+  ICS426:
+    subject: ICS
+    number: "426"
+    title: Computer System Security
+    credits: 3
+    prerequisites: "ICS355"
+    typically_offered: [fall, spring]
+
+  ICS428:
+    subject: ICS
+    number: "428"
+    title: Digital Forensics
+    credits: 3
+    prerequisites: "ICS355"
+    typically_offered: [fall, spring]
+
+  ICS431:
+    subject: ICS
+    number: "431"
+    title: Computer Architecture
+    credits: 3
+    prerequisites: "ICS312 | ICS331"
+    typically_offered: [fall, spring]
+
+  ICS432:
+    subject: ICS
+    number: "432"
+    title: Concurrent and High-Performance Programming
+    credits: 3
+    prerequisites: "ICS332"
+    typically_offered: [fall, spring]
+
+  ICS435:
+    subject: ICS
+    number: "435"
+    title: Machine Learning Fundamentals
+    credits: 3
+    prerequisites: "ICS311"
+    typically_offered: [fall, spring]
+
+  ICS438:
+    subject: ICS
+    number: "438"
+    title: Big Data Analytics
+    credits: 3
+    prerequisites: "ICS321"
+    typically_offered: [fall, spring]
+
+  ICS441:
+    subject: ICS
+    number: "441"
+    title: Theory of Computation
+    credits: 3
+    prerequisites: "ICS311"
+    typically_offered: [fall, spring]
+
+  ICS443:
+    subject: ICS
+    number: "443"
+    title: Parallel Algorithms
+    credits: 3
+    prerequisites: "ICS311"
+    typically_offered: [fall, spring]
+
+  ICS451:
+    subject: ICS
+    number: "451"
+    title: Data Networks
+    credits: 3
+    prerequisites: "ICS212"
+    typically_offered: [fall, spring]
+
+  ICS455:
+    subject: ICS
+    number: "455"
+    title: Security and Trust II - Information Assurance
+    credits: 3
+    prerequisites: "ICS355"
+    typically_offered: [fall, spring]
+
+  ICS461:
+    subject: ICS
+    number: "461"
+    title: Artificial Intelligence
+    credits: 3
+    prerequisites: "ICS311"
+    typically_offered: [fall, spring]
+
+  ICS462:
+    subject: ICS
+    number: "462"
+    title: Artificial Intelligence for Games
+    credits: 3
+    prerequisites: "ICS311"
+    typically_offered: [fall, spring]
+
+  ICS464:
+    subject: ICS
+    number: "464"
+    title: Human Computer Interaction I
+    credits: 3
+    prerequisites: "ICS211"
+    typically_offered: [fall, spring]
+
+  ICS466:
+    subject: ICS
+    number: "466"
+    title: Design for Mobile Devices
+    credits: 3
+    prerequisites: "ICS314"
+    typically_offered: [fall, spring]
+
+  ICS475:
+    subject: ICS
+    number: "475"
+    title: Introduction to Bioinformatics Sequences and Genomes Analysis
+    credits: 3
+    prerequisites: "ICS311"
+    typically_offered: [fall, spring]
+
+  ICS481:
+    subject: ICS
+    number: "481"
+    title: Introduction to Computer Graphics
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & MATH307"
+    typically_offered: [fall, spring]
+
+  ICS483:
+    subject: ICS
+    number: "483"
+    title: Computer Vision
+    credits: 3
+    prerequisites: "ICS311"
+    typically_offered: [fall, spring]
+
+  ICS484:
+    subject: ICS
+    number: "484"
+    title: Data Visualization
+    credits: 3
+    prerequisites: "ICS311"
+    typically_offered: [fall, spring]
+
+  ICS485:
+    subject: ICS
+    number: "485"
+    title: Video Game Design
+    credits: 3
+    prerequisites: "ICS111"
+    typically_offered: [fall, spring]
+
+  ICS491:
+    subject: ICS
+    number: "491"
+    title: Special Topics
+    credits: 3
+    prerequisites: null
+    repeatable: true
+    max_repeat_credits: 9
+    typically_offered: [fall, spring]
+
+  ICS495:
+    subject: ICS
+    number: "495"
+    title: Special Topics in Security
+    credits: 3
+    prerequisites: null
+    repeatable: true
+    max_repeat_credits: 9
+    typically_offered: [fall, spring]
+
+  ICS496:
+    subject: ICS
+    number: "496"
+    title: Capstone Project
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall, spring]
+
+  ICS499:
+    subject: ICS
+    number: "499"
+    title: Directed Reading/Research
+    credit_range:
+      min: 1
+      max: 3
+    prerequisites: null
+    repeatable: true
+    max_repeat_credits: 6
+    typically_offered: [fall, spring]
+
+  ECE362:
+    subject: ECE
+    number: "362"
+    title: Discrete Mathematics
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]

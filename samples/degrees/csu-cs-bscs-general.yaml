@@ -1,0 +1,1266 @@
+# =============================================================================
+# Colorado State University - Major in Computer Science (CS Concentration)
+# Schema v5.1 | Catalog 2025-2026
+# =============================================================================
+
+degree:
+  id: csu-cs-bscs-general
+  institution: Colorado State University
+  program: Bachelor of Science in Computer Science - Computer Science Concentration
+  catalog_year: "2025-2026"
+  source_url: https://catalog.colostate.edu/general-catalog/colleges/natural-sciences/computer-science/computer-science-major/computer-science-concentration/
+  total_credits: 120
+  upper_division_credits: 42
+  in_major_credits: null
+  gpa_minimum: 2.0
+  gpa_major: 2.0
+  grade_minimum: "C"
+  grade_minimum_note: "A minimum grade of C (2.000) is required in CO 150 and in all CS, DSCI, MATH, STAT and departmental Technology Focus Elective courses"
+  major_subjects: [CS, CT, DSCI]
+  allow_double_counting: false
+
+# =============================================================================
+# REQUIREMENTS
+# =============================================================================
+
+requirements:
+
+  # ---------------------------------------------------------------------------
+  # Freshman Year
+  # ---------------------------------------------------------------------------
+  composition:
+    name: College Composition
+    type: all
+    category: gen_ed
+    courses:
+      - CO150
+    constraints:
+      grade_minimum: "C"
+
+  ethics:
+    name: Ethical Computing Systems
+    type: all
+    category: major
+    courses:
+      - "{CS201, PHIL201}"
+    constraints:
+      grade_minimum: "C"
+
+  calculus:
+    name: Mathematics for Computational Science I
+    type: select
+    category: supporting
+    from:
+      courses:
+        - MATH156  # Mathematics for Computational Science I
+        - MATH160  # Calculus for Physical Scientists I
+    count: 1
+    constraints:
+      grade_minimum: "C"
+
+  intro_programming:
+    name: Introduction to Programming Sequence
+    type: one_of
+    category: major
+    options:
+      - id: group_a
+        name: "Group A: Culture and Coding Path"
+        requirements:
+          - name: Culture and Coding
+            type: select
+            from:
+              courses:
+                - CS150A
+                - CS150B
+            count: 1
+          - name: CS1
+            type: select
+            from:
+              courses:
+                - CS162
+                - CS164
+            count: 1
+      - id: group_b
+        name: "Group B: Python for STEM Path"
+        requirements:
+          - name: Python for STEM
+            type: all
+            courses:
+              - CS152
+          - name: CS1
+            type: select
+            from:
+              courses:
+                - CS162
+                - CS164
+            count: 1
+      - id: group_c
+        name: "Group C: No Prior Programming"
+        requirements:
+          - name: CS1 No Prior Experience
+            type: all
+            courses:
+              - CS163
+
+  science_with_lab:
+    name: Natural Science with Lab
+    type: select
+    category: gen_ed
+    from:
+      courses:
+        - "[AA100, AA101]"    # Intro to Astronomy + Lab
+        - "[ANTH120, ANTH121]"  # Human Origins + Lab
+        - "[BZ110, BZ111]"    # Animal Biology + Lab
+        - BZ120              # Plant Biology (has integrated lab)
+        - "[CHEM107, CHEM108]"  # Fundamentals of Chemistry + Lab
+        - "[CHEM111, CHEM112]"  # General Chemistry I + Lab
+        - "[GEOL120, GEOL121]"  # Geology and Society + Lab
+        - "[GEOL122, GEOL121]"  # Climate and Environmental Change + Lab
+        - "[GEOL124, GEOL121]"  # Earth Resources + Lab
+        - GEOL150            # Dynamic Earth
+        - HONR292A           # Honors Seminar: Knowing in Sciences
+        - LIFE102            # Attributes of Living Systems
+        - LIFE103            # Biology of Organisms
+        - LIFE201A           # Introductory Genetics: Applied
+        - LIFE201B           # Introductory Genetics: Molecular
+        - "{LIFE220, LAND220}"  # Fundamentals of Ecology
+        - NR150              # Oceanography
+        - PH121              # General Physics I
+        - PH122              # General Physics II
+        - PH141              # Physics for Scientists and Engineers I
+        - PH142              # Physics for Scientists and Engineers II
+    credits: 7
+    constraints:
+      min_upper_division: 0
+
+  # ---------------------------------------------------------------------------
+  # Sophomore Year
+  # ---------------------------------------------------------------------------
+  data_structures:
+    name: Data Structures
+    type: all
+    category: major
+    courses:
+      - CS165
+    constraints:
+      grade_minimum: "C"
+
+  discrete_structures:
+    name: Discrete Structures
+    type: all
+    category: major
+    courses:
+      - CS220
+    constraints:
+      grade_minimum: "C"
+
+  software_development:
+    name: Software Development
+    type: one_of
+    category: major
+    options:
+      - id: group_a
+        name: "Group A: CS 214 + CT 301"
+        requirements:
+          - type: all
+            courses:
+              - CS214
+              - CT301
+      - id: group_b
+        name: "Group B: CS 253"
+        requirements:
+          - type: all
+            courses:
+              - CS253
+
+  computer_organization:
+    name: Computer Systems/Organization
+    type: select
+    category: major
+    from:
+      courses:
+        - CS250  # Computer Systems Foundations
+        - CS270  # Computer Organization
+    count: 1
+    constraints:
+      grade_minimum: "C"
+
+  linear_algebra:
+    name: Linear Algebra
+    type: select
+    category: supporting
+    from:
+      courses:
+        - DSCI369  # Linear Algebra for Data Science
+        - MATH369  # Linear Algebra I
+    count: 1
+    constraints:
+      grade_minimum: "C"
+
+  statistics:
+    name: Statistics
+    type: select
+    category: supporting
+    from:
+      courses:
+        - STAT301   # Introduction to Applied Statistical Methods
+        - STAT302A  # Statistics Supplement
+        - STAT307   # Introduction to Biostatistics
+        - STAT315   # Intro to Theory and Practice of Statistics
+    count: 1
+    constraints:
+      grade_minimum: "C"
+
+  # ---------------------------------------------------------------------------
+  # Junior Year
+  # ---------------------------------------------------------------------------
+  software_engineering:
+    name: Software Engineering
+    type: all
+    category: major
+    courses:
+      - CS314
+    constraints:
+      grade_minimum: "C"
+
+  algorithms:
+    name: Algorithms
+    type: all
+    category: major
+    courses:
+      - CS320
+    constraints:
+      grade_minimum: "C"
+
+  operating_systems:
+    name: Operating Systems
+    type: all
+    category: major
+    courses:
+      - CS370
+    constraints:
+      grade_minimum: "C"
+
+  junior_cs_electives:
+    name: Junior CS Electives (300-level)
+    type: select
+    category: major
+    from:
+      pattern: "CS:300+"
+      exclude:
+        - "CS:380-399"
+        - "CS:480-499"
+    count: 2
+    constraints:
+      grade_minimum: "C"
+      exclude_used: true
+
+  # ---------------------------------------------------------------------------
+  # Senior Year - Capstone
+  # ---------------------------------------------------------------------------
+  capstone:
+    name: Capstone Course
+    type: select
+    category: major
+    from:
+      courses:
+        - CS410   # Introduction to Computer Graphics
+        - CS414   # Object-Oriented Design
+        - CS420   # Introduction to Analysis of Algorithms
+        - CS425   # Introduction to Bioinformatics Algorithms
+        - CS430   # Database Systems
+        - CS435   # Introduction to Big Data
+        - CS440   # Introduction to Artificial Intelligence
+        - CS445   # Introduction to Machine Learning
+        - CS453   # Introduction to Compiler Construction
+        - CS454   # Principles of Programming Languages
+        - CS455   # Introduction to Distributed Systems
+        - CS456   # Modern CyberSecurity
+        - CS457   # Computer Networks and the Internet
+        - CS458   # Blockchain Principles and Applications
+        - CS462   # Engaging in Virtual Worlds
+        - CS464   # Principles of Human-Computer Interaction
+        - CS465   # Multimodal Interaction for 3D User Interfaces
+        - CS470   # Computer Architecture
+        - CS475   # Parallel Programming
+    count: 1
+    constraints:
+      grade_minimum: "C"
+
+  senior_cs_electives:
+    name: Senior CS Electives (400-level)
+    type: select
+    category: major
+    from:
+      pattern: "CS:400+"
+      exclude:
+        - "CS:480-499"
+    count: 2
+    constraints:
+      grade_minimum: "C"
+      exclude_used: true
+
+  # ---------------------------------------------------------------------------
+  # Technology Focus OR Minor/Second Major (Choose One)
+  # ---------------------------------------------------------------------------
+  tech_focus_or_minor:
+    name: Technology Focus or Minor/Second Major
+    type: one_of
+    category: major
+    options:
+      - id: tech_focus
+        name: "Group A: Technology Focus"
+        requirements:
+          - name: Technology Focus Electives
+            type: select
+            from:
+              courses:
+                - BZ350   # Molecular and General Genetics
+                - BZ360   # Bioinformatics and Genomics
+                - CIS320  # Project Management for Information Systems
+                - DSCI235 # Data Wrangling
+                - ECE452  # Computer Organization and Architecture
+                - ENGR422 # Technology Entrepreneurship
+                - JTC372  # Web Design and Development
+                - JTC472  # Advanced Web Design and Development
+                - MATH161 # Calculus for Physical Scientists II
+                - MATH256 # Mathematics for Computational Science II
+                - MGT330  # Creativity, Innovation, and Value Creation
+                - MGT340  # Fundamentals of Entrepreneurship
+                - MGT420  # New Venture Creation
+                - PHIL410 # Gödel's Incompleteness Theorems
+                - PHIL411 # Logic in Philosophy and Beyond
+                - PHIL415 # Logic and Scientific Method
+                - PSY252  # Mind, Brain, and Behavior
+                - PSY352  # Learning and Memory
+                - PSY452  # Cognitive Psychology
+                - PSY454  # Biological Psychology
+                - PSY456  # Sensation and Perception
+                - PSY458  # Cognitive Neuroscience
+            credits: 6
+            constraints:
+              min_upper_division: 3
+              grade_minimum: "C"
+          - name: Additional 400-level CS Course
+            type: select
+            from:
+              pattern: "CS:400+"
+              exclude:
+                - "CS:480-499"
+            count: 1
+            constraints:
+              exclude_used: true
+              grade_minimum: "C"
+
+      - id: minor_second_major
+        name: "Group B: Minor or Second Major"
+        requirements:
+          - name: Minor/Second Major Credits
+            type: select
+            external_requirement: true
+            external_credits: 21
+            external_note: "Complete a minor or second major (21 credits, none from CS)"
+
+  # ---------------------------------------------------------------------------
+  # AUCC (All-University Core Curriculum) Requirements
+  # ---------------------------------------------------------------------------
+  aucc_1c:
+    name: AUCC 1C Requirement
+    type: select
+    category: gen_ed
+    from:
+      pattern: "*:*"
+    credits: 3
+
+  aucc_historical:
+    name: Historical Perspectives (3D)
+    type: select
+    category: gen_ed
+    from:
+      pattern: "*:*"
+    credits: 3
+
+  aucc_social_behavioral:
+    name: Social and Behavioral Sciences (3C)
+    type: select
+    category: gen_ed
+    from:
+      pattern: "*:*"
+    credits: 3
+
+  advanced_writing:
+    name: Advanced Writing (AUCC 2)
+    type: select
+    category: gen_ed
+    from:
+      pattern: "*:*"
+    credits: 3
+
+  # ---------------------------------------------------------------------------
+  # General Electives
+  # ---------------------------------------------------------------------------
+  general_electives:
+    name: General Electives
+    type: select
+    category: elective
+    from:
+      pattern: "*:*"
+    credits: 8
+
+# =============================================================================
+# COURSES
+# =============================================================================
+
+courses:
+  # Composition
+  CO150:
+    subject: CO
+    number: "150"
+    title: College Composition
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-CO2", "AUCC-1A"]
+
+  # Ethics
+  CS201:
+    subject: CS
+    number: "201"
+    title: Ethical Computing Systems
+    credits: 3
+    prerequisites: null
+    cross_listed_as: [PHIL201]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-AH3", "AUCC-3B"]
+
+  PHIL201:
+    subject: PHIL
+    number: "201"
+    title: Ethical Computing Systems
+    credits: 3
+    prerequisites: null
+    cross_listed_as: [CS201]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-AH3", "AUCC-3B"]
+
+  # Math
+  MATH156:
+    subject: MATH
+    number: "156"
+    title: Mathematics for Computational Science I
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-MA1", "AUCC-1B"]
+
+  MATH160:
+    subject: MATH
+    number: "160"
+    title: Calculus for Physical Scientists I
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-MA1", "AUCC-1B"]
+
+  MATH161:
+    subject: MATH
+    number: "161"
+    title: Calculus for Physical Scientists II
+    credits: 4
+    prerequisites: "MATH160"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-MA1"]
+
+  MATH256:
+    subject: MATH
+    number: "256"
+    title: Mathematics for Computational Science II
+    credits: 4
+    prerequisites: "MATH156"
+    typically_offered: [fall, spring]
+
+  DSCI369:
+    subject: DSCI
+    number: "369"
+    title: Linear Algebra for Data Science
+    credits: 3
+    prerequisites: "MATH156 | MATH160"
+    typically_offered: [fall, spring]
+
+  MATH369:
+    subject: MATH
+    number: "369"
+    title: Linear Algebra I
+    credits: 4
+    prerequisites: "MATH160"
+    typically_offered: [fall, spring]
+
+  # Statistics
+  STAT301:
+    subject: STAT
+    number: "301"
+    title: Introduction to Applied Statistical Methods
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  STAT302A:
+    subject: STAT
+    number: "302A"
+    title: Statistics Supplement - General Applications
+    credits: 1
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  STAT307:
+    subject: STAT
+    number: "307"
+    title: Introduction to Biostatistics
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  STAT315:
+    subject: STAT
+    number: "315"
+    title: Intro to Theory and Practice of Statistics
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  # CS Intro Sequence
+  CS150A:
+    subject: CS
+    number: "150A"
+    title: "Culture and Coding: Java"
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-AH3", "AUCC-3B"]
+
+  CS150B:
+    subject: CS
+    number: "150B"
+    title: "Culture and Coding: Python"
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-AH3", "AUCC-3B"]
+
+  CS152:
+    subject: CS
+    number: "152"
+    title: Python for STEM
+    credits: 2
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  CS162:
+    subject: CS
+    number: "162"
+    title: CS1 - Introduction to Java Programming
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  CS163:
+    subject: CS
+    number: "163"
+    title: CS1 - No Prior Programming Experience
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  CS164:
+    subject: CS
+    number: "164"
+    title: CS1 - Computational Thinking with Java
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  CS165:
+    subject: CS
+    number: "165"
+    title: CS2 - Data Structures
+    credits: 4
+    prerequisites: "CS162[C] | CS163[C] | CS164[C]"
+    typically_offered: [fall, spring]
+
+  CS192:
+    subject: CS
+    number: "192"
+    title: First-Year Seminar
+    credits: 1
+    prerequisites: null
+    typically_offered: [fall]
+
+  # Sophomore CS
+  CS214:
+    subject: CS
+    number: "214"
+    title: Software Development
+    credits: 3
+    prerequisites: "CS165[C]"
+    typically_offered: [fall, spring]
+
+  CT301:
+    subject: CT
+    number: "301"
+    title: C++ Fundamentals
+    credits: 1
+    prerequisites: "CS165[C]"
+    typically_offered: [fall, spring]
+
+  CS253:
+    subject: CS
+    number: "253"
+    title: Software Development with C++
+    credits: 4
+    prerequisites: "CS165[C]"
+    typically_offered: [fall, spring]
+
+  CS220:
+    subject: CS
+    number: "220"
+    title: Discrete Structures and the Applications
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  CS250:
+    subject: CS
+    number: "250"
+    title: Computer Systems Foundations
+    credits: 4
+    prerequisites: "CS163[C] | CS164[C]"
+    typically_offered: [fall, spring]
+
+  CS270:
+    subject: CS
+    number: "270"
+    title: Computer Organization
+    credits: 4
+    prerequisites: "CS163[C] | CS164[C]"
+    typically_offered: [fall, spring]
+
+  # Junior CS Core
+  CS314:
+    subject: CS
+    number: "314"
+    title: Software Engineering
+    credits: 3
+    prerequisites: "(CS214[C] | CS253[C]) & CS220[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4A", "AUCC-4B"]
+
+  CS320:
+    subject: CS
+    number: "320"
+    title: Algorithms - Theory and Practice
+    credits: 3
+    prerequisites: "CS165[C] & CS220[C]"
+    typically_offered: [fall, spring]
+
+  CS370:
+    subject: CS
+    number: "370"
+    title: Operating Systems
+    credits: 3
+    prerequisites: "(CS214[C] | CS253[C]) & (CS250[C] | CS270[C])"
+    typically_offered: [fall, spring]
+
+  # Capstone Courses
+  CS410:
+    subject: CS
+    number: "410"
+    title: Introduction to Computer Graphics
+    credits: 4
+    prerequisites: "(CS214[C] | CS253[C]) & (DSCI369[C] | MATH369[C])"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS414:
+    subject: CS
+    number: "414"
+    title: Object-Oriented Design
+    credits: 4
+    prerequisites: "CS314[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS420:
+    subject: CS
+    number: "420"
+    title: Introduction to Analysis of Algorithms
+    credits: 4
+    prerequisites: "CS320[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS425:
+    subject: CS
+    number: "425"
+    title: Introduction to Bioinformatics Algorithms
+    credits: 4
+    prerequisites: "CS320[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS430:
+    subject: CS
+    number: "430"
+    title: Database Systems
+    credits: 4
+    prerequisites: "CS314[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS435:
+    subject: CS
+    number: "435"
+    title: Introduction to Big Data
+    credits: 4
+    prerequisites: "CS314[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS440:
+    subject: CS
+    number: "440"
+    title: Introduction to Artificial Intelligence
+    credits: 4
+    prerequisites: "CS320[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS445:
+    subject: CS
+    number: "445"
+    title: Introduction to Machine Learning
+    credits: 4
+    prerequisites: "(CS214[C] | CS253[C]) & (DSCI369[C] | MATH369[C]) & (STAT301 | STAT315)"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS453:
+    subject: CS
+    number: "453"
+    title: Introduction to Compiler Construction
+    credits: 4
+    prerequisites: "CS320[C] & CS370[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS454:
+    subject: CS
+    number: "454"
+    title: Principles of Programming Languages
+    credits: 4
+    prerequisites: "CS320[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS455:
+    subject: CS
+    number: "455"
+    title: Introduction to Distributed Systems
+    credits: 4
+    prerequisites: "CS370[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS456:
+    subject: CS
+    number: "456"
+    title: Modern CyberSecurity
+    credits: 4
+    prerequisites: "CS370[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS457:
+    subject: CS
+    number: "457"
+    title: Computer Networks and the Internet
+    credits: 4
+    prerequisites: "CS370[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS458:
+    subject: CS
+    number: "458"
+    title: Blockchain Principles and Applications
+    credits: 4
+    prerequisites: "CS320[C] & CS370[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS462:
+    subject: CS
+    number: "462"
+    title: Engaging in Virtual Worlds
+    credits: 4
+    prerequisites: "(CS214[C] | CS253[C]) & (DSCI369[C] | MATH369[C])"
+    typically_offered: [summer]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS464:
+    subject: CS
+    number: "464"
+    title: Principles of Human-Computer Interaction
+    credits: 4
+    prerequisites: "(CS214[C] | CS253[C])"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS465:
+    subject: CS
+    number: "465"
+    title: Multimodal Interaction for 3D User Interfaces
+    credits: 4
+    prerequisites: "(CS214[C] | CS253[C]) & (DSCI369[C] | MATH369[C])"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS470:
+    subject: CS
+    number: "470"
+    title: Computer Architecture
+    credits: 4
+    prerequisites: "(CS250[C] | CS270[C])"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  CS475:
+    subject: CS
+    number: "475"
+    title: Parallel Programming
+    credits: 4
+    prerequisites: "CS370[C]"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-4C"]
+
+  # Technology Focus Electives (partial list - representative)
+  BZ350:
+    subject: BZ
+    number: "350"
+    title: Molecular and General Genetics
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  BZ360:
+    subject: BZ
+    number: "360"
+    title: Bioinformatics and Genomics
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  CIS320:
+    subject: CIS
+    number: "320"
+    title: Project Management for Information Systems
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  DSCI235:
+    subject: DSCI
+    number: "235"
+    title: Data Wrangling
+    credits: 2
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  ECE452:
+    subject: ECE
+    number: "452"
+    title: Computer Organization and Architecture
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  ENGR422:
+    subject: ENGR
+    number: "422"
+    title: Technology Entrepreneurship
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  JTC372:
+    subject: JTC
+    number: "372"
+    title: Web Design and Development
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  JTC472:
+    subject: JTC
+    number: "472"
+    title: Advanced Web Design and Development
+    credits: 3
+    prerequisites: "JTC372"
+    typically_offered: [fall, spring]
+
+  MGT330:
+    subject: MGT
+    number: "330"
+    title: Creativity, Innovation, and Value Creation
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  MGT340:
+    subject: MGT
+    number: "340"
+    title: Fundamentals of Entrepreneurship
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  MGT420:
+    subject: MGT
+    number: "420"
+    title: New Venture Creation
+    credits: 3
+    prerequisites: "MGT340"
+    typically_offered: [fall, spring]
+
+  PHIL410:
+    subject: PHIL
+    number: "410"
+    title: Gödel's Incompleteness Theorems
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  PHIL411:
+    subject: PHIL
+    number: "411"
+    title: Logic in Philosophy and Beyond
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  PHIL415:
+    subject: PHIL
+    number: "415"
+    title: Logic and Scientific Method
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  PSY252:
+    subject: PSY
+    number: "252"
+    title: Mind, Brain, and Behavior
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  PSY352:
+    subject: PSY
+    number: "352"
+    title: Learning and Memory
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  PSY452:
+    subject: PSY
+    number: "452"
+    title: Cognitive Psychology
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  PSY454:
+    subject: PSY
+    number: "454"
+    title: Biological Psychology
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  PSY456:
+    subject: PSY
+    number: "456"
+    title: Sensation and Perception
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  PSY458:
+    subject: PSY
+    number: "458"
+    title: Cognitive Neuroscience
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  # Science Courses
+  AA100:
+    subject: AA
+    number: "100"
+    title: Introduction to Astronomy
+    credits: 3
+    prerequisites: null
+    corequisites: [AA101]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  AA101:
+    subject: AA
+    number: "101"
+    title: Astronomy Lab
+    credits: 1
+    prerequisites: null
+    corequisites: [AA100]
+    typically_offered: [fall, spring]
+
+  ANTH120:
+    subject: ANTH
+    number: "120"
+    title: Human Origins and Variation
+    credits: 3
+    prerequisites: null
+    corequisites: [ANTH121]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  ANTH121:
+    subject: ANTH
+    number: "121"
+    title: Human Origins Lab
+    credits: 1
+    prerequisites: null
+    corequisites: [ANTH120]
+    typically_offered: [fall, spring]
+
+  BZ110:
+    subject: BZ
+    number: "110"
+    title: Principles of Animal Biology
+    credits: 3
+    prerequisites: null
+    corequisites: [BZ111]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  BZ111:
+    subject: BZ
+    number: "111"
+    title: Animal Biology Lab
+    credits: 1
+    prerequisites: null
+    corequisites: [BZ110]
+    typically_offered: [fall, spring]
+
+  BZ120:
+    subject: BZ
+    number: "120"
+    title: Principles of Plant Biology
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC1", "AUCC-3A"]
+
+  CHEM107:
+    subject: CHEM
+    number: "107"
+    title: Fundamentals of Chemistry
+    credits: 3
+    prerequisites: null
+    corequisites: [CHEM108]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  CHEM108:
+    subject: CHEM
+    number: "108"
+    title: Fundamentals of Chemistry Lab
+    credits: 1
+    prerequisites: null
+    corequisites: [CHEM107]
+    typically_offered: [fall, spring]
+
+  CHEM111:
+    subject: CHEM
+    number: "111"
+    title: General Chemistry I
+    credits: 4
+    prerequisites: null
+    corequisites: [CHEM112]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  CHEM112:
+    subject: CHEM
+    number: "112"
+    title: General Chemistry I Lab
+    credits: 1
+    prerequisites: null
+    corequisites: [CHEM111]
+    typically_offered: [fall, spring]
+
+  GEOL120:
+    subject: GEOL
+    number: "120"
+    title: Geology and Society
+    credits: 3
+    prerequisites: null
+    corequisites: [GEOL121]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  GEOL121:
+    subject: GEOL
+    number: "121"
+    title: Geology Lab
+    credits: 1
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  GEOL122:
+    subject: GEOL
+    number: "122"
+    title: Geoscience - Climate and Environmental Change
+    credits: 3
+    prerequisites: null
+    corequisites: [GEOL121]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  GEOL124:
+    subject: GEOL
+    number: "124"
+    title: Earth Resources and Sustainability
+    credits: 3
+    prerequisites: null
+    corequisites: [GEOL121]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  GEOL150:
+    subject: GEOL
+    number: "150"
+    title: Dynamic Earth
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  HONR292A:
+    subject: HONR
+    number: "292A"
+    title: "Honors Seminar: Knowing in the Sciences"
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-3A"]
+
+  LIFE102:
+    subject: LIFE
+    number: "102"
+    title: Attributes of Living Systems
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC1", "AUCC-3A"]
+
+  LIFE103:
+    subject: LIFE
+    number: "103"
+    title: Biology of Organisms - Animals and Plants
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC1", "AUCC-3A"]
+
+  LIFE201A:
+    subject: LIFE
+    number: "201A"
+    title: Introductory Genetics - Applied/Population/Conservation/Ecological
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  LIFE201B:
+    subject: LIFE
+    number: "201B"
+    title: Introductory Genetics - Molecular/Immunological/Developmental
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  LIFE220:
+    subject: LIFE
+    number: "220"
+    title: Fundamentals of Ecology
+    credits: 4
+    prerequisites: null
+    cross_listed_as: [LAND220]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  LAND220:
+    subject: LAND
+    number: "220"
+    title: Fundamentals of Ecology
+    credits: 4
+    prerequisites: null
+    cross_listed_as: [LIFE220]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  NR150:
+    subject: NR
+    number: "150"
+    title: Oceanography
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC2", "AUCC-3A"]
+
+  PH121:
+    subject: PH
+    number: "121"
+    title: General Physics I
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC1", "AUCC-3A"]
+
+  PH122:
+    subject: PH
+    number: "122"
+    title: General Physics II
+    credits: 4
+    prerequisites: "PH121"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC1", "AUCC-3A"]
+
+  PH141:
+    subject: PH
+    number: "141"
+    title: Physics for Scientists and Engineers I
+    credits: 4
+    prerequisites: "MATH160"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC1", "AUCC-3A"]
+
+  PH142:
+    subject: PH
+    number: "142"
+    title: Physics for Scientists and Engineers II
+    credits: 4
+    prerequisites: "PH141"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-SC1", "AUCC-3A"]
