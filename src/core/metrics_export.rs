@@ -272,7 +272,10 @@ pub fn export_metrics_csv_with_summary(
     let mut file = File::create(output_path)?;
 
     // Try to find the degree to get degree type and system type
-    let degree = school.degrees.iter().find(|d| d.id() == plan.degree_id);
+    let degree = school
+        .degrees
+        .iter()
+        .find(|d| d.degree_id() == plan.degree_id);
 
     let degree_type = degree.map_or_else(|| "BS".to_string(), |d| d.degree_type.clone());
     let cip_code = degree.map_or_else(String::new, |d| d.cip_code.clone());

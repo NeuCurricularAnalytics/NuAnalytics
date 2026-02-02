@@ -144,7 +144,7 @@ impl School {
     /// A reference to the degree, or `None` if not found
     #[must_use]
     pub fn get_degree(&self, degree_id: &str) -> Option<&Degree> {
-        self.degrees.iter().find(|d| d.id() == degree_id)
+        self.degrees.iter().find(|d| d.degree_id() == degree_id)
     }
 
     /// Add a plan to the school

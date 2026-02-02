@@ -427,7 +427,7 @@ mod tests {
             "semester".to_string(),
         );
 
-        let mut plan = Plan::new("CS Plan".to_string(), degree.id());
+        let mut plan = Plan::new("CS Plan".to_string(), degree.degree_id());
         plan.add_course("CS101".to_string());
         plan.add_course("CS201".to_string());
 

@@ -75,7 +75,7 @@ impl<'a> ReportContext<'a> {
     #[must_use]
     pub fn degree_name(&self) -> String {
         self.degree
-            .map_or_else(|| self.plan.degree_id.clone(), Degree::id)
+            .map_or_else(|| self.plan.degree_id.clone(), Degree::degree_id)
     }
 
     /// Get the system type (semester/quarter)

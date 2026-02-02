@@ -64,7 +64,10 @@ fn export_csv(
         // and associated with the first degree in the school (if any).
         let mut default_plan = Plan::new(
             "All Courses".to_string(),
-            school.degrees.first().map_or_else(String::new, Degree::id),
+            school
+                .degrees
+                .first()
+                .map_or_else(String::new, Degree::degree_id),
         );
         for course in &dag.courses {
             default_plan.add_course(course.clone());
@@ -105,7 +108,7 @@ fn export_csv(
     let degree_label = school
         .degrees
         .first()
-        .map_or_else(|| "Unknown Degree".to_string(), Degree::id);
+        .map_or_else(|| "Unknown Degree".to_string(), Degree::degree_id);
     let institution_label = plan
         .institution
         .clone()

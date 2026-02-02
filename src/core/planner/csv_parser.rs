@@ -267,7 +267,7 @@ fn finalize_school(
     // Create a default plan with all courses
     let mut plan = Plan::new(
         curriculum_name.to_string(),
-        school.degrees.first().ok_or("No degree found")?.id(),
+        school.degrees.first().ok_or("No degree found")?.degree_id(),
     );
     plan.institution = Some(school.name.clone());
 
