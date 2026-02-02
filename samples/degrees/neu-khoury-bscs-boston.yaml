@@ -170,7 +170,8 @@ requirements:
             type: select
             from:
               courses:
-                - "[CS3950, CS4950, CS4950]"  # Research seminar sequence (3 courses)
+                - CS3950               # Introduction to Computer Science Research (2 cr)
+                - CS4950               # Computer Science Research Seminar (1 cr, repeatable)
                 - CS4805               # Fundamentals of Complexity Theory
                 - CS4810               # Advanced Algorithms
                 - CS4820               # Computer-Aided Reasoning
@@ -179,6 +180,8 @@ requirements:
             count: 2
             constraints:
               exclude_used: true
+            # Note: For research track, students typically take CS3950 followed by
+            # CS4950 twice (total 4 credits). CS4950 is repeatable up to 2 credits.
 
       # ----- Human-Centered Computing Concentration -----
       - id: human_centered_computing
@@ -1454,12 +1457,44 @@ courses:
   # ---------------------------------------------------------------------------
   # Additional Elective Courses
   # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Data Science Foundational Courses (prerequisites for DS pathway)
+  # ---------------------------------------------------------------------------
+  DS2000:
+    subject: DS
+    number: "2000"
+    title: Programming with Data
+    credits: 4
+    prerequisites: null
+    corequisites: [DS2001]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["NUpath Formal/Quant Reasoning", "NUpath Natural/Designed World"]
+
+  DS2001:
+    subject: DS
+    number: "2001"
+    title: Data Science Programming Practicum
+    credits: 1
+    prerequisites: null
+    corequisites: [DS2000]
+    typically_offered: [fall, spring]
+
   DS2500:
     subject: DS
     number: "2500"
     title: Intermediate Programming with Data
     credits: 4
     prerequisites: "DS2000"
+    corequisites: [DS2501]
+    gen_ed_attributes: ["NUpath Analyzing/Using Data"]
+
+  DS2501:
+    subject: DS
+    number: "2501"
+    title: Lab for DS 2500
+    credits: 1
+    prerequisites: null
+    corequisites: [DS2500]
 
   MKTG4606:
     subject: MKTG
