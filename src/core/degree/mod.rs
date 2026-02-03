@@ -36,4 +36,7 @@ pub use crate::core::models::course::CreditRange;
 // Re-export the DegreeProgram structure (top-level degree container)
 pub use crate::core::models::DegreeProgram;
 
-pub use yaml_parser::{load_degree_from_yaml, parse_degree_yaml, DegreeParseError};
+pub use yaml_parser::{
+    load_degree_from_yaml, parse_degree_yaml, save_degree_to_yaml, serialize_degree_yaml,
+    DegreeParseError,
+};

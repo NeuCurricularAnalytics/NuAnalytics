@@ -1,6 +1,9 @@
 //! Degree YAML ingestion integration tests
 
-use nu_analytics::core::degree::{load_degree_from_yaml, parse_degree_yaml, RequirementType};
+use nu_analytics::core::degree::{
+    load_degree_from_yaml, parse_degree_yaml, save_degree_to_yaml, RequirementType,
+};
+use std::path::Path;
 
 #[test]
 fn test_load_uhm_degree_yaml() {
@@ -170,6 +173,39 @@ fn test_parse_yaml_from_string() {
     let program = result.unwrap();
     assert_eq!(program.degree.id, Some("uhm-ics-bscs-general".to_string()));
     assert!(!program.courses.is_empty());
+}
+
+#[test]
+fn test_round_trip_degree_yaml_exports() -> Result<(), Box<dyn std::error::Error>> {
+    let degrees_dir = Path::new("samples/degrees");
+    let temp_dir = tempfile::TempDir::new()?;
+
+    for entry in std::fs::read_dir(degrees_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.extension().and_then(|ext| ext.to_str()) != Some("yaml") {
+            continue;
+        }
+
+        let program = load_degree_from_yaml(&path)?;
+        let output_path = temp_dir.path().join(path.file_name().unwrap_or_default());
+
+        save_degree_to_yaml(&program, &output_path)?;
+        let reloaded = load_degree_from_yaml(&output_path)?;
+
+        let original = serde_json::to_value(&program)?;
+        let roundtrip = serde_json::to_value(&reloaded)?;
+
+        assert_eq!(
+            original,
+            roundtrip,
+            "Round-trip YAML mismatch for {}",
+            path.display()
+        );
+    }
+
+    Ok(())
 }
 
 #[test]

@@ -68,6 +68,18 @@ pub fn parse_degree_yaml(yaml_content: &str) -> Result<DegreeProgram, DegreePars
         .map_err(|e| DegreeParseError::YamlError(format!("Failed to parse YAML: {e}")))
 }
 
+/// Serialize a degree program to a YAML string
+///
+/// Use this function to export a degree program back to YAML for storage
+/// or interchange.
+///
+/// # Errors
+/// Returns an error if serialization fails
+pub fn serialize_degree_yaml(program: &DegreeProgram) -> Result<String, DegreeParseError> {
+    serde_yaml::to_string(program)
+        .map_err(|e| DegreeParseError::YamlError(format!("Failed to serialize YAML: {e}")))
+}
+
 /// Load a degree program from a YAML file
 ///
 /// Convenience function that reads a file and parses it as YAML.
@@ -99,6 +111,20 @@ pub fn load_degree_from_yaml<P: AsRef<Path>>(path: P) -> Result<DegreeProgram, D
 
     // Parse YAML using the string parser
     parse_degree_yaml(&contents)
+}
+
+/// Save a degree program to a YAML file
+///
+/// # Errors
+/// Returns an error if the file cannot be written or serialization fails
+pub fn save_degree_to_yaml<P: AsRef<Path>>(
+    program: &DegreeProgram,
+    path: P,
+) -> Result<(), DegreeParseError> {
+    let path = path.as_ref();
+    let yaml = serialize_degree_yaml(program)?;
+    std::fs::write(path, yaml)
+        .map_err(|e| DegreeParseError::IoError(format!("Failed to write {}: {e}", path.display())))
 }
 
 #[cfg(test)]

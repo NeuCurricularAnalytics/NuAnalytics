@@ -9,7 +9,10 @@ pub mod planner;
 pub mod report;
 
 // Re-export degree module types for convenience
-pub use degree::{load_degree_from_yaml, parse_degree_yaml, DegreeParseError, DegreeProgram};
+pub use degree::{
+    load_degree_from_yaml, parse_degree_yaml, save_degree_to_yaml, serialize_degree_yaml,
+    DegreeParseError, DegreeProgram,
+};
 
 // Add core domain modules here as they're developed:
 // pub mod school;
