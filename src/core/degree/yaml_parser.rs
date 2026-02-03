@@ -64,8 +64,38 @@ impl std::error::Error for DegreeParseError {}
 /// assert_eq!(program.degree.id.unwrap(), "test-degree");
 /// ```
 pub fn parse_degree_yaml(yaml_content: &str) -> Result<DegreeProgram, DegreeParseError> {
-    serde_yaml::from_str::<DegreeProgram>(yaml_content)
-        .map_err(|e| DegreeParseError::YamlError(format!("Failed to parse YAML: {e}")))
+    let mut program = serde_yaml::from_str::<DegreeProgram>(yaml_content)
+        .map_err(|e| DegreeParseError::YamlError(format!("Failed to parse YAML: {e}")))?;
+
+    resolve_prerequisites(&mut program);
+
+    Ok(program)
+}
+
+/// Helper to populate `prerequisites` vector from `prerequisites_raw` string
+fn resolve_prerequisites(program: &mut DegreeProgram) {
+    for course in program.courses.values_mut() {
+        if let Some(raw) = &course.prerequisites_raw {
+            if course.prerequisites.is_empty() {
+                // Parse raw string
+                // 1. Replace operators with spaces
+                let cleaned = raw.replace(['(', ')', '&', '|'], " ");
+
+                // 2. Split by whitespace
+                for part in cleaned.split_whitespace() {
+                    // 3. Handle grade requirements [X]
+                    let key = part.find('[').map_or(part, |idx| &part[..idx]);
+
+                    if !key.is_empty() {
+                        let key_string = key.to_string();
+                        if !course.prerequisites.contains(&key_string) {
+                            course.prerequisites.push(key_string);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Serialize a degree program to a YAML string

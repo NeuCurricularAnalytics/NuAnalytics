@@ -121,6 +121,14 @@ pub enum ValidationWarning {
         /// Course with no prerequisites or dependents
         course_key: String,
     },
+
+    /// Course is implicitly required (prerequisite of a required course)
+    HiddenRequirement {
+        /// The implicit course
+        course_key: String,
+        /// The required course that depends on it
+        required_by: String,
+    },
 }
 
 impl ValidationResult {
@@ -194,11 +202,11 @@ impl Default for ValidationResult {
 pub fn validate_degree_program(program: &DegreeProgram) -> ValidationResult {
     let mut result = ValidationResult::new();
 
-    // Build DAG for prerequisite validation
-    let dag = build_dag_from_courses(&program.courses);
+    // Build DAG for prerequisite validation (Strict only for cycle detection)
+    let strict_dag = build_strict_dag_from_courses(&program.courses);
 
     // 1. Check for circular prerequisites
-    validate_no_cycles(&dag, &mut result);
+    validate_no_cycles(&strict_dag, &mut result);
 
     // 2. Validate course references in prerequisites and corequisites
     validate_course_prerequisites(&program.courses, &mut result);
@@ -215,30 +223,162 @@ pub fn validate_degree_program(program: &DegreeProgram) -> ValidationResult {
     result
 }
 
-/// Build a DAG from course prerequisites
-fn build_dag_from_courses(courses: &HashMap<String, Course>) -> DAG {
+/// Build a DAG from course prerequisites (Strict dependencies only)
+fn build_strict_dag_from_courses(courses: &HashMap<String, Course>) -> DAG {
     let mut dag = DAG::new();
 
     for (key, course) in courses {
         dag.add_course(key.clone());
 
-        // Add prerequisites
-        for prereq in &course.prerequisites {
-            dag.add_prerequisite(key.clone(), prereq);
+        let strict_prereqs = course.prerequisites_raw.as_ref().map_or_else(
+            || course.prerequisites.clone(),
+            |raw| extract_strict_prerequisites(raw),
+        );
+
+        for prereq in strict_prereqs {
+            // Only add if prereq exists (to avoid polluting DAG with invalid nodes,
+            // though missing prereqs are caught by other checks)
+            if courses.contains_key(&prereq) {
+                dag.add_prerequisite(key.clone(), &prereq);
+            }
         }
 
-        // Add corequisites
+        // Corequisites are usually strict dependencies
         for coreq in &course.corequisites {
-            dag.add_corequisite(key.clone(), coreq);
+            if courses.contains_key(coreq) {
+                dag.add_corequisite(key.clone(), coreq);
+            }
         }
 
-        // Add strict corequisites
         for coreq in &course.strict_corequisites {
-            dag.add_corequisite(key.clone(), coreq);
+            if courses.contains_key(coreq) {
+                dag.add_corequisite(key.clone(), coreq);
+            }
         }
     }
 
     dag
+}
+
+/// Extract strictly required courses from a prerequisite string
+/// (A | B) & C -> C is strict, A and B are not
+fn extract_strict_prerequisites(raw: &str) -> Vec<String> {
+    let mut strict = Vec::new();
+
+    // Clean string: remove grades [X], trim
+    let cleaned = remove_grade_requirements(raw);
+
+    // Split top-level ANDs
+    let parts = split_by_delimiter_at_level(&cleaned, '&');
+
+    for part in parts {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        // If part contains top-level OR, it's optional -> skip
+        // Check for | at level 0
+        if contains_delimiter_at_level(trimmed, '|') {
+            continue;
+        }
+
+        // If wrapped in parens (A), unwrap and recurse
+        if trimmed.starts_with('(') && trimmed.ends_with(')') {
+            // Verify parens are matching for the whole string
+            if is_wrapped_in_parens(trimmed) {
+                let inner = &trimmed[1..trimmed.len() - 1];
+                strict.extend(extract_strict_prerequisites(inner));
+                continue;
+            }
+        }
+
+        // It's a single course (or bundle/equivalent which we parse as strict for now)
+        // clean up any remaining chars
+        let course_key = trimmed.replace(['(', ')'], "").trim().to_string();
+        if !course_key.is_empty() {
+            strict.push(course_key);
+        }
+    }
+
+    strict
+}
+
+fn remove_grade_requirements(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut in_grade = false;
+    for c in s.chars() {
+        if c == '[' {
+            in_grade = true;
+        } else if c == ']' {
+            in_grade = false;
+        } else if !in_grade {
+            result.push(c);
+        }
+    }
+    result
+}
+
+fn split_by_delimiter_at_level(s: &str, delimiter: char) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut level = 0;
+
+    for c in s.chars() {
+        if c == '(' {
+            level += 1;
+            current.push(c);
+        } else if c == ')' {
+            if level > 0 {
+                level -= 1;
+            }
+            current.push(c);
+        } else if c == delimiter && level == 0 {
+            parts.push(current.clone());
+            current.clear();
+        } else {
+            current.push(c);
+        }
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts
+}
+
+fn contains_delimiter_at_level(s: &str, delimiter: char) -> bool {
+    let mut level = 0;
+    for c in s.chars() {
+        if c == '(' {
+            level += 1;
+        } else if c == ')' {
+            if level > 0 {
+                level -= 1;
+            }
+        } else if c == delimiter && level == 0 {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_wrapped_in_parens(s: &str) -> bool {
+    if !s.starts_with('(') || !s.ends_with(')') {
+        return false;
+    }
+
+    let mut level = 0;
+    for (i, c) in s.chars().enumerate() {
+        if c == '(' {
+            level += 1;
+        } else if c == ')' {
+            level -= 1;
+            if level == 0 && i < s.len() - 1 {
+                return false; // Closed before end
+            }
+        }
+    }
+    level == 0
 }
 
 /// Detect cycles in prerequisite graph
@@ -288,9 +428,17 @@ fn detect_cycle(
 /// Validate that all prerequisites and corequisites reference existing courses
 fn validate_course_prerequisites(courses: &HashMap<String, Course>, result: &mut ValidationResult) {
     for (key, course) in courses {
-        // Check prerequisites
-        for prereq in &course.prerequisites {
-            if !courses.contains_key(prereq) {
+        // Check prerequisites (Strict only)
+        // We only require that STRICT prerequisites exist.
+        // Optional prerequisites (in OR clauses) are allowed to be external/missing
+        // to support "alternate but equivalent" scenarios without errors.
+        let strict_prereqs = course.prerequisites_raw.as_ref().map_or_else(
+            || course.prerequisites.clone(),
+            |raw| extract_strict_prerequisites(raw),
+        );
+
+        for prereq in strict_prereqs {
+            if !courses.contains_key(&prereq) {
                 result.add_error(ValidationError::MissingPrerequisite {
                     course_key: key.clone(),
                     prerequisite_key: prereq.clone(),
@@ -440,6 +588,13 @@ fn validate_from_clause(
     // Validate pattern
     if let Some(pattern) = &from.pattern {
         validate_pattern(pattern, req_id, courses, result);
+    }
+
+    // Validate included patterns
+    if let Some(patterns) = &from.include {
+        for pattern in patterns {
+            validate_pattern(pattern, req_id, courses, result);
+        }
     }
 
     // Validate groups
@@ -663,26 +818,115 @@ fn check_unreferenced_courses(
     courses: &HashMap<String, Course>,
     result: &mut ValidationResult,
 ) {
-    let mut referenced = HashSet::new();
+    let mut explicitly_referenced = HashSet::new();
 
-    // Collect all referenced courses
+    // Collect all referenced courses from requirements
     for req in requirements.values() {
-        collect_referenced_courses(req, &mut referenced);
+        collect_referenced_courses(req, &mut explicitly_referenced);
     }
 
     // Also include courses with patterns
     let patterns: Vec<String> = extract_patterns(requirements);
     for pattern in &patterns {
         let matches = match_pattern(pattern, courses);
-        referenced.extend(matches);
+        explicitly_referenced.extend(matches);
     }
 
-    // Check each course
+    // Now identify implicitly referenced courses (prerequisites of referenced courses)
+    // We use two BFS passes:
+    // 1. All reachable courses (Weak + Strict) -> To mark as "Referenced" (avoid Unreferenced warning)
+    // 2. Strictly reachable courses (Strict only) -> To mark as "Hidden Requirement" (Warn if not explicit)
+
+    let mut weakly_reachable = explicitly_referenced.clone();
+    let mut work_queue: Vec<String> = explicitly_referenced.iter().cloned().collect();
+
+    // BFS for all reachable (Weak + Strict)
+    while let Some(current_key) = work_queue.pop() {
+        if let Some(course) = courses.get(&current_key) {
+            // Check all prerequisites (including optional)
+            for prereq in &course.prerequisites {
+                if !weakly_reachable.contains(prereq) {
+                    weakly_reachable.insert(prereq.clone());
+                    work_queue.push(prereq.clone());
+                }
+            }
+            // Check corequisites
+            for coreq in &course.corequisites {
+                if !weakly_reachable.contains(coreq) {
+                    weakly_reachable.insert(coreq.clone());
+                    work_queue.push(coreq.clone());
+                }
+            }
+            // Check strict corequisites
+            for coreq in &course.strict_corequisites {
+                if !weakly_reachable.contains(coreq) {
+                    weakly_reachable.insert(coreq.clone());
+                    work_queue.push(coreq.clone());
+                }
+            }
+        }
+    }
+
+    // BFS for strictly reachable
+    let mut strictly_reachable = explicitly_referenced.clone();
+    work_queue = explicitly_referenced.iter().cloned().collect();
+    let mut implicitly_required_by: HashMap<String, String> = HashMap::new();
+
+    while let Some(current_key) = work_queue.pop() {
+        if let Some(course) = courses.get(&current_key) {
+            // Check strict prerequisites only
+            let strict_prereqs = course.prerequisites_raw.as_ref().map_or_else(
+                || course.prerequisites.clone(),
+                |raw| extract_strict_prerequisites(raw),
+            );
+
+            for prereq in strict_prereqs {
+                if courses.contains_key(&prereq) {
+                    // Ensure exists
+                    if !strictly_reachable.contains(&prereq) {
+                        strictly_reachable.insert(prereq.clone());
+                        work_queue.push(prereq.clone());
+                        implicitly_required_by.insert(prereq.clone(), current_key.clone());
+                    }
+                }
+            }
+
+            // Corequisites are usually strict
+            for coreq in &course.corequisites {
+                if !strictly_reachable.contains(coreq) {
+                    strictly_reachable.insert(coreq.clone());
+                    work_queue.push(coreq.clone());
+                    implicitly_required_by.insert(coreq.clone(), current_key.clone());
+                }
+            }
+            for coreq in &course.strict_corequisites {
+                if !strictly_reachable.contains(coreq) {
+                    strictly_reachable.insert(coreq.clone());
+                    work_queue.push(coreq.clone());
+                    implicitly_required_by.insert(coreq.clone(), current_key.clone());
+                }
+            }
+        }
+    }
+
+    // Add warnings
     for key in courses.keys() {
-        if !referenced.contains(key) {
+        if !weakly_reachable.contains(key) {
             result.add_warning(ValidationWarning::UnreferencedCourse {
                 course_key: key.clone(),
             });
+        } else if !explicitly_referenced.contains(key) {
+            // It IS reachable, but not explicitly referenced.
+            // Only warn if it is STRICTLY reachable (Hidden Requirement)
+            if let Some(required_by) = implicitly_required_by.get(key) {
+                result.add_warning(ValidationWarning::HiddenRequirement {
+                    course_key: key.clone(),
+                    required_by: required_by.clone(),
+                });
+            }
+            // If weakly reachable but not strict, it's an optional alternative.
+            // We consider it "Referenced" enough to suppress Unreferenced warning,
+            // but "Optional" enough to suppress Hidden Requirement warning.
         }
     }
 }
@@ -752,6 +996,9 @@ fn extract_patterns_from_requirement(req: &Requirement, patterns: &mut Vec<Strin
     if let Some(from) = &req.from {
         if let Some(pattern) = &from.pattern {
             patterns.push(pattern.clone());
+        }
+        if let Some(include) = &from.include {
+            patterns.extend(include.clone());
         }
     }
 
@@ -848,6 +1095,14 @@ fn format_warning(warning: &ValidationWarning) -> String {
         } => {
             format!(
                 "Course '{course_key}' lists '{cross_listed_key}' as cross-listed, but '{cross_listed_key}' does not exist"
+            )
+        }
+        ValidationWarning::HiddenRequirement {
+            course_key,
+            required_by,
+        } => {
+            format!(
+                "Course '{course_key}' is implicitly required by '{required_by}' but not listed in requirements"
             )
         }
     }

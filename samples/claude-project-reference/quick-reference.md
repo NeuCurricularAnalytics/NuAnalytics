@@ -1,4 +1,21 @@
-# Schema v5.1 Quick Reference Card
+# Schema v5.2 Quick Reference Card
+
+## What's New in v5.2
+
+**Combined Courses + Patterns**: The `from` block now supports using `courses` AND `pattern`/`include` together!
+
+```yaml
+# OLD (v5.1) - Had to choose one or the other
+from:
+  courses: [BZ350, MGT340]  # OR
+  pattern: "CS:300-479"     # but not both
+
+# NEW (v5.2) - Can combine them
+from:
+  courses: [BZ350, MGT340]      # Specific courses
+  pattern: "CS:300-479"          # Plus pattern matches
+  exclude: [CS314]               # Exclusions apply to pattern only
+```
 
 ## Requirement Types
 
@@ -35,6 +52,41 @@ from:
   exclude: [CS399, CS499] # Specific exclusions
   exclude: ["CS:480-499"] # Range exclusion
 ```
+
+## Combined Courses + Patterns (NEW in v5.2)
+
+```yaml
+# Single pattern with specific courses
+from:
+  courses:
+    - BZ350
+    - MGT340
+    - PHIL410
+  pattern: "CS:300-479"
+  exclude: [CS314]        # Only affects pattern, not explicit courses
+credits: 6
+
+# Multiple patterns with specific courses
+from:
+  courses:
+    - BZ350
+    - ECE452
+    - PHIL410
+  include:                 # Array of patterns
+    - "CS:300-479"
+    - "MATH:300-479"
+    - "STAT:300-479"
+  exclude:
+    - CS314               # Specific course
+    - MATH369             # Specific course
+    - "CS:380-399"        # Pattern exclusion
+credits: 9
+```
+
+**Key Rules:**
+- `exclude` only removes from pattern matches, NOT from explicit `courses`
+- Use `pattern` for single pattern, `include` for multiple patterns
+- If both `pattern` and `include` exist, `include` takes precedence
 
 ## Select from Groups
 
@@ -102,6 +154,7 @@ constraints:
 | "Two of three pairs:" | `from.groups`, `groups_required: 2`, `per_group: 1` |
 | "A or B" in a list | Use choice syntax: `"{A, B}"` |
 | "A and B" together | Use bundle syntax: `"[A, B]"` |
+| "Specific courses + range" | **NEW:** `courses` + `pattern`/`include` |
 
 ## Categories
 
@@ -155,3 +208,21 @@ CS499:
 - [ ] Course numbers verified against current catalog
 - [ ] "Pick from" vs "all required" correctly interpreted
 - [ ] Elective lists are complete (not truncated)
+- [ ] **NEW:** When using `courses` + `pattern`, verify `exclude` logic
+
+## Migration from v5.1
+
+v5.1 files are fully compatible with v5.2. No changes required.
+
+To use the new combined feature, change:
+```yaml
+# Before (v5.1 workaround)
+from:
+  courses: [BZ350, MGT340]
+  # Comment: Also allows CS:300-479 but can't model
+
+# After (v5.2)
+from:
+  courses: [BZ350, MGT340]
+  pattern: "CS:300-479"
+```

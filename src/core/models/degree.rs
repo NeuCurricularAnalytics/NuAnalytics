@@ -152,6 +152,10 @@ pub struct FromClause {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pattern: Option<String>,
 
+    /// Additional patterns to include (e.g., `["CS:300-479", "MATH:300-479"]`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
+
     /// Courses/patterns to exclude
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exclude: Option<Vec<String>>,

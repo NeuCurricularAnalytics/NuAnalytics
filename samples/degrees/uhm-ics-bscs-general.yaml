@@ -756,6 +756,15 @@ courses:
     typically_offered: [fall, spring]
     gen_ed_attributes: [FQ]
 
+  MATH203:
+    subject: MATH
+    number: "203"
+    title: Calculus for Business and Social Sciences
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [FQ]
+
   MATH216:
     subject: MATH
     number: "216"
@@ -966,6 +975,14 @@ courses:
     title: Object-Oriented Programming
     credits: 3
     prerequisites: "ECE160"
+    typically_offered: [fall, spring]
+
+  ECE260:
+    subject: ECE
+    number: "260"
+    title: Introduction to Circuits
+    credits: 4
+    prerequisites: "MATH242 & PHYS272"
     typically_offered: [fall, spring]
 
   ECE361:

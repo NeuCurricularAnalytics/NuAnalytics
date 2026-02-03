@@ -1,6 +1,6 @@
 # =============================================================================
 # Colorado State University - BS in Computer Science (Computer Science Concentration)
-# Schema v5.1 | Catalog 2025-2026
+# Schema v5.2 | Catalog 2025-2026
 # =============================================================================
 # Source: https://catalog.colostate.edu/general-catalog/colleges/natural-sciences/
 #         computer-science/computer-science-major/computer-science-concentration/
@@ -380,6 +380,7 @@ requirements:
           - name: Technology Focus Electives
             type: select
             from:
+              # Specific approved courses from various departments
               courses:
                 # Biology
                 - BZ350
@@ -412,8 +413,25 @@ requirements:
                 - PSY454
                 - PSY456
                 - PSY458
-              # Note: Also includes CS, CT, DSCI, MATH, STAT ranges
-              # modeled with pattern in constraints
+              # PLUS any course from these patterns (v5.2 feature)
+              include:
+                - "CS:300-479"
+                - "CT:300-479"
+                - "DSCI:300-479"
+                - "MATH:300-479"
+                - "STAT:300-479"
+                - "IDEA:300-479"
+              # Exclude courses required elsewhere or special topics
+              exclude:
+                - CT301           # Required in software development
+                - DSCI369         # Required in linear algebra
+                - MATH369         # Required in linear algebra
+                - STAT301         # Statistics requirement
+                - STAT302A        # Statistics requirement
+                - STAT307         # Statistics requirement
+                - STAT315         # Statistics requirement
+                - "CS:380-399"    # Seminar/special topics range
+                - "CS:480-499"    # Capstone/thesis range
             credits: 6
             constraints:
               exclude_used: true
