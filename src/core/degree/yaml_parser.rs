@@ -3,7 +3,7 @@
 //! Handles parsing degree program definitions from YAML strings or files.
 //! Supports both file-based loading and string parsing for network sources.
 
-use super::models::YamlDegree;
+use crate::core::models::DegreeProgram;
 use std::path::Path;
 
 /// Error type for degree YAML parsing
@@ -36,7 +36,7 @@ impl std::error::Error for DegreeParseError {}
 /// * `yaml_content` - YAML string containing the degree definition
 ///
 /// # Returns
-/// A parsed `YamlDegree` on success, or `DegreeParseError` on failure
+/// A parsed `DegreeProgram` on success, or `DegreeParseError` on failure
 ///
 /// # Errors
 /// Returns an error if the YAML is invalid or doesn't match the expected schema
@@ -47,9 +47,11 @@ impl std::error::Error for DegreeParseError {}
 ///
 /// let yaml = r#"
 /// degree:
+///   name: BS Computer Science
+///   degree_type: BS
+///   system_type: semester
 ///   id: test-degree
 ///   institution: Test University
-///   program: BS Test
 ///   catalog_year: "2024-2025"
 ///   total_credits: 120
 ///   gpa_minimum: 2.0
@@ -58,11 +60,11 @@ impl std::error::Error for DegreeParseError {}
 /// courses: {}
 /// "#;
 ///
-/// let degree = parse_degree_yaml(yaml).unwrap();
-/// assert_eq!(degree.degree.id, "test-degree");
+/// let program = parse_degree_yaml(yaml).unwrap();
+/// assert_eq!(program.degree.id.unwrap(), "test-degree");
 /// ```
-pub fn parse_degree_yaml(yaml_content: &str) -> Result<YamlDegree, DegreeParseError> {
-    serde_yaml::from_str::<YamlDegree>(yaml_content)
+pub fn parse_degree_yaml(yaml_content: &str) -> Result<DegreeProgram, DegreeParseError> {
+    serde_yaml::from_str::<DegreeProgram>(yaml_content)
         .map_err(|e| DegreeParseError::YamlError(format!("Failed to parse YAML: {e}")))
 }
 
@@ -75,7 +77,7 @@ pub fn parse_degree_yaml(yaml_content: &str) -> Result<YamlDegree, DegreeParseEr
 /// * `path` - Path to the YAML file containing the degree definition
 ///
 /// # Returns
-/// A parsed `YamlDegree` on success, or `DegreeParseError` on failure
+/// A parsed `DegreeProgram` on success, or `DegreeParseError` on failure
 ///
 /// # Errors
 /// Returns an error if the file cannot be read or the YAML is invalid
@@ -84,10 +86,10 @@ pub fn parse_degree_yaml(yaml_content: &str) -> Result<YamlDegree, DegreeParseEr
 /// ```no_run
 /// use nu_analytics::core::degree::load_degree_from_yaml;
 ///
-/// let degree = load_degree_from_yaml("samples/degrees/uhm-ics-bscs-general.yaml").unwrap();
-/// println!("Loaded: {}", degree.degree.id);
+/// let program = load_degree_from_yaml("samples/degrees/uhm-ics-bscs-general.yaml").unwrap();
+/// println!("Loaded: {}", program.degree.id.unwrap());
 /// ```
-pub fn load_degree_from_yaml<P: AsRef<Path>>(path: P) -> Result<YamlDegree, DegreeParseError> {
+pub fn load_degree_from_yaml<P: AsRef<Path>>(path: P) -> Result<DegreeProgram, DegreeParseError> {
     let path = path.as_ref();
 
     // Read file
@@ -109,9 +111,11 @@ mod tests {
     fn test_parse_degree_yaml_valid() {
         let yaml_content = r#"
 degree:
+  name: Bachelor of Science in Test
+  degree_type: BS
+  system_type: semester
   id: test-degree
   institution: Test University
-  program: Bachelor of Science in Test
   catalog_year: "2024-2025"
   total_credits: 120
   gpa_minimum: 2.0
@@ -124,10 +128,13 @@ courses: {}
         let result = parse_degree_yaml(yaml_content);
         assert!(result.is_ok());
 
-        let degree = result.unwrap();
-        assert_eq!(degree.degree.id, "test-degree");
-        assert_eq!(degree.degree.institution, "Test University");
-        assert_eq!(degree.degree.total_credits, 120);
+        let program = result.unwrap();
+        assert_eq!(program.degree.id, Some("test-degree".to_string()));
+        assert_eq!(
+            program.degree.institution,
+            Some("Test University".to_string())
+        );
+        assert_eq!(program.degree.total_credits, Some(120));
     }
 
     #[test]
@@ -142,9 +149,11 @@ courses: {}
     fn test_parse_degree_yaml_with_courses() {
         let yaml_content = r#"
 degree:
+  name: BS Test
+  degree_type: BS
+  system_type: semester
   id: test-degree
   institution: Test University
-  program: BS Test
   catalog_year: "2024-2025"
   total_credits: 120
   gpa_minimum: 2.0
@@ -161,28 +170,31 @@ requirements:
 
 courses:
   CS101:
-    subject: CS
+    name: Intro to CS
+    prefix: CS
     number: "101"
-    title: Intro to CS
-    credits: 3
+    credit_hours: 3
   CS102:
-    subject: CS
+    name: Programming
+    prefix: CS
     number: "102"
-    title: Programming
-    credits: 4
-    prerequisites: "CS101"
+    credit_hours: 4
+    prerequisites_raw: "CS101"
 "#;
 
         let result = parse_degree_yaml(yaml_content);
+        if let Err(ref e) = result {
+            eprintln!("Parse error: {e:?}");
+        }
         assert!(result.is_ok());
 
-        let degree = result.unwrap();
-        assert_eq!(degree.courses.len(), 2);
-        assert!(degree.courses.contains_key("CS101"));
-        assert!(degree.courses.contains_key("CS102"));
+        let program = result.unwrap();
+        assert_eq!(program.courses.len(), 2);
+        assert!(program.courses.contains_key("CS101"));
+        assert!(program.courses.contains_key("CS102"));
 
-        let cs102 = degree.courses.get("CS102").unwrap();
-        assert_eq!(cs102.prerequisites, Some("CS101".to_string()));
+        let cs102 = program.courses.get("CS102").unwrap();
+        assert_eq!(cs102.prerequisites_raw, Some("CS101".to_string()));
     }
 
     #[test]
@@ -198,9 +210,11 @@ courses:
 
         let yaml_content = r#"
 degree:
+  name: BS File Test
+  degree_type: BS
+  system_type: semester
   id: file-test-degree
   institution: File Test University
-  program: BS File Test
   catalog_year: "2024-2025"
   total_credits: 120
   gpa_minimum: 2.0
@@ -215,8 +229,8 @@ courses: {}
         let result = load_degree_from_yaml(&yaml_file);
         assert!(result.is_ok());
 
-        let degree = result.unwrap();
-        assert_eq!(degree.degree.id, "file-test-degree");
+        let program = result.unwrap();
+        assert_eq!(program.degree.id, Some("file-test-degree".to_string()));
 
         Ok(())
     }

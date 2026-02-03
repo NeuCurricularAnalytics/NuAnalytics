@@ -7,32 +7,35 @@ fn test_load_uhm_degree_yaml() {
     let result = load_degree_from_yaml("samples/degrees/uhm-ics-bscs-general.yaml");
     assert!(result.is_ok(), "Failed to load UHM degree YAML");
 
-    let degree = result.unwrap();
+    let program = result.unwrap();
 
     // Verify metadata
-    assert_eq!(degree.degree.id, "uhm-ics-bscs-general");
-    assert_eq!(degree.degree.institution, "University of Hawaiʻi at Mānoa");
-    assert_eq!(degree.degree.total_credits, 120);
+    assert_eq!(program.degree.id, Some("uhm-ics-bscs-general".to_string()));
+    assert_eq!(
+        program.degree.institution,
+        Some("University of Hawaiʻi at Mānoa".to_string())
+    );
+    assert_eq!(program.degree.total_credits, Some(120));
     #[allow(clippy::float_cmp)]
     {
-        assert_eq!(degree.degree.gpa_minimum, 2.0);
+        assert_eq!(program.degree.gpa_minimum, Some(2.0));
     }
-    assert!(!degree.degree.allow_double_counting);
+    assert_eq!(program.degree.allow_double_counting, Some(false));
 
     // Verify requirements exist
     assert!(
-        !degree.requirements.is_empty(),
+        !program.requirements.is_empty(),
         "Requirements should not be empty"
     );
 
     // Verify courses exist
-    assert!(!degree.courses.is_empty(), "Courses should not be empty");
+    assert!(!program.courses.is_empty(), "Courses should not be empty");
 
     // Spot-check some known courses
-    assert!(degree.courses.contains_key("ICS111"), "Should have ICS111");
-    assert!(degree.courses.contains_key("ICS211"), "Should have ICS211");
+    assert!(program.courses.contains_key("ICS111"), "Should have ICS111");
+    assert!(program.courses.contains_key("ICS211"), "Should have ICS211");
     assert!(
-        degree.courses.contains_key("MATH215"),
+        program.courses.contains_key("MATH215"),
         "Should have MATH215"
     );
 }
@@ -42,23 +45,26 @@ fn test_load_csu_degree_yaml() {
     let result = load_degree_from_yaml("samples/degrees/csu-cs-bscs-general.yaml");
     assert!(result.is_ok(), "Failed to load CSU degree YAML");
 
-    let degree = result.unwrap();
+    let program = result.unwrap();
 
     // Verify metadata
-    assert_eq!(degree.degree.id, "csu-cs-bscs-general");
-    assert_eq!(degree.degree.institution, "Colorado State University");
-    assert_eq!(degree.degree.total_credits, 120);
+    assert_eq!(program.degree.id, Some("csu-cs-bscs-general".to_string()));
+    assert_eq!(
+        program.degree.institution,
+        Some("Colorado State University".to_string())
+    );
+    assert_eq!(program.degree.total_credits, Some(120));
 
     // Verify requirements and courses exist
     assert!(
-        !degree.requirements.is_empty(),
+        !program.requirements.is_empty(),
         "Requirements should not be empty"
     );
-    assert!(!degree.courses.is_empty(), "Courses should not be empty");
+    assert!(!program.courses.is_empty(), "Courses should not be empty");
 
     // Spot-check some known courses
-    assert!(degree.courses.contains_key("CO150"), "Should have CO150");
-    assert!(degree.courses.contains_key("CS162"), "Should have CS162");
+    assert!(program.courses.contains_key("CO150"), "Should have CO150");
+    assert!(program.courses.contains_key("CS162"), "Should have CS162");
 }
 
 #[test]
@@ -66,44 +72,50 @@ fn test_load_neu_degree_yaml() {
     let result = load_degree_from_yaml("samples/degrees/neu-khoury-bscs-boston.yaml");
     assert!(result.is_ok(), "Failed to load NEU degree YAML");
 
-    let degree = result.unwrap();
+    let program = result.unwrap();
 
     // Verify metadata
-    assert_eq!(degree.degree.id, "neu-khoury-bscs-boston");
-    assert_eq!(degree.degree.institution, "Northeastern University");
+    assert_eq!(
+        program.degree.id,
+        Some("neu-khoury-bscs-boston".to_string())
+    );
+    assert_eq!(
+        program.degree.institution,
+        Some("Northeastern University".to_string())
+    );
 
     // Verify requirements and courses exist
     assert!(
-        !degree.requirements.is_empty(),
+        !program.requirements.is_empty(),
         "Requirements should not be empty"
     );
-    assert!(!degree.courses.is_empty(), "Courses should not be empty");
+    assert!(!program.courses.is_empty(), "Courses should not be empty");
 }
 
 #[test]
 fn test_degree_metadata_fields() {
     let result = load_degree_from_yaml("samples/degrees/uhm-ics-bscs-general.yaml");
-    let degree = result.unwrap();
+    let program = result.unwrap();
 
     // Verify optional fields are present or correctly set
-    assert!(degree.degree.source_url.is_some());
-    assert!(degree.degree.upper_division_credits.is_some());
-    assert_eq!(degree.degree.upper_division_credits, Some(45));
-    assert!(degree.degree.in_major_credits.is_some());
-    assert_eq!(degree.degree.in_major_credits, Some(57));
-    assert!(degree.degree.grade_minimum.is_some());
-    assert!(degree.degree.major_subjects.is_some());
+    assert!(program.degree.source_url.is_some());
+    assert!(program.degree.upper_division_credits.is_some());
+    assert_eq!(program.degree.upper_division_credits, Some(45));
+    assert!(program.degree.in_major_credits.is_some());
+    assert_eq!(program.degree.in_major_credits, Some(57));
+    assert!(program.degree.gpa_minimum.is_some());
+    assert!(program.degree.major_subjects.is_some());
 }
 
 #[test]
 fn test_course_key_generation() {
     let result = load_degree_from_yaml("samples/degrees/uhm-ics-bscs-general.yaml");
-    let degree = result.unwrap();
+    let program = result.unwrap();
 
     // Verify that courses can generate their keys
-    if let Some(course) = degree.courses.get("ICS111") {
-        assert_eq!(course.course_key(), "ICS111");
-        assert_eq!(course.subject, "ICS");
+    if let Some(course) = program.courses.get("ICS111") {
+        assert_eq!(course.key(), "ICS111");
+        assert_eq!(course.prefix, "ICS");
         assert_eq!(course.number, "111");
     } else {
         panic!("ICS111 course not found");
@@ -113,22 +125,22 @@ fn test_course_key_generation() {
 #[test]
 fn test_requirement_types_parsed() {
     let result = load_degree_from_yaml("samples/degrees/uhm-ics-bscs-general.yaml");
-    let degree = result.unwrap();
+    let program = result.unwrap();
 
     // Count requirements by type
-    let all_reqs = degree
+    let all_reqs = program
         .requirements
         .values()
         .filter(|r| r.req_type == RequirementType::All)
         .count();
 
-    let select_reqs = degree
+    let select_reqs = program
         .requirements
         .values()
         .filter(|r| r.req_type == RequirementType::Select)
         .count();
 
-    let one_of_reqs = degree
+    let one_of_reqs = program
         .requirements
         .values()
         .filter(|r| r.req_type == RequirementType::OneOf)
@@ -155,25 +167,25 @@ fn test_parse_yaml_from_string() {
     let result = parse_degree_yaml(&yaml_content);
     assert!(result.is_ok(), "Failed to parse YAML from string");
 
-    let degree = result.unwrap();
-    assert_eq!(degree.degree.id, "uhm-ics-bscs-general");
-    assert!(!degree.courses.is_empty());
+    let program = result.unwrap();
+    assert_eq!(program.degree.id, Some("uhm-ics-bscs-general".to_string()));
+    assert!(!program.courses.is_empty());
 }
 
 #[test]
 fn test_courses_have_expected_fields() {
     let result = load_degree_from_yaml("samples/degrees/uhm-ics-bscs-general.yaml");
-    let degree = result.unwrap();
+    let program = result.unwrap();
 
     // Check a course with prerequisites
-    if let Some(course) = degree.courses.get("ICS311") {
-        assert_eq!(course.subject, "ICS");
+    if let Some(course) = program.courses.get("ICS311") {
+        assert_eq!(course.prefix, "ICS");
         assert_eq!(course.number, "311");
-        assert!(course.title.contains("Algorithms") || !course.title.is_empty());
-        assert!(course.credits.is_some() || course.credit_range.is_some());
+        assert!(course.name.contains("Algorithms") || !course.name.is_empty());
+        assert!(course.credit_hours > 0.0 || course.credit_range.is_some());
         // ICS311 should have prerequisites
         assert!(
-            course.prerequisites.is_some(),
+            !course.prerequisites.is_empty() || course.prerequisites_raw.is_some(),
             "ICS311 should have prerequisites"
         );
     } else {
@@ -184,12 +196,10 @@ fn test_courses_have_expected_fields() {
 #[test]
 fn test_yaml_course_to_unified_course() {
     let result = load_degree_from_yaml("samples/degrees/uhm-ics-bscs-general.yaml");
-    let degree = result.unwrap();
+    let program = result.unwrap();
 
-    // Convert a YAML course to unified Course model
-    if let Some(yaml_course) = degree.courses.get("ICS311") {
-        let course = yaml_course.to_course();
-
+    // Courses are already in unified model
+    if let Some(course) = program.courses.get("ICS311") {
         // Verify unified model fields are properly populated
         assert_eq!(course.key(), "ICS311");
         assert_eq!(course.prefix, "ICS");
@@ -202,12 +212,7 @@ fn test_yaml_course_to_unified_course() {
             "prerequisites_raw should be set"
         );
 
-        // Prerequisites Vec is empty until parsed
-        assert!(
-            course.prerequisites.is_empty(),
-            "prerequisites Vec should be empty until parsed"
-        );
-
+        // Prerequisites Vec contains resolved prerequisites
         // Credit hours should be set
         assert!(course.credit_hours > 0.0 || course.credit_range.is_some());
     } else {
@@ -220,8 +225,8 @@ fn test_degree_meta_to_unified_degree() {
     let result = load_degree_from_yaml("samples/degrees/uhm-ics-bscs-general.yaml");
     let degree_program = result.unwrap();
 
-    // Convert DegreeMeta to unified Degree model
-    let unified_degree = degree_program.degree.to_degree();
+    // Degree is already in unified model - no conversion needed
+    let unified_degree = &degree_program.degree;
 
     // Verify unified model fields
     assert_eq!(unified_degree.degree_id(), "uhm-ics-bscs-general");
@@ -239,14 +244,12 @@ fn test_degree_meta_to_unified_degree() {
 }
 
 #[test]
-fn test_all_courses_convert_to_unified_model() {
+fn test_all_courses_in_unified_model() {
     let result = load_degree_from_yaml("samples/degrees/uhm-ics-bscs-general.yaml");
-    let degree = result.unwrap();
+    let program = result.unwrap();
 
-    // Every YamlCourse should convert cleanly to Course
-    for (key, yaml_course) in &degree.courses {
-        let course = yaml_course.to_course();
-
+    // Every course should be in unified model
+    for (key, course) in &program.courses {
         // Key should match
         assert_eq!(course.key(), *key, "Course key mismatch for {key}");
 
@@ -262,14 +265,13 @@ fn test_convert_csu_degree_to_unified_models() {
     let result = load_degree_from_yaml("samples/degrees/csu-cs-bscs-general.yaml");
     let degree_program = result.unwrap();
 
-    // Convert degree
-    let unified_degree = degree_program.degree.to_degree();
+    // Degree is already in unified model
+    let unified_degree = &degree_program.degree;
     assert_eq!(unified_degree.degree_id(), "csu-cs-bscs-general");
     assert_eq!(unified_degree.total_credits, Some(120));
 
-    // Convert a sample course
-    if let Some(yaml_course) = degree_program.courses.get("CS162") {
-        let course = yaml_course.to_course();
+    // Course is already in unified model
+    if let Some(course) = degree_program.courses.get("CS162") {
         assert_eq!(course.prefix, "CS");
         assert_eq!(course.number, "162");
     }
@@ -280,17 +282,16 @@ fn test_convert_neu_degree_to_unified_models() {
     let result = load_degree_from_yaml("samples/degrees/neu-khoury-bscs-boston.yaml");
     let degree_program = result.unwrap();
 
-    // Convert degree
-    let unified_degree = degree_program.degree.to_degree();
+    // Degree is already in unified model
+    let unified_degree = &degree_program.degree;
     assert_eq!(unified_degree.degree_id(), "neu-khoury-bscs-boston");
     assert_eq!(
         unified_degree.institution,
         Some("Northeastern University".to_string())
     );
 
-    // All courses should convert
-    for (key, yaml_course) in &degree_program.courses {
-        let course = yaml_course.to_course();
+    // All courses should already be in unified model
+    for (key, course) in &degree_program.courses {
         assert_eq!(course.key(), *key);
     }
 }

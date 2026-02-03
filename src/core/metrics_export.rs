@@ -278,7 +278,7 @@ pub fn export_metrics_csv_with_summary(
         .find(|d| d.degree_id() == plan.degree_id);
 
     let degree_type = degree.map_or_else(|| "BS".to_string(), |d| d.degree_type.clone());
-    let cip_code = degree.map_or_else(String::new, |d| d.cip_code.clone());
+    let cip_code = degree.and_then(|d| d.cip_code.clone()).unwrap_or_default();
     let system_type = degree.map_or_else(|| "semester".to_string(), |d| d.system_type.clone());
     let scale_factor = degree.map_or(1.0, Degree::complexity_scale_factor);
 

@@ -22,7 +22,7 @@ fn test_parse_colostate_cs_curriculum() {
     assert_eq!(school.degrees.len(), 1);
     assert_eq!(school.degrees[0].name, "Colostate_CS Degree");
     assert_eq!(school.degrees[0].degree_type, "BS");
-    assert_eq!(school.degrees[0].cip_code, "11.0701");
+    assert_eq!(school.degrees[0].cip_code, Some("11.0701".to_string()));
 
     // Verify courses were loaded (should have multiple courses)
     let courses = school.courses();

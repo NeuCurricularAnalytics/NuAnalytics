@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+// Re-export CreditRange from Course model for convenience
+pub use crate::core::models::course::CreditRange;
+
 /// Represents a degree program
 ///
 /// This struct supports both CSV plan loading (basic fields) and
@@ -11,16 +14,19 @@ use serde::{Deserialize, Serialize};
 pub struct Degree {
     // === Core fields (required, used by CSV and YAML) ===
     /// Degree name / program name (e.g., "Computer Science" or full "Bachelor of Science in Computer Science")
+    #[serde(alias = "program")]
     pub name: String,
 
     /// Degree type (e.g., "BS", "BA", "MS")
+    #[serde(default = "default_degree_type")]
     pub degree_type: String,
 
-    /// CIP code (Classification of Instructional Programs)
+    /// CIP code (Classification of Instructional Programs) - optional
     #[serde(default)]
-    pub cip_code: String,
+    pub cip_code: Option<String>,
 
-    /// System type ("semester" or "quarter")
+    /// System type ("semester" or "quarter") - defaults to "semester"
+    #[serde(default = "default_system_type")]
     pub system_type: String,
 
     // === Extended fields (optional, populated from YAML) ===
@@ -77,17 +83,176 @@ pub struct Degree {
     pub allow_double_counting: Option<bool>,
 }
 
+/// A requirement in a degree program
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Requirement {
+    /// Human-readable requirement name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// Requirement type
+    #[serde(rename = "type")]
+    pub req_type: RequirementType,
+
+    /// Category: major, supporting, `gen_ed`, elective
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+
+    /// List of courses (for type: all)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub courses: Option<Vec<String>>,
+
+    /// Selection options (for type: select)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<FromClause>,
+
+    /// Number of courses to select (for type: select)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+
+    /// Total credits to reach (for type: select)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credits: Option<u32>,
+
+    /// Variable credit range (for type: select)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credit_range: Option<CreditRange>,
+
+    /// Constraints on the requirement
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub constraints: Option<RequirementConstraints>,
+
+    /// Mutually exclusive paths (for type: `one_of`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<RequirementOption>>,
+}
+
+/// Types of requirements
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RequirementType {
+    /// Complete all listed courses
+    All,
+
+    /// Select N courses/credits from options
+    Select,
+
+    /// Choose one path (mutually exclusive options)
+    OneOf,
+}
+
+/// Source of courses for a select requirement
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FromClause {
+    /// Explicit list of courses
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub courses: Option<Vec<String>>,
+
+    /// Pattern-based course selection (e.g., "ICS:400+", "CS:*")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<String>,
+
+    /// Courses/patterns to exclude
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
+
+    /// Grouped selection (pick from N groups)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub groups: Option<Vec<CourseGroup>>,
+
+    /// How many groups to select (null = all)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub groups_required: Option<u32>,
+
+    /// Courses to take per selected group
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub per_group: Option<u32>,
+}
+
+/// A group of courses within a select requirement
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CourseGroup {
+    /// Unique identifier for this group
+    pub id: String,
+
+    /// Human-readable group name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// List of courses in this group
+    pub courses: Vec<String>,
+}
+
+/// Constraints on requirement satisfaction
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequirementConstraints {
+    /// Exclude courses already used in prior requirements
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclude_used: Option<bool>,
+
+    /// Selections must be from different subjects
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distinct_subjects: Option<bool>,
+
+    /// Minimum upper-division courses/credits
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_upper_division: Option<u32>,
+
+    /// Maximum credits from any single subject
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_from_subject: Option<u32>,
+
+    /// Pattern to limit (e.g., "ICS:400+")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_from_pattern: Option<String>,
+
+    /// Credit limit for pattern
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_from_pattern_credits: Option<u32>,
+
+    /// Override default grade requirement
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grade_minimum: Option<String>,
+}
+
+/// A mutually exclusive option within a `one_of` requirement
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequirementOption {
+    /// Unique identifier for this option
+    pub id: String,
+
+    /// Human-readable option name
+    pub name: String,
+
+    /// Nested requirements for this path
+    pub requirements: Vec<Requirement>,
+}
+
+/// Default system type for degrees
+fn default_system_type() -> String {
+    "semester".to_string()
+}
+
+fn default_degree_type() -> String {
+    "BS".to_string()
+}
+
 impl Degree {
     /// Create a new degree with basic fields (for CSV loading)
     ///
     /// # Arguments
     /// * `name` - Degree name
     /// * `degree_type` - Degree type (BS, BA, etc.)
-    /// * `cip_code` - CIP code
-    /// * `system_type` - System type ("semester" or "quarter")
+    /// * `cip_code` - CIP code (optional)
+    /// * `system_type` - System type ("semester" or "quarter", defaults to "semester")
     #[must_use]
     #[allow(clippy::missing_const_for_fn)]
-    pub fn new(name: String, degree_type: String, cip_code: String, system_type: String) -> Self {
+    pub fn new(
+        name: String,
+        degree_type: String,
+        cip_code: Option<String>,
+        system_type: String,
+    ) -> Self {
         Self {
             name,
             degree_type,
@@ -127,7 +292,7 @@ impl Degree {
         Self {
             name: program,
             degree_type: String::new(), // Will be parsed from program name if needed
-            cip_code: String::new(),
+            cip_code: None,
             system_type,
             id: Some(id),
             institution: Some(institution),
@@ -194,13 +359,13 @@ mod tests {
         let degree = Degree::new(
             "Computer Science".to_string(),
             "BS".to_string(),
-            "11.0701".to_string(),
+            Some("11.0701".to_string()),
             "semester".to_string(),
         );
 
         assert_eq!(degree.name, "Computer Science");
         assert_eq!(degree.degree_type, "BS");
-        assert_eq!(degree.cip_code, "11.0701");
+        assert_eq!(degree.cip_code, Some("11.0701".to_string()));
         assert_eq!(degree.system_type, "semester");
     }
 
@@ -209,7 +374,7 @@ mod tests {
         let degree = Degree::new(
             "Computer Science".to_string(),
             "BS".to_string(),
-            "11.0701".to_string(),
+            Some("11.0701".to_string()),
             "semester".to_string(),
         );
 
@@ -221,14 +386,14 @@ mod tests {
         let bs = Degree::new(
             "Computer Science".to_string(),
             "BS".to_string(),
-            "11.0701".to_string(),
+            Some("11.0701".to_string()),
             "semester".to_string(),
         );
 
         let ba = Degree::new(
             "Computer Science".to_string(),
             "BA".to_string(),
-            "11.0701".to_string(),
+            Some("11.0701".to_string()),
             "semester".to_string(),
         );
 
@@ -241,7 +406,7 @@ mod tests {
         let degree = Degree::new(
             "Data Science".to_string(),
             "Master of Science".to_string(),
-            "30.7001".to_string(),
+            Some("30.7001".to_string()),
             "semester".to_string(),
         );
 
@@ -254,7 +419,7 @@ mod tests {
         let degree = Degree::new(
             "Computer Science".to_string(),
             "BS".to_string(),
-            "11.0701".to_string(),
+            Some("11.0701".to_string()),
             "quarter".to_string(),
         );
 
@@ -267,7 +432,7 @@ mod tests {
         let degree = Degree::new(
             "Computer Science".to_string(),
             "BS".to_string(),
-            "11.0701".to_string(),
+            Some("11.0701".to_string()),
             "semester".to_string(),
         );
 

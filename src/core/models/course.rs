@@ -1,6 +1,6 @@
 //! Course model
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Variable credit range for courses with flexible credits
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +56,52 @@ pub struct CreditRange {
 /// **Note**: Regardless of approach, the Course struct must be able to represent the full
 /// prerequisite expression. The choice resolution approach means that when analyzing a
 /// specific plan, we only include the paths the student actually took, not all possibilities.
+///
+/// Deserializer for `Vec<String>` that handles null values and strings
+fn deserialize_vec_string<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum VecStringOrNull {
+        Vec(Vec<String>),
+        String(String),
+        Null,
+    }
+
+    match VecStringOrNull::deserialize(deserializer)? {
+        VecStringOrNull::Vec(v) => Ok(v),
+        VecStringOrNull::String(_s) => Ok(vec![]), // Ignore string prerequisites for now
+        VecStringOrNull::Null => Ok(vec![]),
+    }
+}
+
+/// Deserializer for `prerequisites_raw` that captures string prerequisites
+fn deserialize_prerequisites_raw<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum PrereqRaw {
+        String(String),
+        Vec(Vec<String>),
+        Null,
+    }
+
+    match PrereqRaw::deserialize(deserializer)? {
+        PrereqRaw::String(s) => Ok(Some(s)),
+        PrereqRaw::Vec(_v) => Ok(None), // Vec is resolved prerequisites, not raw
+        PrereqRaw::Null => Ok(None),
+    }
+}
+
+/// Represents a course in a curriculum
+///
+/// This struct supports both CSV plan loading (basic fields) and
+/// full YAML degree loading (extended fields). Optional fields
+/// are populated when loading from YAML degree definitions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct Course {
     // === Core fields (used by CSV and YAML) ===
@@ -66,9 +112,11 @@ pub struct Course {
     pub id: Option<String>,
 
     /// Course name/title (e.g., "Calculus for Physical Scientists I")
+    #[serde(alias = "title")]
     pub name: String,
 
     /// Course prefix/subject (e.g., "MATH", "CS", "ICS")
+    #[serde(alias = "subject")]
     pub prefix: String,
 
     /// Course number (e.g., "1342", "2510", "111")
@@ -77,15 +125,19 @@ pub struct Course {
     /// Prerequisites - stored as "PREFIX NUMBER" keys (e.g., "MATH 1341")
     /// Currently assumes ALL prerequisites must be satisfied (AND semantics)
     /// For YAML sources, use `prerequisites_raw` for boolean expressions
+    #[serde(default, deserialize_with = "deserialize_vec_string", skip)]
     pub prerequisites: Vec<String>,
 
     /// Co-requisites - stored as "PREFIX NUMBER" keys
+    #[serde(default, deserialize_with = "deserialize_vec_string")]
     pub corequisites: Vec<String>,
 
     /// Strict co-requisites - stored as "PREFIX NUMBER" keys (must be taken together)
+    #[serde(default, deserialize_with = "deserialize_vec_string")]
     pub strict_corequisites: Vec<String>,
 
     /// Credit hours (can be fractional)
+    #[serde(alias = "credits", default)]
     pub credit_hours: f32,
 
     /// Canonical name for cross-institution lookup (e.g., "Calculus I")
@@ -94,11 +146,16 @@ pub struct Course {
     // === Extended fields (optional, populated from YAML) ===
     /// Raw prerequisite expression string (e.g., "(ICS311 | ECE367) & ICS314")
     /// Stored as-is for future parsing; the `prerequisites` Vec is the resolved form
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "prerequisites",
+        deserialize_with = "deserialize_prerequisites_raw"
+    )]
     pub prerequisites_raw: Option<String>,
 
     /// Terms typically offered (e.g., `["fall", "spring"]`)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "typically_offered")]
     pub typically_offered: Option<Vec<String>>,
 
     /// General education attributes (e.g., `["FW", "DP"]`)

@@ -3,39 +3,37 @@
 //! This module provides:
 //! - YAML degree schema structures (`models`)
 //! - YAML parsing functions (`yaml_parser`)
-//! - Conversion to unified `Degree` and `Course` models via `into_degree()` and `into_course()`
+//! - Direct conversion to unified `Degree` and `Course` models for metrics/plans
 //!
 //! # Example
 //! ```no_run
-//! use nu_analytics::core::degree::{load_degree_from_yaml, parse_degree_yaml};
+//! use nu_analytics::core::degree::{load_degree_from_yaml, DegreeProgram};
 //!
 //! // Load from file
-//! let degree_program = load_degree_from_yaml("path/to/degree.yaml").unwrap();
+//! let program = load_degree_from_yaml("path/to/degree.yaml").unwrap();
 //!
-//! // Convert to unified Degree model for metrics/plans
-//! let degree = degree_program.degree.into_degree();
-//!
-//! // Convert courses to unified Course model
-//! for (key, yaml_course) in degree_program.courses {
-//!     let course = yaml_course.into_course();
-//!     println!("{}: {}", course.key(), course.name);
+//! // Access metadata and process courses
+//! println!("Program: {}", program.degree.name);
+//! for (key, course) in program.courses {
+//!     println!("{}: {}", key, course.name);
 //! }
-//!
-//! // Or parse from string (e.g., from network/database)
-//! let yaml_content = std::fs::read_to_string("path/to/degree.yaml").unwrap();
-//! let degree = parse_degree_yaml(&yaml_content).unwrap();
 //! ```
 
-pub mod models;
 pub mod yaml_parser;
 
-// Re-export commonly used types
-pub use models::{
-    CourseGroup, CreditRange, DegreeMeta, FromClause, Requirement, RequirementConstraints,
-    RequirementOption, RequirementType, YamlDegree,
+// Re-export degree structure
+pub use crate::core::models::degree::Degree;
+
+// Re-export requirement-related types from unified models
+pub use crate::core::models::degree::{
+    CourseGroup, FromClause, Requirement, RequirementConstraints, RequirementOption,
+    RequirementType,
 };
 
-// Type alias for clearer naming
-pub use models::YamlDegree as DegreeProgram;
+// Re-export course credit range
+pub use crate::core::models::course::CreditRange;
+
+// Re-export the DegreeProgram structure (top-level degree container)
+pub use crate::core::models::DegreeProgram;
 
 pub use yaml_parser::{load_degree_from_yaml, parse_degree_yaml, DegreeParseError};

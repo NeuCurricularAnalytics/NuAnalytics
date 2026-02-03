@@ -87,7 +87,10 @@ impl<'a> ReportContext<'a> {
     /// Get the CIP code
     #[must_use]
     pub fn cip_code(&self) -> &str {
-        self.degree.map_or("", |d| d.cip_code.as_str())
+        self.degree
+            .as_ref()
+            .and_then(|d| d.cip_code.as_deref())
+            .unwrap_or("")
     }
 
     /// Calculate total credit hours

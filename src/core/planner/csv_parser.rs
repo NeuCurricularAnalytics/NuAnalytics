@@ -24,8 +24,8 @@ pub struct CurriculumMetadata {
     pub degree_type: String,
     /// System type (semester, quarter, etc.)
     pub system_type: String,
-    /// CIP code for the degree
-    pub cip_code: String,
+    /// CIP code for the degree (optional)
+    pub cip_code: Option<String>,
 }
 
 /// Intermediate data structure for first-pass course parsing
@@ -312,7 +312,7 @@ fn parse_metadata(lines: &[&str]) -> Result<CurriculumMetadata, Box<dyn Error>> 
         institution: String::new(),
         degree_type: String::new(),
         system_type: String::new(),
-        cip_code: String::new(),
+        cip_code: None,
     };
 
     for line in lines.iter().take(10) {
@@ -329,7 +329,7 @@ fn parse_metadata(lines: &[&str]) -> Result<CurriculumMetadata, Box<dyn Error>> 
             "institution" | "insitution" => metadata.institution = value, // or because of the common typo in the plan database
             "degree type" => metadata.degree_type = value,
             "system type" => metadata.system_type = value,
-            "cip" => metadata.cip_code = value,
+            "cip" => metadata.cip_code = Some(value),
             _ => {}
         }
     }
@@ -624,7 +624,7 @@ mod tests {
         assert_eq!(metadata.institution, "Test University");
         assert_eq!(metadata.degree_type, "BS");
         assert_eq!(metadata.system_type, "semester");
-        assert_eq!(metadata.cip_code, "11.0701");
+        assert_eq!(metadata.cip_code, Some("11.0701".to_string()));
     }
 
     #[test]
