@@ -126,7 +126,17 @@ pub enum ValidationWarning {
     HiddenRequirement {
         /// The implicit course
         course_key: String,
-        /// The required course that depends on it
+        /// The required course that depends on it (immediate parent)
+        required_by: String,
+        /// The chain of courses leading to this requirement (e.g., "A -> B -> C")
+        dependency_chain: Vec<String>,
+    },
+
+    /// A required course has a prerequisite choice where none of the options are listed in the degree
+    HiddenRequirementOption {
+        /// The list of options (e.g., `["MATH120", "MATH124"]`)
+        options: Vec<String>,
+        /// The required course that triggers this choice
         required_by: String,
     },
 }
@@ -173,9 +183,44 @@ impl ValidationResult {
 
         if !self.warnings.is_empty() {
             let _ = write!(report, "\nWarnings ({}): \n", self.warnings.len());
-            for (i, warning) in self.warnings.iter().enumerate() {
-                let _ = writeln!(report, "  {}. {}", i + 1, format_warning(warning));
+
+            // Group warnings by type
+            let mut unreferenced = Vec::new();
+            let mut missing_cross_listed = Vec::new();
+            let mut broad_pattern = Vec::new();
+            let mut isolated = Vec::new();
+            let mut hidden_req = Vec::new();
+            let mut hidden_opts = Vec::new();
+
+            for warning in &self.warnings {
+                match warning {
+                    ValidationWarning::UnreferencedCourse { .. } => unreferenced.push(warning),
+                    ValidationWarning::MissingCrossListedCourse { .. } => {
+                        missing_cross_listed.push(warning);
+                    }
+                    ValidationWarning::BroadPattern { .. } => broad_pattern.push(warning),
+                    ValidationWarning::IsolatedCourse { .. } => isolated.push(warning),
+                    ValidationWarning::HiddenRequirement { .. } => hidden_req.push(warning),
+                    ValidationWarning::HiddenRequirementOption { .. } => hidden_opts.push(warning),
+                }
             }
+
+            // Helper to print a group
+            let mut print_group = |title: &str, warnings: &[&ValidationWarning]| {
+                if !warnings.is_empty() {
+                    let _ = writeln!(report, "\n  {title}:");
+                    for warning in warnings {
+                        let _ = writeln!(report, "    - {}", format_warning(warning));
+                    }
+                }
+            };
+
+            print_group("Unreferenced Courses", &unreferenced);
+            print_group("Hidden Requirements (Implicitly Required)", &hidden_req);
+            print_group("Hidden Requirement Options (Implicit Choice)", &hidden_opts);
+            print_group("Missing Cross-Listed Courses", &missing_cross_listed);
+            print_group("Broad Patterns", &broad_pattern);
+            print_group("Isolated Courses", &isolated);
         }
 
         report
@@ -360,6 +405,39 @@ fn contains_delimiter_at_level(s: &str, delimiter: char) -> bool {
         }
     }
     false
+}
+
+/// Extract top-level OR options from a prerequisite string
+/// `(A | B) -> ["A", "B"]`
+/// `(A & B) | C -> ["A & B", "C"]` - simplified, we just want to catch single course ORs for now
+fn extract_top_level_options(raw: &str) -> Vec<String> {
+    let mut options = Vec::new();
+    let cleaned = remove_grade_requirements(raw);
+
+    // Split by top-level OR
+    let parts = split_by_delimiter_at_level(&cleaned, '|');
+
+    for part in parts {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        // Remove surrounding parens if present
+        let clean_part = if is_wrapped_in_parens(trimmed) {
+            &trimmed[1..trimmed.len() - 1]
+        } else {
+            trimmed
+        };
+
+        // Only return single courses as options for now to keep it simple
+        // If an option is a complex expression (A & B), we skip it for this check
+        if !clean_part.contains('&') && !clean_part.contains('|') {
+            options.push(clean_part.trim().to_string());
+        }
+    }
+
+    options
 }
 
 fn is_wrapped_in_parens(s: &str) -> bool {
@@ -835,12 +913,66 @@ fn check_unreferenced_courses(
     // Now identify implicitly referenced courses (prerequisites of referenced courses)
     // We use two BFS passes:
     // 1. All reachable courses (Weak + Strict) -> To mark as "Referenced" (avoid Unreferenced warning)
-    // 2. Strictly reachable courses (Strict only) -> To mark as "Hidden Requirement" (Warn if not explicit)
+    let weakly_reachable = compute_weakly_reachable(&explicitly_referenced, courses);
 
+    // 2. Strictly reachable courses (Strict only) -> To mark as "Hidden Requirement" (Warn if not explicit)
+    let (implicit_paths, mut implicit_options) =
+        compute_strictly_reachable(&explicitly_referenced, courses, &weakly_reachable);
+
+    // Add warnings (sorted by key for deterministic output)
+    let mut sorted_keys: Vec<_> = courses.keys().collect();
+    sorted_keys.sort();
+
+    // Add implicit option warnings
+    // Sort implicit options for deterministic output
+    implicit_options.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (required_by, options) in implicit_options {
+        result.add_warning(ValidationWarning::HiddenRequirementOption {
+            required_by,
+            options,
+        });
+    }
+
+    for key in sorted_keys {
+        if !weakly_reachable.contains(key) {
+            result.add_warning(ValidationWarning::UnreferencedCourse {
+                course_key: key.clone(),
+            });
+        } else if !explicitly_referenced.contains(key) {
+            // It IS reachable, but not explicitly referenced.
+            // Only warn if it is STRICTLY reachable (Hidden Requirement)
+            if let Some(path) = implicit_paths.get(key) {
+                // Format path: Root -> Parent -> Key
+                // We want to show: Key is required by ...
+                // Let's store the full path for the warning
+                let parent = if path.len() >= 2 {
+                    path[path.len() - 2].clone()
+                } else {
+                    String::from("Unknown")
+                };
+
+                result.add_warning(ValidationWarning::HiddenRequirement {
+                    course_key: key.clone(),
+                    required_by: parent,
+                    dependency_chain: path.clone(),
+                });
+            }
+            // If weakly reachable but not strict, it's an optional alternative.
+            // We consider it "Referenced" enough to suppress Unreferenced warning,
+            // but "Optional" enough to suppress Hidden Requirement warning.
+        }
+    }
+}
+
+/// Compute all courses reachable from the explicit set (Weak + Strict prerequisites)
+fn compute_weakly_reachable(
+    explicitly_referenced: &HashSet<String>,
+    courses: &HashMap<String, Course>,
+) -> HashSet<String> {
     let mut weakly_reachable = explicitly_referenced.clone();
     let mut work_queue: Vec<String> = explicitly_referenced.iter().cloned().collect();
 
-    // BFS for all reachable (Weak + Strict)
     while let Some(current_key) = work_queue.pop() {
         if let Some(course) = courses.get(&current_key) {
             // Check all prerequisites (including optional)
@@ -866,13 +998,29 @@ fn check_unreferenced_courses(
             }
         }
     }
+    weakly_reachable
+}
 
-    // BFS for strictly reachable
+/// Compute strictly reachable courses and identify implicit options
+#[allow(clippy::type_complexity)]
+fn compute_strictly_reachable(
+    explicitly_referenced: &HashSet<String>,
+    courses: &HashMap<String, Course>,
+    weakly_reachable: &HashSet<String>,
+) -> (HashMap<String, Vec<String>>, Vec<(String, Vec<String>)>) {
     let mut strictly_reachable = explicitly_referenced.clone();
-    work_queue = explicitly_referenced.iter().cloned().collect();
-    let mut implicitly_required_by: HashMap<String, String> = HashMap::new();
 
-    while let Some(current_key) = work_queue.pop() {
+    // Queue stores (course_key, path_to_course)
+    // For explicit courses, path is just [course_key]
+    let mut work_queue: Vec<(String, Vec<String>)> = explicitly_referenced
+        .iter()
+        .map(|k| (k.clone(), vec![k.clone()]))
+        .collect();
+
+    let mut implicit_paths: HashMap<String, Vec<String>> = HashMap::new();
+    let mut implicit_options: Vec<(String, Vec<String>)> = Vec::new();
+
+    while let Some((current_key, current_path)) = work_queue.pop() {
         if let Some(course) = courses.get(&current_key) {
             // Check strict prerequisites only
             let strict_prereqs = course.prerequisites_raw.as_ref().map_or_else(
@@ -885,8 +1033,36 @@ fn check_unreferenced_courses(
                     // Ensure exists
                     if !strictly_reachable.contains(&prereq) {
                         strictly_reachable.insert(prereq.clone());
-                        work_queue.push(prereq.clone());
-                        implicitly_required_by.insert(prereq.clone(), current_key.clone());
+
+                        let mut new_path = current_path.clone();
+                        new_path.push(prereq.clone());
+
+                        work_queue.push((prereq.clone(), new_path.clone()));
+                        implicit_paths.insert(prereq.clone(), new_path);
+                    }
+                }
+            }
+
+            // Detect implicit choices (OR groups)
+            // If a required course has prerequisites like (A | B), and neither A nor B is referenced,
+            // then we have a "Hidden Option".
+            if let Some(raw) = &course.prerequisites_raw {
+                let options = extract_top_level_options(raw);
+                if options.len() > 1 {
+                    // Check if ANY of the options are already reachable/referenced
+                    let any_referenced = options.iter().any(|opt| weakly_reachable.contains(opt));
+
+                    if !any_referenced {
+                        // None of the options are referenced. This is a hidden choice.
+                        // Filter to only include options that actually exist in the course catalog
+                        let valid_options: Vec<String> = options
+                            .into_iter()
+                            .filter(|opt| courses.contains_key(opt))
+                            .collect();
+
+                        if !valid_options.is_empty() {
+                            implicit_options.push((current_key.clone(), valid_options));
+                        }
                     }
                 }
             }
@@ -895,40 +1071,29 @@ fn check_unreferenced_courses(
             for coreq in &course.corequisites {
                 if !strictly_reachable.contains(coreq) {
                     strictly_reachable.insert(coreq.clone());
-                    work_queue.push(coreq.clone());
-                    implicitly_required_by.insert(coreq.clone(), current_key.clone());
+
+                    let mut new_path = current_path.clone();
+                    new_path.push(coreq.clone());
+
+                    work_queue.push((coreq.clone(), new_path.clone()));
+                    implicit_paths.insert(coreq.clone(), new_path);
                 }
             }
             for coreq in &course.strict_corequisites {
                 if !strictly_reachable.contains(coreq) {
                     strictly_reachable.insert(coreq.clone());
-                    work_queue.push(coreq.clone());
-                    implicitly_required_by.insert(coreq.clone(), current_key.clone());
+
+                    let mut new_path = current_path.clone();
+                    new_path.push(coreq.clone());
+
+                    work_queue.push((coreq.clone(), new_path.clone()));
+                    implicit_paths.insert(coreq.clone(), new_path);
                 }
             }
         }
     }
 
-    // Add warnings
-    for key in courses.keys() {
-        if !weakly_reachable.contains(key) {
-            result.add_warning(ValidationWarning::UnreferencedCourse {
-                course_key: key.clone(),
-            });
-        } else if !explicitly_referenced.contains(key) {
-            // It IS reachable, but not explicitly referenced.
-            // Only warn if it is STRICTLY reachable (Hidden Requirement)
-            if let Some(required_by) = implicitly_required_by.get(key) {
-                result.add_warning(ValidationWarning::HiddenRequirement {
-                    course_key: key.clone(),
-                    required_by: required_by.clone(),
-                });
-            }
-            // If weakly reachable but not strict, it's an optional alternative.
-            // We consider it "Referenced" enough to suppress Unreferenced warning,
-            // but "Optional" enough to suppress Hidden Requirement warning.
-        }
-    }
+    (implicit_paths, implicit_options)
 }
 
 /// Recursively collect all course references from a requirement
@@ -1099,10 +1264,28 @@ fn format_warning(warning: &ValidationWarning) -> String {
         }
         ValidationWarning::HiddenRequirement {
             course_key,
+            required_by: _,
+            dependency_chain,
+        } => {
+            if dependency_chain.is_empty() {
+                format!(
+                    "Course '{course_key}' is implicitly required but not listed in requirements"
+                )
+            } else {
+                format!(
+                    "Course '{course_key}' is implicitly required: {}",
+                    dependency_chain.join(" -> ")
+                )
+            }
+        }
+        ValidationWarning::HiddenRequirementOption {
+            options,
             required_by,
         } => {
             format!(
-                "Course '{course_key}' is implicitly required by '{required_by}' but not listed in requirements"
+                "One of [{}] is implicitly required by '{}' (prerequisite choice)",
+                options.join(", "),
+                required_by
             )
         }
     }
