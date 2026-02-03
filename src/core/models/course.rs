@@ -249,6 +249,31 @@ impl Course {
         }
     }
 
+    /// Check if this course is cross-listed with other courses
+    #[must_use]
+    pub fn is_cross_listed(&self) -> bool {
+        self.cross_listed_as
+            .as_ref()
+            .is_some_and(|list| !list.is_empty())
+    }
+
+    /// Get the list of courses this is cross-listed with
+    #[must_use]
+    pub fn cross_listed_courses(&self) -> Vec<&str> {
+        self.cross_listed_as
+            .as_ref()
+            .map(|list| list.iter().map(std::string::String::as_str).collect())
+            .unwrap_or_default()
+    }
+
+    /// Check if this course is cross-listed with a specific course
+    #[must_use]
+    pub fn is_cross_listed_with(&self, course_key: &str) -> bool {
+        self.cross_listed_as
+            .as_ref()
+            .is_some_and(|list| list.iter().any(|c| c == course_key))
+    }
+
     /// Get the course key for lookups (prefix + number)
     ///
     /// # Returns

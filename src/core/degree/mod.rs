@@ -19,6 +19,8 @@
 //! }
 //! ```
 
+pub mod course_reference;
+pub mod validation;
 pub mod yaml_parser;
 
 // Re-export degree structure
@@ -39,4 +41,12 @@ pub use crate::core::models::DegreeProgram;
 pub use yaml_parser::{
     load_degree_from_yaml, parse_degree_yaml, save_degree_to_yaml, serialize_degree_yaml,
     DegreeParseError,
+};
+
+// Re-export course reference types
+pub use course_reference::CourseReference;
+
+// Re-export validation types
+pub use validation::{
+    validate_degree_program, ValidationError, ValidationResult, ValidationWarning,
 };
