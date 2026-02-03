@@ -4,11 +4,13 @@
 //!
 //! ## Command Handlers
 //! - [`config`] - Configuration management
+//! - [`degree`] - Degree program validation
 //! - [`planner`] - Curriculum planning and CSV export
 //!
 //! ## Utilities
 //! - [`report`] - Report generation utilities (used by multiple commands)
 
 pub mod config;
+pub mod degree;
 pub mod planner;
 pub mod report;
