@@ -95,8 +95,12 @@ fn main() {
             };
             run_planner(&config, &opts);
         }
-        Command::Degree { validate } => {
-            commands::degree::run(validate.as_deref(), verbose);
+        Command::Degree {
+            file,
+            validate,
+            print_graph,
+        } => {
+            commands::degree::run(file.as_deref(), validate, print_graph, verbose);
         }
     }
 }

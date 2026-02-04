@@ -204,13 +204,24 @@ pub enum Command {
     /// # Validate a degree program
     /// nuanalytics degree --validate samples/degrees/csu-cs-bscs-general.yaml
     ///
-    /// # Validate with verbose output
-    /// nuanalytics degree --validate samples/degrees/uhm-ics-bscs-general.yaml -v
+    /// # Print prerequisite graph
+    /// nuanalytics degree --print-graph samples/degrees/csu-cs-bscs-general.yaml
+    ///
+    /// # Both validate and print graph
+    /// nuanalytics degree --validate --print-graph samples/degrees/uhm-ics-bscs-general.yaml
     /// ```
     Degree {
+        /// Path to the degree program YAML file
+        #[arg(value_name = "FILE")]
+        file: Option<PathBuf>,
+
         /// Validate the degree program YAML file
-        #[arg(long, value_name = "FILE")]
-        validate: Option<PathBuf>,
+        #[arg(long)]
+        validate: bool,
+
+        /// Print the course prerequisite graph
+        #[arg(long)]
+        print_graph: bool,
     },
 }
 

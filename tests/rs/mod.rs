@@ -1,5 +1,7 @@
 //! Rust integration test modules
 
+pub mod cli_degree;
+pub mod course_graph;
 pub mod course_syntax;
 pub mod cross_listing;
 pub mod degree_yaml;

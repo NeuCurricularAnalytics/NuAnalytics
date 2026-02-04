@@ -6,6 +6,7 @@ pub mod metrics;
 pub mod metrics_export;
 pub mod models;
 pub mod planner;
+pub mod prerequisite_parser;
 pub mod report;
 
 // Re-export degree module types for convenience
