@@ -894,7 +894,7 @@ courses:
     number: "410"
     title: "Gödel's Incompleteness Theorems"
     credits: 3
-    prerequisites: null
+    prerequisites: "CS220 | CS253 | CS270 | ECE102 | MATH235 | MATH317 | MATH366 | PHIL210"
     typically_offered: [fall, spring]
 
   PHIL411:
@@ -902,7 +902,7 @@ courses:
     number: "411"
     title: Logic in Philosophy and Beyond
     credits: 3
-    prerequisites: null
+    prerequisites: "CS220 | CS253 | CS270 | ECE102 | MATH235 | MATH317 | MATH366 | PHIL210"
     typically_offered: [fall, spring]
 
   PHIL415:
@@ -1218,7 +1218,8 @@ courses:
     number: "350"
     title: Molecular and General Genetics
     credits: 4
-    prerequisites: null
+    prerequisites: "BZ110 | BZ120 | LIFE102"
+    corequisites: [STAT301, STAT307, STAT315]
     typically_offered: [fall, spring]
 
   BZ360:
@@ -1226,7 +1227,7 @@ courses:
     number: "360"
     title: Bioinformatics and Genomics
     credits: 4
-    prerequisites: null
+    prerequisites: "BZ110 | BZ120 | LIFE102"
     typically_offered: [fall, spring]
 
   CHEM107:
@@ -1273,6 +1274,7 @@ courses:
     title: Geology and Society
     credits: 3
     prerequisites: null
+    corequisites: [GEOL121]
     typically_offered: [fall, spring]
     gen_ed_attributes: ["AUCC-3A", "GT-SC2"]
 
@@ -1282,6 +1284,7 @@ courses:
     title: Geology Lab
     credits: 1
     prerequisites: null
+    corequisites: [GEOL120, GEOL122, GEOL124]
     typically_offered: [fall, spring]
 
   GEOL122:
@@ -1290,6 +1293,7 @@ courses:
     title: "Geoscience--Climate and Environmental Change"
     credits: 3
     prerequisites: null
+    corequisites: [GEOL121]
     typically_offered: [fall, spring]
     gen_ed_attributes: ["AUCC-3A", "GT-SC2"]
 
@@ -1299,6 +1303,7 @@ courses:
     title: Earth Resources and Sustainability
     credits: 3
     prerequisites: null
+    corequisites: [GEOL121]
     typically_offered: [fall, spring]
     gen_ed_attributes: ["AUCC-3A", "GT-SC2"]
 
@@ -1558,7 +1563,7 @@ courses:
     number: "352"
     title: Learning and Memory
     credits: 3
-    prerequisites: null
+    prerequisites: "PSY252"
     typically_offered: [fall, spring]
 
   PSY452:
@@ -1566,7 +1571,7 @@ courses:
     number: "452"
     title: Cognitive Psychology
     credits: 3
-    prerequisites: null
+    prerequisites: "PSY252"
     typically_offered: [fall, spring]
 
   PSY454:
@@ -1574,7 +1579,7 @@ courses:
     number: "454"
     title: Biological Psychology
     credits: 3
-    prerequisites: null
+    prerequisites: "PSY252"
     typically_offered: [fall, spring]
 
   PSY456:
@@ -1582,7 +1587,7 @@ courses:
     number: "456"
     title: Sensation and Perception
     credits: 3
-    prerequisites: null
+    prerequisites: "PSY252"
     typically_offered: [fall, spring]
 
   PSY458:
@@ -1590,7 +1595,7 @@ courses:
     number: "458"
     title: Cognitive Neuroscience
     credits: 3
-    prerequisites: null
+    prerequisites: "PSY252"
     typically_offered: [fall, spring]
 
 # =============================================================================
@@ -1689,3 +1694,31 @@ courses:
     credits: 3
     prerequisites: "MATH156 | MATH161 | MATH271"
     typically_offered: [fall, spring, summer]
+
+  # ---------------------------------------------------------------------------
+  # Additional Prerequisite Courses - Added for PHIL 410/411 prerequisites
+  # ---------------------------------------------------------------------------
+
+  PHIL210:
+    subject: PHIL
+    number: "210"
+    title: Introduction to Formal Logic
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  ECE102:
+    subject: ECE
+    number: "102"
+    title: Logic Design Laboratory
+    credits: 1
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  MATH317:
+    subject: MATH
+    number: "317"
+    title: Advanced Calculus of One Variable
+    credits: 3
+    prerequisites: "MATH161"
+    typically_offered: [fall, spring]
