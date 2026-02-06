@@ -2,7 +2,8 @@
 # Enforces code quality and best practices
 
 # Cognitive complexity threshold
-cognitive-complexity-threshold = 30
+cognitive-complexity-threshold = 15
+too-many-lines-threshold = 100
 
 # Type complexity threshold
 type-complexity-threshold = 250

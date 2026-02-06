@@ -144,7 +144,7 @@ impl School {
     /// A reference to the degree, or `None` if not found
     #[must_use]
     pub fn get_degree(&self, degree_id: &str) -> Option<&Degree> {
-        self.degrees.iter().find(|d| d.id() == degree_id)
+        self.degrees.iter().find(|d| d.degree_id() == degree_id)
     }
 
     /// Add a plan to the school
@@ -357,7 +357,7 @@ mod tests {
         let degree = Degree::new(
             "Computer Science".to_string(),
             "BS".to_string(),
-            "11.0701".to_string(),
+            Some("11.0701".to_string()),
             "semester".to_string(),
         );
 
@@ -367,7 +367,7 @@ mod tests {
 
         let retrieved = school.get_degree("BS Computer Science");
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().cip_code, "11.0701");
+        assert_eq!(retrieved.unwrap().cip_code, Some("11.0701".to_string()));
     }
 
     #[test]

@@ -1,14 +1,22 @@
 //! Core module for common functionality across all targets
 
 pub mod config;
+pub mod degree;
 pub mod metrics;
 pub mod metrics_export;
 pub mod models;
 pub mod planner;
+pub mod prerequisite_parser;
 pub mod report;
 
+// Re-export degree module types for convenience
+pub use degree::{
+    load_degree_from_yaml, parse_degree_yaml, save_degree_to_yaml, serialize_degree_yaml,
+    validate_degree_program, DegreeParseError, DegreeProgram, ValidationError, ValidationResult,
+    ValidationWarning,
+};
+
 // Add core domain modules here as they're developed:
-// pub mod degree;
 // pub mod school;
 // pub mod database;
 // pub mod utils;

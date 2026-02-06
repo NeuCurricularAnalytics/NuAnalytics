@@ -63,7 +63,10 @@ fn prepare_report_data(input_file: &Path, term_credits: Option<f32>) -> Result<R
     let plan = school.plans.first().cloned().unwrap_or_else(|| {
         let mut default_plan = Plan::new(
             "All Courses".to_string(),
-            school.degrees.first().map_or_else(String::new, Degree::id),
+            school
+                .degrees
+                .first()
+                .map_or_else(String::new, Degree::degree_id),
         );
         for course in &dag.courses {
             default_plan.add_course(course.clone());

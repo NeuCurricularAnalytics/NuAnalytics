@@ -423,11 +423,11 @@ mod tests {
         let degree = Degree::new(
             "Computer Science".to_string(),
             "BS".to_string(),
-            "11.0701".to_string(),
+            Some("11.0701".to_string()),
             "semester".to_string(),
         );
 
-        let mut plan = Plan::new("CS Plan".to_string(), degree.id());
+        let mut plan = Plan::new("CS Plan".to_string(), degree.degree_id());
         plan.add_course("CS101".to_string());
         plan.add_course("CS201".to_string());
 

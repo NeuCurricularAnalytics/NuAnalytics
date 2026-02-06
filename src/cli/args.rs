@@ -194,6 +194,40 @@ pub enum Command {
         #[arg(long)]
         no_report: bool,
     },
+    /// Validate and analyze degree program YAML files.
+    ///
+    /// Load a degree program YAML file and validate its structure, requirements,
+    /// prerequisites, and cross-listing relationships.
+    ///
+    /// # Examples
+    /// ```sh
+    /// # Validate a degree program
+    /// nuanalytics degree --validate samples/degrees/csu-cs-bscs-general.yaml
+    ///
+    /// # Print prerequisite graph
+    /// nuanalytics degree --print-graph samples/degrees/csu-cs-bscs-general.yaml
+    ///
+    /// # Both validate and print graph
+    /// nuanalytics degree --validate --print-graph samples/degrees/uhm-ics-bscs-general.yaml
+    /// ```
+    Degree {
+        /// Path to the degree program YAML file
+        #[arg(value_name = "FILE")]
+        file: Option<PathBuf>,
+
+        /// Validate the degree program YAML file
+        #[arg(long)]
+        validate: bool,
+
+        /// Print the course prerequisite graph
+        #[arg(long)]
+        print_graph: bool,
+
+        /// Run an audit report on the degree program
+        /// Includes validation, missing prerequisites analysis, and deep chain detection
+        #[arg(long)]
+        audit: bool,
+    },
 }
 
 #[derive(Parser, Debug)]

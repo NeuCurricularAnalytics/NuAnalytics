@@ -1,0 +1,607 @@
+# =============================================================================
+# DEGREE REQUIREMENTS SCHEMA v5.2
+# =============================================================================
+#
+# Design Principles:
+#   - Minimal types: 3 requirement types cover all cases
+#   - Computable credits: derived from courses, not redundantly specified
+#   - Structured prerequisites: boolean expressions, not prose
+#   - Inline syntax for common patterns: bundles, equivalents, ranges
+#
+# Changes from v5.1:
+#   - BREAKING: `from` block now supports combining `courses` AND `pattern`
+#     Previously these were mutually exclusive; now they can be used together
+#     to create a pool of "specific courses + pattern-matched courses"
+#   - Added `include` as array of patterns (multiple pattern support)
+#   - Clarified that `exclude` applies to pattern matches, not explicit courses
+#   - Added examples for combined courses+pattern usage
+#
+# Changes from v5.0 (included in v5.1):
+#   - Added cross_listed_as for equivalent courses across departments
+#   - Added repeatable and max_repeat_credits for research/directed study
+#   - Added credit_range for variable-credit requirements
+#   - Expanded constraints with min_upper_division, max_from_subject
+#   - Added gen_ed_attributes for mapping courses to university requirements
+#   - Clarified grade requirements: course-level vs prerequisite expressions
+#   - Added external_requirement flag for minor/second major paths
+#   - Improved pattern exclusion syntax documentation
+#
+# =============================================================================
+
+# =============================================================================
+# DEGREE METADATA
+# =============================================================================
+
+degree:
+  id: string                          # Unique identifier, e.g., "uhm-ics-bscs-general"
+  institution: string
+  program: string                     # Full degree name including track
+  catalog_year: string                # e.g., "2024-2025"
+  source_url: string | null
+
+  # Credit requirements
+  total_credits: integer              # Minimum required for graduation
+  upper_division_credits: integer | null  # Minimum 300+ level credits (null if not specified)
+  in_major_credits: integer | null    # Minimum credits within major subjects
+
+  # GPA requirements
+  gpa_minimum: number                 # Overall GPA required
+  gpa_major: number | null            # Major GPA if different
+
+  # Grade requirements
+  grade_minimum: "string | null"        # Default minimum grade for major courses (e.g., "C")
+  grade_minimum_note: "string | null"   # Clarification (e.g., "C means C, not C-")
+
+  # Subjects that count toward major
+  major_subjects: "[string] | null"     # e.g., ["CS", "CY", "DS", "IS"]
+
+  # Double counting policy
+  allow_double_counting: boolean      # Can courses satisfy multiple requirements?
+
+# =============================================================================
+# REQUIREMENTS
+# =============================================================================
+#
+# Three requirement types:
+#
+# | Type     | Use Case                              | Key Fields           |
+# |----------|---------------------------------------|----------------------|
+# | all      | Must complete all listed courses      | courses              |
+# | select   | Choose N courses/credits from options | from, count/credits  |
+# | one_of   | Choose one path (mutually exclusive)  | options              |
+#
+# =============================================================================
+
+requirements:
+
+  requirement_id:                     # Unique key for this requirement
+    name: string                      # Human-readable name
+    type: all | select | one_of
+    category: major | supporting | gen_ed | elective
+
+    # -------------------------------------------------------------------------
+    # For type: all - Complete all listed courses
+    # -------------------------------------------------------------------------
+    courses: [course_ref]             # Required when type is 'all'
+
+    # -------------------------------------------------------------------------
+    # For type: select - Choose from options
+    # -------------------------------------------------------------------------
+    from:                             # Source of course options
+      # ----- Course Sources (can combine A, B, and/or C) -----
+
+      # Option A: Explicit course list
+      courses: [course_ref]           # Specific courses always included in pool
+
+      # Option B: Pattern-based (single pattern - legacy support)
+      pattern: string                 # e.g., "CS:400+"
+
+      # Option C: Multiple patterns (NEW in v5.2)
+      include: [string]               # Array of patterns, e.g., ["CS:300-479", "MATH:300-479"]
+
+      # Exclusions (apply to pattern/include matches, NOT to explicit courses)
+      exclude: [course_ref | pattern] # Courses/patterns to exclude from pattern matches
+
+      # ----- Grouped Selection (alternative to A/B/C) -----
+
+      # Option D: Grouped selection (pick from N groups)
+      groups:
+        - id: string
+          name: string | null
+          courses: [course_ref]
+      groups_required: integer | null # How many groups to select (null = all)
+      per_group: integer              # Courses to take per selected group
+
+    # Selection quantity (exactly one of these, or credit_range)
+    count: integer | null             # Number of courses to select
+    credits: integer | null           # Credit total to reach
+    credit_range:                     # Variable credit requirement
+      min: integer
+      max: integer
+
+    # Constraints on selection
+    constraints:
+      exclude_used: boolean           # Exclude courses used in prior requirements
+      distinct_subjects: boolean      # Selections must be from different subjects
+      min_upper_division: integer     # Minimum courses/credits at 300+ level
+      max_from_subject: integer       # Maximum credits from any single subject
+      max_from_pattern: string        # Pattern to limit, e.g., "ICS:400+"
+      max_from_pattern_credits: integer # Credit limit for that pattern
+      grade_minimum: string           # Override degree-level grade requirement
+
+    # External requirements (for minor/second major options)
+    external_requirement: boolean     # If true, credits come from outside defined courses
+    external_credits: integer | null  # How many external credits required
+    external_note: string | null      # Description of external requirement
+
+    # -------------------------------------------------------------------------
+    # For type: one_of - Mutually exclusive paths
+    # -------------------------------------------------------------------------
+    options:
+      - id: string                    # Unique identifier for this path
+        name: string                  # Path name (e.g., "Data Science Track")
+        requirements:                 # Nested requirements for this path
+          - name: string | null
+            type: all | select
+            courses: [course_ref]     # For type: all
+            from: object              # For type: select (same structure as above)
+            count: integer | null
+            credits: integer | null
+            credit_range: object | null
+            constraints: object | null
+            external_requirement: boolean | null
+            external_credits: integer | null
+
+# =============================================================================
+# FROM BLOCK: COMBINING COURSES AND PATTERNS (NEW in v5.2)
+# =============================================================================
+#
+# The `from` block now supports combining explicit courses with patterns.
+# This is useful when a requirement allows:
+#   - Specific courses from outside the pattern (e.g., BZ 350, MGT 340)
+#   - PLUS any course matching a pattern (e.g., CS 300-479)
+#
+# POOL CALCULATION:
+#   pool = explicit_courses + pattern_matches - exclusions
+#
+# Where:
+#   - explicit_courses: All courses listed in `courses` array
+#   - pattern_matches: All courses matching `pattern` or any pattern in `include`
+#   - exclusions: Courses/patterns in `exclude` (applied to pattern matches only)
+#
+# IMPORTANT: `exclude` does NOT remove explicit courses from the pool.
+# If a course is explicitly listed in `courses`, it's always included.
+#
+# EXAMPLES:
+#
+# Example 1: Specific courses + one pattern
+# -----------------------------------------
+# Technology electives: BZ 350, CIS 320, plus any CS 300-479
+#
+#   from:
+#     courses:
+#       - BZ350
+#       - CIS320
+#       - MGT340
+#     pattern: "CS:300-479"
+#     exclude: ["CS:380-399"]  # Excludes CS 380-399 from pattern, not BZ350/etc.
+#   credits: 6
+#
+# Example 2: Multiple patterns with specific courses
+# --------------------------------------------------
+# Electives from CS, MATH, or STAT upper-division, plus specific approved courses
+#
+#   from:
+#     courses:
+#       - ECE452
+#       - PHIL410
+#       - PSY452
+#     include:
+#       - "CS:300-479"
+#       - "MATH:300-479"
+#       - "STAT:300-479"
+#     exclude:
+#       - CS314          # Already required elsewhere
+#       - MATH369        # Already required elsewhere
+#       - "CS:380-399"   # Exclude seminar range
+#   credits: 9
+#
+# Example 3: Pattern only (unchanged from v5.1)
+# ---------------------------------------------
+#   from:
+#     pattern: "CS:400+"
+#     exclude: [CS499]
+#   count: 3
+#
+# Example 4: Courses only (unchanged from v5.1)
+# ---------------------------------------------
+#   from:
+#     courses: [MATH241, MATH242, MATH243]
+#   count: 2
+#
+# =============================================================================
+
+# =============================================================================
+# COURSE REFERENCE SYNTAX
+# =============================================================================
+#
+# course_ref supports multiple formats:
+#
+# 1. Single course:
+#    "CS314"
+#
+# 2. Course range pattern:
+#    "CS:300+"      - CS courses numbered 300 and above
+#    "CS:300-399"   - CS courses numbered 300-399
+#    "CS:*"         - Any CS course
+#    "*:300+"       - Any subject, 300-level and above
+#
+# 3. Bundle (must take all together, typically lecture + lab):
+#    "[CHEM111, CHEM112]"
+#    "[PHYS1151, PHYS1152, PHYS1153]"  # Lecture + Lab + Recitation
+#
+# 4. Choice (pick one, interchangeable):
+#    "{CS250, CS270}"
+#    Any one of these courses satisfies the requirement
+#
+# 5. Combination:
+#    "{[CHEM111, CHEM112], [CHEM107, CHEM108]}"
+#    Pick one bundle from the options
+#
+# 6. Exclusion in patterns (used in 'from.exclude'):
+#    "CS:480-499"   - Exclude CS courses 480-499
+#    ["CS5010", "CY4930"]  - Exclude specific courses
+#
+# =============================================================================
+
+# =============================================================================
+# COURSES
+# =============================================================================
+#
+# Minimal course data needed for plan generation.
+# Extended metadata (descriptions, tags, etc.) belongs in a separate catalog.
+#
+# =============================================================================
+
+courses:
+  COURSE_ID:                          # e.g., "CS314"
+    subject: string                   # e.g., "CS"
+    number: string                    # e.g., "314" (string to preserve leading zeros)
+    title: string
+    credits: integer
+
+    # Variable credits (for courses with credit ranges)
+    credit_range:                     # Use instead of credits if variable
+      min: integer
+      max: integer
+
+    # Scheduling
+    prerequisites: "prereq_expr | null" # Boolean expression (see syntax below)
+    corequisites: "[string] | null"     # Courses that must be taken concurrently
+    typically_offered: "[string] | null" # ["fall", "spring", "summer"]
+
+    # Grade requirements
+    grade_minimum: "string | null"      # Override if stricter than degree default
+                                      # Use for enrollment requirements, not prereqs
+                                      # (prereq grades go in prerequisite expression)
+
+    # Cross-listing (equivalent courses in different departments)
+    cross_listed_as: "[string] | null"  # e.g., ["PHIL201"] for CS201
+                                      # Only one needs to be taken; they're equivalent
+
+    # Repeatability (for research, directed study, special topics)
+    repeatable: boolean               # Can this course be taken multiple times?
+    max_repeat_credits: "integer | null" # Maximum total credits from repeating
+
+    # General education attributes
+    gen_ed_attributes: "[string] | null" # e.g., ["GT-SC1", "AUCC-3A", "NUpath-ND"]
+                                       # Institution-specific gen-ed codes
+
+# =============================================================================
+# PREREQUISITE EXPRESSION SYNTAX
+# =============================================================================
+#
+# Prerequisites are boolean expressions that can be evaluated programmatically.
+#
+# Operators:
+#   &   AND (both required)
+#   |   OR (either satisfies)
+#   ()  Grouping
+#   []  Grade requirement suffix
+#
+# Examples:
+#   "CS165"                           # Single prerequisite
+#   "CS165 & CS220"                   # Both required
+#   "CS250 | CS270"                   # Either satisfies
+#   "(CS165 & CS220) | MATH301"       # Complex expression
+#   "ICS111[B] & ICS211[B]"           # Requires grade B or better
+#   "MATH241[B]"                      # Requires B in MATH241
+#   null                              # No prerequisites
+#
+# Grade Requirements:
+#   - Use [GRADE] suffix in prerequisites for prerequisite grade requirements
+#   - Use course.grade_minimum for the grade required IN THIS COURSE
+#   - Common grades: A, A-, B+, B, B-, C+, C, C-, D+, D, D-, F
+#   - "B" means "B or better" (B, B+, A-, A)
+#
+# Grammar (informal):
+#   expr       := term (('&' | '|') term)*
+#   term       := course_req | '(' expr ')'
+#   course_req := COURSE_ID ('[' GRADE ']')?
+#
+# =============================================================================
+
+# =============================================================================
+# GENERAL EDUCATION / UNIVERSITY REQUIREMENTS
+# =============================================================================
+#
+# University-wide requirements can be represented as regular requirements
+# with category: gen_ed. Use gen_ed_attributes on courses to map them
+# to institution-specific requirement codes.
+#
+# Common patterns:
+#
+# 1. Simple category requirement:
+#    gen_ed_writing:
+#      name: "First-Year Writing"
+#      type: select
+#      category: gen_ed
+#      from:
+#        courses: [ENGW1111, ENGL1010]
+#      count: 1
+#
+# 2. Attribute-based requirement (courses tagged with gen-ed codes):
+#    gen_ed_natural_science:
+#      name: "Natural Science (AUCC 3A)"
+#      type: select
+#      category: gen_ed
+#      from:
+#        # Courses with gen_ed_attributes containing "AUCC-3A"
+#        attribute: "AUCC-3A"
+#      credits: 7
+#
+# 3. Distribution requirement:
+#    gen_ed_distribution:
+#      name: "Arts & Humanities Distribution"
+#      type: select
+#      category: gen_ed
+#      from:
+#        groups:
+#          - id: arts
+#            name: "Arts"
+#            attribute: "GE-ART"
+#          - id: humanities
+#            name: "Humanities"
+#            attribute: "GE-HUM"
+#        groups_required: 2
+#        per_group: 1
+#
+# =============================================================================
+
+# =============================================================================
+# COMPLETE EXAMPLE: Technology Focus with Mixed Sources (NEW in v5.2)
+# =============================================================================
+#
+# This example shows the new v5.2 feature for combining courses and patterns.
+# Based on CSU Computer Science "Technology Focus" requirement.
+#
+# tech_focus_electives:
+#   name: Technology Focus Electives
+#   type: select
+#   category: major
+#   from:
+#     # Specific approved courses from various departments
+#     courses:
+#       - BZ350           # Molecular and General Genetics
+#       - BZ360           # Bioinformatics and Genomics
+#       - CIS320          # Project Management for Information Systems
+#       - DSCI235         # Data Wrangling
+#       - ECE452          # Computer Organization and Architecture
+#       - ENGR422         # Technology Entrepreneurship
+#       - JTC372          # Web Design and Development
+#       - JTC472          # Advanced Web Design and Development
+#       - MATH161         # Calculus II
+#       - MATH256         # Mathematics for Computational Science II
+#       - MGT330          # Creativity, Innovation, and Value Creation
+#       - MGT340          # Fundamentals of Entrepreneurship
+#       - MGT420          # New Venture Creation
+#       - PHIL410         # Gödel's Incompleteness Theorems
+#       - PHIL411         # Logic in Philosophy and Beyond
+#       - PHIL415         # Logic and Scientific Method
+#       - PSY252          # Mind, Brain, and Behavior
+#       - PSY352          # Learning and Memory
+#       - PSY452          # Cognitive Psychology
+#       - PSY454          # Biological Psychology
+#       - PSY456          # Sensation and Perception
+#       - PSY458          # Cognitive Neuroscience
+#     # PLUS any course from these patterns
+#     include:
+#       - "CS:300-479"    # CS upper-division
+#       - "CT:300-479"    # Computing Technology
+#       - "DSCI:300-479"  # Data Science
+#       - "MATH:300-479"  # Mathematics
+#       - "STAT:300-479"  # Statistics
+#       - "IDEA:300-479"  # IDEA program
+#     # Exclude courses required elsewhere or not allowed
+#     exclude:
+#       - CT301           # Required in software development
+#       - DSCI369         # Required in linear algebra
+#       - MATH369         # Required in linear algebra
+#       - STAT301         # Required in statistics
+#       - STAT302A        # Required in statistics
+#       - STAT307         # Required in statistics
+#       - STAT315         # Required in statistics
+#       - "CS:380-399"    # Seminar/special topics range
+#       - "CS:480-499"    # Capstone/thesis range
+#   credits: 6
+#   constraints:
+#     exclude_used: true
+#     min_upper_division: 1  # At least 3 credits must be 300+ level
+#
+# =============================================================================
+
+# =============================================================================
+# VALIDATION RULES
+# =============================================================================
+#
+# A valid v5.2 file must satisfy:
+#
+# 1. Referential integrity:
+#    - All courses referenced in requirements exist in `courses` section
+#    - All courses in bundles exist
+#    - All courses in choice sets exist
+#    - All prerequisites reference existing courses
+#    - Cross-listed courses reference each other bidirectionally
+#
+# 2. Type consistency:
+#    - type: all → must have `courses`
+#    - type: select → must have `from` and (`count` or `credits` or `credit_range`)
+#    - type: one_of → must have `options`
+#    - external_requirement: true → should have `external_credits`
+#
+# 3. From block consistency (UPDATED in v5.2):
+#    - Must have at least one of: `courses`, `pattern`, `include`, or `groups`
+#    - `pattern` and `include` can coexist (include takes precedence if both present)
+#    - `exclude` only applies to pattern/include matches
+#    - `groups` is mutually exclusive with courses/pattern/include
+#
+# 4. Nested requirements in one_of:
+#    - Cannot have nested one_of (max depth = 1)
+#    - Nested requirements can only be `all` or `select`
+#
+# 5. Pattern syntax:
+#    - Patterns must match: SUBJECT:(NUMBER+ | NUMBER-NUMBER | *)
+#    - Wildcard subject: *:(NUMBER+ | NUMBER-NUMBER)
+#    - Bundles: [COURSE, COURSE, ...]
+#    - Choices: {COURSE, COURSE, ...}
+#
+# 6. Prerequisite expressions:
+#    - Must be valid boolean expressions
+#    - All referenced courses must exist
+#    - Grade requirements must be valid grades (A through F, with +/-)
+#
+# 7. Credit consistency:
+#    - Course must have either `credits` or `credit_range`, not both
+#    - Requirement must have one of: `count`, `credits`, `credit_range`
+#    - `max_repeat_credits` only valid when `repeatable: true`
+#
+# 8. Cross-listing consistency:
+#    - If A lists B in cross_listed_as, B should list A
+#    - Cross-listed courses should have same credits
+#    - Only one cross-listed course should appear in requirements
+#
+# =============================================================================
+
+# =============================================================================
+# MIGRATION FROM v5.1
+# =============================================================================
+#
+# v5.1 files are fully compatible with v5.2. No changes required.
+#
+# To use the new combined courses+pattern feature:
+#
+# BEFORE (v5.1 - required workarounds):
+#   # Had to choose between explicit courses OR pattern, not both
+#   from:
+#     courses:
+#       - BZ350
+#       - MGT340
+#       # Comment: Also allows CS:300-479 but can't model here
+#   credits: 6
+#
+# AFTER (v5.2 - combined):
+#   from:
+#     courses:
+#       - BZ350
+#       - MGT340
+#     pattern: "CS:300-479"
+#   credits: 6
+#
+# For multiple patterns, use `include` instead of `pattern`:
+#   from:
+#     courses: [BZ350, MGT340]
+#     include:
+#       - "CS:300-479"
+#       - "MATH:300-479"
+#     exclude: [CS314, MATH369]
+#   credits: 6
+#
+# =============================================================================
+
+# =============================================================================
+# MIGRATION FROM v5.0
+# =============================================================================
+#
+# | v5.0 Construct           | v5.2 Equivalent                           |
+# |--------------------------|-------------------------------------------|
+# | (same as v5.1)           | (compatible - v5.0 files work in v5.2)    |
+#
+# =============================================================================
+
+# =============================================================================
+# MIGRATION FROM v4.4
+# =============================================================================
+#
+# | v4.4 Construct           | v5.2 Equivalent                           |
+# |--------------------------|-------------------------------------------|
+# | type: required           | type: all                                 |
+# | type: pick               | type: select, from.courses                |
+# | type: pool               | type: select, from.pattern                |
+# | type: pick_group         | type: one_of                              |
+# | type: pick_n_groups      | type: select, from.groups                 |
+# | type: pick_requirement   | type: one_of (nested requirements)        |
+# | type: pick_path          | type: one_of                              |
+# | course_bundles section   | Inline [A, B] syntax                      |
+# | equivalent_to            | Inline {A, B} syntax + cross_listed_as    |
+# | substitutions section    | type: one_of with path options            |
+# | prerequisites (list)     | prerequisites (expression)                |
+# | prerequisites_note       | Removed (expression is self-documenting)  |
+# | university_requirements  | Regular requirements with category: gen_ed|
+# | experiential section     | Regular requirements                      |
+# | notes                    | Removed (use external documentation)      |
+# | requires_approval        | Removed                                   |
+# | overlap_policy           | degree.allow_double_counting              |
+#
+# =============================================================================
+
+# =============================================================================
+# BEST PRACTICES
+# =============================================================================
+#
+# 1. Grade Requirements:
+#    - Use prerequisite expression [GRADE] for "must have earned X in prereq"
+#    - Use course.grade_minimum for "must earn X in this course"
+#    - Use requirement.constraints.grade_minimum for "all courses in this
+#      requirement need grade X"
+#
+# 2. Cross-listed Courses:
+#    - Define both courses with cross_listed_as pointing to each other
+#    - In requirements, use {A, B} syntax or just list one
+#    - Validation should warn if both appear in same requirement
+#
+# 3. Variable Credits:
+#    - Use credit_range for research, independent study, internship
+#    - When calculating totals, use min value for minimum credits
+#
+# 4. Gen-Ed Mapping:
+#    - Use gen_ed_attributes to tag courses with institution codes
+#    - Create gen_ed requirements that filter by attribute
+#    - This enables "take any course with attribute X" requirements
+#
+# 5. External Requirements:
+#    - Use for minors, second majors, or requirements outside your data
+#    - Set external_requirement: true and external_credits
+#    - Planner software should prompt user to specify these
+#
+# 6. Pattern Exclusions:
+#    - List specific courses: exclude: [CS5010, CY4930]
+#    - Use ranges: exclude: ["CS:480-499"]
+#    - Combine both: exclude: [CS5010, "CS:480-499"]
+#
+# 7. Combined Courses + Patterns (NEW in v5.2):
+#    - Use when requirement allows specific courses PLUS a range
+#    - Explicit courses are always included (exclude doesn't affect them)
+#    - Use `include` array for multiple patterns
+#    - Document the catalog source in comments
+#
+# =============================================================================

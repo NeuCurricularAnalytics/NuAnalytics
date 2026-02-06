@@ -1,0 +1,1079 @@
+# =============================================================================
+# University of Hawaiʻi at Mānoa
+# Bachelor of Science in Computer Science - General Track
+# Schema v5.1 | Catalog 2024-2025
+# =============================================================================
+# Source: https://www.ics.hawaii.edu/academics/undergraduate-programs/bs/
+#         https://manoa.hawaii.edu/catalog/schools-colleges/nat-sci/ics/
+# Generated: 2026-02-02
+# =============================================================================
+
+degree:
+  id: uhm-ics-bscs-general
+  institution: University of Hawaiʻi at Mānoa
+  program: Bachelor of Science in Computer Science - General Track
+  catalog_year: "2024-2025"
+  source_url: https://manoa.hawaii.edu/catalog/schools-colleges/nat-sci/ics/
+  total_credits: 120
+  upper_division_credits: 45
+  in_major_credits: 57
+  gpa_minimum: 2.0
+  gpa_major: null
+  grade_minimum: "C"
+  grade_minimum_note: "C means C (2.0), not C- (1.7). Grade of B required in ICS 111 for progression to ICS 211."
+  major_subjects: [ICS]
+  allow_double_counting: false
+
+# =============================================================================
+# REQUIREMENTS
+# =============================================================================
+
+requirements:
+
+  # ---------------------------------------------------------------------------
+  # Introductory Programming Sequence (B grade required)
+  # ---------------------------------------------------------------------------
+  intro_sequence:
+    name: Introductory Computer Science Sequence
+    type: all
+    category: major
+    courses:
+      - ICS111
+      - ICS211
+    constraints:
+      grade_minimum: "B"
+
+  # ---------------------------------------------------------------------------
+  # Discrete Mathematics
+  # ---------------------------------------------------------------------------
+  discrete_math:
+    name: Discrete Mathematics Requirement
+    type: one_of
+    category: major
+    options:
+      - id: ics_path
+        name: ICS Discrete Math Sequence
+        requirements:
+          - type: all
+            courses: [ICS141, ICS241]
+      - id: math_substitution
+        name: Math Department Substitution
+        requirements:
+          - type: all
+            courses: [MATH301, MATH372]
+            # Note: If using this path, must take MATH 307 (not MATH 372) as the math elective
+
+  # ---------------------------------------------------------------------------
+  # Program Structure
+  # ---------------------------------------------------------------------------
+  program_structure:
+    name: Program Structure
+    type: all
+    category: major
+    courses:
+      - ICS212
+
+  # ---------------------------------------------------------------------------
+  # Core Required Courses
+  # ---------------------------------------------------------------------------
+  core_courses:
+    name: Computer Science Core
+    type: all
+    category: major
+    courses:
+      - ICS311
+      - ICS314
+      - ICS321
+      - ICS332
+      - ICS355
+
+  # ---------------------------------------------------------------------------
+  # Capstone
+  # ---------------------------------------------------------------------------
+  capstone:
+    name: Capstone Project
+    type: all
+    category: major
+    courses:
+      - ICS496
+
+  # ---------------------------------------------------------------------------
+  # Math/Statistics Elective
+  # ---------------------------------------------------------------------------
+  math_elective:
+    name: Mathematics or Statistics Elective
+    type: select
+    category: major
+    from:
+      courses:
+        - MATH307
+        - MATH372
+    count: 1
+    # Note: If discrete math substitution (MATH 301 + 372) is used, must take MATH 307
+
+  # ---------------------------------------------------------------------------
+  # Breadth Requirements (Two of Three Pairs)
+  # ---------------------------------------------------------------------------
+  breadth_requirements:
+    name: Breadth Requirements (Two of Three Areas)
+    type: select
+    category: major
+    from:
+      groups:
+        - id: systems_hardware
+          name: Systems and Hardware
+          courses: [ICS312, ICS331]
+        - id: languages_ai
+          name: Languages and AI
+          courses: [ICS313, ICS361]
+        - id: networking
+          name: Networking
+          courses: [ICS351, ICS451]
+      groups_required: 2
+      per_group: 1
+
+  # ---------------------------------------------------------------------------
+  # 400-Level Electives
+  # ---------------------------------------------------------------------------
+  upper_electives:
+    name: 400-Level Electives
+    type: select
+    category: major
+    from:
+      pattern: "ICS:400+"
+      exclude: [ICS496]  # Already required as capstone
+    count: 4
+    constraints:
+      exclude_used: true
+
+  # ---------------------------------------------------------------------------
+  # Calculus Sequence
+  # ---------------------------------------------------------------------------
+  calculus:
+    name: Calculus Sequence
+    type: all
+    category: supporting
+    courses:
+      - "{MATH215, MATH241, MATH251A}"  # Calc I - pick one
+      - "{MATH216, MATH242, MATH252A}"  # Calc II - pick one
+    # Note: MATH 242 required if taking MATH 307
+
+  # ---------------------------------------------------------------------------
+  # Science Sequence with Labs
+  # ---------------------------------------------------------------------------
+  science_sequence:
+    name: Natural Science Sequence with Labs
+    type: one_of
+    category: supporting
+    options:
+      - id: physics_calc
+        name: Physics (Calculus-Based)
+        requirements:
+          - type: all
+            courses:
+              - "[PHYS170, PHYS170L]"
+              - "[PHYS272, PHYS272L]"
+      - id: physics_algebra
+        name: Physics (Algebra-Based)
+        requirements:
+          - type: all
+            courses:
+              - "[PHYS151, PHYS151L]"
+              - "[PHYS152, PHYS152L]"
+      - id: chemistry
+        name: Chemistry
+        requirements:
+          - type: all
+            courses:
+              - "[CHEM161, CHEM161L]"
+              - "[CHEM162, CHEM162L]"
+
+  # ---------------------------------------------------------------------------
+  # General Education - Foundations
+  # ---------------------------------------------------------------------------
+  gen_ed_written:
+    name: Written Communication (FW)
+    type: select
+    category: gen_ed
+    from:
+      courses: [ENG100]
+    count: 1
+
+  gen_ed_quantitative:
+    name: Quantitative Reasoning (FQ)
+    type: select
+    category: gen_ed
+    from:
+      courses: [MATH215, MATH241, MATH251A, ICS141]
+    count: 1
+    # Note: Satisfied by Calculus I or ICS 141
+
+  gen_ed_global:
+    name: Global and Multicultural Perspectives (FG)
+    type: select
+    category: gen_ed
+    from:
+      pattern: "*:*"  # Courses with FGA, FGB, or FGC attributes
+    credits: 6
+    # Note: Must be from at least 2 different FG groups
+
+  # ---------------------------------------------------------------------------
+  # General Education - Diversification
+  # ---------------------------------------------------------------------------
+  gen_ed_arts_humanities:
+    name: Arts, Humanities, and Literature (DA/DH/DL)
+    type: select
+    category: gen_ed
+    from:
+      pattern: "*:*"  # Courses with DA, DH, or DL attributes
+    credits: 6
+    # Note: Must be from at least 2 different categories
+
+  gen_ed_social_sciences:
+    name: Social Sciences (DS)
+    type: select
+    category: gen_ed
+    from:
+      pattern: "*:*"  # Courses with DS attribute
+    credits: 6
+    # Note: Must be from at least 2 different departments
+
+  gen_ed_biological:
+    name: Biological Sciences (DB)
+    type: select
+    category: gen_ed
+    from:
+      pattern: "*:*"  # Courses with DB attribute
+    credits: 3
+
+  # ---------------------------------------------------------------------------
+  # Hawaiian/Second Language Requirement
+  # ---------------------------------------------------------------------------
+  second_language:
+    name: Hawaiian/Second Language (HSL)
+    type: select
+    category: gen_ed
+    from:
+      pattern: "*:*"  # Language courses through 202 level
+    credits: 12
+    # Note: Competence at 202 level required
+
+  # ---------------------------------------------------------------------------
+  # Free Electives
+  # ---------------------------------------------------------------------------
+  free_electives:
+    name: Free Electives
+    type: select
+    category: elective
+    from:
+      pattern: "*:*"
+    credits: 6
+    # Note: Credits to reach 120 total
+
+# =============================================================================
+# COURSES
+# =============================================================================
+
+courses:
+
+  # ---------------------------------------------------------------------------
+  # ICS Foundation Courses
+  # ---------------------------------------------------------------------------
+  ICS111:
+    subject: ICS
+    number: "111"
+    title: Introduction to Computer Science I
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    grade_minimum: "B"
+
+  ICS141:
+    subject: ICS
+    number: "141"
+    title: Discrete Mathematics for Computer Science I
+    credits: 3
+    prerequisites: "MATH215 | MATH241 | MATH251A"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [FQ]
+
+  ICS211:
+    subject: ICS
+    number: "211"
+    title: Introduction to Computer Science II
+    credits: 4
+    prerequisites: "ICS111[B]"
+    typically_offered: [fall, spring]
+    grade_minimum: "B"
+
+  ICS212:
+    subject: ICS
+    number: "212"
+    title: Program Structure
+    credits: 3
+    prerequisites: "ICS211"
+    typically_offered: [fall, spring]
+
+  ICS222:
+    subject: ICS
+    number: "222"
+    title: Basic Concepts of Computer Science
+    credits: 3
+    prerequisites: "ICS141"
+    typically_offered: [fall, spring]
+
+  ICS241:
+    subject: ICS
+    number: "241"
+    title: Discrete Mathematics for Computer Science II
+    credits: 3
+    prerequisites: "ICS141"
+    typically_offered: [fall, spring]
+
+  # ---------------------------------------------------------------------------
+  # ICS Core Courses
+  # ---------------------------------------------------------------------------
+  ICS311:
+    subject: ICS
+    number: "311"
+    title: Algorithms
+    credits: 4
+    prerequisites: "ICS211 & ((ICS241 | ECE362) & (MATH216 | MATH242 | MATH252A)) | (MATH301 & MATH372)"
+    typically_offered: [fall, spring]
+
+  ICS314:
+    subject: ICS
+    number: "314"
+    title: Software Engineering I
+    credits: 3
+    prerequisites: "(ICS211 | ECE205) & (ICS241 | ECE362 | (MATH301 & MATH372))"
+    typically_offered: [fall, spring]
+
+  ICS321:
+    subject: ICS
+    number: "321"
+    title: Database Systems I
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall, spring]
+
+  ICS332:
+    subject: ICS
+    number: "332"
+    title: Operating Systems
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall, spring]
+
+  ICS355:
+    subject: ICS
+    number: "355"
+    title: Security and Trust I - Resource Protections
+    credits: 3
+    prerequisites: "ICS241 | (MATH301 & MATH372)"
+    typically_offered: [fall, spring]
+
+  ICS496:
+    subject: ICS
+    number: "496"
+    title: Capstone Project
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall, spring]
+
+  # ---------------------------------------------------------------------------
+  # ICS Breadth Courses - Systems/Hardware Pair
+  # ---------------------------------------------------------------------------
+  ICS312:
+    subject: ICS
+    number: "312"
+    title: Machine-Level and Systems Programming
+    credits: 3
+    prerequisites: "(ICS212 | ECE205) & (ICS311 | ECE367) & ICS314"
+    typically_offered: [fall, spring]
+
+  ICS331:
+    subject: ICS
+    number: "331"
+    title: Logic Design and Microprocessors
+    credits: 4
+    prerequisites: "(ICS212 | ECE205) & (ICS311 | ECE367) & ICS314"
+    typically_offered: [fall, spring]
+
+  # ---------------------------------------------------------------------------
+  # ICS Breadth Courses - Languages/AI Pair
+  # ---------------------------------------------------------------------------
+  ICS313:
+    subject: ICS
+    number: "313"
+    title: Programming Language Theory
+    credits: 3
+    prerequisites: "(ICS212 | ECE205) & (ICS311 | ECE367) & ICS314"
+    typically_offered: [fall, spring]
+
+  ICS361:
+    subject: ICS
+    number: "361"
+    title: Introduction to Artificial Intelligence Programming
+    credits: 3
+    prerequisites: "(ICS215 | ICS212 | ECE205) & (ICS311 | ECE367) & ICS314"
+    typically_offered: [fall, spring]
+
+  # ---------------------------------------------------------------------------
+  # ICS Breadth Courses - Networking Pair
+  # ---------------------------------------------------------------------------
+  ICS351:
+    subject: ICS
+    number: "351"
+    title: Network Design and Management
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall]
+
+  ICS451:
+    subject: ICS
+    number: "451"
+    title: Data Networks
+    credits: 3
+    prerequisites: "(ICS212 | ECE205) & (ICS311 | ECE367) & ICS314"
+    typically_offered: [fall, spring]
+
+  # ---------------------------------------------------------------------------
+  # ICS 400-Level Electives
+  # ---------------------------------------------------------------------------
+  ICS414:
+    subject: ICS
+    number: "414"
+    title: Software Engineering II
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall, spring]
+
+  ICS415:
+    subject: ICS
+    number: "415"
+    title: Introduction to Programming for the Web
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall, spring]
+
+  ICS421:
+    subject: ICS
+    number: "421"
+    title: Database Systems II
+    credits: 3
+    prerequisites: "ICS321"
+    typically_offered: [fall]
+
+  ICS422:
+    subject: ICS
+    number: "422"
+    title: Data Processing
+    credits: 3
+    prerequisites: "ICS311 | ECE367"
+    typically_offered: [spring]
+    cross_listed_as: [DATA422]
+
+  ICS423:
+    subject: ICS
+    number: "423"
+    title: Data Security and Cryptography I
+    credits: 3
+    prerequisites: "ICS222 & ICS355"
+    typically_offered: [fall]
+
+  ICS424:
+    subject: ICS
+    number: "424"
+    title: Application Frameworks
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [spring]
+
+  ICS425:
+    subject: ICS
+    number: "425"
+    title: Computer Security and Ethics
+    credits: 3
+    prerequisites: "ICS355"
+    typically_offered: [fall]
+
+  ICS426:
+    subject: ICS
+    number: "426"
+    title: Computer System Security
+    credits: 3
+    prerequisites: "ICS355"
+    typically_offered: [spring]
+
+  ICS428:
+    subject: ICS
+    number: "428"
+    title: Digital Forensics
+    credits: 3
+    prerequisites: "ICS355"
+    typically_offered: [spring]
+
+  ICS431:
+    subject: ICS
+    number: "431"
+    title: Computer Architecture
+    credits: 3
+    prerequisites: "ICS331 | ECE361"
+    typically_offered: [spring]
+
+  ICS432:
+    subject: ICS
+    number: "432"
+    title: Concurrent and High-Performance Programming
+    credits: 3
+    prerequisites: "(ICS212 | ECE205) & ICS332 & (ICS311 | ECE367) & ICS314"
+    typically_offered: [fall]
+
+  ICS434:
+    subject: ICS
+    number: "434"
+    title: Data Science Fundamentals
+    credits: 3
+    prerequisites: "ICS211"
+    typically_offered: [fall, spring]
+    cross_listed_as: [DATA434]
+
+  ICS435:
+    subject: ICS
+    number: "435"
+    title: Machine Learning Fundamentals
+    credits: 3
+    prerequisites: "ICS235"
+    typically_offered: [fall]
+    cross_listed_as: [DATA435]
+
+  ICS438:
+    subject: ICS
+    number: "438"
+    title: Big Data Analytics
+    credits: 3
+    prerequisites: "ICS321"
+    typically_offered: [spring]
+    cross_listed_as: [DATA438]
+
+  ICS441:
+    subject: ICS
+    number: "441"
+    title: Theory of Computation
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall]
+
+  ICS442:
+    subject: ICS
+    number: "442"
+    title: Analytical Models and Methods
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [spring]
+
+  ICS443:
+    subject: ICS
+    number: "443"
+    title: Parallel Algorithms
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall]
+
+  ICS452:
+    subject: ICS
+    number: "452"
+    title: Software Design for Robotics
+    credits: 3
+    prerequisites: null  # Two ICS 300-level courses; consent
+    typically_offered: [spring]
+
+  ICS455:
+    subject: ICS
+    number: "455"
+    title: Security and Trust II - Information Assurance
+    credits: 3
+    prerequisites: "ICS355"
+    typically_offered: [spring]
+
+  ICS461:
+    subject: ICS
+    number: "461"
+    title: Artificial Intelligence
+    credits: 3
+    prerequisites: "ICS311 | ECE367"
+    typically_offered: [fall, spring]
+
+  ICS462:
+    subject: ICS
+    number: "462"
+    title: Artificial Intelligence for Games
+    credits: 3
+    prerequisites: "(ICS212 | ECE205) & (ICS311 | ECE367) & ICS314 & (PHYS151 | PHYS170)"
+    typically_offered: [spring]  # Alternate years
+
+  ICS464:
+    subject: ICS
+    number: "464"
+    title: Human Computer Interaction I
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall, spring]
+
+  ICS466:
+    subject: ICS
+    number: "466"
+    title: Design for Mobile Devices
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [spring]
+
+  ICS469:
+    subject: ICS
+    number: "469"
+    title: Cognitive Science
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall]
+
+  ICS481:
+    subject: ICS
+    number: "481"
+    title: Introduction to Computer Graphics
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall]
+
+  ICS484:
+    subject: ICS
+    number: "484"
+    title: Data Visualization
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [spring]
+    cross_listed_as: [DATA484, CINE484]
+
+  ICS485:
+    subject: ICS
+    number: "485"
+    title: Video Game Design and Development
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [fall]
+
+  ICS491:
+    subject: ICS
+    number: "491"
+    title: Special Topics
+    credits: 3
+    prerequisites: null  # At least two 300-level ICS courses
+    repeatable: true
+    max_repeat_credits: 6
+
+  ICS495:
+    subject: ICS
+    number: "495"
+    title: Special Topics in Security
+    credits: 3
+    prerequisites: null  # At least two 300-level ICS courses
+    repeatable: true
+    max_repeat_credits: 9
+
+  ICS499:
+    subject: ICS
+    number: "499"
+    title: Directed Reading/Research
+    credit_range:
+      min: 1
+      max: 3
+    prerequisites: null
+    repeatable: true
+    max_repeat_credits: 6
+
+  # ---------------------------------------------------------------------------
+  # Additional ICS Courses (Data Science/CCM tracks)
+  # ---------------------------------------------------------------------------
+  ICS110D:
+    subject: ICS
+    number: "110D"
+    title: Introduction to Programming Through Animations
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  ICS215:
+    subject: ICS
+    number: "215"
+    title: Introduction to Scripting
+    credits: 3
+    prerequisites: "ICS111"
+    typically_offered: [fall, spring]
+
+  ICS235:
+    subject: ICS
+    number: "235"
+    title: Machine Learning Methods
+    credits: 3
+    prerequisites: "MATH241 | MATH203 | MATH215 | MATH251A"
+    typically_offered: [fall]
+    cross_listed_as: [DATA235]
+
+  ICS369:
+    subject: ICS
+    number: "369"
+    title: Computational Media Systems
+    credits: 3
+    prerequisites: "ICS111 | ECE160"
+    typically_offered: [fall, spring]
+    cross_listed_as: [ECE369]
+
+  ICS487:
+    subject: ICS
+    number: "487"
+    title: Digital Content Creation I (VR/AR)
+    credits: 3
+    prerequisites: "ICS369"
+    typically_offered: [fall]
+
+  ICS488:
+    subject: ICS
+    number: "488"
+    title: Digital Content Creation II (Advanced VFX)
+    credits: 3
+    prerequisites: "ICS481"
+    typically_offered: [spring]
+
+  # ---------------------------------------------------------------------------
+  # Mathematics Courses
+  # ---------------------------------------------------------------------------
+  MATH215:
+    subject: MATH
+    number: "215"
+    title: Applied Calculus I
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [FQ]
+
+  MATH203:
+    subject: MATH
+    number: "203"
+    title: Calculus for Business and Social Sciences
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [FQ]
+
+  MATH216:
+    subject: MATH
+    number: "216"
+    title: Applied Calculus II
+    credits: 3
+    prerequisites: "MATH215"
+    typically_offered: [fall, spring]
+
+  MATH241:
+    subject: MATH
+    number: "241"
+    title: Calculus I
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [FQ]
+
+  MATH242:
+    subject: MATH
+    number: "242"
+    title: Calculus II
+    credits: 4
+    prerequisites: "MATH241"
+    typically_offered: [fall, spring]
+
+  MATH251A:
+    subject: MATH
+    number: "251A"
+    title: Accelerated Calculus I
+    credits: 4
+    prerequisites: null  # Consent required
+    typically_offered: [fall]
+    gen_ed_attributes: [FQ]
+
+  MATH252A:
+    subject: MATH
+    number: "252A"
+    title: Accelerated Calculus II
+    credits: 4
+    prerequisites: "MATH251A"
+    typically_offered: [spring]
+
+  MATH301:
+    subject: MATH
+    number: "301"
+    title: Introduction to Discrete Mathematics
+    credits: 3
+    prerequisites: "MATH241"
+    typically_offered: [fall, spring]
+
+  MATH307:
+    subject: MATH
+    number: "307"
+    title: Linear Algebra and Differential Equations
+    credits: 3
+    prerequisites: "MATH242"
+    typically_offered: [fall, spring]
+
+  MATH372:
+    subject: MATH
+    number: "372"
+    title: Elementary Probability and Statistics
+    credits: 3
+    prerequisites: "MATH242"
+    typically_offered: [fall, spring]
+
+  # ---------------------------------------------------------------------------
+  # Physics Courses (Calculus-Based)
+  # ---------------------------------------------------------------------------
+  PHYS170:
+    subject: PHYS
+    number: "170"
+    title: General Physics I (Calculus)
+    credits: 4
+    prerequisites: "MATH241"
+    corequisites: [PHYS170L]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [DP]
+
+  PHYS170L:
+    subject: PHYS
+    number: "170L"
+    title: General Physics I Lab
+    credits: 1
+    prerequisites: null
+    corequisites: [PHYS170]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [DY]
+
+  PHYS272:
+    subject: PHYS
+    number: "272"
+    title: General Physics II (Calculus)
+    credits: 3
+    prerequisites: "PHYS170"
+    corequisites: [PHYS272L]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [DP]
+
+  PHYS272L:
+    subject: PHYS
+    number: "272L"
+    title: General Physics II Lab
+    credits: 1
+    prerequisites: null
+    corequisites: [PHYS272]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [DY]
+
+  # ---------------------------------------------------------------------------
+  # Physics Courses (Algebra-Based)
+  # ---------------------------------------------------------------------------
+  PHYS151:
+    subject: PHYS
+    number: "151"
+    title: College Physics I
+    credits: 3
+    prerequisites: null
+    corequisites: [PHYS151L]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [DP]
+
+  PHYS151L:
+    subject: PHYS
+    number: "151L"
+    title: College Physics I Lab
+    credits: 1
+    prerequisites: null
+    corequisites: [PHYS151]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [DY]
+
+  PHYS152:
+    subject: PHYS
+    number: "152"
+    title: College Physics II
+    credits: 3
+    prerequisites: "PHYS151"
+    corequisites: [PHYS152L]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [DP]
+
+  PHYS152L:
+    subject: PHYS
+    number: "152L"
+    title: College Physics II Lab
+    credits: 1
+    prerequisites: null
+    corequisites: [PHYS152]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [DY]
+
+  # ---------------------------------------------------------------------------
+  # Chemistry Courses
+  # ---------------------------------------------------------------------------
+  CHEM161:
+    subject: CHEM
+    number: "161"
+    title: General Chemistry I
+    credits: 3
+    prerequisites: null
+    corequisites: [CHEM161L]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [DP]
+
+  CHEM161L:
+    subject: CHEM
+    number: "161L"
+    title: General Chemistry I Lab
+    credits: 1
+    prerequisites: null
+    corequisites: [CHEM161]
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [DY]
+
+  CHEM162:
+    subject: CHEM
+    number: "162"
+    title: General Chemistry II
+    credits: 3
+    prerequisites: "CHEM161"
+    corequisites: [CHEM162L]
+    typically_offered: [fall, spring]
+
+  CHEM162L:
+    subject: CHEM
+    number: "162L"
+    title: General Chemistry II Lab
+    credits: 1
+    prerequisites: null
+    corequisites: [CHEM162]
+    typically_offered: [fall, spring]
+
+  # ---------------------------------------------------------------------------
+  # ECE Cross-listed/Substitute Courses
+  # ---------------------------------------------------------------------------
+  ECE160:
+    subject: ECE
+    number: "160"
+    title: Programming for Engineers
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  ECE205:
+    subject: ECE
+    number: "205"
+    title: Object-Oriented Programming
+    credits: 3
+    prerequisites: "ECE160"
+    typically_offered: [fall, spring]
+
+  ECE260:
+    subject: ECE
+    number: "260"
+    title: Introduction to Circuits
+    credits: 4
+    prerequisites: "MATH242 & PHYS272"
+    typically_offered: [fall, spring]
+
+  ECE361:
+    subject: ECE
+    number: "361"
+    title: Digital Systems and Computer Design
+    credits: 3
+    prerequisites: "ECE205 & ECE260"
+    typically_offered: [fall, spring]
+
+  ECE362:
+    subject: ECE
+    number: "362"
+    title: Discrete Mathematics for Computer Engineers
+    credits: 3
+    prerequisites: "ECE160 & ECE260 & MATH242"
+    typically_offered: [fall, spring]
+
+  ECE367:
+    subject: ECE
+    number: "367"
+    title: Algorithms
+    credits: 3
+    prerequisites: "(ECE205 | ICS212) & (ECE362 | ICS241)"
+    typically_offered: [fall, spring]
+
+  # ---------------------------------------------------------------------------
+  # General Education - Writing
+  # ---------------------------------------------------------------------------
+  ENG100:
+    subject: ENG
+    number: "100"
+    title: Composition I
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: [FW]
+
+  # ---------------------------------------------------------------------------
+  # DATA Cross-listed Courses
+  # ---------------------------------------------------------------------------
+  DATA235:
+    subject: DATA
+    number: "235"
+    title: Machine Learning Methods
+    credits: 3
+    prerequisites: "MATH241 | MATH203 | MATH215 | MATH251A"
+    typically_offered: [fall]
+    cross_listed_as: [ICS235]
+
+  DATA422:
+    subject: DATA
+    number: "422"
+    title: Data Processing
+    credits: 3
+    prerequisites: "ICS311 | ECE367"
+    typically_offered: [spring]
+    cross_listed_as: [ICS422]
+
+  DATA434:
+    subject: DATA
+    number: "434"
+    title: Data Science Fundamentals
+    credits: 3
+    prerequisites: "ICS211"
+    typically_offered: [fall, spring]
+    cross_listed_as: [ICS434]
+
+  DATA435:
+    subject: DATA
+    number: "435"
+    title: Machine Learning Fundamentals
+    credits: 3
+    prerequisites: "ICS235"
+    typically_offered: [fall]
+    cross_listed_as: [ICS435]
+
+  DATA438:
+    subject: DATA
+    number: "438"
+    title: Big Data Analytics
+    credits: 3
+    prerequisites: "ICS321"
+    typically_offered: [spring]
+    cross_listed_as: [ICS438]
+
+  DATA484:
+    subject: DATA
+    number: "484"
+    title: Data Visualization
+    credits: 3
+    prerequisites: "(ICS311 | ECE367) & ICS314"
+    typically_offered: [spring]
+    cross_listed_as: [ICS484, CINE484]

@@ -75,7 +75,7 @@ impl<'a> ReportContext<'a> {
     #[must_use]
     pub fn degree_name(&self) -> String {
         self.degree
-            .map_or_else(|| self.plan.degree_id.clone(), Degree::id)
+            .map_or_else(|| self.plan.degree_id.clone(), Degree::degree_id)
     }
 
     /// Get the system type (semester/quarter)
@@ -87,7 +87,10 @@ impl<'a> ReportContext<'a> {
     /// Get the CIP code
     #[must_use]
     pub fn cip_code(&self) -> &str {
-        self.degree.map_or("", |d| d.cip_code.as_str())
+        self.degree
+            .as_ref()
+            .and_then(|d| d.cip_code.as_deref())
+            .unwrap_or("")
     }
 
     /// Calculate total credit hours
