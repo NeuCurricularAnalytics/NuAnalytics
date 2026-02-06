@@ -99,8 +99,15 @@ fn main() {
             file,
             validate,
             print_graph,
+            audit,
         } => {
-            commands::degree::run(file.as_deref(), validate, print_graph, verbose);
+            let options = commands::degree::DegreeOptions {
+                validate,
+                print_graph,
+                audit,
+                verbose,
+            };
+            commands::degree::run(file.as_deref(), &options, &config);
         }
     }
 }

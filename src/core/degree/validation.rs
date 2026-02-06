@@ -1098,46 +1098,51 @@ fn compute_strictly_reachable(
 
 /// Recursively collect all course references from a requirement
 fn collect_referenced_courses(req: &Requirement, referenced: &mut HashSet<String>) {
-    if let Some(course_list) = &req.courses {
-        for course_key in course_list {
-            // Parse course reference to handle bundles and equivalents
+    // Collect from direct course list
+    collect_courses_from_list(req.courses.as_ref(), referenced);
+
+    // Collect from 'from' section
+    if let Some(from) = &req.from {
+        collect_courses_from_list(from.courses.as_ref(), referenced);
+        collect_courses_from_groups(from.groups.as_ref(), referenced);
+    }
+
+    // Recursively collect from options
+    collect_courses_from_options(req.options.as_ref(), referenced);
+}
+
+/// Collect courses from a course list
+fn collect_courses_from_list(course_list: Option<&Vec<String>>, referenced: &mut HashSet<String>) {
+    if let Some(courses) = course_list {
+        for course_key in courses {
             if let Ok(course_ref) = CourseReference::parse(course_key) {
-                // Add all courses in the reference
                 for course in course_ref.courses() {
                     referenced.insert(course.to_string());
                 }
             }
         }
     }
+}
 
-    if let Some(from) = &req.from {
-        if let Some(course_list) = &from.courses {
-            for course_key in course_list {
-                // Parse course reference
-                if let Ok(course_ref) = CourseReference::parse(course_key) {
-                    for course in course_ref.courses() {
-                        referenced.insert(course.to_string());
-                    }
-                }
-            }
-        }
-
-        if let Some(groups) = &from.groups {
-            for group in groups {
-                for course_key in &group.courses {
-                    // Parse course reference
-                    if let Ok(course_ref) = CourseReference::parse(course_key) {
-                        for course in course_ref.courses() {
-                            referenced.insert(course.to_string());
-                        }
-                    }
-                }
-            }
+/// Collect courses from requirement groups
+fn collect_courses_from_groups(
+    groups: Option<&Vec<crate::core::models::degree::CourseGroup>>,
+    referenced: &mut HashSet<String>,
+) {
+    if let Some(group_list) = groups {
+        for group in group_list {
+            collect_courses_from_list(Some(&group.courses), referenced);
         }
     }
+}
 
-    if let Some(options) = &req.options {
-        for option in options {
+/// Collect courses from requirement options (recursive)
+fn collect_courses_from_options(
+    options: Option<&Vec<crate::core::models::degree::RequirementOption>>,
+    referenced: &mut HashSet<String>,
+) {
+    if let Some(option_list) = options {
+        for option in option_list {
             for nested_req in &option.requirements {
                 collect_referenced_courses(nested_req, referenced);
             }

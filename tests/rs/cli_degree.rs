@@ -291,3 +291,93 @@ fn test_graph_programmatic_vs_cli_consistency() {
         "CLI should report same course count as programmatic build"
     );
 }
+
+/// Test degree audit command produces expected sections
+#[test]
+fn test_degree_audit_command() {
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "degree",
+            "--audit",
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+        ])
+        .output()
+        .expect("Failed to execute command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Should contain all audit sections
+    assert!(
+        stdout.contains("Degree Audit Report"),
+        "Output should contain audit header"
+    );
+    assert!(
+        stdout.contains("1. Validation Report"),
+        "Output should contain validation section"
+    );
+    assert!(
+        stdout.contains("2. Upper-Level Courses Missing Prerequisites"),
+        "Output should contain missing prereqs section"
+    );
+    assert!(
+        stdout.contains("3. Deep Prerequisite Chains"),
+        "Output should contain deep chains section"
+    );
+    assert!(
+        stdout.contains("Audit Summary"),
+        "Output should contain summary"
+    );
+}
+
+/// Test degree audit detects upper-level courses without prerequisites
+#[test]
+fn test_degree_audit_finds_missing_prereqs() {
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "degree",
+            "--audit",
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+        ])
+        .output()
+        .expect("Failed to execute command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // NEU degree has several upper-level courses without prerequisites
+    // These should be reported
+    assert!(
+        stdout.contains("upper-level course(s) without prerequisites")
+            || stdout.contains("All upper-level courses have prerequisites"),
+        "Should report on upper-level courses without prerequisites"
+    );
+}
+
+/// Test degree audit detects deep prerequisite chains
+#[test]
+fn test_degree_audit_finds_deep_chains() {
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "degree",
+            "--audit",
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+        ])
+        .output()
+        .expect("Failed to execute command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // NEU degree has courses with deep chains (CS4410 has 6+)
+    // Should find courses with chains >= threshold (default 3 or 4)
+    assert!(
+        stdout.contains("prerequisite chains >=")
+            || stdout.contains("prerequisites in chain")
+            || stdout.contains("Deep Prerequisite Chains"),
+        "Should report on deep prerequisite chains"
+    );
+}

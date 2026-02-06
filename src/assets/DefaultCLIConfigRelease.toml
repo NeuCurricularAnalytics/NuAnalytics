@@ -12,3 +12,6 @@ endpoint = ""
 [paths]
 metrics_dir = "./metrics"
 reports_dir = "./reports"
+
+[audit]
+prerequisite_chain_threshold = 4

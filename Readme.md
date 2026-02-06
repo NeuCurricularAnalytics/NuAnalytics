@@ -1,13 +1,17 @@
 # NuAnalytics
 
+**Version 0.2.0**
+
 NuAnalytics is a Rust-based tool for analyzing computer science curricula. It computes detailed metrics about curriculum structure including complexity, blocking relationships, delay paths, and centrality measures to help understand how courses are organized and their impact on students.
 
-It is based off the work of Greg Heileman, and CurricularAnalytics.org. Current version just provides a command line batch capability
-and more report options.
+It is based off the work of Greg Heileman, and CurricularAnalytics.org. Current version provides command line capabilities for curriculum analysis, degree program validation, and comprehensive reporting.
 
 ## Features
 
 - **Curriculum Analysis**: Parse CSV-formatted curriculum files and analyze course dependencies
+- **Degree Program Validation**: Validate YAML-based degree programs with comprehensive checks
+- **Graph Analysis**: Build and analyze course prerequisite graphs
+- **Curriculum Auditing**: Identify issues like missing prerequisites and complex prerequisite chains
 - **Metric Computation**: Calculate comprehensive metrics including:
   - **Complexity**: Measure of course density and impact on overall curriculum
   - **Blocking**: Count of courses directly blocked by a given course
@@ -77,10 +81,23 @@ nuanalytics config get level
 nuanalytics config set level debug
 ```
 
+Validate a degree program:
+
+```bash
+nuanalytics degree --validate samples/neu_cs_2024.yaml
+```
+
+Audit a degree program for issues:
+
+```bash
+nuanalytics degree --audit samples/neu_cs_2024.yaml
+```
+
 ## Documentation
 
 - **[Config Command](docs/config.md)** - Configure NuAnalytics settings (logging, database, output directories)
 - **[Planner Command](docs/planner.md)** - Analyze curricula for a degree plan, compute metrics, and generate reports
+- **[Degree Command](docs/degree.md)** - Validate, analyze, and audit degree program YAML files
 
 ## Development
 

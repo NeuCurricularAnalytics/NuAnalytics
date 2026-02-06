@@ -55,6 +55,28 @@ pub struct PathsConfig {
     pub reports_dir: String,
 }
 
+/// Audit configuration for degree analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditConfig {
+    /// Threshold for highlighting courses with many prerequisites in their chain
+    /// Courses with prerequisite chains >= this value will be highlighted
+    #[serde(default = "default_prerequisite_chain_threshold")]
+    pub prerequisite_chain_threshold: usize,
+}
+
+/// Default prerequisite chain threshold (3)
+const fn default_prerequisite_chain_threshold() -> usize {
+    3
+}
+
+impl Default for AuditConfig {
+    fn default() -> Self {
+        Self {
+            prerequisite_chain_threshold: default_prerequisite_chain_threshold(),
+        }
+    }
+}
+
 /// Main configuration structure
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
@@ -66,6 +88,9 @@ pub struct Config {
     /// Path settings
     #[serde(default)]
     pub paths: PathsConfig,
+    /// Audit settings for degree analysis
+    #[serde(default)]
+    pub audit: AuditConfig,
 }
 
 /// Optional CLI overrides for configuration values
@@ -448,6 +473,9 @@ impl Config {
             "endpoint" => Some(self.database.endpoint.clone()),
             "metrics_dir" | "metrics-dir" => Some(self.paths.metrics_dir.clone()),
             "reports_dir" | "reports-dir" => Some(self.paths.reports_dir.clone()),
+            "prerequisite_chain_threshold" => {
+                Some(self.audit.prerequisite_chain_threshold.to_string())
+            }
             _ => None,
         }
     }
@@ -497,6 +525,11 @@ impl Config {
             "endpoint" => self.database.endpoint = value.to_string(),
             "metrics_dir" | "metrics-dir" => self.paths.metrics_dir = value.to_string(),
             "reports_dir" | "reports-dir" => self.paths.reports_dir = value.to_string(),
+            "prerequisite_chain_threshold" => {
+                self.audit.prerequisite_chain_threshold = value.parse::<usize>().map_err(|_| {
+                    format!("Invalid number for 'prerequisite_chain_threshold': '{value}'")
+                })?;
+            }
             _ => return Err(format!("Unknown config key: '{key}'")),
         }
         Ok(())
@@ -546,6 +579,10 @@ impl Config {
                 .paths
                 .reports_dir
                 .clone_from(&defaults.paths.reports_dir),
+            "prerequisite_chain_threshold" => {
+                self.audit.prerequisite_chain_threshold =
+                    defaults.audit.prerequisite_chain_threshold;
+            }
             _ => return Err(format!("Unknown config key: '{key}'")),
         }
         Ok(())
@@ -599,6 +636,13 @@ impl fmt::Display for Config {
         writeln!(f, "\n[paths]")?;
         writeln!(f, "  metrics_dir = \"{}\"", self.paths.metrics_dir)?;
         writeln!(f, "  reports_dir = \"{}\"", self.paths.reports_dir)?;
+
+        writeln!(f, "\n[audit]")?;
+        writeln!(
+            f,
+            "  prerequisite_chain_threshold = {}",
+            self.audit.prerequisite_chain_threshold
+        )?;
 
         Ok(())
     }

@@ -222,6 +222,11 @@ pub enum Command {
         /// Print the course prerequisite graph
         #[arg(long)]
         print_graph: bool,
+
+        /// Run an audit report on the degree program
+        /// Includes validation, missing prerequisites analysis, and deep chain detection
+        #[arg(long)]
+        audit: bool,
     },
 }
 

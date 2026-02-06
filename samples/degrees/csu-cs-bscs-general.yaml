@@ -4,8 +4,9 @@
 # =============================================================================
 # Source: https://catalog.colostate.edu/general-catalog/colleges/natural-sciences/
 #         computer-science/computer-science-major/computer-science-concentration/
-# Generated: January 2026
-# Note: Effective Fall 2025. All course numbers verified against 2025-2026 catalog.
+# Generated: January 2026 | Updated: February 2026
+# Note: Effective Fall 2025. All course numbers and prerequisites verified
+#       against 2025-2026 catalog (catalog.colostate.edu).
 # =============================================================================
 
 degree:
@@ -877,7 +878,7 @@ courses:
     typically_offered: [fall, spring]
 
   # ---------------------------------------------------------------------------
-  # Philosophy (cross-listed)
+  # Philosophy
   # ---------------------------------------------------------------------------
   PHIL201:
     subject: PHIL
@@ -888,6 +889,15 @@ courses:
     typically_offered: [spring]
     cross_listed_as: [CS201]
     gen_ed_attributes: ["AUCC-3B", "GT-AH3"]
+
+  PHIL210:
+    subject: PHIL
+    number: "210"
+    title: Introduction to Formal Logic
+    credits: 3
+    prerequisites: null
+    # Note: Sophomore standing required (restriction, not prerequisite)
+    typically_offered: [fall, spring]
 
   PHIL410:
     subject: PHIL
@@ -1050,6 +1060,23 @@ courses:
     prerequisites: "MATH141 | MATH155 | MATH160"
     typically_offered: [fall, spring, summer]
 
+  MATH235:
+    subject: MATH
+    number: "235"
+    title: Introduction to Mathematical Reasoning
+    credits: 3
+    prerequisites: "MATH156 | MATH161 | MATH271"
+    typically_offered: [fall, spring]
+
+  MATH255:
+    subject: MATH
+    number: "255"
+    title: Calculus for Biological Scientists II
+    credits: 4
+    prerequisites: "MATH155"
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["AUCC-1B"]
+
   MATH256:
     subject: MATH
     number: "256"
@@ -1065,6 +1092,38 @@ courses:
     credits: 2
     prerequisites: "MATH117 | MATH120 | MATH127"
     typically_offered: [fall]
+
+  MATH271:
+    subject: MATH
+    number: "271"
+    title: Applied Mathematics for Chemists I
+    credits: 4
+    prerequisites: "MATH155 | MATH159 | MATH160"
+    typically_offered: [fall, spring]
+
+  MATH317:
+    subject: MATH
+    number: "317"
+    title: Advanced Calculus of One Variable
+    credits: 3
+    prerequisites: "MATH161"
+    typically_offered: [fall, spring]
+
+  MATH360:
+    subject: MATH
+    number: "360"
+    title: Mathematics of Information Security
+    credits: 3
+    prerequisites: "(MATH156 | MATH161) & (CS220 | MATH235)"
+    typically_offered: [fall]
+
+  MATH366:
+    subject: MATH
+    number: "366"
+    title: Introduction to Abstract Algebra
+    credits: 3
+    prerequisites: "MATH156 | MATH161 | MATH271"
+    typically_offered: [fall, spring, summer]
 
   MATH369:
     subject: MATH
@@ -1082,7 +1141,7 @@ courses:
     number: "235"
     title: Data Wrangling
     credits: 2
-    prerequisites: null
+    prerequisites: "(CS150B[C] | CS152[C]) & CS165[C]"
     typically_offered: [fall, spring]
 
   DSCI369:
@@ -1090,20 +1149,37 @@ courses:
     number: "369"
     title: Linear Algebra for Data Science
     credits: 4
-    prerequisites: null
+    prerequisites: "(MATH157 & MATH159) | MATH155 | MATH156 | MATH160 | MATH161"
     typically_offered: [fall, spring, summer]
 
   DSCI445:
     subject: DSCI
     number: "445"
-    title: Machine Learning
+    title: Statistical Machine Learning
     credits: 3
-    prerequisites: null
+    prerequisites: "DSCI369 | MATH369"
+    corequisites: [STAT341]
     typically_offered: [fall, spring]
 
   # ---------------------------------------------------------------------------
   # Statistics
   # ---------------------------------------------------------------------------
+  STAT201:
+    subject: STAT
+    number: "201"
+    title: General Statistics
+    credits: 3
+    prerequisites: "MATH117 | MATH118 | MATH120 | MATH124 | MATH125 | MATH126 | MATH127 | MATH141 | MATH155 | MATH160"
+    typically_offered: [fall, spring, summer]
+
+  STAT204:
+    subject: STAT
+    number: "204"
+    title: Statistics for Business
+    credits: 3
+    prerequisites: "MATH117 | MATH118 | MATH120 | MATH124 | MATH125 | MATH126 | MATH127 | MATH141 | MATH155 | MATH160"
+    typically_offered: [fall, spring, summer]
+
   STAT301:
     subject: STAT
     number: "301"
@@ -1117,7 +1193,7 @@ courses:
     number: "302A"
     title: "Statistics Supplement: General Applications"
     credits: 1
-    prerequisites: null
+    prerequisites: "STAT201[B] | STAT204[B]"
     typically_offered: [fall, spring]
 
   STAT303:
@@ -1144,8 +1220,17 @@ courses:
     prerequisites: "MATH155 | MATH156 | MATH159 | MATH160"
     typically_offered: [fall, spring, summer]
 
+  STAT341:
+    subject: STAT
+    number: "341"
+    title: Statistical Data Analysis I
+    credits: 3
+    prerequisites: "STAT301 | STAT307 | STAT315"
+    corequisites: [DSCI445]
+    typically_offered: [fall, spring]
+
   # ---------------------------------------------------------------------------
-  # Natural Sciences (Sample - for AUCC 3A)
+  # Natural Sciences (for AUCC 3A)
   # ---------------------------------------------------------------------------
   AA100:
     subject: AA
@@ -1316,12 +1401,29 @@ courses:
     typically_offered: [fall, spring]
     gen_ed_attributes: ["AUCC-3A", "GT-SC2"]
 
+  HONR192:
+    subject: HONR
+    number: "192"
+    title: "Honors Seminar: Understanding the Arts and Humanities"
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  HONR193:
+    subject: HONR
+    number: "193"
+    title: "Honors Seminar: Exploring Social and Behavioral Sciences"
+    credits: 3
+    prerequisites: "HONR192"
+    typically_offered: [fall, spring]
+
   HONR292A:
     subject: HONR
     number: "292A"
     title: "Honors Seminar: Knowing in the Sciences"
     credits: 3
-    prerequisites: null
+    prerequisites: "HONR192 & HONR193"
+    # Note: Track 1 requires HONR192+193; Track 2 requires 30+ credit hours
     typically_offered: [fall, spring]
     gen_ed_attributes: ["AUCC-3A"]
 
@@ -1347,8 +1449,8 @@ courses:
     subject: LIFE
     number: "201A"
     title: "Introductory Genetics: Applied/Population/Conservation/Ecological"
-    credits: 4
-    prerequisites: null
+    credits: 3
+    prerequisites: "LIFE102"
     typically_offered: [fall, spring]
     gen_ed_attributes: ["AUCC-3A", "GT-SC2"]
 
@@ -1356,8 +1458,8 @@ courses:
     subject: LIFE
     number: "201B"
     title: "Introductory Genetics: Molecular/Immunological/Developmental"
-    credits: 4
-    prerequisites: null
+    credits: 3
+    prerequisites: "LIFE102"
     typically_offered: [fall, spring]
     gen_ed_attributes: ["AUCC-3A", "GT-SC2"]
 
@@ -1365,8 +1467,9 @@ courses:
     subject: LIFE
     number: "220"
     title: Fundamentals of Ecology
-    credits: 4
-    prerequisites: null
+    credits: 3
+    prerequisites: "(BZ110 | BZ120 | LIFE102 | LIFE103) & (MATH117 | MATH120 | MATH127 | MATH141 | MATH155 | MATH156 | MATH160)"
+    # Note: Catalog specifies BIO/BZ/LIFE 100-199 (3+ cr) OR HORT100, AND MATH 100-199 (3+ cr)
     typically_offered: [fall, spring]
     cross_listed_as: [LAND220]
     gen_ed_attributes: ["AUCC-3A", "GT-SC2"]
@@ -1417,145 +1520,23 @@ courses:
     gen_ed_attributes: ["AUCC-3A", "GT-SC1"]
 
   # ---------------------------------------------------------------------------
-  # Technology Focus Electives - Additional Courses
+  # Psychology
   # ---------------------------------------------------------------------------
-  CIS320:
-    subject: CIS
-    number: "320"
-    title: Project Management for Information Systems
+  PSY100:
+    subject: PSY
+    number: "100"
+    title: General Psychology
     credits: 3
     prerequisites: null
-    typically_offered: [fall, spring]
-
-  CIS340:
-    subject: CIS
-    number: "340"
-    title: Introduction to Programming
-    credits: 3
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  ECE251:
-    subject: ECE
-    number: "251"
-    title: Digital Logic
-    credits: 3
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  ECE303:
-    subject: ECE
-    number: "303"
-    title: Probability and Statistics for Engineers
-    credits: 3
-    prerequisites: "MATH161"
-    typically_offered: [fall, spring]
-
-  ECE312:
-    subject: ECE
-    number: "312"
-    title: Logic and Formal Verification
-    credits: 3
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  ECE452:
-    subject: ECE
-    number: "452"
-    title: Computer Organization and Architecture
-    credits: 3
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  ENGR123:
-    subject: ENGR
-    number: "123"
-    title: Programming Fundamentals
-    credits: 3
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  ENGR422:
-    subject: ENGR
-    number: "422"
-    title: Technology Entrepreneurship
-    credits: 3
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  IDEA210:
-    subject: IDEA
-    number: "210"
-    title: Introduction to Digital Media
-    credits: 3
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  IDEA310H:
-    subject: IDEA
-    number: "310H"
-    title: "Design Thinking Toolbox: Mixed Reality Design"
-    credits: 3
-    prerequisites: "CS214[C] | CS253[C] | IDEA210"
-    typically_offered: [fall]
-    cross_listed_as: [CS310H]
-
-  JTC372:
-    subject: JTC
-    number: "372"
-    title: Web Design and Development
-    credits: 3
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  JTC472:
-    subject: JTC
-    number: "472"
-    title: Advanced Web Design and Development
-    credits: 3
-    prerequisites: "JTC372"
-    typically_offered: [fall, spring]
-
-  LAND220:
-    subject: LAND
-    number: "220"
-    title: Fundamentals of Ecology
-    credits: 4
-    prerequisites: null
-    typically_offered: [fall, spring]
-    cross_listed_as: [LIFE220]
-    gen_ed_attributes: ["AUCC-3A", "GT-SC2"]
-
-  MGT330:
-    subject: MGT
-    number: "330"
-    title: "Creativity, Innovation, and Value Creation"
-    credits: 3
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  MGT340:
-    subject: MGT
-    number: "340"
-    title: Fundamentals of Entrepreneurship
-    credits: 3
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  MGT420:
-    subject: MGT
-    number: "420"
-    title: New Venture Creation
-    credits: 3
-    prerequisites: "MGT340"
-    typically_offered: [fall, spring]
+    typically_offered: [fall, spring, summer]
+    gen_ed_attributes: ["GT-SS3"]
 
   PSY252:
     subject: PSY
     number: "252"
     title: "Mind, Brain, and Behavior"
     credits: 3
-    prerequisites: null
+    prerequisites: "PSY100"
     typically_offered: [fall, spring]
 
   PSY352:
@@ -1598,6 +1579,191 @@ courses:
     prerequisites: "PSY252"
     typically_offered: [fall, spring]
 
+  # ---------------------------------------------------------------------------
+  # Technology Focus Electives - CIS, ECE, ENGR, IDEA, JTC, MGT
+  # ---------------------------------------------------------------------------
+  CIS200:
+    subject: CIS
+    number: "200"
+    title: Business Information Systems
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring, summer]
+
+  CIS240:
+    subject: CIS
+    number: "240"
+    title: Application Design and Development
+    credits: 3
+    prerequisites: "CIS200"
+    typically_offered: [fall, spring]
+
+  CIS320:
+    subject: CIS
+    number: "320"
+    title: Project Management for Information Systems
+    credits: 3
+    prerequisites: "CIS200 | CS165"
+    typically_offered: [fall, spring]
+
+  CIS340:
+    subject: CIS
+    number: "340"
+    title: Advanced Application Design and Development
+    credits: 3
+    prerequisites: "CIS240"
+    typically_offered: [fall, spring]
+
+  ECE102:
+    subject: ECE
+    number: "102"
+    title: Logic Design Laboratory
+    credits: 1
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  ECE251:
+    subject: ECE
+    number: "251"
+    title: Introduction to Microcontrollers and IoT
+    credits: 4
+    prerequisites: "ECE102[C]"
+    typically_offered: [fall, spring]
+
+  ECE253:
+    subject: ECE
+    number: "253"
+    title: Digital Design Lab
+    credits: 1
+    prerequisites: "ECE102"
+    typically_offered: [fall, spring]
+
+  ECE303:
+    subject: ECE
+    number: "303"
+    title: Probability and Statistics for Engineers
+    credits: 3
+    prerequisites: "MATH161"
+    typically_offered: [fall, spring]
+
+  ECE311:
+    subject: ECE
+    number: "311"
+    title: Linear System Analysis I
+    credits: 3
+    prerequisites: "MATH161"
+    typically_offered: [fall, spring]
+
+  ECE312:
+    subject: ECE
+    number: "312"
+    title: Linear System Analysis II
+    credits: 3
+    prerequisites: "ECE311[C]"
+    typically_offered: [fall, spring]
+
+  ECE452:
+    subject: ECE
+    number: "452"
+    title: Computer Organization and Architecture
+    credits: 3
+    prerequisites: "CS250[C] | CS270[C] | ECE251[C] | ECE253[C]"
+    typically_offered: [fall, spring]
+
+  ENGR123:
+    subject: ENGR
+    number: "123"
+    title: Programming Fundamentals
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  ENGR422:
+    subject: ENGR
+    number: "422"
+    title: Technology Entrepreneurship
+    credits: 3
+    prerequisites: "MGT340"
+    typically_offered: [fall, spring]
+
+  IDEA210:
+    subject: IDEA
+    number: "210"
+    title: Introduction to Design Thinking
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+    gen_ed_attributes: ["GT-AH1"]
+
+  IDEA310H:
+    subject: IDEA
+    number: "310H"
+    title: "Design Thinking Toolbox: Mixed Reality Design"
+    credits: 3
+    prerequisites: "CS214[C] | CS253[C] | IDEA210"
+    typically_offered: [fall]
+    cross_listed_as: [CS310H]
+
+  JTC211:
+    subject: JTC
+    number: "211"
+    title: Multimedia Tools
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  JTC372:
+    subject: JTC
+    number: "372"
+    title: Web Design and Development
+    credits: 3
+    prerequisites: "JTC211"
+    # Note: Junior standing also required
+    typically_offered: [fall, spring]
+
+  JTC472:
+    subject: JTC
+    number: "472"
+    title: Advanced Web Design and Development
+    credits: 3
+    prerequisites: "JTC372"
+    typically_offered: [fall, spring]
+
+  LAND220:
+    subject: LAND
+    number: "220"
+    title: Fundamentals of Ecology
+    credits: 3
+    prerequisites: "(BZ110 | BZ120 | LIFE102 | LIFE103) & (MATH117 | MATH120 | MATH127 | MATH141 | MATH155 | MATH156 | MATH160)"
+    # Note: Catalog specifies BIO/BZ/LIFE 100-199 (3+ cr) OR HORT100, AND MATH 100-199 (3+ cr)
+    typically_offered: [fall, spring]
+    cross_listed_as: [LIFE220]
+    gen_ed_attributes: ["AUCC-3A", "GT-SC2"]
+
+  MGT330:
+    subject: MGT
+    number: "330"
+    title: "Creativity, Innovation, and Value Creation"
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  MGT340:
+    subject: MGT
+    number: "340"
+    title: Fundamentals of Entrepreneurship
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  MGT420:
+    subject: MGT
+    number: "420"
+    title: New Venture Creation
+    credits: 3
+    prerequisites: "MGT340"
+    typically_offered: [fall, spring]
+
 # =============================================================================
 # CREDIT ARITHMETIC VERIFICATION
 # =============================================================================
@@ -1621,7 +1787,7 @@ courses:
 #   CS 250/270:                      4 credits
 #   DSCI/MATH 369:                   3-4 credits
 #   Statistics:                      1-3 credits
-#   CS 314, 320, 370:                9 credits
+#   CS 314, 320, 370:               9 credits
 #   CS 300-level electives (2):      6-8 credits
 #   Capstone:                        4 credits
 #   CS 400-level electives (2):      8 credits
@@ -1631,94 +1797,3 @@ courses:
 #
 # TOTAL:                             120 credits
 # =============================================================================
-
-  # ---------------------------------------------------------------------------
-  # MISSING PREREQUISITE COURSES - Added during audit
-  # ---------------------------------------------------------------------------
-
-  # CIS courses (needed for CS 163/164 prerequisites)
-  CIS200:
-    subject: CIS
-    number: "200"
-    title: Introduction to Information Systems
-    credits: 3
-    prerequisites: null
-    typically_offered: [fall, spring, summer]
-
-  CIS240:
-    subject: CIS
-    number: "240"
-    title: Application Design and Development
-    credits: 3
-    prerequisites: "CIS200"
-    typically_offered: [fall, spring]
-
-  # MATH courses (needed for MATH 369 and CS 422 prerequisites)
-  MATH235:
-    subject: MATH
-    number: "235"
-    title: Introduction to Mathematical Reasoning
-    credits: 3
-    prerequisites: "MATH156 | MATH161 | MATH271"
-    typically_offered: [fall, spring]
-
-  MATH255:
-    subject: MATH
-    number: "255"
-    title: Calculus for Biological Scientists II
-    credits: 4
-    prerequisites: "MATH155"
-    typically_offered: [fall, spring]
-    gen_ed_attributes: ["AUCC-1B"]
-
-  MATH271:
-    subject: MATH
-    number: "271"
-    title: Applied Mathematics for Chemists I
-    credits: 4
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  MATH360:
-    subject: MATH
-    number: "360"
-    title: Mathematics of Information Security
-    credits: 3
-    prerequisites: "(MATH156 | MATH161) & (CS220 | MATH235)"
-    typically_offered: [fall]
-
-  MATH366:
-    subject: MATH
-    number: "366"
-    title: Introduction to Abstract Algebra
-    credits: 3
-    prerequisites: "MATH156 | MATH161 | MATH271"
-    typically_offered: [fall, spring, summer]
-
-  # ---------------------------------------------------------------------------
-  # Additional Prerequisite Courses - Added for PHIL 410/411 prerequisites
-  # ---------------------------------------------------------------------------
-
-  PHIL210:
-    subject: PHIL
-    number: "210"
-    title: Introduction to Formal Logic
-    credits: 3
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  ECE102:
-    subject: ECE
-    number: "102"
-    title: Logic Design Laboratory
-    credits: 1
-    prerequisites: null
-    typically_offered: [fall, spring]
-
-  MATH317:
-    subject: MATH
-    number: "317"
-    title: Advanced Calculus of One Variable
-    credits: 3
-    prerequisites: "MATH161"
-    typically_offered: [fall, spring]
