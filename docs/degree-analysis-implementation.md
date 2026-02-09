@@ -71,9 +71,16 @@ When a user runs `nuanalytics degree <yaml_file>`, the system will:
 
 ---
 
-## Phase 1: Core Infrastructure ✅ IN PROGRESS
+## Phase 1: Core Infrastructure ✅ COMPLETE
 
 **Goal**: Build the foundation for statistics and plan representation
+
+**Completed**:
+- ✅ `CalculationStrategy` trait with `MedianStrategy` and `MeanStrategy`
+- ✅ `DescriptiveStats` struct with min, Q1, median, Q3, max, mean, std_dev
+- ✅ Outlier detection with 1.5*IQR rule
+- ✅ `DegreeAnalysisConfig` added to config system
+- ✅ 23 unit tests + 8 integration tests (100% and 98% coverage)
 
 ### 1.1 CalculationStrategy Trait
 ```rust
@@ -113,13 +120,15 @@ pub struct PlanVariant {
     pub requirement_choices: HashMap<String, Vec<String>>,
 }
 ```
+*(Deferred to Phase 2)*
 
-### Files to Create/Modify
-- [ ] `src/core/statistics/mod.rs` - Module root
-- [ ] `src/core/statistics/strategy.rs` - CalculationStrategy trait + impls
-- [ ] `src/core/statistics/descriptive.rs` - DescriptiveStats + computation
-- [ ] `src/core/config.rs` - Add new config options
-- [ ] `src/cli/args.rs` - Add CLI arguments
+### Files Created/Modified
+- [x] `src/core/statistics/mod.rs` - Module root
+- [x] `src/core/statistics/strategy.rs` - CalculationStrategy trait + impls
+- [x] `src/core/statistics/descriptive.rs` - DescriptiveStats + computation
+- [x] `src/core/config.rs` - Add new config options
+- [x] `tests/rs/statistics.rs` - Integration tests
+- [ ] `src/cli/args.rs` - Add CLI arguments (deferred to Phase 6)
 
 ---
 
@@ -270,7 +279,7 @@ ignore_duplicates = false       # skip equivalent combinations
 
 | Phase | Status | Started | Completed |
 |-------|--------|---------|-----------|
-| 1. Core Infrastructure | 🟡 In Progress | 2026-02-09 | |
+| 1. Core Infrastructure | ✅ Complete | 2026-02-09 | 2026-02-09 |
 | 2. Plan Generation | ⬜ Not Started | | |
 | 3. Metrics Aggregation | ⬜ Not Started | | |
 | 4. Special Plan Selection | ⬜ Not Started | | |
