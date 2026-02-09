@@ -351,6 +351,7 @@ dependencies = [
  "askama",
  "clap",
  "dirs",
+ "fastrand",
  "serde",
  "serde_json",
  "serde_yaml",
