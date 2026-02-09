@@ -279,4 +279,46 @@ mod tests {
         // Population std dev should be 2.0
         assert!((stats.std_dev - 2.0).abs() < 0.001);
     }
+
+    #[test]
+    fn test_range() {
+        let values = vec![5.0, 10.0, 15.0, 20.0, 25.0];
+        let stats = DescriptiveStats::from_values(&values);
+        assert!((stats.range() - 20.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_fences() {
+        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let stats = DescriptiveStats::from_values(&values);
+
+        // Verify fences are computed correctly
+        let iqr = stats.iqr();
+        let expected_lower = 1.5_f64.mul_add(-iqr, stats.q1);
+        let expected_upper = 1.5_f64.mul_add(iqr, stats.q3);
+
+        assert!((stats.lower_fence() - expected_lower).abs() < 0.001);
+        assert!((stats.upper_fence() - expected_upper).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_percentile_single_value() {
+        // This tests the single-value branch in compute_percentile
+        let values = vec![42.0];
+        let stats = DescriptiveStats::from_values(&values);
+
+        // All quartiles should equal the single value
+        assert!((stats.q1 - 42.0).abs() < f64::EPSILON);
+        assert!((stats.median - 42.0).abs() < f64::EPSILON);
+        assert!((stats.q3 - 42.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_default_representative() {
+        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let stats = DescriptiveStats::from_values(&values);
+
+        // Default representative should be median
+        assert!((stats.default_representative() - stats.median).abs() < f64::EPSILON);
+    }
 }
