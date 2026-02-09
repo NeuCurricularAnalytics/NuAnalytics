@@ -6,6 +6,7 @@ pub mod course_syntax;
 pub mod cross_listing;
 pub mod degree_yaml;
 pub mod metrics_comparison;
+pub mod plan_generation;
 pub mod planner;
 pub mod smoke;
 pub mod statistics;
