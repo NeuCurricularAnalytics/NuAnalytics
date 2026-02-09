@@ -132,9 +132,18 @@ pub struct PlanVariant {
 
 ---
 
-## Phase 2: Plan Generation Engine
+## Phase 2: Plan Generation Engine ✅ COMPLETE
 
 **Goal**: Full combinatorial plan generation with optimizations
+
+**Completed**:
+- ✅ `RequirementResolver` for expanding requirements into course choices
+- ✅ `PlanGenerator` with lazy iterator-based generation
+- ✅ `PlanVariant` for representing individual plan combinations
+- ✅ Pattern matching for course pools (e.g., `CS:3000+`)
+- ✅ Combination generation with max plans safety cap
+- ✅ Plan fingerprinting for deduplication
+- ✅ 17 unit tests + 5 integration tests
 
 ### 2.1 RequirementResolver
 - Expand each requirement into concrete course choices
@@ -150,9 +159,11 @@ pub struct PlanVariant {
 - Fingerprint by (credits, prereq-set)
 - Skip equivalent when `--ignore-duplicates`
 
-### Files to Create
-- [ ] `src/core/degree/requirement_resolver.rs`
-- [ ] `src/core/degree/plan_generator.rs`
+### Files Created
+- [x] `src/core/degree/requirement_resolver.rs`
+- [x] `src/core/degree/plan_generator.rs`
+- [x] `src/core/degree/plan_variant.rs`
+- [x] `tests/rs/plan_generation.rs`
 
 ---
 
@@ -280,7 +291,7 @@ ignore_duplicates = false       # skip equivalent combinations
 | Phase | Status | Started | Completed |
 |-------|--------|---------|-----------|
 | 1. Core Infrastructure | ✅ Complete | 2026-02-09 | 2026-02-09 |
-| 2. Plan Generation | ⬜ Not Started | | |
+| 2. Plan Generation | ✅ Complete | 2026-02-09 | 2026-02-09 |
 | 3. Metrics Aggregation | ⬜ Not Started | | |
 | 4. Special Plan Selection | ⬜ Not Started | | |
 | 5. Report Generation | ⬜ Not Started | | |
