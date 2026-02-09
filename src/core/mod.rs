@@ -8,6 +8,7 @@ pub mod models;
 pub mod planner;
 pub mod prerequisite_parser;
 pub mod report;
+pub mod statistics;
 
 // Re-export degree module types for convenience
 pub use degree::{
@@ -15,6 +16,9 @@ pub use degree::{
     validate_degree_program, DegreeParseError, DegreeProgram, ValidationError, ValidationResult,
     ValidationWarning,
 };
+
+// Re-export statistics types for convenience
+pub use statistics::{CalculationStrategy, DescriptiveStats, MeanStrategy, MedianStrategy};
 
 // Add core domain modules here as they're developed:
 // pub mod school;

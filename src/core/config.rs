@@ -77,6 +77,49 @@ impl Default for AuditConfig {
     }
 }
 
+/// Degree analysis configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DegreeAnalysisConfig {
+    /// Calculation strategy for aggregate metrics ("median" or "mean")
+    #[serde(default = "default_calc_strategy")]
+    pub calc_strategy: String,
+
+    /// Number of random plans to sample and export
+    #[serde(default = "default_sample_plan_count")]
+    pub sample_plan_count: usize,
+
+    /// Maximum number of plans to generate (safety cap)
+    #[serde(default = "default_max_plans")]
+    pub max_plans: usize,
+
+    /// Skip equivalent plan combinations
+    #[serde(default)]
+    pub ignore_duplicates: bool,
+}
+
+fn default_calc_strategy() -> String {
+    "median".to_string()
+}
+
+const fn default_sample_plan_count() -> usize {
+    5
+}
+
+const fn default_max_plans() -> usize {
+    1_000_000
+}
+
+impl Default for DegreeAnalysisConfig {
+    fn default() -> Self {
+        Self {
+            calc_strategy: default_calc_strategy(),
+            sample_plan_count: default_sample_plan_count(),
+            max_plans: default_max_plans(),
+            ignore_duplicates: false,
+        }
+    }
+}
+
 /// Main configuration structure
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
@@ -91,6 +134,9 @@ pub struct Config {
     /// Audit settings for degree analysis
     #[serde(default)]
     pub audit: AuditConfig,
+    /// Degree analysis settings
+    #[serde(default)]
+    pub degree_analysis: DegreeAnalysisConfig,
 }
 
 /// Optional CLI overrides for configuration values
@@ -476,6 +522,14 @@ impl Config {
             "prerequisite_chain_threshold" => {
                 Some(self.audit.prerequisite_chain_threshold.to_string())
             }
+            "calc_strategy" | "calc-strategy" => Some(self.degree_analysis.calc_strategy.clone()),
+            "sample_plan_count" | "sample-plan-count" => {
+                Some(self.degree_analysis.sample_plan_count.to_string())
+            }
+            "max_plans" | "max-plans" => Some(self.degree_analysis.max_plans.to_string()),
+            "ignore_duplicates" | "ignore-duplicates" => {
+                Some(self.degree_analysis.ignore_duplicates.to_string())
+            }
             _ => None,
         }
     }
@@ -530,6 +584,29 @@ impl Config {
                     format!("Invalid number for 'prerequisite_chain_threshold': '{value}'")
                 })?;
             }
+            "calc_strategy" | "calc-strategy" => {
+                if value != "median" && value != "mean" {
+                    return Err(format!(
+                        "Invalid calc_strategy '{value}': must be 'median' or 'mean'"
+                    ));
+                }
+                self.degree_analysis.calc_strategy = value.to_string();
+            }
+            "sample_plan_count" | "sample-plan-count" => {
+                self.degree_analysis.sample_plan_count = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("Invalid number for 'sample_plan_count': '{value}'"))?;
+            }
+            "max_plans" | "max-plans" => {
+                self.degree_analysis.max_plans = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("Invalid number for 'max_plans': '{value}'"))?;
+            }
+            "ignore_duplicates" | "ignore-duplicates" => {
+                self.degree_analysis.ignore_duplicates = value
+                    .parse::<bool>()
+                    .map_err(|_| format!("Invalid boolean for 'ignore_duplicates': '{value}'"))?;
+            }
             _ => return Err(format!("Unknown config key: '{key}'")),
         }
         Ok(())
@@ -582,6 +659,20 @@ impl Config {
             "prerequisite_chain_threshold" => {
                 self.audit.prerequisite_chain_threshold =
                     defaults.audit.prerequisite_chain_threshold;
+            }
+            "calc_strategy" | "calc-strategy" => {
+                self.degree_analysis
+                    .calc_strategy
+                    .clone_from(&defaults.degree_analysis.calc_strategy);
+            }
+            "sample_plan_count" | "sample-plan-count" => {
+                self.degree_analysis.sample_plan_count = defaults.degree_analysis.sample_plan_count;
+            }
+            "max_plans" | "max-plans" => {
+                self.degree_analysis.max_plans = defaults.degree_analysis.max_plans;
+            }
+            "ignore_duplicates" | "ignore-duplicates" => {
+                self.degree_analysis.ignore_duplicates = defaults.degree_analysis.ignore_duplicates;
             }
             _ => return Err(format!("Unknown config key: '{key}'")),
         }
@@ -642,6 +733,24 @@ impl fmt::Display for Config {
             f,
             "  prerequisite_chain_threshold = {}",
             self.audit.prerequisite_chain_threshold
+        )?;
+
+        writeln!(f, "\n[degree_analysis]")?;
+        writeln!(
+            f,
+            "  calc_strategy = \"{}\"",
+            self.degree_analysis.calc_strategy
+        )?;
+        writeln!(
+            f,
+            "  sample_plan_count = {}",
+            self.degree_analysis.sample_plan_count
+        )?;
+        writeln!(f, "  max_plans = {}", self.degree_analysis.max_plans)?;
+        writeln!(
+            f,
+            "  ignore_duplicates = {}",
+            self.degree_analysis.ignore_duplicates
         )?;
 
         Ok(())
