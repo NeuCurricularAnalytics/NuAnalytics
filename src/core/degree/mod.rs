@@ -4,6 +4,7 @@
 //! - YAML degree schema structures (`models`)
 //! - YAML parsing functions (`yaml_parser`)
 //! - Direct conversion to unified `Degree` and `Course` models for metrics/plans
+//! - Plan generation for degree analysis
 //!
 //! # Example
 //! ```no_run
@@ -20,6 +21,9 @@
 //! ```
 
 pub mod course_reference;
+pub mod plan_generator;
+pub mod plan_variant;
+pub mod requirement_resolver;
 pub mod validation;
 pub mod yaml_parser;
 
@@ -50,3 +54,8 @@ pub use course_reference::CourseReference;
 pub use validation::{
     validate_degree_program, ValidationError, ValidationResult, ValidationWarning,
 };
+
+// Re-export plan generation types
+pub use plan_generator::{PlanGenerationStats, PlanGenerator, PlanGeneratorConfig};
+pub use plan_variant::PlanVariant;
+pub use requirement_resolver::{RequirementResolver, ResolvedRequirement};
