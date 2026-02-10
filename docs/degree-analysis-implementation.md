@@ -260,27 +260,44 @@ pub struct PlanVariant {
 
 ---
 
-## Phase 6: CLI Integration
+## Phase 6: CLI Integration ✅ COMPLETE
 
 **Goal**: Wire everything into `nuanalytics degree` command
 
+**Completed**:
+- ✅ Added `--analyze` flag to trigger full degree analysis
+- ✅ Added `--calc-strategy <median|mean>` argument (reserved for future use)
+- ✅ Added `--sample-plans <N>` argument for random plan sampling
+- ✅ Added `--max-plans <N>` argument for safety cap
+- ✅ Added `--ignore-duplicates` flag for skipping equivalent plans
+- ✅ Added `--report-dir` and `--metrics-dir` overrides
+- ✅ Added `--no-csv` and `--no-report` flags
+- ✅ Progress reporting during plan enumeration
+- ✅ Final summary with degree statistics
+
 ### 6.1 New Arguments
 ```
+--analyze                       Run full degree analysis
 --calc-strategy <median|mean>   Calculation strategy for aggregate metrics
 --ignore-duplicates             Skip equivalent plan combinations
 --max-plans <N>                 Safety cap on plan generation
 --sample-plans <N>              Number of random plans to export (default: 5)
---export-all-plans              Export all plans (warning: may be large)
+--report-dir <DIR>              Override reports output directory
+--metrics-dir <DIR>             Override metrics output directory
+--no-csv                        Skip CSV plan export
+--no-report                     Skip HTML report generation
 ```
 
 ### 6.2 Progress Reporting
-- Plan count estimation
-- Progress bar for large generations
-- Final summary
+- Plan count estimation before generation
+- Progress updates during processing (every 5% or 100 plans)
+- Final summary with selected plans
+- Generated file list
 
-### Files to Modify
-- [ ] `src/cli/args.rs`
-- [ ] `src/cli/commands/degree.rs`
+### Files Modified
+- [x] `src/cli/args.rs` - Added `CalcStrategyArg` enum and degree command args
+- [x] `src/cli/main.rs` - Updated command dispatch for new args
+- [x] `src/cli/commands/degree.rs` - Added `analyze_degree` and helper functions
 
 ---
 
@@ -302,6 +319,7 @@ ignore_duplicates = false       # skip equivalent combinations
 - **Weighted strategies**: Research-focused calculation methods
 - **Incremental analysis**: Cache intermediate results
 - **Distributed processing**: For extremely large plan spaces
+- **Parallel processing**: Use rayon for multi-threaded plan processing
 
 ---
 
@@ -314,4 +332,4 @@ ignore_duplicates = false       # skip equivalent combinations
 | 3. Metrics Aggregation | ✅ Complete | 2026-02-09 | 2026-02-09 |
 | 4. Special Plan Selection | ✅ Complete | 2026-02-10 | 2026-02-10 |
 | 5. Report Generation | ✅ Complete | 2026-02-10 | 2026-02-10 |
-| 6. CLI Integration | ⬜ Not Started | | |
+| 6. CLI Integration | ✅ Complete | 2026-02-10 | 2026-02-10 |

@@ -1,9 +1,16 @@
 //! Degree command handler for validating degree program YAML files
 
 use nu_analytics::config::Config;
-use nu_analytics::core::degree::load_degree_from_yaml;
+use nu_analytics::core::degree::{
+    load_degree_from_yaml, PlanGenerator, PlanGeneratorConfig, PlanSelector, PlanSelectorConfig,
+};
+use nu_analytics::core::metrics::compute_all_metrics;
 use nu_analytics::core::models::degree::Requirement;
-use nu_analytics::core::models::CourseGraph;
+use nu_analytics::core::models::{CourseGraph, School, DAG};
+use nu_analytics::core::report::degree_report::{DegreeReportContext, DegreeReportGenerator};
+use nu_analytics::core::report::plan_export::{export_selected_plans, PlanExportConfig};
+use nu_analytics::core::report::term_scheduler::SchedulerConfig;
+use nu_analytics::core::statistics::aggregator::{AggregatorConfig, MetricsAggregator};
 use nu_analytics::core::validate_degree_program;
 use std::collections::HashSet;
 use std::path::Path;
@@ -638,7 +645,7 @@ fn extract_subject(course_key: &str) -> Option<&str> {
 }
 
 /// Options for the degree command
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct DegreeOptions {
     /// Whether to validate the degree program
@@ -647,6 +654,25 @@ pub struct DegreeOptions {
     pub print_graph: bool,
     /// Whether to run an audit report
     pub audit: bool,
+    /// Whether to run full degree analysis
+    pub analyze: bool,
+    /// Calculation strategy override ("median" or "mean") - reserved for future use
+    #[allow(dead_code)]
+    pub calc_strategy: Option<String>,
+    /// Number of random plans to sample
+    pub sample_plans: Option<usize>,
+    /// Maximum plans to generate
+    pub max_plans: Option<usize>,
+    /// Generate all plans without deduplication (disables `ignore_duplicates`)
+    pub full_run: bool,
+    /// Override reports directory
+    pub report_dir: Option<std::path::PathBuf>,
+    /// Override metrics directory
+    pub metrics_dir: Option<std::path::PathBuf>,
+    /// Skip CSV export
+    pub no_csv: bool,
+    /// Skip HTML report
+    pub no_report: bool,
     /// Whether to print verbose output
     pub verbose: bool,
 }
@@ -668,12 +694,16 @@ pub fn run(file: Option<&Path>, options: &DegreeOptions, config: &Config) {
         process::exit(1);
     };
 
-    // Check if at least one action was specified
-    if !options.validate && !options.print_graph && !options.audit {
-        eprintln!("Error: No action specified. Use --validate, --print-graph, and/or --audit.");
-        eprintln!("Run 'nuanalytics degree --help' for usage information.");
-        process::exit(1);
-    }
+    // Default to analyze if no action specified
+    let options = if !options.validate && !options.print_graph && !options.audit && !options.analyze
+    {
+        DegreeOptions {
+            analyze: true,
+            ..options.clone()
+        }
+    } else {
+        options.clone()
+    };
 
     let mut has_error = false;
     let mut actions_run = 0;
@@ -720,11 +750,520 @@ pub fn run(file: Option<&Path>, options: &DegreeOptions, config: &Config) {
                 has_error = true;
             }
         }
+        actions_run += 1;
+    }
+
+    // Run full analysis if requested
+    if options.analyze {
+        if actions_run > 0 {
+            print_separator();
+        }
+        match analyze_degree(degree_path, &options, config) {
+            Ok(()) => {}
+            Err(e) => {
+                eprintln!("Error: {e}");
+                has_error = true;
+            }
+        }
     }
 
     if has_error {
         process::exit(1);
     }
+}
+
+/// Analysis context holding all data needed for degree analysis
+struct AnalysisContext<'a> {
+    program: &'a nu_analytics::core::DegreeProgram,
+    school: School,
+    dag: DAG,
+    graph: &'a CourseGraph,
+    gen_config: PlanGeneratorConfig,
+    verbose: bool,
+}
+
+/// Run full degree analysis: generate plans, compute metrics, produce report
+///
+/// This is the main entry point for the `--analyze` flag. It:
+/// 1. Loads the degree program and builds the course graph
+/// 2. Generates all possible plans from requirements
+/// 3. Streams metrics computation and aggregation
+/// 4. Selects special plans (shortest, longest, calc-ready)
+/// 5. Generates HTML report with box plots and statistics
+/// 6. Exports CSV files for selected plans
+#[allow(clippy::too_many_lines)]
+fn analyze_degree(
+    degree_path: &Path,
+    options: &DegreeOptions,
+    config: &Config,
+) -> Result<(), String> {
+    let verbose = options.verbose;
+
+    // Load and validate the degree program
+    let program = load_degree_program(degree_path, verbose)?;
+
+    // Build course graph and handle cycles by breaking them
+    let mut graph_result = CourseGraph::from_degree_program(&program);
+    if !graph_result.cycles.is_empty() {
+        if verbose {
+            eprintln!(
+                "⚠ Detected {} circular prerequisite(s), breaking cycles...",
+                graph_result.cycles.len()
+            );
+        }
+        let removed = graph_result.graph.break_cycles(&graph_result.cycles);
+        if verbose {
+            for (course, prereq) in &removed {
+                eprintln!("  Removed edge: {course} → {prereq}");
+            }
+        }
+        // Clear cycles since we broke them
+        graph_result.cycles.clear();
+    }
+
+    // Build analysis context
+    let ctx = AnalysisContext {
+        program: &program,
+        school: build_school_from_program(&program),
+        dag: build_dag_from_graph(&graph_result.graph),
+        graph: &graph_result.graph,
+        gen_config: PlanGeneratorConfig {
+            max_plans: options
+                .max_plans
+                .unwrap_or(config.degree_analysis.max_plans),
+            // Default is ignore_duplicates=true; --full-run disables it
+            ignore_duplicates: !options.full_run && config.degree_analysis.ignore_duplicates,
+            sample_count: options
+                .sample_plans
+                .unwrap_or(config.degree_analysis.sample_plan_count),
+            target_credits: program.degree.total_credits,
+            ..Default::default()
+        },
+        verbose,
+    };
+
+    // Run plan enumeration and metrics aggregation
+    let (aggregator, selected, plans_processed) = enumerate_and_analyze_plans(&ctx);
+
+    // Generate outputs
+    generate_analysis_outputs(&ctx, options, &aggregator, &selected)?;
+
+    // Print summary
+    print_analysis_summary(&ctx, &aggregator, plans_processed);
+
+    Ok(())
+}
+
+/// Load and validate a degree program from YAML
+fn load_degree_program(
+    degree_path: &Path,
+    verbose: bool,
+) -> Result<nu_analytics::core::DegreeProgram, String> {
+    if verbose {
+        eprintln!("Starting degree analysis...");
+        eprintln!("Loading degree program from: {}", degree_path.display());
+    }
+
+    let program = load_degree_from_yaml(degree_path).map_err(|e| {
+        format!(
+            "Failed to load degree program from {}: {}",
+            degree_path.display(),
+            e
+        )
+    })?;
+
+    if verbose {
+        let degree = &program.degree;
+        eprintln!("✓ Loaded degree: {} {}", degree.degree_type, degree.name);
+        eprintln!("  Courses: {}", program.courses.len());
+        eprintln!("  Requirements: {}", program.requirements.len());
+    }
+
+    Ok(program)
+}
+
+/// Enumerate all plans and compute aggregated metrics
+fn enumerate_and_analyze_plans(
+    ctx: &AnalysisContext<'_>,
+) -> (
+    MetricsAggregator,
+    nu_analytics::core::degree::SelectedPlans,
+    usize,
+) {
+    // Create plan generator
+    let generator = PlanGenerator::new(
+        &ctx.program.requirements,
+        &ctx.program.courses,
+        ctx.gen_config.clone(),
+    );
+    let stats = generator.get_stats();
+
+    if ctx.verbose {
+        eprintln!();
+        eprintln!("Plan Generation:");
+        eprintln!("  Estimated total plans: {}", stats.total_possible);
+        eprintln!("  Variable requirements: {}", stats.variable_requirements);
+        if stats.total_possible > ctx.gen_config.max_plans {
+            eprintln!(
+                "  ⚠ Will cap at {} plans (use --max-plans to adjust)",
+                ctx.gen_config.max_plans
+            );
+        }
+    }
+
+    // Configure metrics aggregation
+    let agg_config = AggregatorConfig {
+        reservoir_size: 1000,
+        track_per_course: true,
+        exact_mode: stats.total_possible <= 10000,
+    };
+
+    // Configure plan selection
+    let selector_config = PlanSelectorConfig {
+        sample_count: ctx.gen_config.sample_count,
+        scheduler_config: SchedulerConfig::default(),
+        ..Default::default()
+    };
+
+    // Initialize aggregator and selector
+    let mut aggregator = MetricsAggregator::new(agg_config);
+    let mut selector = PlanSelector::new(&ctx.school, &ctx.dag, selector_config);
+
+    if ctx.verbose {
+        eprintln!();
+        eprintln!("Processing plans...");
+    }
+
+    // Process plans
+    let plans_processed = process_plan_variants(ctx, &generator, &mut aggregator, &mut selector);
+
+    let selected = selector.into_selected_plans();
+
+    if ctx.verbose {
+        print_selection_summary(&selected, plans_processed);
+    }
+
+    (aggregator, selected, plans_processed)
+}
+
+/// Process all plan variants, computing metrics and updating aggregator/selector
+fn process_plan_variants(
+    ctx: &AnalysisContext<'_>,
+    generator: &PlanGenerator<'_>,
+    aggregator: &mut MetricsAggregator,
+    selector: &mut PlanSelector<'_>,
+) -> usize {
+    let mut plans_processed = 0;
+    let mut seen_fingerprints = HashSet::new();
+    let progress_interval = (ctx.gen_config.max_plans / 20).max(100);
+
+    for variant in generator.generate() {
+        if plans_processed >= ctx.gen_config.max_plans {
+            break;
+        }
+
+        // Skip duplicates if configured
+        if ctx.gen_config.ignore_duplicates {
+            let fp = variant.fingerprint();
+            if seen_fingerprints.contains(&fp) {
+                continue;
+            }
+            seen_fingerprints.insert(fp);
+        }
+
+        // Build plan-specific DAG and compute metrics
+        let plan_dag = build_dag_for_plan(&variant.courses, ctx.graph);
+        let course_metrics = match compute_all_metrics(&plan_dag) {
+            Ok(metrics) => metrics,
+            Err(e) => {
+                if ctx.verbose {
+                    eprintln!("  Warning: Failed to compute metrics for plan: {e}");
+                }
+                continue;
+            }
+        };
+
+        // Aggregate metrics using variant's pre-calculated total credits
+        // (includes non-major courses and elective placeholders)
+        let total_credits = f64::from(variant.total_credits);
+        aggregator.add_plan(&course_metrics, total_credits);
+
+        // Update plan selection
+        selector.process_plan(&variant, &course_metrics);
+
+        plans_processed += 1;
+
+        // Progress reporting
+        if ctx.verbose && plans_processed % progress_interval == 0 {
+            eprintln!("  Processed {plans_processed} plans...");
+        }
+    }
+
+    plans_processed
+}
+
+/// Print summary of selected plans
+fn print_selection_summary(
+    selected: &nu_analytics::core::degree::SelectedPlans,
+    plans_processed: usize,
+) {
+    eprintln!("✓ Processed {plans_processed} plans");
+    eprintln!();
+    eprintln!("Selected Plans:");
+    eprintln!(
+        "  Shortest: {} terms",
+        selected
+            .shortest
+            .as_ref()
+            .map_or_else(|| "N/A".to_string(), |p| p.score.terms_required.to_string())
+    );
+    eprintln!(
+        "  Longest: {} terms",
+        selected
+            .longest
+            .as_ref()
+            .map_or_else(|| "N/A".to_string(), |p| p.score.terms_required.to_string())
+    );
+    eprintln!(
+        "  Calc-Ready: {}",
+        if selected.calc_ready_shortest.is_some() {
+            "found"
+        } else {
+            "N/A"
+        }
+    );
+    eprintln!("  Random Samples: {}", selected.random_samples.len());
+}
+
+/// Generate HTML report and CSV exports
+fn generate_analysis_outputs(
+    ctx: &AnalysisContext<'_>,
+    options: &DegreeOptions,
+    aggregator: &MetricsAggregator,
+    selected: &nu_analytics::core::degree::SelectedPlans,
+) -> Result<Vec<String>, String> {
+    let mut outputs_generated = Vec::new();
+
+    // Generate HTML report
+    if !options.no_report {
+        let report_path = generate_html_report(ctx, options, aggregator, selected)?;
+        outputs_generated.push(format!("Report: {}", report_path.display()));
+    }
+
+    // Export CSV files
+    if !options.no_csv {
+        let exported = export_csv_files(ctx, options, selected)?;
+        for path in exported {
+            outputs_generated.push(format!("CSV: {path}"));
+        }
+    }
+
+    if ctx.verbose && !outputs_generated.is_empty() {
+        eprintln!();
+        eprintln!("Generated Files:");
+        for output in &outputs_generated {
+            eprintln!("  ✓ {output}");
+        }
+    }
+
+    Ok(outputs_generated)
+}
+
+/// Generate HTML report
+fn generate_html_report(
+    ctx: &AnalysisContext<'_>,
+    options: &DegreeOptions,
+    aggregator: &MetricsAggregator,
+    selected: &nu_analytics::core::degree::SelectedPlans,
+) -> Result<std::path::PathBuf, String> {
+    let report_dir = options
+        .report_dir
+        .clone()
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    // Create report directory if needed
+    if !report_dir.exists() {
+        std::fs::create_dir_all(&report_dir).map_err(|e| {
+            format!(
+                "Failed to create report directory {}: {e}",
+                report_dir.display()
+            )
+        })?;
+    }
+
+    let report_path = report_dir.join(format!("{}-analysis.html", ctx.program.degree.degree_id()));
+
+    if ctx.verbose {
+        eprintln!();
+        eprintln!("Generating HTML report: {}", report_path.display());
+    }
+
+    let report_ctx =
+        DegreeReportContext::new(&ctx.school, &ctx.program.degree, aggregator, selected);
+    let generator = DegreeReportGenerator::new();
+    generator
+        .generate(&report_ctx, &report_path)
+        .map_err(|e| format!("Failed to generate report: {e}"))?;
+
+    Ok(report_path)
+}
+
+/// Export CSV files for selected plans
+fn export_csv_files(
+    ctx: &AnalysisContext<'_>,
+    options: &DegreeOptions,
+    selected: &nu_analytics::core::degree::SelectedPlans,
+) -> Result<Vec<String>, String> {
+    let metrics_dir = options.metrics_dir.as_ref().map_or_else(
+        || "metrics".to_string(),
+        |p| p.to_string_lossy().to_string(),
+    );
+
+    let export_config = PlanExportConfig {
+        base_dir: format!("{metrics_dir}/plans"),
+        create_dirs: true,
+    };
+
+    if ctx.verbose {
+        eprintln!("Exporting CSV files to: {}", export_config.base_dir);
+    }
+
+    export_selected_plans(&ctx.school, &ctx.program.degree, selected, &export_config)
+        .map_err(|e| format!("Failed to export CSV files: {e}"))
+}
+
+/// Print final analysis summary
+fn print_analysis_summary(
+    ctx: &AnalysisContext<'_>,
+    aggregator: &MetricsAggregator,
+    plans_processed: usize,
+) {
+    println!();
+    println!("Degree Analysis Complete");
+    println!("========================");
+    println!(
+        "Degree: {} {}",
+        ctx.program.degree.degree_type, ctx.program.degree.name
+    );
+    println!("Plans analyzed: {plans_processed}");
+
+    let degree_stats = aggregator.degree_stats();
+    println!();
+    println!("Degree Statistics (across all plans):");
+    println!(
+        "  Complexity: median {:.1}, range {:.1}-{:.1}",
+        degree_stats.total_complexity.median,
+        degree_stats.total_complexity.min,
+        degree_stats.total_complexity.max
+    );
+    println!(
+        "  Longest Delay: median {:.1}, range {:.1}-{:.1}",
+        degree_stats.longest_delay.median,
+        degree_stats.longest_delay.min,
+        degree_stats.longest_delay.max
+    );
+}
+
+/// Build a School model from the degree program
+fn build_school_from_program(program: &nu_analytics::core::DegreeProgram) -> School {
+    let mut school = School::new(
+        program
+            .degree
+            .institution
+            .clone()
+            .unwrap_or_else(|| "Unknown".to_string()),
+    );
+
+    for (key, course) in &program.courses {
+        let mut school_course = nu_analytics::core::models::Course::new(
+            course.name.clone(),
+            course.prefix.clone(),
+            course.number.clone(),
+            course.credit_hours,
+        );
+        school_course.canonical_name = Some(key.clone());
+
+        // Copy prerequisites from raw string if available
+        school_course
+            .prerequisites_raw
+            .clone_from(&course.prerequisites_raw);
+
+        // Copy corequisites (Vec<String>, not Option)
+        school_course.corequisites.clone_from(&course.corequisites);
+
+        // Copy typically offered and gen_ed attributes
+        school_course
+            .typically_offered
+            .clone_from(&course.typically_offered);
+        school_course
+            .gen_ed_attributes
+            .clone_from(&course.gen_ed_attributes);
+
+        school.add_course(school_course);
+    }
+
+    school
+}
+
+/// Build a DAG from the course graph
+fn build_dag_from_graph(graph: &CourseGraph) -> DAG {
+    let mut dag = DAG::new();
+
+    for key in graph.course_keys() {
+        if let Some(node) = graph.get(key) {
+            // Add node to DAG
+            dag.add_course(key.to_string());
+
+            // Add edges for prerequisites (using prerequisite_paths for flattened list)
+            // Use the first path (simplest/shortest) from DNF form
+            if !node.prerequisite_paths.is_empty() {
+                for prereq in &node.prerequisite_paths[0] {
+                    dag.add_prerequisite(key.to_string(), prereq);
+                }
+            }
+
+            // Also add required prerequisites from edges
+            for prereq in node.required_prerequisites() {
+                dag.add_prerequisite(key.to_string(), prereq);
+            }
+        }
+    }
+
+    dag
+}
+
+/// Build a DAG containing only the courses in a specific plan
+///
+/// Filters the full course graph to include only courses in the plan and
+/// their prerequisite relationships within the plan.
+fn build_dag_for_plan(courses: &[String], graph: &CourseGraph) -> DAG {
+    let plan_courses: HashSet<&str> = courses.iter().map(String::as_str).collect();
+    let mut dag = DAG::new();
+
+    for course_key in courses {
+        dag.add_course(course_key.clone());
+
+        // Add prerequisites that are also in the plan
+        if let Some(node) = graph.get(course_key) {
+            // Use the first prerequisite path (DNF) if available
+            if !node.prerequisite_paths.is_empty() {
+                for prereq in &node.prerequisite_paths[0] {
+                    if plan_courses.contains(prereq.as_str()) {
+                        dag.add_prerequisite(course_key.clone(), prereq);
+                    }
+                }
+            }
+
+            // Also add required prerequisites from edges
+            for prereq in node.required_prerequisites() {
+                if plan_courses.contains(prereq) {
+                    dag.add_prerequisite(course_key.clone(), prereq);
+                }
+            }
+        }
+    }
+
+    dag
 }
 
 /// Print a separator between sections

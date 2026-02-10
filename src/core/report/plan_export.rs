@@ -136,16 +136,38 @@ pub fn export_plan_csv(
         let course = school.get_course(course_key);
         let metrics = plan.course_metrics.get(*course_key);
 
-        let name = course.map_or("Unknown", |c| &c.name);
+        // Handle placeholder electives (ELEC###) with better names
+        let is_elective = course_key.starts_with("ELEC");
+        let name = if is_elective {
+            "Elective"
+        } else {
+            course.map_or("Unknown", |c| &c.name)
+        };
         let prefix = course.map_or("", |c| &c.prefix);
         let number = course.map_or("", |c| &c.number);
-        let credits = course.map_or(0.0, |c| c.credit_hours);
+        let credits = if is_elective {
+            // Electives are 3 credits by default, 1-2 if they have 'S' suffix
+            if course_key.ends_with('S') {
+                2.0
+            } else {
+                3.0
+            }
+        } else {
+            course.map_or(0.0, |c| c.credit_hours)
+        };
         let canonical = course
             .and_then(|c| c.canonical_name.as_deref())
             .unwrap_or("");
 
+        // Use prerequisites_raw if prerequisites vec is empty (YAML source)
         let prereqs = course
-            .map(|c| c.prerequisites.join(";"))
+            .map(|c| {
+                if c.prerequisites.is_empty() {
+                    c.prerequisites_raw.clone().unwrap_or_default()
+                } else {
+                    c.prerequisites.join(";")
+                }
+            })
             .unwrap_or_default();
         let coreqs = course.map(|c| c.corequisites.join(";")).unwrap_or_default();
         let strict_coreqs = course

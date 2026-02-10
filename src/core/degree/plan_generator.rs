@@ -2,12 +2,22 @@
 //!
 //! Generates all valid combinations of course selections that satisfy
 //! a degree's requirements, using lazy iteration to handle large plan spaces.
+//!
+//! The generator separates requirements into two categories:
+//! - **Major requirements**: Enumerated to generate all possible plan combinations
+//! - **Non-major requirements** (`gen_ed`, supporting, elective): Simplified to first/shortest option
+//!
+//! This design keeps combinatorial explosion manageable while still capturing
+//! the meaningful variations in degree complexity.
 
 use super::plan_variant::PlanVariant;
 use super::requirement_resolver::{RequirementResolver, ResolvedRequirement};
 use crate::core::models::course::Course;
 use crate::core::models::degree::Requirement;
 use std::collections::HashMap;
+
+/// Categories that should be enumerated for plan generation
+const ENUMERABLE_CATEGORIES: [&str; 1] = ["major"];
 
 /// Configuration for plan generation
 #[derive(Debug, Clone)]
@@ -16,18 +26,27 @@ pub struct PlanGeneratorConfig {
     pub max_plans: usize,
 
     /// Skip plans that are equivalent (same courses, same metrics)
+    /// Defaults to true - use `full_run` to disable
     pub ignore_duplicates: bool,
 
     /// Number of random plans to sample
     pub sample_count: usize,
+
+    /// Target total credits for the degree (adds placeholder electives if needed)
+    pub target_credits: Option<u32>,
+
+    /// Default credit hours for placeholder electives
+    pub default_elective_credits: f32,
 }
 
 impl Default for PlanGeneratorConfig {
     fn default() -> Self {
         Self {
             max_plans: 1_000_000,
-            ignore_duplicates: false,
+            ignore_duplicates: true, // Default to true per user request
             sample_count: 5,
+            target_credits: None,
+            default_elective_credits: 3.0,
         }
     }
 }
@@ -49,6 +68,15 @@ pub struct PlanGenerationStats {
 
     /// Breakdown of choices per variable requirement
     pub requirement_choices: Vec<(String, usize)>,
+
+    /// Total credits from major requirements
+    pub major_credits: f32,
+
+    /// Total credits from non-major requirements (`gen_ed`, supporting, etc.)
+    pub non_major_credits: f32,
+
+    /// Credits added from placeholder electives
+    pub elective_placeholder_credits: f32,
 }
 
 impl PlanGenerationStats {
@@ -60,9 +88,20 @@ impl PlanGenerationStats {
 }
 
 /// Generates all possible degree plans from requirements
+///
+/// The generator separates requirements by category:
+/// - Major requirements are enumerated to generate all combinations
+/// - Non-major requirements (`gen_ed`, supporting, elective) use simplest option
+/// - Placeholder electives are added to reach target credits if specified
 pub struct PlanGenerator<'a> {
-    /// Resolved requirements with their choices
-    resolved: Vec<ResolvedRequirement>,
+    /// Major requirements to enumerate (category = "major")
+    major_requirements: Vec<ResolvedRequirement>,
+
+    /// Non-major requirements with fixed (first) choice
+    non_major_courses: Vec<String>,
+
+    /// Credits from non-major requirements
+    non_major_credits: f32,
 
     /// Course credit information
     course_credits: HashMap<String, f32>,
@@ -76,6 +115,8 @@ pub struct PlanGenerator<'a> {
 
 impl<'a> PlanGenerator<'a> {
     /// Create a new plan generator
+    ///
+    /// Separates requirements into major (enumerated) and non-major (simplified).
     ///
     /// # Arguments
     /// * `requirements` - Degree requirements to generate plans from
@@ -97,18 +138,49 @@ impl<'a> PlanGenerator<'a> {
             .map(|(k, c)| (k.clone(), c.credit_hours))
             .collect();
 
+        // Separate major vs non-major requirements
+        let (major_requirements, non_major_requirements): (Vec<_>, Vec<_>) =
+            resolved.into_iter().partition(|r| {
+                r.category
+                    .as_ref()
+                    .is_some_and(|cat| ENUMERABLE_CATEGORIES.contains(&cat.as_str()))
+            });
+
+        // For non-major requirements, pick the first/simplest choice
+        let mut non_major_courses = Vec::new();
+        let mut non_major_credits = 0.0f32;
+
+        for req in &non_major_requirements {
+            if let Some(first_choice) = req.choices.first() {
+                for course in first_choice {
+                    let credits = course_credits.get(course).copied().unwrap_or(3.0);
+                    non_major_credits += credits;
+                    non_major_courses.push(course.clone());
+                }
+            }
+        }
+
+        // Sort and dedupe non-major courses
+        non_major_courses.sort();
+        non_major_courses.dedup();
+
         Self {
-            resolved,
+            major_requirements,
+            non_major_courses,
+            non_major_credits,
             course_credits,
             config,
             _courses: courses,
         }
     }
 
-    /// Estimate the total number of possible plans
+    /// Estimate the total number of possible plans (major requirements only)
     #[must_use]
     pub fn estimate_plan_count(&self) -> usize {
-        self.resolved
+        if self.major_requirements.is_empty() {
+            return 1; // Single plan with no major choices
+        }
+        self.major_requirements
             .iter()
             .map(|r| r.choice_count.max(1))
             .product()
@@ -117,7 +189,11 @@ impl<'a> PlanGenerator<'a> {
     /// Get statistics about the plan space
     #[must_use]
     pub fn get_stats(&self) -> PlanGenerationStats {
-        let variable_reqs: Vec<_> = self.resolved.iter().filter(|r| r.is_variable).collect();
+        let variable_reqs: Vec<_> = self
+            .major_requirements
+            .iter()
+            .filter(|r| r.is_variable)
+            .collect();
 
         PlanGenerationStats {
             total_possible: self.estimate_plan_count(),
@@ -128,7 +204,22 @@ impl<'a> PlanGenerator<'a> {
                 .iter()
                 .map(|r| (r.id.clone(), r.choice_count))
                 .collect(),
+            major_credits: 0.0, // Will be computed during generation
+            non_major_credits: self.non_major_credits,
+            elective_placeholder_credits: 0.0, // Will be computed during generation
         }
+    }
+
+    /// Calculate placeholder elective credits needed to reach target
+    #[allow(clippy::cast_precision_loss)] // Safe: credit values are small integers
+    fn calculate_elective_placeholders(&self, plan_credits: f32) -> f32 {
+        if let Some(target) = self.config.target_credits {
+            let target_f32 = target as f32;
+            if plan_credits < target_f32 {
+                return target_f32 - plan_credits;
+            }
+        }
+        0.0
     }
 
     /// Generate all plans up to the configured limit
@@ -162,6 +253,14 @@ impl<'a> PlanGenerator<'a> {
                 seen_fingerprints.insert(fp);
             }
 
+            // Track credits for first plan to populate stats
+            if plans.is_empty() {
+                let major_credits = plan.total_credits - self.non_major_credits;
+                stats.major_credits = major_credits;
+                stats.elective_placeholder_credits =
+                    self.calculate_elective_placeholders(plan.total_credits);
+            }
+
             plans.push(plan);
         }
 
@@ -171,11 +270,14 @@ impl<'a> PlanGenerator<'a> {
 }
 
 /// Iterator over generated plans
+///
+/// Iterates through all combinations of major requirement choices,
+/// combining each with fixed non-major courses and placeholder electives.
 pub struct PlanIterator<'a> {
     /// Reference to the generator
     generator: &'a PlanGenerator<'a>,
 
-    /// Current indices into each requirement's choices
+    /// Current indices into each major requirement's choices
     indices: Vec<usize>,
 
     /// Whether we've finished iterating
@@ -186,10 +288,15 @@ pub struct PlanIterator<'a> {
 }
 
 impl<'a> PlanIterator<'a> {
+    /// Create a new plan iterator
     fn new(generator: &'a PlanGenerator<'a>) -> Self {
-        let indices = vec![0; generator.resolved.len()];
-        let done = generator.resolved.is_empty()
-            || generator.resolved.iter().any(|r| r.choices.is_empty());
+        let indices = vec![0; generator.major_requirements.len()];
+        // Done if no major requirements (single plan) or any requirement has no choices
+        let done = !generator.major_requirements.is_empty()
+            && generator
+                .major_requirements
+                .iter()
+                .any(|r| r.choices.is_empty());
 
         Self {
             generator,
@@ -200,25 +307,95 @@ impl<'a> PlanIterator<'a> {
     }
 
     /// Build a plan variant from current indices
+    ///
+    /// Combines major requirement choices with fixed non-major courses
+    /// and adds placeholder electives to reach target credits.
     fn build_current_plan(&self) -> PlanVariant {
         let mut requirement_choices: HashMap<String, Vec<String>> = HashMap::new();
 
-        for (i, req) in self.generator.resolved.iter().enumerate() {
+        // Add major requirement choices based on current indices
+        for (i, req) in self.generator.major_requirements.iter().enumerate() {
             let choice_idx = self.indices[i];
             if choice_idx < req.choices.len() {
                 requirement_choices.insert(req.id.clone(), req.choices[choice_idx].clone());
             }
         }
 
-        PlanVariant::new(requirement_choices, &self.generator.course_credits)
+        // Add non-major courses as a fixed "non_major" requirement
+        if !self.generator.non_major_courses.is_empty() {
+            requirement_choices.insert(
+                "_non_major".to_string(),
+                self.generator.non_major_courses.clone(),
+            );
+        }
+
+        // Create base plan
+        let mut plan = PlanVariant::new(requirement_choices, &self.generator.course_credits);
+
+        // Add placeholder electives if needed to reach target credits
+        let elective_credits = self
+            .generator
+            .calculate_elective_placeholders(plan.total_credits);
+        if elective_credits > 0.0 {
+            plan = self.add_elective_placeholders(plan, elective_credits);
+        }
+
+        plan
+    }
+
+    /// Add placeholder elective courses to reach target credits
+    ///
+    /// Creates generic 3-credit elective placeholders plus a smaller one
+    /// if there's a remainder.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn add_elective_placeholders(&self, mut plan: PlanVariant, credits_needed: f32) -> PlanVariant {
+        let default_credits = self.generator.config.default_elective_credits;
+        // Safe: credits_needed is always non-negative and reasonable
+        let full_electives = (credits_needed / default_credits).floor() as usize;
+        let remainder = credits_needed % default_credits;
+
+        let mut elective_courses = Vec::new();
+
+        // Add full-credit electives
+        for i in 0..full_electives {
+            elective_courses.push(format!("ELEC{:03}", i + 1));
+        }
+
+        // Add partial elective if there's a remainder
+        if remainder > 0.5 {
+            elective_courses.push(format!("ELEC{:03}S", full_electives + 1));
+        }
+
+        // Add electives to plan
+        if !elective_courses.is_empty() {
+            let mut new_courses = plan.courses.clone();
+            new_courses.extend(elective_courses.clone());
+            new_courses.sort();
+
+            let mut new_choices = plan.requirement_choices.clone();
+            new_choices.insert("_elective_placeholders".to_string(), elective_courses);
+
+            // Recalculate total credits
+            let total_credits = plan.total_credits + credits_needed;
+
+            plan = PlanVariant::from_parts(new_courses, new_choices, total_credits);
+        }
+
+        plan
     }
 
     /// Advance to the next combination of choices
     fn advance(&mut self) {
+        if self.generator.major_requirements.is_empty() {
+            // Only one plan possible with no major choices
+            self.done = true;
+            return;
+        }
+
         // Increment indices like a multi-digit counter
         for i in (0..self.indices.len()).rev() {
             self.indices[i] += 1;
-            if self.indices[i] < self.generator.resolved[i].choices.len() {
+            if self.indices[i] < self.generator.major_requirements[i].choices.len() {
                 return;
             }
             self.indices[i] = 0;
@@ -424,7 +601,10 @@ mod tests {
     fn test_plan_unique_courses() {
         let courses = sample_courses();
         let reqs = sample_requirements();
-        let config = PlanGeneratorConfig::default();
+        let config = PlanGeneratorConfig {
+            ignore_duplicates: false, // Need all plans for this test
+            ..Default::default()
+        };
 
         let generator = PlanGenerator::new(&reqs, &courses, config);
         let (plans, _) = generator.generate_all();
@@ -434,5 +614,81 @@ mod tests {
 
         // Exactly one plan should have CS3000
         assert_eq!(electives.iter().filter(|&&x| x).count(), 1);
+    }
+
+    #[test]
+    fn test_non_major_requirements_simplified() {
+        let courses = sample_courses();
+        let mut reqs = sample_requirements();
+
+        // Add a non-major (gen_ed) requirement with multiple choices
+        reqs.insert(
+            "gen_ed".to_string(),
+            Requirement {
+                name: Some("Gen Ed Math".to_string()),
+                req_type: RequirementType::Select,
+                category: Some("gen_ed".to_string()),
+                courses: None,
+                from: Some(FromClause {
+                    courses: Some(vec!["MATH1000".to_string(), "MATH2000".to_string()]),
+                    pattern: None,
+                    include: None,
+                    exclude: None,
+                    groups: None,
+                    groups_required: None,
+                    per_group: None,
+                }),
+                count: Some(1),
+                credits: None,
+                credit_range: None,
+                constraints: None,
+                options: None,
+            },
+        );
+
+        let config = PlanGeneratorConfig {
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+
+        let generator = PlanGenerator::new(&reqs, &courses, config);
+        let (plans, stats) = generator.generate_all();
+
+        // Should still only have 3 plans (gen_ed doesn't contribute to combinations)
+        assert_eq!(plans.len(), 3);
+        assert_eq!(stats.total_possible, 3);
+
+        // All plans should have the first gen_ed option (MATH1000)
+        for plan in &plans {
+            assert!(plan.contains_course("MATH1000"));
+        }
+
+        // Non-major credits should be tracked
+        assert!((stats.non_major_credits - 3.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_elective_placeholders() {
+        let courses = sample_courses();
+        let reqs = sample_requirements();
+        let config = PlanGeneratorConfig {
+            target_credits: Some(30), // Higher than actual course credits
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+
+        let generator = PlanGenerator::new(&reqs, &courses, config);
+        let (plans, _) = generator.generate_all();
+
+        // All plans should reach target credits
+        for plan in &plans {
+            assert!(
+                plan.total_credits >= 30.0,
+                "Plan has {} credits, expected >= 30",
+                plan.total_credits
+            );
+            // Should have elective placeholders
+            assert!(plan.contains_course("ELEC001"));
+        }
     }
 }

@@ -28,6 +28,7 @@ fn test_plan_generation_from_yaml() {
         max_plans: 100,
         ignore_duplicates: false,
         sample_count: 5,
+        ..Default::default()
     };
 
     let generator = PlanGenerator::new(&program.requirements, &program.courses, config);
@@ -111,6 +112,7 @@ fn test_plan_generation_stats() {
         max_plans: 1000,
         ignore_duplicates: false,
         sample_count: 5,
+        ..Default::default()
     };
 
     let generator = PlanGenerator::new(&program.requirements, &program.courses, config);
@@ -195,6 +197,7 @@ fn test_plan_uniqueness() {
         max_plans: 50,
         ignore_duplicates: false,
         sample_count: 5,
+        ..Default::default()
     };
 
     let generator = PlanGenerator::new(&program.requirements, &program.courses, config);

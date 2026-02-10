@@ -58,6 +58,25 @@ pub enum ReportFormatArg {
     Pdf,
 }
 
+/// Calculation strategy for aggregate metrics
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq, Default)]
+pub enum CalcStrategyArg {
+    /// Median (default) - robust to outliers
+    #[default]
+    Median,
+    /// Mean - arithmetic average
+    Mean,
+}
+
+impl std::fmt::Display for CalcStrategyArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Median => write!(f, "median"),
+            Self::Mean => write!(f, "mean"),
+        }
+    }
+}
+
 impl ReportFormatArg {
     /// Get the file extension for this format
     #[must_use]
@@ -197,18 +216,26 @@ pub enum Command {
     /// Validate and analyze degree program YAML files.
     ///
     /// Load a degree program YAML file and validate its structure, requirements,
-    /// prerequisites, and cross-listing relationships.
+    /// prerequisites, and cross-listing relationships. By default (no flags),
+    /// runs full degree analysis (--analyze). Use specific flags to run only
+    /// validation, graph printing, or audit.
+    ///
+    /// Circular prerequisites are automatically broken by removing optional edges
+    /// to create a valid DAG for analysis.
     ///
     /// # Examples
     /// ```sh
-    /// # Validate a degree program
+    /// # Run full degree analysis (default action)
+    /// nuanalytics degree samples/degrees/csu-cs-bscs-general.yaml
+    ///
+    /// # Validate a degree program only
     /// nuanalytics degree --validate samples/degrees/csu-cs-bscs-general.yaml
     ///
     /// # Print prerequisite graph
     /// nuanalytics degree --print-graph samples/degrees/csu-cs-bscs-general.yaml
     ///
-    /// # Both validate and print graph
-    /// nuanalytics degree --validate --print-graph samples/degrees/uhm-ics-bscs-general.yaml
+    /// # Analyze with custom settings
+    /// nuanalytics degree --analyze --calc-strategy mean --sample-plans 10 degree.yaml
     /// ```
     Degree {
         /// Path to the degree program YAML file
@@ -227,6 +254,43 @@ pub enum Command {
         /// Includes validation, missing prerequisites analysis, and deep chain detection
         #[arg(long)]
         audit: bool,
+
+        /// Run full degree analysis: generate all plans and produce HTML report with statistics.
+        /// This is the default action when no other flags are specified.
+        #[arg(long)]
+        analyze: bool,
+
+        /// Calculation strategy for aggregate metrics (median or mean)
+        #[arg(long, value_enum, value_name = "STRATEGY")]
+        calc_strategy: Option<CalcStrategyArg>,
+
+        /// Number of random plans to sample and export (default: 5)
+        #[arg(long, value_name = "COUNT")]
+        sample_plans: Option<usize>,
+
+        /// Maximum number of plans to generate (safety cap)
+        #[arg(long, value_name = "COUNT")]
+        max_plans: Option<usize>,
+
+        /// Generate all plan combinations without deduplication (overrides default)
+        #[arg(long)]
+        full_run: bool,
+
+        /// Override reports output directory (from config)
+        #[arg(long, value_name = "DIR")]
+        report_dir: Option<PathBuf>,
+
+        /// Override metrics output directory (from config)
+        #[arg(long, value_name = "DIR")]
+        metrics_dir: Option<PathBuf>,
+
+        /// Skip CSV plan export
+        #[arg(long)]
+        no_csv: bool,
+
+        /// Skip HTML report generation
+        #[arg(long)]
+        no_report: bool,
     },
 }
 

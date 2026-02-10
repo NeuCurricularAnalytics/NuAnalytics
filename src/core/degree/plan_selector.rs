@@ -126,6 +126,9 @@ pub struct PlanSelectorConfig {
 
     /// Course codes for calculus prerequisites to skip in calc-ready mode
     pub calculus_prereqs: Vec<String>,
+
+    /// Patterns to detect calculus courses (regex-like: prefix contains these)
+    pub calculus_patterns: Vec<String>,
 }
 
 impl Default for PlanSelectorConfig {
@@ -133,15 +136,35 @@ impl Default for PlanSelectorConfig {
         Self {
             sample_count: 5,
             scheduler_config: SchedulerConfig::default(),
+            // Common calculus course codes across institutions
             calculus_courses: vec![
-                "MATH1341".to_string(), // Calculus 1
-                "MATH1342".to_string(), // Calculus 2
-                "MATH2321".to_string(), // Calculus 3
+                // NEU
+                "MATH1341".to_string(),
+                "MATH1342".to_string(),
+                "MATH2321".to_string(),
+                // CSU (Colorado State)
+                "MATH155".to_string(),
+                "MATH156".to_string(),
+                "MATH160".to_string(),
+                "MATH161".to_string(),
+                // Generic patterns
+                "CALC".to_string(),
             ],
             calculus_prereqs: vec![
-                "MATH1120".to_string(), // Precalculus
-                "MATH1215".to_string(), // Mathematical Thinking
+                // NEU
+                "MATH1120".to_string(),
+                "MATH1215".to_string(),
+                // CSU
+                "MATH117".to_string(),
+                "MATH118".to_string(),
+                "MATH120".to_string(),
+                "MATH124".to_string(),
+                "MATH125".to_string(),
+                "MATH126".to_string(),
+                "MATH127".to_string(),
             ],
+            // Patterns that indicate a calculus course (used for fuzzy matching)
+            calculus_patterns: vec!["Calculus".to_string(), "CALC".to_string()],
         }
     }
 }
@@ -295,14 +318,19 @@ impl<'a> PlanSelector<'a> {
     /// A plan is calc-ready if it contains calculus courses.
     /// All such plans are considered calc-ready candidates.
     fn is_calc_ready_plan(&self, variant: &PlanVariant) -> bool {
-        // All plans are potential calc-ready candidates
-        // If no calculus is needed, it's trivially calc-ready
-        // If calculus is needed, the scheduling would assume calc prereqs satisfied
-        variant.courses.iter().any(|c| {
+        // Check if any course matches calculus course codes or patterns
+        variant.courses.iter().any(|course| {
+            // Direct match with calculus courses
             self.config
                 .calculus_courses
                 .iter()
-                .any(|calc| c.contains(calc))
+                .any(|calc| course.contains(calc))
+                // Pattern match with calculus patterns (e.g., "Calculus" in course name)
+                || self
+                    .config
+                    .calculus_patterns
+                    .iter()
+                    .any(|pattern| course.to_uppercase().contains(&pattern.to_uppercase()))
         })
     }
 

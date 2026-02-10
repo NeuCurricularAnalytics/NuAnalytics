@@ -93,7 +93,7 @@ pub struct DegreeAnalysisConfig {
     pub max_plans: usize,
 
     /// Skip equivalent plan combinations
-    #[serde(default)]
+    #[serde(default = "default_ignore_duplicates")]
     pub ignore_duplicates: bool,
 }
 
@@ -109,13 +109,17 @@ const fn default_max_plans() -> usize {
     1_000_000
 }
 
+const fn default_ignore_duplicates() -> bool {
+    true
+}
+
 impl Default for DegreeAnalysisConfig {
     fn default() -> Self {
         Self {
             calc_strategy: default_calc_strategy(),
             sample_plan_count: default_sample_plan_count(),
             max_plans: default_max_plans(),
-            ignore_duplicates: false,
+            ignore_duplicates: default_ignore_duplicates(),
         }
     }
 }

@@ -358,6 +358,89 @@ impl CourseGraph {
         }
     }
 
+    /// Break cycles in the graph by removing edges
+    ///
+    /// When cycles exist (often due to OR-prerequisites creating circular paths),
+    /// this method removes one edge from each cycle to create a valid DAG.
+    /// Prefers removing optional (OR-group) edges over required edges.
+    ///
+    /// # Arguments
+    /// * `cycles` - The cycles detected in the graph
+    ///
+    /// # Returns
+    /// A vector of edges that were removed: (course, prerequisite)
+    pub fn break_cycles(&mut self, cycles: &[Vec<String>]) -> Vec<(String, String)> {
+        let mut removed_edges = Vec::new();
+
+        for cycle in cycles {
+            if cycle.len() < 2 {
+                continue;
+            }
+
+            // Find the best edge to remove (prefer optional/OR edges)
+            let edge_to_remove = self.find_best_edge_to_break(cycle);
+
+            if let Some((course, prereq)) = edge_to_remove {
+                // Remove the edge
+                if let Some(node) = self.nodes.get_mut(&course) {
+                    node.prerequisites.retain(|e| e.prerequisite != prereq);
+                }
+                // Also remove from reverse edges
+                if let Some(prereq_node) = self.nodes.get_mut(&prereq) {
+                    prereq_node.dependents.retain(|d| d != &course);
+                }
+                removed_edges.push((course, prereq));
+            }
+        }
+
+        // Recompute topological order after breaking cycles
+        let remaining_cycles = self.detect_cycles();
+        if remaining_cycles.is_empty() {
+            self.topo_order = Some(self.compute_topological_order());
+        }
+
+        removed_edges
+    }
+
+    /// Find the best edge to remove from a cycle
+    ///
+    /// Prefers optional (OR-group) edges over required edges.
+    /// Within a cycle A → B → C → A, we look at edges (A,B), (B,C), (C,A).
+    fn find_best_edge_to_break(&self, cycle: &[String]) -> Option<(String, String)> {
+        // Build list of edges in the cycle with their "removability" score
+        // Higher score = more preferable to remove
+        let mut edges: Vec<(String, String, i32)> = Vec::new();
+
+        for i in 0..cycle.len() - 1 {
+            let course = &cycle[i];
+            let prereq = &cycle[i + 1];
+
+            if let Some(node) = self.nodes.get(course) {
+                for edge in &node.prerequisites {
+                    if &edge.prerequisite == prereq {
+                        // Score: optional edges are preferred (higher score)
+                        let score = match edge.prereq_type {
+                            PrerequisiteType::Optional => 10,
+                            PrerequisiteType::Required => 1,
+                            PrerequisiteType::Corequisite | PrerequisiteType::StrictCorequisite => {
+                                0
+                            } // Don't break coreqs
+                        };
+                        if score > 0 {
+                            edges.push((course.clone(), prereq.clone(), score));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Return edge with highest score
+        edges
+            .into_iter()
+            .max_by_key(|(_, _, score)| *score)
+            .map(|(course, prereq, _)| (course, prereq))
+    }
+
     /// Get a course node by key
     #[must_use]
     pub fn get(&self, key: &str) -> Option<&CourseNode> {
@@ -1804,5 +1887,103 @@ mod tests {
         let chain = graph.min_prerequisite_chain("CS200").unwrap();
         // Should select MATH100 because CS100 path has cycle issues
         assert!(chain.contains(&"MATH100".to_string()) || chain.contains(&"CS100".to_string()));
+    }
+
+    #[test]
+    fn test_break_cycles_removes_optional_edge_first() {
+        let mut graph = CourseGraph::default();
+
+        // Create a cycle: CS100 → CS200 → CS100
+        // CS200 → CS100 is optional, CS100 → CS200 is required
+        // Should remove the optional edge
+        let mut cs100 = CourseNode::new("CS100".to_string(), None);
+        cs100.prerequisites.push(PrerequisiteEdge {
+            prerequisite: "CS200".to_string(),
+            prereq_type: PrerequisiteType::Required,
+            or_group: None,
+        });
+        graph.nodes.insert("CS100".to_string(), cs100);
+
+        let mut cs200 = CourseNode::new("CS200".to_string(), None);
+        cs200.prerequisites.push(PrerequisiteEdge {
+            prerequisite: "CS100".to_string(),
+            prereq_type: PrerequisiteType::Optional,
+            or_group: Some(0),
+        });
+        graph.nodes.insert("CS200".to_string(), cs200);
+
+        // Build reverse edges
+        if let Some(cs100_node) = graph.nodes.get_mut("CS100") {
+            cs100_node.dependents.push("CS200".to_string());
+        }
+        if let Some(cs200_node) = graph.nodes.get_mut("CS200") {
+            cs200_node.dependents.push("CS100".to_string());
+        }
+
+        let cycles = vec![vec![
+            "CS100".to_string(),
+            "CS200".to_string(),
+            "CS100".to_string(),
+        ]];
+
+        let removed = graph.break_cycles(&cycles);
+
+        // Should remove the optional edge (CS200 → CS100)
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0], ("CS200".to_string(), "CS100".to_string()));
+
+        // Graph should now have topological order
+        assert!(!graph.has_cycles());
+    }
+
+    #[test]
+    fn test_break_cycles_handles_multiple_cycles() {
+        let mut graph = CourseGraph::default();
+
+        // Create two separate cycles
+        // Cycle 1: A → B → A
+        // Cycle 2: C → D → C
+
+        let mut a = CourseNode::new("A".to_string(), None);
+        a.prerequisites.push(PrerequisiteEdge {
+            prerequisite: "B".to_string(),
+            prereq_type: PrerequisiteType::Optional,
+            or_group: Some(0),
+        });
+        graph.nodes.insert("A".to_string(), a);
+
+        let mut b = CourseNode::new("B".to_string(), None);
+        b.prerequisites.push(PrerequisiteEdge {
+            prerequisite: "A".to_string(),
+            prereq_type: PrerequisiteType::Optional,
+            or_group: Some(0),
+        });
+        graph.nodes.insert("B".to_string(), b);
+
+        let mut c = CourseNode::new("C".to_string(), None);
+        c.prerequisites.push(PrerequisiteEdge {
+            prerequisite: "D".to_string(),
+            prereq_type: PrerequisiteType::Optional,
+            or_group: Some(1),
+        });
+        graph.nodes.insert("C".to_string(), c);
+
+        let mut d = CourseNode::new("D".to_string(), None);
+        d.prerequisites.push(PrerequisiteEdge {
+            prerequisite: "C".to_string(),
+            prereq_type: PrerequisiteType::Optional,
+            or_group: Some(1),
+        });
+        graph.nodes.insert("D".to_string(), d);
+
+        let cycles = vec![
+            vec!["A".to_string(), "B".to_string(), "A".to_string()],
+            vec!["C".to_string(), "D".to_string(), "C".to_string()],
+        ];
+
+        let removed = graph.break_cycles(&cycles);
+
+        // Should remove one edge from each cycle
+        assert_eq!(removed.len(), 2);
     }
 }
