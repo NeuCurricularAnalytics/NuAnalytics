@@ -247,13 +247,16 @@ pub struct PlanVariant {
 - Reuse existing metrics_export format
 - Output special plans + sampled plans
 
-### Files to Create/Modify
-- [ ] `src/core/statistics/box_plot.rs`
-- [ ] `src/core/report/degree_report.rs`
-- [ ] Update `src/core/report/formats/html.rs`
+### Files Created
+- [x] `src/core/statistics/box_plot.rs` - Pure Rust SVG box plot generation
+- [x] `src/core/report/degree_report.rs` - Degree analysis HTML report generator
+- [x] `src/core/report/plan_export.rs` - CSV export for selected plans
+- [x] `src/core/report/templates/degree_report.html` - HTML template
 
-### Dependencies to Add
-- `plotters` - SVG chart generation
+### Tests Added
+- 16 unit tests for box plot generation
+- 5 unit tests for degree report
+- 7 unit tests for plan export
 
 ---
 
@@ -310,5 +313,5 @@ ignore_duplicates = false       # skip equivalent combinations
 | 2. Plan Generation | ✅ Complete | 2026-02-09 | 2026-02-09 |
 | 3. Metrics Aggregation | ✅ Complete | 2026-02-09 | 2026-02-09 |
 | 4. Special Plan Selection | ✅ Complete | 2026-02-10 | 2026-02-10 |
-| 5. Report Generation | ⬜ Not Started | | |
+| 5. Report Generation | ✅ Complete | 2026-02-10 | 2026-02-10 |
 | 6. CLI Integration | ⬜ Not Started | | |
