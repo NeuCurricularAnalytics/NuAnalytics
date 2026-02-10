@@ -5,6 +5,7 @@
 //! - YAML parsing functions (`yaml_parser`)
 //! - Direct conversion to unified `Degree` and `Course` models for metrics/plans
 //! - Plan generation for degree analysis
+//! - Plan selection for identifying special plans (shortest, longest, etc.)
 //!
 //! # Example
 //! ```no_run
@@ -22,6 +23,7 @@
 
 pub mod course_reference;
 pub mod plan_generator;
+pub mod plan_selector;
 pub mod plan_variant;
 pub mod requirement_resolver;
 pub mod validation;
@@ -59,3 +61,8 @@ pub use validation::{
 pub use plan_generator::{PlanGenerationStats, PlanGenerator, PlanGeneratorConfig};
 pub use plan_variant::PlanVariant;
 pub use requirement_resolver::{RequirementResolver, ResolvedRequirement};
+
+// Re-export plan selection types
+pub use plan_selector::{
+    PlanCategory, PlanScore, PlanSelector, PlanSelectorConfig, ScoredPlan, SelectedPlans,
+};

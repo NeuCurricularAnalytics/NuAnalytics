@@ -218,3 +218,102 @@ fn test_plan_uniqueness() {
         seen.len()
     );
 }
+
+/// Test plan score comparison logic
+#[test]
+fn test_plan_score_comparison() {
+    use nu_analytics::core::degree::PlanScore;
+
+    let score1 = PlanScore {
+        terms_required: 8,
+        total_complexity: 150,
+        longest_delay: 6,
+        is_calc_ready: false,
+    };
+
+    let score2 = PlanScore {
+        terms_required: 9,
+        total_complexity: 160,
+        longest_delay: 7,
+        is_calc_ready: false,
+    };
+
+    let score3 = PlanScore {
+        terms_required: 8,
+        total_complexity: 140,
+        longest_delay: 5,
+        is_calc_ready: false,
+    };
+
+    // Basic comparison
+    assert!(score1.is_shorter_than(&score2));
+    assert!(score2.is_longer_than(&score1));
+
+    // Same terms, different complexity
+    assert!(score3.has_lower_complexity(&score1));
+    assert!(!score1.has_lower_complexity(&score3));
+}
+
+/// Test plan category utilities
+#[test]
+fn test_plan_category_utilities() {
+    use nu_analytics::core::degree::PlanCategory;
+
+    assert_eq!(PlanCategory::Shortest.display_name(), "Shortest Path");
+    assert_eq!(PlanCategory::Shortest.file_name(), "shortest");
+
+    assert_eq!(PlanCategory::Longest.display_name(), "Longest Path");
+    assert_eq!(PlanCategory::Longest.file_name(), "longest");
+
+    assert_eq!(
+        PlanCategory::CalcReadyShortest.display_name(),
+        "Calculus-Ready Shortest"
+    );
+    assert_eq!(
+        PlanCategory::CalcReadyShortest.file_name(),
+        "calc-ready-shortest"
+    );
+
+    assert_eq!(PlanCategory::RandomSample.display_name(), "Random Sample");
+    assert_eq!(PlanCategory::RandomSample.file_name(), "random-sample");
+}
+
+/// Test selected plans collection
+#[test]
+fn test_selected_plans_collection() {
+    use nu_analytics::core::degree::{PlanScore, ScoredPlan, SelectedPlans};
+    use nu_analytics::core::report::term_scheduler::TermPlan;
+    use std::collections::HashMap;
+
+    #[allow(clippy::cast_precision_loss)]
+    let create_scored_plan = |courses: &[&str]| ScoredPlan {
+        variant: PlanVariant::from_parts(
+            courses
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
+            HashMap::new(),
+            courses.len() as f32 * 3.0,
+        ),
+        score: PlanScore::default(),
+        schedule: TermPlan::new(8, false, 15.0),
+        course_metrics: HashMap::new(),
+    };
+
+    let selected = SelectedPlans {
+        shortest: Some(create_scored_plan(&["CS1000", "CS2000"])),
+        longest: Some(create_scored_plan(&["CS1000", "CS2000", "CS3000"])),
+        calc_ready_shortest: None,
+        random_samples: vec![
+            create_scored_plan(&["CS1000"]),
+            create_scored_plan(&["CS2000"]),
+        ],
+        total_plans_seen: 100,
+    };
+
+    assert_eq!(selected.special_plan_count(), 2);
+    assert_eq!(selected.total_count(), 4);
+
+    // Test iteration
+    assert_eq!(selected.iter().count(), 4);
+}

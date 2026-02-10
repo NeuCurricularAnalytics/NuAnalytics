@@ -198,9 +198,18 @@ pub struct PlanVariant {
 
 ---
 
-## Phase 4: Special Plan Selection
+## Phase 4: Special Plan Selection ✅ COMPLETE
 
 **Goal**: Identify and retain shortest/longest/calc-ready plans
+
+**Completed**:
+- ✅ `PlanScore` for comparing plans by terms and complexity
+- ✅ `ScoredPlan` combining variant, score, schedule, and metrics
+- ✅ `PlanSelector` for tracking best plans during enumeration
+- ✅ Reservoir sampling (Algorithm R) for random plan selection
+- ✅ `SelectedPlans` collection for final results
+- ✅ `PlanCategory` enum for plan classification
+- ✅ 6 unit tests + 3 integration tests
 
 ### 4.1 Plan Scoring
 - `shortest_terms()` - Use TermScheduler, minimize terms
@@ -215,9 +224,8 @@ pub struct PlanVariant {
 - Track current best for each category
 - Update atomically during parallel processing
 
-### Files to Create/Modify
-- [ ] `src/core/degree/plan_selector.rs`
-- [ ] `src/core/degree/plan_sampler.rs`
+### Files Created
+- [x] `src/core/degree/plan_selector.rs`
 
 ---
 
@@ -301,6 +309,6 @@ ignore_duplicates = false       # skip equivalent combinations
 | 1. Core Infrastructure | ✅ Complete | 2026-02-09 | 2026-02-09 |
 | 2. Plan Generation | ✅ Complete | 2026-02-09 | 2026-02-09 |
 | 3. Metrics Aggregation | ✅ Complete | 2026-02-09 | 2026-02-09 |
-| 4. Special Plan Selection | ⬜ Not Started | | |
+| 4. Special Plan Selection | ✅ Complete | 2026-02-10 | 2026-02-10 |
 | 5. Report Generation | ⬜ Not Started | | |
 | 6. CLI Integration | ⬜ Not Started | | |
