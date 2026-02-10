@@ -4,7 +4,7 @@
 //! to CSV format compatible with the existing planner export.
 
 use crate::core::degree::plan_selector::{PlanCategory, ScoredPlan, SelectedPlans};
-use crate::core::models::{Degree, Plan, School};
+use crate::core::models::{Course, Degree, Plan, School};
 use std::error::Error;
 use std::fs::{self, File};
 use std::io::Write;
@@ -136,25 +136,9 @@ pub fn export_plan_csv(
         let course = school.get_course(course_key);
         let metrics = plan.course_metrics.get(*course_key);
 
-        // Handle placeholder electives (ELEC###) with better names
-        let is_elective = course_key.starts_with("ELEC");
-        let name = if is_elective {
-            "Elective"
-        } else {
-            course.map_or("Unknown", |c| &c.name)
-        };
-        let prefix = course.map_or("", |c| &c.prefix);
-        let number = course.map_or("", |c| &c.number);
-        let credits = if is_elective {
-            // Electives are 3 credits by default, 1-2 if they have 'S' suffix
-            if course_key.ends_with('S') {
-                2.0
-            } else {
-                3.0
-            }
-        } else {
-            course.map_or(0.0, |c| c.credit_hours)
-        };
+        // Determine course type and properties based on key pattern
+        let course_info = classify_course_key(course_key, course);
+
         let canonical = course
             .and_then(|c| c.canonical_name.as_deref())
             .unwrap_or("");
@@ -185,13 +169,13 @@ pub fn export_plan_csv(
             file,
             "{},{},\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",{},\"{}\",\"{}\",{:.1},{},{},{}",
             idx + 1,
-            name,
-            prefix,
-            number,
+            course_info.name,
+            course_info.prefix,
+            course_info.number,
             prereqs,
             coreqs,
             strict_coreqs,
-            credits,
+            course_info.credits,
             institution,
             canonical,
             scaled_complexity,
@@ -202,6 +186,89 @@ pub fn export_plan_csv(
     }
 
     Ok(())
+}
+
+/// Classification info for a course (real or placeholder)
+struct CourseInfo {
+    name: String,
+    prefix: String,
+    number: String,
+    credits: f32,
+}
+
+/// Classify a course key to determine its type and properties
+///
+/// Handles:
+/// - Real courses from the catalog
+/// - ELEC### placeholder electives
+/// - Requirement placeholder courses (e.g., WRTC01 for `writing_composition`)
+fn classify_course_key(course_key: &str, course: Option<&Course>) -> CourseInfo {
+    // Check for ELEC### pattern (free electives)
+    if let Some(suffix) = course_key.strip_prefix("ELEC") {
+        let is_small = suffix.ends_with('S');
+        return CourseInfo {
+            name: "Free Elective".to_string(),
+            prefix: "ELEC".to_string(),
+            number: suffix.to_string(),
+            credits: if is_small { 2.0 } else { 3.0 },
+        };
+    }
+
+    // Check if it's a real course from the catalog
+    if let Some(c) = course {
+        return CourseInfo {
+            name: c.name.clone(),
+            prefix: c.prefix.clone(),
+            number: c.number.clone(),
+            credits: c.credit_hours,
+        };
+    }
+
+    // Check for requirement placeholder pattern (uppercase letters followed by digits)
+    // e.g., WRTC01, AUCC01S, etc.
+    let prefix: String = course_key
+        .chars()
+        .take_while(|c| c.is_alphabetic())
+        .collect();
+    let number: String = course_key
+        .chars()
+        .skip_while(|c| c.is_alphabetic())
+        .collect();
+
+    if !prefix.is_empty() && !number.is_empty() {
+        let is_small = number.ends_with('S');
+        let name = humanize_placeholder_prefix(&prefix);
+        return CourseInfo {
+            name,
+            prefix,
+            number,
+            credits: if is_small { 2.0 } else { 3.0 },
+        };
+    }
+
+    // Unknown course
+    CourseInfo {
+        name: "Unknown".to_string(),
+        prefix: String::new(),
+        number: course_key.to_string(),
+        credits: 3.0,
+    }
+}
+
+/// Convert a placeholder prefix back to a human-readable name
+///
+/// Maps common prefixes to descriptive names
+fn humanize_placeholder_prefix(prefix: &str) -> String {
+    match prefix {
+        "ELEC" | "FE" => "Free Elective".to_string(),
+        "WRTC" | "WC" => "Writing/Composition".to_string(),
+        "AUCC" | "AC" => "Gen Ed Citizenship".to_string(),
+        "AW" => "Advanced Writing".to_string(),
+        "NS" => "Natural Science".to_string(),
+        "SB" => "Social/Behavioral Science".to_string(),
+        "HP" => "Historical Perspectives".to_string(),
+        _ => format!("{prefix} Elective"),
+    }
 }
 
 /// Export a plan as a Plan model for use with existing reporters

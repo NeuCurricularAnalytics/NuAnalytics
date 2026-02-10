@@ -1188,6 +1188,11 @@ fn build_school_from_program(program: &nu_analytics::core::DegreeProgram) -> Sch
             .prerequisites_raw
             .clone_from(&course.prerequisites_raw);
 
+        // Also populate the prerequisites vector from prerequisites_raw
+        if let Some(raw) = &course.prerequisites_raw {
+            school_course.prerequisites = parse_prerequisites_from_raw(raw);
+        }
+
         // Copy corequisites (Vec<String>, not Option)
         school_course.corequisites.clone_from(&course.corequisites);
 
@@ -1203,6 +1208,43 @@ fn build_school_from_program(program: &nu_analytics::core::DegreeProgram) -> Sch
     }
 
     school
+}
+
+/// Parse prerequisite course codes from a raw prerequisite string
+///
+/// Extracts course codes from expressions like:
+/// - `"CS165[C]"` → `["CS165"]`
+/// - `"(CS220[C] & CS165[C])"` → `["CS220", "CS165"]`
+/// - `"CS162[C] | CS163[C] | CS164[C]"` → `["CS162", "CS163", "CS164"]`
+fn parse_prerequisites_from_raw(raw: &str) -> Vec<String> {
+    let mut prereqs = Vec::new();
+
+    // Replace operators and brackets with spaces
+    let cleaned = raw.replace(['(', ')', '&', '|', '[', ']'], " ");
+
+    for part in cleaned.split_whitespace() {
+        // Skip grade requirements like "B", "C", etc.
+        if part.len() <= 2
+            && part
+                .chars()
+                .all(|c| c.is_alphabetic() || c == '-' || c == '+')
+        {
+            continue;
+        }
+
+        // Must start with a letter (course code)
+        if part.chars().next().is_some_and(char::is_alphabetic) {
+            // Remove any trailing grade requirement
+            let key = part
+                .find(|c: char| !c.is_alphanumeric())
+                .map_or(part, |idx| &part[..idx]);
+            if !key.is_empty() && !prereqs.contains(&key.to_string()) {
+                prereqs.push(key.to_string());
+            }
+        }
+    }
+
+    prereqs
 }
 
 /// Build a DAG from the course graph

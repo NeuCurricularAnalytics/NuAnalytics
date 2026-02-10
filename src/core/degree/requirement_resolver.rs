@@ -136,10 +136,34 @@ impl<'a> RequirementResolver<'a> {
         category: Option<String>,
         req: &Requirement,
     ) -> ResolvedRequirement {
+        // Check if this is a pure wildcard requirement that should use placeholders
+        // Pure wildcards are patterns like "*:*" with no explicit course list
+        if self.is_pure_wildcard_requirement(req) {
+            let placeholder_courses = self.generate_placeholder_courses(id, req);
+            if !placeholder_courses.is_empty() {
+                return ResolvedRequirement::fixed(
+                    id.to_string(),
+                    name.to_string(),
+                    category,
+                    placeholder_courses,
+                );
+            }
+        }
+
         // Get the pool of courses to select from
         let pool = self.get_selection_pool(req.from.as_ref());
 
+        // If pool is empty but credits are specified, generate placeholder courses
         if pool.is_empty() {
+            let placeholder_courses = self.generate_placeholder_courses(id, req);
+            if !placeholder_courses.is_empty() {
+                return ResolvedRequirement::fixed(
+                    id.to_string(),
+                    name.to_string(),
+                    category,
+                    placeholder_courses,
+                );
+            }
             return ResolvedRequirement::fixed(
                 id.to_string(),
                 name.to_string(),
@@ -160,6 +184,79 @@ impl<'a> RequirementResolver<'a> {
         let combinations = self.generate_combinations(&pool, count);
 
         ResolvedRequirement::variable(id.to_string(), name.to_string(), category, combinations)
+    }
+
+    /// Check if a requirement uses only wildcard patterns (no explicit courses)
+    ///
+    /// Pure wildcard requirements should generate placeholder courses since
+    /// we can't meaningfully enumerate all possible courses from a wildcard.
+    #[allow(clippy::unused_self)]
+    fn is_pure_wildcard_requirement(&self, req: &Requirement) -> bool {
+        // Must have credits specified (not count)
+        if req.count.is_some() || (req.credits.is_none() && req.credit_range.is_none()) {
+            return false;
+        }
+
+        // Check the from clause
+        let Some(from) = &req.from else {
+            return false;
+        };
+
+        // If there are explicit courses, it's not pure wildcard
+        if from.courses.is_some() || from.groups.is_some() {
+            return false;
+        }
+
+        // Check if pattern is a wildcard
+        if let Some(pattern) = &from.pattern {
+            if pattern.contains('*') || pattern == "*:*" {
+                return true;
+            }
+        }
+
+        // Check include patterns
+        if let Some(includes) = &from.include {
+            if includes.iter().any(|p| p.contains('*')) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Generate placeholder courses for requirements with wildcard patterns
+    ///
+    /// When a requirement specifies credits but uses a wildcard pattern (like "*:*")
+    /// that doesn't match any defined courses, we create placeholder courses to
+    /// represent those credits in the plan.
+    #[allow(clippy::unused_self)]
+    fn generate_placeholder_courses(&self, req_id: &str, req: &Requirement) -> Vec<String> {
+        // Determine how many credits are needed
+        let credits_needed = req
+            .credits
+            .or_else(|| req.credit_range.as_ref().map(|r| r.min));
+
+        let Some(credits) = credits_needed else {
+            return Vec::new();
+        };
+
+        // Generate placeholder course keys based on requirement ID
+        // Use 3-credit courses as default, with smaller courses for remainder
+        let full_courses = credits / 3;
+        let remainder = credits % 3;
+
+        let mut placeholders = Vec::new();
+        let prefix = sanitize_placeholder_prefix(req_id);
+
+        for i in 0..full_courses {
+            placeholders.push(format!("{prefix}{:02}", i + 1));
+        }
+
+        if remainder > 0 {
+            placeholders.push(format!("{prefix}{:02}S", full_courses + 1));
+        }
+
+        placeholders
     }
 
     /// Resolve a `one_of` requirement (mutually exclusive paths)
@@ -334,12 +431,17 @@ impl<'a> RequirementResolver<'a> {
         let prefix = parts[0];
         let level_spec = parts[1];
 
+        // Handle wildcard prefix "*" - match all prefixes
+        let is_wildcard_prefix = prefix == "*";
+
         let mut matches = Vec::new();
 
         for key in self.courses.keys() {
             // Extract subject from course key (e.g., "CS" from "CS3000")
             let subject = extract_subject(key);
-            if subject.as_deref() != Some(prefix) {
+
+            // Skip if not matching the prefix (unless wildcard)
+            if !is_wildcard_prefix && subject.as_deref() != Some(prefix) {
                 continue;
             }
 
@@ -480,10 +582,37 @@ fn extract_subject(key: &str) -> Option<String> {
     }
 }
 
-/// Extract course number from a course key (e.g., 3000 from "CS3000")
+/// Extract course number from a course key (e.g., 3000 from "CS3000", 310 from "CS310H")
+///
+/// Extracts leading digits after the prefix, ignoring any trailing letters (like "H" for honors)
 fn extract_number(key: &str) -> Option<u32> {
-    let number_str: String = key.chars().skip_while(|c| c.is_alphabetic()).collect();
+    let number_str: String = key
+        .chars()
+        .skip_while(|c| c.is_alphabetic())
+        .take_while(char::is_ascii_digit)
+        .collect();
     number_str.parse().ok()
+}
+
+/// Sanitize a requirement ID to create a placeholder course prefix
+///
+/// Converts requirement IDs like `writing_composition` to "WRTC" (up to 4 chars, uppercase)
+fn sanitize_placeholder_prefix(req_id: &str) -> String {
+    // Take first letter of each word (snake_case), up to 4 chars
+    let parts: Vec<&str> = req_id.split('_').collect();
+    let prefix: String = parts
+        .iter()
+        .filter_map(|part| part.chars().next())
+        .take(4)
+        .collect::<String>()
+        .to_uppercase();
+
+    // Pad to at least 2 chars
+    if prefix.len() < 2 {
+        format!("{prefix}X")
+    } else {
+        prefix
+    }
 }
 
 #[cfg(test)]
