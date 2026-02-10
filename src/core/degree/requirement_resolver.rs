@@ -32,6 +32,13 @@ pub struct ResolvedRequirement {
 
     /// Whether to exclude courses already used in prior requirements
     pub exclude_used: bool,
+
+    /// For `exclude_used` requirements: the full pool of available courses
+    /// Used to dynamically select courses when some are already used
+    pub available_pool: Option<Vec<String>>,
+
+    /// For `exclude_used` requirements: the number of courses needed
+    pub courses_needed: Option<usize>,
 }
 
 impl ResolvedRequirement {
@@ -46,6 +53,8 @@ impl ResolvedRequirement {
             is_variable: false,
             choice_count: 1,
             exclude_used: false,
+            available_pool: None,
+            courses_needed: None,
         }
     }
 
@@ -67,6 +76,8 @@ impl ResolvedRequirement {
             is_variable: choice_count > 1,
             choice_count,
             exclude_used: false,
+            available_pool: None,
+            courses_needed: None,
         }
     }
 
@@ -74,6 +85,14 @@ impl ResolvedRequirement {
     #[must_use]
     pub const fn with_exclude_used(mut self, exclude: bool) -> Self {
         self.exclude_used = exclude;
+        self
+    }
+
+    /// Set the available pool for dynamic selection when `exclude_used` is true
+    #[must_use]
+    pub fn with_available_pool(mut self, pool: Vec<String>, count: usize) -> Self {
+        self.available_pool = Some(pool);
+        self.courses_needed = Some(count);
         self
     }
 }
@@ -211,8 +230,17 @@ impl<'a> RequirementResolver<'a> {
         // Generate all combinations of size `count`
         let combinations = self.generate_combinations(&pool, count);
 
-        ResolvedRequirement::variable(id.to_string(), name.to_string(), category, combinations)
-            .with_exclude_used(exclude_used)
+        // For exclude_used requirements, also track the pool and count for dynamic selection
+        let mut resolved =
+            ResolvedRequirement::variable(id.to_string(), name.to_string(), category, combinations)
+                .with_exclude_used(exclude_used);
+
+        // If exclude_used is true, store the pool for dynamic selection during plan building
+        if exclude_used {
+            resolved = resolved.with_available_pool(pool, count);
+        }
+
+        resolved
     }
 
     /// Check if a requirement uses only wildcard patterns (no explicit courses)

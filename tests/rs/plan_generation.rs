@@ -281,6 +281,67 @@ fn test_plan_category_utilities() {
     assert_eq!(PlanCategory::RandomSample.file_name(), "random-sample");
 }
 
+/// Debug test: Print resolved requirements for CSU to verify 400-level handling
+#[test]
+fn test_debug_csu_requirements() {
+    let degree_path = samples_dir().join("csu-cs-bscs-general.yaml");
+    if !degree_path.exists() {
+        eprintln!("Skipping test: sample degree file not found");
+        return;
+    }
+
+    let program = load_degree_from_yaml(&degree_path).expect("Failed to load degree");
+    let mut req_resolver = RequirementResolver::new(&program.courses);
+    let resolved = req_resolver.resolve_all(&program.requirements);
+
+    println!("\n=== Resolved Major Requirements ===");
+    for req in &resolved {
+        if req.category.as_deref() == Some("major") {
+            println!(
+                "\n{} ({} choices, exclude_used: {})",
+                req.id, req.choice_count, req.exclude_used
+            );
+            if req.choice_count <= 3 {
+                for (i, choice) in req.choices.iter().enumerate() {
+                    println!("  Choice {}: {:?}", i + 1, choice);
+                }
+            } else {
+                println!("  First: {:?}", req.choices.first());
+                println!("  Last: {:?}", req.choices.last());
+            }
+        }
+    }
+
+    // Check specific requirements
+    println!("\n=== Checking 400-level requirements ===");
+    let capstone = resolved.iter().find(|r| r.id == "capstone");
+    let cs_400_electives = resolved.iter().find(|r| r.id == "cs_400_electives");
+    let tech_focus = resolved.iter().find(|r| r.id.contains("tech_focus"));
+
+    if let Some(req) = capstone {
+        println!("\nCapstone: {} choices", req.choice_count);
+        println!("  First choice: {:?}", req.choices.first());
+    }
+
+    if let Some(req) = cs_400_electives {
+        println!("\nCS 400 Electives: {} choices", req.choice_count);
+        println!("  First choice: {:?}", req.choices.first());
+        // Count total CS 400-level courses across all choices
+        let all_courses: std::collections::HashSet<_> = req.choices.iter().flatten().collect();
+        let cs_400_count = all_courses.iter().filter(|c| c.starts_with("CS4")).count();
+        println!("  Total unique CS 400-level courses: {cs_400_count}");
+    }
+
+    if let Some(req) = tech_focus {
+        println!("\nTech Focus/Minor: {} choices", req.choice_count);
+        if !req.choices.is_empty() {
+            let first = &req.choices[0];
+            let cs_400_in_first: Vec<_> = first.iter().filter(|c| c.starts_with("CS4")).collect();
+            println!("  CS 400-level in first choice: {cs_400_in_first:?}");
+        }
+    }
+}
+
 /// Test selected plans collection
 #[test]
 fn test_selected_plans_collection() {

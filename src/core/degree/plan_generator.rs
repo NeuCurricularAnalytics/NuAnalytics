@@ -310,7 +310,8 @@ impl<'a> PlanIterator<'a> {
     ///
     /// Combines major requirement choices with fixed non-major courses
     /// and adds placeholder electives to reach target credits.
-    /// Respects `exclude_used` constraints by filtering out courses already used.
+    /// Respects `exclude_used` constraints by dynamically selecting courses
+    /// from the available pool when some are already used.
     fn build_current_plan(&self) -> PlanVariant {
         let mut requirement_choices: HashMap<String, Vec<String>> = HashMap::new();
         let mut used_courses: HashSet<String> = HashSet::new();
@@ -320,12 +321,12 @@ impl<'a> PlanIterator<'a> {
         for (i, req) in self.generator.major_requirements.iter().enumerate() {
             let choice_idx = self.indices[i];
             if choice_idx < req.choices.len() {
-                let mut chosen_courses = req.choices[choice_idx].clone();
-
-                // If exclude_used is set, filter out already used courses
-                if req.exclude_used {
-                    chosen_courses.retain(|c| !used_courses.contains(c));
-                }
+                let chosen_courses = if req.exclude_used {
+                    // For exclude_used requirements, dynamically select from the pool
+                    self.select_courses_excluding_used(req, choice_idx, &used_courses)
+                } else {
+                    req.choices[choice_idx].clone()
+                };
 
                 // Add chosen courses to used set
                 for course in &chosen_courses {
@@ -407,6 +408,52 @@ impl<'a> PlanIterator<'a> {
         }
 
         plan
+    }
+
+    /// Select courses for an `exclude_used` requirement
+    ///
+    /// Uses the pre-generated choice as a starting point, but dynamically
+    /// adds additional courses from the pool if some were already used.
+    #[allow(clippy::unused_self)]
+    fn select_courses_excluding_used(
+        &self,
+        req: &ResolvedRequirement,
+        choice_idx: usize,
+        used_courses: &HashSet<String>,
+    ) -> Vec<String> {
+        // Get the base choice
+        let base_choice = &req.choices[choice_idx];
+
+        // Filter out already used courses
+        let mut available: Vec<String> = base_choice
+            .iter()
+            .filter(|c| !used_courses.contains(*c))
+            .cloned()
+            .collect();
+
+        // If we have enough courses, return them
+        let needed = req.courses_needed.unwrap_or(base_choice.len());
+
+        if available.len() >= needed {
+            available.truncate(needed);
+            return available;
+        }
+
+        // Need more courses - get them from the pool
+        if let Some(pool) = &req.available_pool {
+            // Find courses in pool that aren't used and aren't already selected
+            let available_set: HashSet<&str> = available.iter().map(String::as_str).collect();
+            let additional: Vec<String> = pool
+                .iter()
+                .filter(|c| !used_courses.contains(*c) && !available_set.contains(c.as_str()))
+                .take(needed - available.len())
+                .cloned()
+                .collect();
+
+            available.extend(additional);
+        }
+
+        available
     }
 
     /// Advance to the next combination of choices
