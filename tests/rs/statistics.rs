@@ -162,3 +162,125 @@ fn test_empty_data_handling() {
     assert!((median - 0.0).abs() < f64::EPSILON);
     assert!((mean - 0.0).abs() < f64::EPSILON);
 }
+
+/// Test streaming aggregation matches batch computation
+#[test]
+fn test_streaming_vs_batch_statistics() {
+    use nu_analytics::core::statistics::streaming::WelfordAccumulator;
+
+    let values: Vec<f64> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+
+    // Batch computation
+    let batch_stats = DescriptiveStats::from_values(&values);
+
+    // Streaming computation
+    let mut streaming = WelfordAccumulator::new();
+    for &v in &values {
+        streaming.push(v);
+    }
+
+    // Results should match
+    assert!((streaming.mean() - batch_stats.mean).abs() < 0.001);
+    assert!((streaming.min() - batch_stats.min).abs() < f64::EPSILON);
+    assert!((streaming.max() - batch_stats.max).abs() < f64::EPSILON);
+    assert!((streaming.std_dev() - batch_stats.std_dev).abs() < 0.001);
+}
+
+/// Test metrics aggregation across simulated plans
+#[test]
+fn test_metrics_aggregation_integration() {
+    use nu_analytics::core::metrics::CourseMetrics;
+    use nu_analytics::core::statistics::{AggregatorConfig, MetricsAggregator};
+    use std::collections::HashMap;
+
+    let mut aggregator = MetricsAggregator::new(AggregatorConfig::default());
+
+    // Simulate 50 different degree plans
+    for plan_num in 1..=50 {
+        let mut course_metrics = HashMap::new();
+
+        // CS1000 appears in all plans with varying metrics
+        course_metrics.insert(
+            "CS1000".to_string(),
+            CourseMetrics {
+                complexity: 5 + (plan_num % 5),
+                centrality: 3 + (plan_num % 3),
+                delay: 2 + (plan_num % 4),
+                blocking: 3 + (plan_num % 3),
+            },
+        );
+
+        // CS2000 appears in all plans
+        course_metrics.insert(
+            "CS2000".to_string(),
+            CourseMetrics {
+                complexity: 8 + (plan_num % 4),
+                centrality: 5 + (plan_num % 5),
+                delay: 4 + (plan_num % 3),
+                blocking: 4 + (plan_num % 4),
+            },
+        );
+
+        // CS3000 appears in all plans (highest complexity)
+        course_metrics.insert(
+            "CS3000".to_string(),
+            CourseMetrics {
+                complexity: 12 + (plan_num % 6),
+                centrality: 8 + (plan_num % 4),
+                delay: 6 + (plan_num % 5),
+                blocking: 6 + (plan_num % 6),
+            },
+        );
+
+        aggregator.add_plan(&course_metrics, 12.0);
+    }
+
+    // Verify aggregation results
+    assert_eq!(aggregator.plan_count(), 50);
+
+    // Check degree-level stats
+    let degree_stats = aggregator.degree_stats();
+    assert_eq!(degree_stats.plan_count, 50);
+    assert!(degree_stats.total_complexity.mean > 20.0); // Sum of 3 courses
+    assert!(degree_stats.longest_delay.max >= 6.0); // At least CS3000's delay
+
+    // Check course-level stats
+    let cs1000_stats = aggregator
+        .course_stats("CS1000")
+        .expect("CS1000 should exist");
+    assert_eq!(cs1000_stats.plan_count, 50);
+    assert!(cs1000_stats.complexity.min >= 5.0);
+    assert!(cs1000_stats.complexity.max <= 10.0);
+
+    let cs3000_stats = aggregator
+        .course_stats("CS3000")
+        .expect("CS3000 should exist");
+    assert!(cs3000_stats.complexity.mean > cs1000_stats.complexity.mean);
+
+    // Verify all courses are tracked
+    let course_ids = aggregator.course_ids();
+    assert_eq!(course_ids.len(), 3);
+}
+
+/// Test reservoir sampling approximates true percentiles
+#[test]
+fn test_reservoir_percentile_accuracy() {
+    use nu_analytics::core::statistics::streaming::QuantileReservoir;
+
+    // Generate 10000 values
+    let mut reservoir = QuantileReservoir::new(1000);
+    for i in 1..=10000 {
+        reservoir.push(f64::from(i));
+    }
+
+    // For uniform 1-10000:
+    // Q1 ≈ 2500, Median ≈ 5000, Q3 ≈ 7500
+    let q1 = reservoir.q1();
+    let median = reservoir.median();
+    let q3 = reservoir.q3();
+
+    // Allow 10% error due to sampling
+    assert!(q1 > 2000.0 && q1 < 3000.0, "Q1 was {q1}");
+    assert!(median > 4500.0 && median < 5500.0, "Median was {median}");
+    assert!(q3 > 7000.0 && q3 < 8000.0, "Q3 was {q3}");
+}

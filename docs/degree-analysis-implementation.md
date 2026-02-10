@@ -167,9 +167,17 @@ pub struct PlanVariant {
 
 ---
 
-## Phase 3: Metrics Aggregation
+## Phase 3: Metrics Aggregation ✅ COMPLETE
 
 **Goal**: Compute and aggregate metrics across all plans via streaming
+
+**Completed**:
+- ✅ `WelfordAccumulator` for online mean/variance computation
+- ✅ `QuantileReservoir` for approximate percentile computation
+- ✅ `MetricsAggregator` for degree and per-course aggregation
+- ✅ Thread-safe `SharedAggregator` for parallel processing
+- ✅ Merge support for combining parallel results
+- ✅ 18 unit tests
 
 ### 3.1 StreamingAggregator
 - Online algorithms for statistics (Welford's for mean/variance)
@@ -184,9 +192,9 @@ pub struct PlanVariant {
 - Use `rayon` for parallel plan processing
 - Thread-safe aggregator with atomics/mutex
 
-### Files to Create
-- [ ] `src/core/statistics/aggregator.rs`
-- [ ] `src/core/statistics/streaming.rs`
+### Files Created
+- [x] `src/core/statistics/aggregator.rs`
+- [x] `src/core/statistics/streaming.rs`
 
 ---
 
@@ -292,7 +300,7 @@ ignore_duplicates = false       # skip equivalent combinations
 |-------|--------|---------|-----------|
 | 1. Core Infrastructure | ✅ Complete | 2026-02-09 | 2026-02-09 |
 | 2. Plan Generation | ✅ Complete | 2026-02-09 | 2026-02-09 |
-| 3. Metrics Aggregation | ⬜ Not Started | | |
+| 3. Metrics Aggregation | ✅ Complete | 2026-02-09 | 2026-02-09 |
 | 4. Special Plan Selection | ⬜ Not Started | | |
 | 5. Report Generation | ⬜ Not Started | | |
 | 6. CLI Integration | ⬜ Not Started | | |
