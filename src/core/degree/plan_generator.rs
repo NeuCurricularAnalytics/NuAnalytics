@@ -14,7 +14,7 @@ use super::plan_variant::PlanVariant;
 use super::requirement_resolver::{RequirementResolver, ResolvedRequirement};
 use crate::core::models::course::Course;
 use crate::core::models::degree::Requirement;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Categories that should be enumerated for plan generation
 const ENUMERABLE_CATEGORIES: [&str; 1] = ["major"];
@@ -310,23 +310,48 @@ impl<'a> PlanIterator<'a> {
     ///
     /// Combines major requirement choices with fixed non-major courses
     /// and adds placeholder electives to reach target credits.
+    /// Respects `exclude_used` constraints by filtering out courses already used.
     fn build_current_plan(&self) -> PlanVariant {
         let mut requirement_choices: HashMap<String, Vec<String>> = HashMap::new();
+        let mut used_courses: HashSet<String> = HashSet::new();
 
         // Add major requirement choices based on current indices
+        // Track used courses for exclude_used filtering
         for (i, req) in self.generator.major_requirements.iter().enumerate() {
             let choice_idx = self.indices[i];
             if choice_idx < req.choices.len() {
-                requirement_choices.insert(req.id.clone(), req.choices[choice_idx].clone());
+                let mut chosen_courses = req.choices[choice_idx].clone();
+
+                // If exclude_used is set, filter out already used courses
+                if req.exclude_used {
+                    chosen_courses.retain(|c| !used_courses.contains(c));
+                }
+
+                // Add chosen courses to used set
+                for course in &chosen_courses {
+                    used_courses.insert(course.clone());
+                }
+
+                requirement_choices.insert(req.id.clone(), chosen_courses);
             }
         }
 
         // Add non-major courses as a fixed "non_major" requirement
+        // Filter out any courses already used in major requirements
         if !self.generator.non_major_courses.is_empty() {
-            requirement_choices.insert(
-                "_non_major".to_string(),
-                self.generator.non_major_courses.clone(),
-            );
+            let non_major: Vec<String> = self
+                .generator
+                .non_major_courses
+                .iter()
+                .filter(|c| !used_courses.contains(*c))
+                .cloned()
+                .collect();
+
+            for course in &non_major {
+                used_courses.insert(course.clone());
+            }
+
+            requirement_choices.insert("_non_major".to_string(), non_major);
         }
 
         // Create base plan

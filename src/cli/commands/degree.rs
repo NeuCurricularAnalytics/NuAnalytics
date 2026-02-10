@@ -3,6 +3,7 @@
 use nu_analytics::config::Config;
 use nu_analytics::core::degree::{
     load_degree_from_yaml, PlanGenerator, PlanGeneratorConfig, PlanSelector, PlanSelectorConfig,
+    PlanVariant,
 };
 use nu_analytics::core::metrics::compute_all_metrics;
 use nu_analytics::core::models::degree::Requirement;
@@ -971,8 +972,11 @@ fn process_plan_variants(
             seen_fingerprints.insert(fp);
         }
 
+        // Expand courses to include all prerequisites
+        let expanded_courses = expand_courses_with_prerequisites(&variant.courses, ctx.graph);
+
         // Build plan-specific DAG and compute metrics
-        let plan_dag = build_dag_for_plan(&variant.courses, ctx.graph);
+        let plan_dag = build_dag_for_plan(&expanded_courses, ctx.graph);
         let course_metrics = match compute_all_metrics(&plan_dag) {
             Ok(metrics) => metrics,
             Err(e) => {
@@ -983,13 +987,18 @@ fn process_plan_variants(
             }
         };
 
-        // Aggregate metrics using variant's pre-calculated total credits
-        // (includes non-major courses and elective placeholders)
-        let total_credits = f64::from(variant.total_credits);
+        // Aggregate metrics using expanded course credits
+        // Calculate total credits from expanded courses
+        let total_credits = expanded_courses
+            .iter()
+            .filter_map(|key| ctx.school.get_course(key))
+            .map(|c| f64::from(c.credit_hours))
+            .sum::<f64>();
         aggregator.add_plan(&course_metrics, total_credits);
 
-        // Update plan selection
-        selector.process_plan(&variant, &course_metrics);
+        // Update plan selection (pass expanded variant)
+        let expanded_variant = create_expanded_variant(&variant, &expanded_courses);
+        selector.process_plan(&expanded_variant, &course_metrics);
 
         plans_processed += 1;
 
@@ -1272,6 +1281,60 @@ fn build_dag_from_graph(graph: &CourseGraph) -> DAG {
     }
 
     dag
+}
+
+/// Expand a plan's courses to include all required prerequisites
+///
+/// For each course in the plan, finds the minimum prerequisite chain and adds
+/// any missing prerequisites to the course list. This ensures the plan is
+/// complete and can be properly scheduled.
+fn expand_courses_with_prerequisites(courses: &[String], graph: &CourseGraph) -> Vec<String> {
+    let mut expanded: HashSet<String> = courses.iter().cloned().collect();
+    let mut to_process: Vec<String> = courses.to_vec();
+
+    while let Some(course_key) = to_process.pop() {
+        // Get the minimum prerequisite chain for this course
+        if let Some(prereq_chain) = graph.min_prerequisite_chain(&course_key) {
+            for prereq in prereq_chain {
+                if !expanded.contains(&prereq) {
+                    expanded.insert(prereq.clone());
+                    to_process.push(prereq); // Process this prereq's chain too
+                }
+            }
+        }
+    }
+
+    let mut result: Vec<String> = expanded.into_iter().collect();
+    result.sort();
+    result
+}
+
+/// Create an expanded plan variant with additional prerequisite courses
+///
+/// Takes the original variant and creates a new one with the expanded course list,
+/// preserving requirement choice metadata.
+fn create_expanded_variant(original: &PlanVariant, expanded_courses: &[String]) -> PlanVariant {
+    let mut new_choices = original.requirement_choices.clone();
+
+    // Find courses that were added (prerequisites not in original plan)
+    let original_set: HashSet<&str> = original.courses.iter().map(String::as_str).collect();
+    let added_prereqs: Vec<String> = expanded_courses
+        .iter()
+        .filter(|c| !original_set.contains(c.as_str()))
+        .cloned()
+        .collect();
+
+    // Add prerequisites as a special requirement
+    if !added_prereqs.is_empty() {
+        new_choices.insert("_prerequisites".to_string(), added_prereqs);
+    }
+
+    // Create new variant with empty credits map (credits will be calculated externally)
+    PlanVariant::from_parts(
+        expanded_courses.to_vec(),
+        new_choices,
+        original.total_credits, // Preserve original credits for now
+    )
 }
 
 /// Build a DAG containing only the courses in a specific plan

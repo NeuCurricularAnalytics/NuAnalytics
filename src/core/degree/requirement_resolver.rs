@@ -29,6 +29,9 @@ pub struct ResolvedRequirement {
 
     /// Estimated contribution to total plan count
     pub choice_count: usize,
+
+    /// Whether to exclude courses already used in prior requirements
+    pub exclude_used: bool,
 }
 
 impl ResolvedRequirement {
@@ -42,6 +45,7 @@ impl ResolvedRequirement {
             choices: vec![courses],
             is_variable: false,
             choice_count: 1,
+            exclude_used: false,
         }
     }
 
@@ -62,7 +66,15 @@ impl ResolvedRequirement {
             choices,
             is_variable: choice_count > 1,
             choice_count,
+            exclude_used: false,
         }
+    }
+
+    /// Set whether this requirement should exclude courses used in prior requirements
+    #[must_use]
+    pub const fn with_exclude_used(mut self, exclude: bool) -> Self {
+        self.exclude_used = exclude;
+        self
     }
 }
 
@@ -125,7 +137,13 @@ impl<'a> RequirementResolver<'a> {
         let courses = req.courses.clone().unwrap_or_default();
         // Expand any bundles/equivalents in the course list
         let expanded = self.expand_course_list(&courses);
+        let exclude_used = req
+            .constraints
+            .as_ref()
+            .and_then(|c| c.exclude_used)
+            .unwrap_or(false);
         ResolvedRequirement::fixed(id.to_string(), name.to_string(), category, expanded)
+            .with_exclude_used(exclude_used)
     }
 
     /// Resolve a "select" requirement (choose N from options)
@@ -136,6 +154,12 @@ impl<'a> RequirementResolver<'a> {
         category: Option<String>,
         req: &Requirement,
     ) -> ResolvedRequirement {
+        let exclude_used = req
+            .constraints
+            .as_ref()
+            .and_then(|c| c.exclude_used)
+            .unwrap_or(false);
+
         // Check if this is a pure wildcard requirement that should use placeholders
         // Pure wildcards are patterns like "*:*" with no explicit course list
         if self.is_pure_wildcard_requirement(req) {
@@ -146,7 +170,8 @@ impl<'a> RequirementResolver<'a> {
                     name.to_string(),
                     category,
                     placeholder_courses,
-                );
+                )
+                .with_exclude_used(exclude_used);
             }
         }
 
@@ -162,14 +187,16 @@ impl<'a> RequirementResolver<'a> {
                     name.to_string(),
                     category,
                     placeholder_courses,
-                );
+                )
+                .with_exclude_used(exclude_used);
             }
             return ResolvedRequirement::fixed(
                 id.to_string(),
                 name.to_string(),
                 category,
                 Vec::new(),
-            );
+            )
+            .with_exclude_used(exclude_used);
         }
 
         // Determine how many to select
@@ -177,13 +204,15 @@ impl<'a> RequirementResolver<'a> {
 
         if count == 0 || count >= pool.len() {
             // Select all - single choice
-            return ResolvedRequirement::fixed(id.to_string(), name.to_string(), category, pool);
+            return ResolvedRequirement::fixed(id.to_string(), name.to_string(), category, pool)
+                .with_exclude_used(exclude_used);
         }
 
         // Generate all combinations of size `count`
         let combinations = self.generate_combinations(&pool, count);
 
         ResolvedRequirement::variable(id.to_string(), name.to_string(), category, combinations)
+            .with_exclude_used(exclude_used)
     }
 
     /// Check if a requirement uses only wildcard patterns (no explicit courses)
