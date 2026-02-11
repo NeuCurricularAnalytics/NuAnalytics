@@ -153,7 +153,10 @@ impl<'a> PlanGenerator<'a> {
         for req in &non_major_requirements {
             if let Some(first_choice) = req.choices.first() {
                 for course in first_choice {
-                    let credits = course_credits.get(course).copied().unwrap_or(3.0);
+                    let credits = course_credits
+                        .get(course)
+                        .copied()
+                        .unwrap_or_else(|| placeholder_credits(course));
                     non_major_credits += credits;
                     non_major_courses.push(course.clone());
                 }
@@ -513,6 +516,25 @@ impl Iterator for PlanIterator<'_> {
             .saturating_sub(self.count);
         let capped = remaining.min(self.generator.config.max_plans - self.count);
         (capped, Some(capped))
+    }
+}
+
+/// Calculate credits for a placeholder course based on its key pattern
+///
+/// Placeholder courses (generated for wildcard requirements) follow naming conventions:
+/// - Courses ending in 'S' are "small" courses with 2 credits (remainder courses)
+/// - All other placeholder courses default to 3 credits
+///
+/// This function recognizes placeholder patterns like:
+/// - `FE01`, `FE02S` (free electives)
+/// - `AC01`, `AW01` (gen ed placeholders)
+/// - `ELEC001`, `ELEC002S` (target credit placeholders)
+fn placeholder_credits(course_key: &str) -> f32 {
+    // Check for "S" suffix indicating a small/remainder course
+    if course_key.ends_with('S') {
+        2.0
+    } else {
+        3.0
     }
 }
 

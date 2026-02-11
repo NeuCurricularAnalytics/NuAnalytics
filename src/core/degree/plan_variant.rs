@@ -46,9 +46,20 @@ impl PlanVariant {
         courses.sort();
 
         // Calculate total credits
+        // For placeholder courses (not in course_credits), use pattern-based credits:
+        // - Courses ending in 'S' are "small" courses (2 credits)
+        // - Other placeholders default to 3 credits
         let total_credits = courses
             .iter()
-            .map(|c| course_credits.get(c).copied().unwrap_or(3.0))
+            .map(|c| {
+                course_credits.get(c).copied().unwrap_or_else(|| {
+                    if c.ends_with('S') {
+                        2.0
+                    } else {
+                        3.0
+                    }
+                })
+            })
             .sum();
 
         // Compute fingerprint for duplicate detection

@@ -118,6 +118,10 @@ impl<'a> RequirementResolver<'a> {
 
     /// Resolve all requirements in a degree program
     ///
+    /// Requirements are processed in dependency order:
+    /// 1. Requirements without `exclude_used` constraint come first
+    /// 2. Requirements with `exclude_used` come later (they depend on prior selections)
+    ///
     /// # Arguments
     /// * `requirements` - Map of requirement ID to requirement definition
     ///
@@ -127,8 +131,30 @@ impl<'a> RequirementResolver<'a> {
         &mut self,
         requirements: &HashMap<String, Requirement>,
     ) -> Vec<ResolvedRequirement> {
-        requirements
-            .iter()
+        // Sort requirements: non-exclude_used first, then exclude_used
+        let mut sorted_reqs: Vec<_> = requirements.iter().collect();
+        sorted_reqs.sort_by(|(id_a, req_a), (id_b, req_b)| {
+            let a_excludes = req_a
+                .constraints
+                .as_ref()
+                .and_then(|c| c.exclude_used)
+                .unwrap_or(false);
+            let b_excludes = req_b
+                .constraints
+                .as_ref()
+                .and_then(|c| c.exclude_used)
+                .unwrap_or(false);
+
+            // Sort by exclude_used (false < true), then by ID for stability
+            match (a_excludes, b_excludes) {
+                (false, true) => std::cmp::Ordering::Less,
+                (true, false) => std::cmp::Ordering::Greater,
+                _ => id_a.cmp(id_b),
+            }
+        });
+
+        sorted_reqs
+            .into_iter()
             .map(|(id, req)| self.resolve_requirement(id, req))
             .collect()
     }
