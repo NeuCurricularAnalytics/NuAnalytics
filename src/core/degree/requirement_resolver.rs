@@ -384,6 +384,11 @@ impl<'a> RequirementResolver<'a> {
     }
 
     /// Get the pool of courses for a select requirement
+    ///
+    /// Returns courses sorted by preference for shortest path:
+    /// 1. Courses with no prerequisites
+    /// 2. Courses with same major subject (CS, etc.)
+    /// 3. Alphabetical order
     fn get_selection_pool(&mut self, from: Option<&FromClause>) -> Vec<String> {
         let Some(from) = from else {
             return Vec::new();
@@ -430,8 +435,39 @@ impl<'a> RequirementResolver<'a> {
             }
         }
 
+        // Sort by preference: courses with fewer prerequisites first, then CS courses, then alphabetical
         let mut result: Vec<String> = pool.into_iter().collect();
-        result.sort();
+        result.sort_by(|a, b| {
+            // First: prefer courses that exist in course catalog (have known data)
+            let a_exists = self.courses.contains_key(a);
+            let b_exists = self.courses.contains_key(b);
+            if a_exists != b_exists {
+                return b_exists.cmp(&a_exists); // true > false
+            }
+
+            // Second: prefer courses with no prerequisites
+            let a_has_prereqs = self
+                .courses
+                .get(a)
+                .is_some_and(|c| c.prerequisites_raw.is_some() || !c.prerequisites.is_empty());
+            let b_has_prereqs = self
+                .courses
+                .get(b)
+                .is_some_and(|c| c.prerequisites_raw.is_some() || !c.prerequisites.is_empty());
+            if a_has_prereqs != b_has_prereqs {
+                return a_has_prereqs.cmp(&b_has_prereqs); // false < true (no prereqs first)
+            }
+
+            // Third: prefer major subjects (CS, CT, DSCI) for CS degrees
+            let a_is_major = is_major_subject(a);
+            let b_is_major = is_major_subject(b);
+            if a_is_major != b_is_major {
+                return b_is_major.cmp(&a_is_major); // true > false
+            }
+
+            // Finally: alphabetical
+            a.cmp(b)
+        });
         result
     }
 
@@ -696,6 +732,20 @@ fn sanitize_placeholder_prefix(req_id: &str) -> String {
     } else {
         prefix
     }
+}
+
+/// Check if a course key belongs to a major CS subject
+///
+/// Major subjects for CS degrees include: CS, CT, DSCI, ECE, MATH, STAT
+/// These are preferred when selecting electives for shortest path plans.
+fn is_major_subject(key: &str) -> bool {
+    let subject = extract_subject(key);
+    subject.is_some_and(|s| {
+        matches!(
+            s.to_uppercase().as_str(),
+            "CS" | "CT" | "DSCI" | "ECE" | "MATH" | "STAT"
+        )
+    })
 }
 
 #[cfg(test)]

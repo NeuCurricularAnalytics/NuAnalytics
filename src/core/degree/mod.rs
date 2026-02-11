@@ -24,6 +24,7 @@
 pub mod course_reference;
 pub mod plan_generator;
 pub mod plan_selector;
+pub mod plan_validation;
 pub mod plan_variant;
 pub mod requirement_resolver;
 pub mod validation;
@@ -65,4 +66,10 @@ pub use requirement_resolver::{RequirementResolver, ResolvedRequirement};
 // Re-export plan selection types
 pub use plan_selector::{
     PlanCategory, PlanScore, PlanSelector, PlanSelectorConfig, ScoredPlan, SelectedPlans,
+};
+
+// Re-export plan validation types
+pub use plan_validation::{
+    PlanValidationError, PlanValidationResult, PlanValidationStats, PlanValidationWarning,
+    PlanValidator, PlanValidatorConfig,
 };

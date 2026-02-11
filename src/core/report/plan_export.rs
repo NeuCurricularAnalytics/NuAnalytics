@@ -128,6 +128,10 @@ pub fn export_plan_csv(
         "Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality"
     )?;
 
+    // Build a set of courses in this plan for filtering prerequisites
+    let plan_courses: std::collections::HashSet<&str> =
+        plan.variant.courses.iter().map(String::as_str).collect();
+
     // Sort courses by term, then alphabetically
     let mut courses: Vec<_> = plan.variant.courses.iter().collect();
     courses.sort();
@@ -143,20 +147,11 @@ pub fn export_plan_csv(
             .and_then(|c| c.canonical_name.as_deref())
             .unwrap_or("");
 
-        // Use prerequisites_raw if prerequisites vec is empty (YAML source)
-        let prereqs = course
-            .map(|c| {
-                if c.prerequisites.is_empty() {
-                    c.prerequisites_raw.clone().unwrap_or_default()
-                } else {
-                    c.prerequisites.join(";")
-                }
-            })
-            .unwrap_or_default();
-        let coreqs = course.map(|c| c.corequisites.join(";")).unwrap_or_default();
-        let strict_coreqs = course
-            .map(|c| c.strict_corequisites.join(";"))
-            .unwrap_or_default();
+        // Filter prerequisites to only include courses that are in this plan
+        // This ensures we show the actual prereqs used, not all possible options
+        let prereqs = filter_prerequisites_for_plan(course, &plan_courses);
+        let coreqs = filter_coreqs_for_plan(course, &plan_courses);
+        let strict_coreqs = filter_strict_coreqs_for_plan(course, &plan_courses);
 
         let (complexity, blocking, delay, centrality) = metrics.map_or((0, 0, 0, 0), |m| {
             (m.complexity, m.blocking, m.delay, m.centrality)
@@ -186,6 +181,111 @@ pub fn export_plan_csv(
     }
 
     Ok(())
+}
+
+/// Filter prerequisites to only include courses that are in the plan
+///
+/// This ensures the CSV shows the actual prerequisites used in this specific plan,
+/// not all possible prerequisite options from the YAML.
+fn filter_prerequisites_for_plan(
+    course: Option<&Course>,
+    plan_courses: &std::collections::HashSet<&str>,
+) -> String {
+    let Some(c) = course else {
+        return String::new();
+    };
+
+    // Parse all prerequisite course codes from raw string
+    let all_prereqs = if let Some(raw) = &c.prerequisites_raw {
+        parse_prerequisite_course_codes(raw)
+    } else if !c.prerequisites.is_empty() {
+        c.prerequisites.clone()
+    } else {
+        return String::new();
+    };
+
+    // Filter to only include courses in the plan
+    let filtered: Vec<String> = all_prereqs
+        .into_iter()
+        .filter(|prereq| plan_courses.contains(prereq.as_str()))
+        .collect();
+
+    filtered.join(";")
+}
+
+/// Filter corequisites to only include courses that are in the plan
+fn filter_coreqs_for_plan(
+    course: Option<&Course>,
+    plan_courses: &std::collections::HashSet<&str>,
+) -> String {
+    let Some(c) = course else {
+        return String::new();
+    };
+
+    let filtered: Vec<&str> = c
+        .corequisites
+        .iter()
+        .map(String::as_str)
+        .filter(|coreq| plan_courses.contains(coreq))
+        .collect();
+
+    filtered.join(";")
+}
+
+/// Filter strict corequisites to only include courses that are in the plan
+fn filter_strict_coreqs_for_plan(
+    course: Option<&Course>,
+    plan_courses: &std::collections::HashSet<&str>,
+) -> String {
+    let Some(c) = course else {
+        return String::new();
+    };
+
+    let filtered: Vec<&str> = c
+        .strict_corequisites
+        .iter()
+        .map(String::as_str)
+        .filter(|coreq| plan_courses.contains(coreq))
+        .collect();
+
+    filtered.join(";")
+}
+
+/// Parse prerequisite course codes from a raw prerequisite string
+///
+/// Extracts course codes from expressions like:
+/// - `"CS165[C]"` → `["CS165"]`
+/// - `"(CS220[C] & CS165[C])"` → `["CS220", "CS165"]`
+/// - `"CS162[C] | CS163[C] | CS164[C]"` → `["CS162", "CS163", "CS164"]`
+fn parse_prerequisite_course_codes(raw: &str) -> Vec<String> {
+    let mut prereqs = Vec::new();
+
+    // Replace operators and brackets with spaces
+    let cleaned = raw.replace(['(', ')', '&', '|', '[', ']'], " ");
+
+    for part in cleaned.split_whitespace() {
+        // Skip grade requirements like "B", "C", etc.
+        if part.len() <= 2
+            && part
+                .chars()
+                .all(|c| c.is_alphabetic() || c == '-' || c == '+')
+        {
+            continue;
+        }
+
+        // Must start with a letter (course code)
+        if part.chars().next().is_some_and(char::is_alphabetic) {
+            // Remove any trailing grade requirement
+            let key = part
+                .find(|c: char| !c.is_alphanumeric())
+                .map_or(part, |idx| &part[..idx]);
+            if !key.is_empty() && !prereqs.contains(&key.to_string()) {
+                prereqs.push(key.to_string());
+            }
+        }
+    }
+
+    prereqs
 }
 
 /// Classification info for a course (real or placeholder)

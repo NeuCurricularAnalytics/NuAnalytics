@@ -3,7 +3,7 @@
 use nu_analytics::config::Config;
 use nu_analytics::core::degree::{
     load_degree_from_yaml, PlanGenerator, PlanGeneratorConfig, PlanSelector, PlanSelectorConfig,
-    PlanVariant,
+    PlanValidator, PlanValidatorConfig, PlanVariant,
 };
 use nu_analytics::core::metrics::compute_all_metrics;
 use nu_analytics::core::models::degree::Requirement;
@@ -846,6 +846,9 @@ fn analyze_degree(
     // Run plan enumeration and metrics aggregation
     let (aggregator, selected, plans_processed) = enumerate_and_analyze_plans(&ctx);
 
+    // Validate the selected plans and report any issues
+    validate_selected_plans(&ctx, &selected);
+
     // Generate outputs
     generate_analysis_outputs(&ctx, options, &aggregator, &selected)?;
 
@@ -1171,6 +1174,48 @@ fn print_analysis_summary(
         degree_stats.longest_delay.min,
         degree_stats.longest_delay.max
     );
+}
+
+/// Validate selected plans and report any issues
+#[allow(clippy::cast_precision_loss)] // Safe: credit values are small
+fn validate_selected_plans(
+    ctx: &AnalysisContext<'_>,
+    selected: &nu_analytics::core::degree::SelectedPlans,
+) {
+    // Configure validation
+    let validator_config = PlanValidatorConfig {
+        target_credits: ctx.gen_config.target_credits.map(|c| c as f32),
+        strict_prerequisites: false, // Non-strict for now, just report warnings
+        ..Default::default()
+    };
+
+    let validator = PlanValidator::new(&ctx.program.courses, ctx.graph, validator_config);
+
+    // Validate the shortest plan (most commonly used)
+    if let Some(shortest) = &selected.shortest {
+        let result = validator.validate(&shortest.variant);
+
+        if ctx.verbose {
+            eprintln!();
+            eprintln!("Plan Validation (Shortest Path):");
+            eprintln!("  Courses: {}", result.stats.total_courses);
+            eprintln!("  Credits: {:.1}", result.stats.total_credits);
+            eprintln!("  Placeholders: {}", result.stats.placeholder_courses);
+
+            if !result.errors.is_empty() {
+                eprintln!("  ⚠ Errors: {}", result.errors.len());
+            }
+            if !result.warnings.is_empty() {
+                eprintln!("  ⚠ Warnings: {}", result.warnings.len());
+            }
+        }
+
+        // Print detailed issues if there are any and verbose mode
+        if ctx.verbose && (!result.errors.is_empty() || !result.warnings.is_empty()) {
+            eprintln!();
+            eprintln!("{}", result.format_report());
+        }
+    }
 }
 
 /// Build a School model from the degree program
