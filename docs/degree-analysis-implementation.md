@@ -307,8 +307,8 @@ pub struct PlanVariant {
 [degree_analysis]
 calc_strategy = "median"        # median | mean
 sample_plan_count = 5           # random plans to export
-max_plans = 1000000             # safety cap
-ignore_duplicates = false       # skip equivalent combinations
+max_plans = 1000                # safety cap
+ignore_duplicates = true        # skip equivalent combinations
 ```
 
 ---

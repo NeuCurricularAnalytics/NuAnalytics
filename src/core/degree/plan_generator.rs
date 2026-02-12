@@ -107,7 +107,7 @@ pub struct PlanGeneratorConfig {
 impl Default for PlanGeneratorConfig {
     fn default() -> Self {
         Self {
-            max_plans: 1_000_000,
+            max_plans: 1_000,
             ignore_duplicates: true,
             sample_count: 5,
             target_credits: None,

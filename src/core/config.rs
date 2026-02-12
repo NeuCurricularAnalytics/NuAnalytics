@@ -111,7 +111,7 @@ const fn default_sample_plan_count() -> usize {
 }
 
 const fn default_max_plans() -> usize {
-    1_000_000
+    1_000
 }
 
 const fn default_ignore_duplicates() -> bool {
