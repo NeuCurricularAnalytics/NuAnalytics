@@ -200,6 +200,35 @@
             font-weight: 600;
         }
 
+        .metrics-table th.sortable {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            padding-right: 1.5rem;
+        }
+
+        .metrics-table th.sortable:hover {
+            background: #3d5a73;
+        }
+
+        .metrics-table th.sortable::after {
+            content: '⇅';
+            position: absolute;
+            right: 0.5rem;
+            opacity: 0.5;
+            font-size: 0.7rem;
+        }
+
+        .metrics-table th.sortable.asc::after {
+            content: '↑';
+            opacity: 1;
+        }
+
+        .metrics-table th.sortable.desc::after {
+            content: '↓';
+            opacity: 1;
+        }
+
         .metrics-table tr.sub-header th {
             background: #455a64;
             font-size: 0.75rem;
@@ -210,8 +239,46 @@
             background: var(--light-bg);
         }
 
+        .metrics-table tbody tr.major-course {
+            background: #e3f2fd;
+        }
+
+        .metrics-table tbody tr.major-course:hover {
+            background: #bbdefb;
+        }
+
         .metrics-table td small {
             color: #666;
+        }
+
+        /* Course stats legend */
+        .course-stats-legend {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-size: 0.85rem;
+            color: #666;
+        }
+
+        .course-stats-legend .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .course-stats-legend .legend-color-box {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+            border: 1px solid var(--border-color);
+        }
+
+        .course-stats-legend .legend-color-box.major {
+            background: #e3f2fd;
+        }
+
+        .course-stats-legend .legend-color-box.non-major {
+            background: white;
         }
 
         /* Selected plans */
@@ -275,6 +342,213 @@
             overflow-y: auto;
         }
 
+        /* Special plan section (full details) */
+        .special-plan {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+        }
+
+        .special-plan h3 {
+            color: var(--secondary-color);
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--secondary-color);
+        }
+
+        .special-plan .plan-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .special-plan .critical-path {
+            background: linear-gradient(90deg, var(--light-bg), white);
+            padding: 0.75rem;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        .special-plan .term-schedule {
+            margin-bottom: 1.5rem;
+        }
+
+        .special-plan .term-schedule table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        .special-plan .term-schedule th,
+        .special-plan .term-schedule td {
+            padding: 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .special-plan .term-schedule th {
+            background: var(--primary-color);
+            color: white;
+            font-weight: 600;
+        }
+
+        .special-plan .course-badge {
+            display: inline-block;
+            background: var(--secondary-color);
+            color: white;
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            margin-right: 0.25rem;
+        }
+
+        /* Curriculum Graph within special plans */
+        .special-plan .curriculum-graph-wrapper {
+            overflow-x: auto;
+            margin: 1rem 0;
+            position: relative;
+        }
+
+        .special-plan .curriculum-graph {
+            display: flex;
+            gap: 0;
+            width: 100%;
+            position: relative;
+        }
+
+        .special-plan .term-column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            min-width: 90px;
+            background: var(--light-bg);
+            border-radius: 4px;
+            margin: 0 12px;
+            padding: 8px 4px;
+        }
+
+        .special-plan .term-header {
+            font-weight: 600;
+            font-size: 0.7rem;
+            color: var(--primary-color);
+            margin-bottom: 8px;
+            padding: 3px 6px;
+            background: white;
+            border-radius: 4px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .special-plan .term-courses {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+        }
+
+        .special-plan .course-node {
+            position: relative;
+            background: white;
+            border-radius: 4px;
+            padding: 8px 4px 6px;
+            text-align: center;
+            border: 2px solid #37474f;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+            margin-top: 8px;
+        }
+
+        .special-plan .course-node:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+        }
+
+        .special-plan .course-node.faded { opacity: 0.25; }
+        .special-plan .course-node.highlighted {
+            border-color: var(--secondary-color);
+            border-width: 2px;
+            box-shadow: 0 0 6px rgba(52, 152, 219, 0.5);
+        }
+        .special-plan .course-node.critical-highlight {
+            border-color: #9C27B0;
+            border-width: 2px;
+            box-shadow: 0 0 6px rgba(156, 39, 176, 0.5);
+        }
+
+        .special-plan .course-node .complexity-badge {
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.55rem;
+            font-weight: bold;
+            color: white;
+            border: 2px solid white;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        }
+
+        .special-plan .course-node .course-id {
+            font-weight: 600;
+            font-size: 0.65rem;
+            color: var(--primary-color);
+            margin-top: 4px;
+        }
+
+        .special-plan .course-node .course-name {
+            font-size: 0.55rem;
+            color: #666;
+            line-height: 1.1;
+            max-height: 2.2em;
+            overflow: hidden;
+        }
+
+        .complexity-low { background-color: #4CAF50; }
+        .complexity-medium { background-color: #FF9800; }
+        .complexity-high { background-color: #F44336; }
+
+        .special-plan .connections-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            width: 100%;
+            height: 100%;
+            min-height: 400px;
+        }
+
+        .prereq-line { stroke: #666; stroke-width: 1.5; fill: none; transition: stroke 0.2s, opacity 0.2s; }
+        .coreq-line { stroke: var(--secondary-color); stroke-width: 1.5; stroke-dasharray: 4,3; fill: none; }
+        .prereq-line.faded, .coreq-line.faded { opacity: 0.15; }
+        .prereq-line.highlighted, .coreq-line.highlighted { stroke: var(--secondary-color); stroke-width: 2; }
+        .prereq-line.critical, .coreq-line.critical { stroke: #9C27B0; stroke-width: 2.5; }
+
+        .special-plan .graph-legend {
+            display: flex;
+            gap: 1rem;
+            margin: 0.5rem 0;
+            flex-wrap: wrap;
+            font-size: 0.75rem;
+        }
+
+        .special-plan .legend-item { display: flex; align-items: center; gap: 0.3rem; }
+        .special-plan .legend-color { width: 14px; height: 14px; border-radius: 50%; }
+        .special-plan .legend-line { width: 24px; height: 2px; }
+        .special-plan .legend-line.solid { background: #666; }
+        .special-plan .legend-line.dashed { background: repeating-linear-gradient(90deg, var(--secondary-color), var(--secondary-color) 4px, transparent 4px, transparent 7px); }
+        .special-plan .legend-line.critical { background: #9C27B0; height: 2.5px; }
+
         /* Print styles */
         @media print {
             body {
@@ -286,6 +560,9 @@
                 padding: 0;
             }
             .box-plot-container {
+                break-inside: avoid;
+            }
+            .special-plan {
                 break-inside: avoid;
             }
         }
@@ -333,16 +610,211 @@
         </div>
 
         <h2>Per-Course Statistics</h2>
+        <div class="course-stats-legend">
+            <span class="legend-item"><span class="legend-color-box major"></span> Major courses (sorted first by complexity)</span>
+            <span class="legend-item"><span class="legend-color-box non-major"></span> Non-major courses (electives, gen-eds, supporting)</span>
+        </div>
         {{course_stats_table}}
 
-        <h2>Selected Plans</h2>
+        <h2>Special Plans</h2>
+        {{special_plans_section}}
+
+        <h2>Random Samples</h2>
         <div class="plans-grid">
-            {{selected_plans_section}}
+            {{random_samples_section}}
         </div>
 
         <footer style="margin-top: 2rem; text-align: center; font-size: 0.8rem; color: #666;">
             Generated by NuAnalytics Degree Analyzer
         </footer>
     </div>
+
+    <script>
+        // Major subject codes for highlighting and sorting
+        const majorSubjects = {{major_subjects_json}};
+
+        // Check if a course ID belongs to a major subject
+        function isMajorCourse(courseId) {
+            if (!majorSubjects || majorSubjects.length === 0) return false;
+            for (const subj of majorSubjects) {
+                if (courseId.startsWith(subj)) return true;
+            }
+            return false;
+        }
+
+        // Parse the metric value from "Med / Min / Max" format
+        function parseMetricValue(text) {
+            const parts = text.split('/').map(s => parseFloat(s.trim()));
+            return parts[0] || 0; // Return median (first value)
+        }
+
+        // Sort table functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const table = document.getElementById('course-stats-table');
+            if (!table) return;
+
+            const headers = table.querySelectorAll('th.sortable');
+            const tbody = table.querySelector('tbody');
+
+            headers.forEach((header, colIdx) => {
+                header.addEventListener('click', () => {
+                    const rows = Array.from(tbody.querySelectorAll('tr'));
+                    const isAsc = header.classList.contains('asc');
+
+                    // Clear other sort indicators
+                    headers.forEach(h => h.classList.remove('asc', 'desc'));
+
+                    // Toggle sort direction
+                    header.classList.add(isAsc ? 'desc' : 'asc');
+                    const dir = isAsc ? -1 : 1;
+
+                    rows.sort((a, b) => {
+                        const aCell = a.cells[colIdx];
+                        const bCell = b.cells[colIdx];
+                        if (!aCell || !bCell) return 0;
+
+                        let aVal, bVal;
+
+                        // Column 0 is course ID (text sort with major priority)
+                        if (colIdx === 0) {
+                            const aId = aCell.querySelector('strong')?.textContent || aCell.textContent;
+                            const bId = bCell.querySelector('strong')?.textContent || bCell.textContent;
+                            const aMajor = isMajorCourse(aId);
+                            const bMajor = isMajorCourse(bId);
+
+                            // Major courses always first when sorting ascending
+                            if (aMajor !== bMajor) {
+                                return (aMajor ? -1 : 1) * dir;
+                            }
+                            return aId.localeCompare(bId) * dir;
+                        }
+
+                        // Column 1 is Plans count (numeric)
+                        if (colIdx === 1) {
+                            aVal = parseInt(aCell.textContent) || 0;
+                            bVal = parseInt(bCell.textContent) || 0;
+                        } else {
+                            // Columns 2-5 are "Med / Min / Max" format, sort by median
+                            aVal = parseMetricValue(aCell.textContent);
+                            bVal = parseMetricValue(bCell.textContent);
+                        }
+
+                        return (aVal - bVal) * dir;
+                    });
+
+                    // Re-append sorted rows
+                    rows.forEach(row => tbody.appendChild(row));
+                });
+            });
+
+            // Initial sort: major courses first by complexity descending
+            const complexityHeader = headers[2]; // Complexity column
+            if (complexityHeader) {
+                complexityHeader.click(); // Ascending first
+                complexityHeader.click(); // Then descending
+            }
+
+            // Draw curriculum graphs for special plans
+            drawAllPlanGraphs();
+        });
+
+        // Draw connections for all plan graphs
+        function drawAllPlanGraphs() {
+            if (!window.planGraphs) return;
+
+            for (const planId of Object.keys(window.planGraphs)) {
+                drawPlanConnections(planId);
+            }
+
+            // Redraw on resize
+            window.addEventListener('resize', () => {
+                for (const planId of Object.keys(window.planGraphs)) {
+                    drawPlanConnections(planId);
+                }
+            });
+        }
+
+        // Draw connections for a specific plan graph
+        function drawPlanConnections(planId) {
+            const planData = window.planGraphs[planId];
+            if (!planData) return;
+
+            const svg = document.getElementById('svg-' + planId);
+            const graph = document.getElementById('graph-' + planId);
+            if (!svg || !graph) return;
+
+            const wrapper = svg.parentElement;
+            const wrapperRect = wrapper.getBoundingClientRect();
+
+            // Size SVG to match wrapper
+            svg.style.width = wrapper.offsetWidth + 'px';
+            svg.style.height = wrapper.offsetHeight + 'px';
+            svg.setAttribute('width', wrapper.offsetWidth);
+            svg.setAttribute('height', wrapper.offsetHeight);
+            svg.innerHTML = '';
+
+            const svgNS = 'http://www.w3.org/2000/svg';
+            const criticalSet = new Set(planData.criticalPath);
+
+            planData.edges.forEach(edge => {
+                const fromEl = graph.querySelector('[data-course-id="' + edge.from + '"]');
+                const toEl = graph.querySelector('[data-course-id="' + edge.to + '"]');
+                if (!fromEl || !toEl) return;
+
+                const fromRect = fromEl.getBoundingClientRect();
+                const toRect = toEl.getBoundingClientRect();
+                const offsetX = wrapperRect.left;
+                const offsetY = wrapperRect.top;
+
+                // Check if courses are in the same column (corequisites in same term)
+                const fromCenterX = fromRect.left + fromRect.width / 2;
+                const toCenterX = toRect.left + toRect.width / 2;
+                const sameColumn = Math.abs(fromCenterX - toCenterX) < 50;
+
+                let x1, y1, x2, y2, pathD;
+
+                if (sameColumn && edge.dashes) {
+                    // Corequisite in same term: connect bottom to top
+                    const fromTop = fromRect.top;
+                    const toTop = toRect.top;
+                    let upperRect, lowerRect;
+                    if (fromTop < toTop) {
+                        upperRect = fromRect;
+                        lowerRect = toRect;
+                    } else {
+                        upperRect = toRect;
+                        lowerRect = fromRect;
+                    }
+                    x1 = upperRect.left + upperRect.width / 2 - offsetX;
+                    y1 = upperRect.bottom - offsetY;
+                    x2 = lowerRect.left + lowerRect.width / 2 - offsetX;
+                    y2 = lowerRect.top - offsetY;
+                    const midY = (y1 + y2) / 2;
+                    pathD = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + midY + ', ' + x2 + ' ' + midY + ', ' + x2 + ' ' + y2;
+                } else {
+                    // Horizontal connection: from right side to left side
+                    x1 = fromRect.right - offsetX;
+                    y1 = fromRect.top + fromRect.height / 2 - offsetY;
+                    x2 = toRect.left - offsetX;
+                    y2 = toRect.top + toRect.height / 2 - offsetY;
+                    const midX = (x1 + x2) / 2;
+                    pathD = 'M ' + x1 + ' ' + y1 + ' C ' + midX + ' ' + y1 + ', ' + midX + ' ' + y2 + ', ' + x2 + ' ' + y2;
+                }
+
+                const path = document.createElementNS(svgNS, 'path');
+                path.setAttribute('d', pathD);
+
+                // Check if this edge is on the critical path
+                const isCritical = criticalSet.has(edge.from) && criticalSet.has(edge.to);
+
+                let className = edge.dashes ? 'coreq-line' : 'prereq-line';
+                if (isCritical) {
+                    className += ' critical';
+                }
+                path.setAttribute('class', className);
+                svg.appendChild(path);
+            });
+        }
+    </script>
 </body>
 </html>

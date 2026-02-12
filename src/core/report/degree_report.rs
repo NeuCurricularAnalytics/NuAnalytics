@@ -44,6 +44,27 @@ impl<'a> DegreeReportContext<'a> {
             selected_plans,
         }
     }
+
+    /// Get major subject codes from the degree configuration
+    ///
+    /// Returns the list of subject codes that are considered part of the major.
+    fn major_subjects(&self) -> Vec<&str> {
+        self.degree
+            .major_subjects
+            .as_ref()
+            .map_or_else(Vec::new, |subjects| {
+                subjects.iter().map(String::as_str).collect()
+            })
+    }
+
+    /// Check if a course ID belongs to a major subject
+    fn is_major_course(&self, course_id: &str) -> bool {
+        let subjects = self.major_subjects();
+        if subjects.is_empty() {
+            return false;
+        }
+        subjects.iter().any(|subj| course_id.starts_with(subj))
+    }
 }
 
 /// Generates HTML reports for degree analysis
@@ -114,13 +135,35 @@ impl DegreeReportGenerator {
             &Self::render_course_stats_table(ctx),
         );
 
-        // Selected plans section
+        // Special plans section (shortest, longest, calc-ready with full details)
         html = html.replace(
-            "{{selected_plans_section}}",
-            &Self::render_selected_plans(ctx),
+            "{{special_plans_section}}",
+            &Self::render_special_plans(ctx),
+        );
+
+        // Random samples section (compact view)
+        html = html.replace(
+            "{{random_samples_section}}",
+            &Self::render_random_samples(ctx),
+        );
+
+        // Major subjects JSON for JavaScript sorting
+        html = html.replace(
+            "{{major_subjects_json}}",
+            &Self::render_major_subjects_json(ctx),
         );
 
         Ok(html)
+    }
+
+    /// Render major subjects as JSON array for JavaScript
+    fn render_major_subjects_json(ctx: &DegreeReportContext) -> String {
+        let subjects = ctx.major_subjects();
+        if subjects.is_empty() {
+            return "[]".to_string();
+        }
+        let quoted: Vec<String> = subjects.iter().map(|s| format!("\"{s}\"")).collect();
+        format!("[{}]", quoted.join(", "))
     }
 
     /// Render degree-level statistics cards
@@ -215,22 +258,22 @@ impl DegreeReportGenerator {
         html
     }
 
-    /// Render per-course statistics table
+    /// Render per-course statistics table with sortable headers
     fn render_course_stats_table(ctx: &DegreeReportContext) -> String {
         let mut html = String::new();
 
-        // Table header
+        // Table header with sortable columns
         let _ = writeln!(
             html,
-            "<table class=\"metrics-table\">\n\
+            "<table class=\"metrics-table\" id=\"course-stats-table\">\n\
 <thead>\n\
     <tr>\n\
-        <th>Course</th>\n\
-        <th>Plans</th>\n\
-        <th>Complexity</th>\n\
-        <th>Centrality</th>\n\
-        <th>Delay</th>\n\
-        <th>Blocking</th>\n\
+        <th class=\"sortable\">Course</th>\n\
+        <th class=\"sortable\">Plans</th>\n\
+        <th class=\"sortable\">Complexity</th>\n\
+        <th class=\"sortable\">Centrality</th>\n\
+        <th class=\"sortable\">Delay</th>\n\
+        <th class=\"sortable\">Blocking</th>\n\
     </tr>\n\
     <tr class=\"sub-header\">\n\
         <th></th>\n\
@@ -244,9 +287,35 @@ impl DegreeReportGenerator {
 <tbody>"
         );
 
-        // Get course IDs and sort
+        // Get course IDs and sort: major courses first by complexity (descending)
         let mut course_ids = ctx.aggregator.course_ids();
-        course_ids.sort();
+        course_ids.sort_by(|a, b| {
+            let a_major = ctx.is_major_course(a);
+            let b_major = ctx.is_major_course(b);
+
+            // Major courses come first
+            if a_major != b_major {
+                return if a_major {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                };
+            }
+
+            // Within same category, sort by complexity (descending)
+            let a_complexity = ctx
+                .aggregator
+                .course_stats(a)
+                .map_or(0.0, |s| s.complexity.median);
+            let b_complexity = ctx
+                .aggregator
+                .course_stats(b)
+                .map_or(0.0, |s| s.complexity.median);
+
+            b_complexity
+                .partial_cmp(&a_complexity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         for course_id in course_ids {
             if let Some(stats) = ctx.aggregator.course_stats(&course_id) {
@@ -255,9 +324,15 @@ impl DegreeReportGenerator {
                     .get_course(&course_id)
                     .map_or(&course_id, |c| &c.name);
 
+                let row_class = if ctx.is_major_course(&course_id) {
+                    " class=\"major-course\""
+                } else {
+                    ""
+                };
+
                 let _ = writeln!(
                     html,
-                    "<tr>\n\
+                    "<tr{row_class}>\n\
     <td><strong>{}</strong><br><small>{}</small></td>\n\
     <td>{}</td>\n\
     <td>{:.1} / {:.1} / {:.1}</td>\n\
@@ -288,7 +363,349 @@ impl DegreeReportGenerator {
         html
     }
 
-    /// Render selected plans section
+    /// Render special plans section with full details (term schedule, critical path, curriculum graph)
+    #[allow(clippy::too_many_lines)]
+    fn render_special_plans(ctx: &DegreeReportContext) -> String {
+        let mut html = String::new();
+
+        // Render each special plan (shortest, longest, calc-ready)
+        let special_plans = [
+            (PlanCategory::Shortest, &ctx.selected_plans.shortest),
+            (PlanCategory::Longest, &ctx.selected_plans.longest),
+            (
+                PlanCategory::CalcReadyShortest,
+                &ctx.selected_plans.calc_ready_shortest,
+            ),
+        ];
+
+        for (category, plan_opt) in special_plans {
+            if let Some(plan) = plan_opt {
+                let plan_id = category.file_name().replace('-', "_");
+                let _ = writeln!(html, "<div class=\"special-plan\" id=\"plan-{plan_id}\">");
+                let _ = writeln!(html, "<h3>{}</h3>", category.display_name());
+
+                // Overview stats
+                let _ = writeln!(html, "<div class=\"plan-overview\">");
+                let _ = writeln!(
+                    html,
+                    "<div class=\"stat-card\">\n\
+    <div class=\"label\">Terms</div>\n\
+    <div class=\"value\">{}</div>\n\
+</div>",
+                    plan.score.terms_required
+                );
+                let _ = writeln!(
+                    html,
+                    "<div class=\"stat-card\">\n\
+    <div class=\"label\">Complexity</div>\n\
+    <div class=\"value\">{}</div>\n\
+</div>",
+                    plan.score.total_complexity
+                );
+                let _ = writeln!(
+                    html,
+                    "<div class=\"stat-card\">\n\
+    <div class=\"label\">Longest Delay</div>\n\
+    <div class=\"value\">{}</div>\n\
+</div>",
+                    plan.score.longest_delay
+                );
+
+                // Total credits
+                let total_credits: f32 = plan.schedule.terms.iter().map(|t| t.total_credits).sum();
+                let _ = writeln!(
+                    html,
+                    "<div class=\"stat-card\">\n\
+    <div class=\"label\">Total Credits</div>\n\
+    <div class=\"value\">{total_credits:.0}</div>\n\
+</div>"
+                );
+
+                // Course count
+                let course_count: usize = plan.schedule.terms.iter().map(|t| t.courses.len()).sum();
+                let _ = writeln!(
+                    html,
+                    "<div class=\"stat-card\">\n\
+    <div class=\"label\">Courses</div>\n\
+    <div class=\"value\">{course_count}</div>\n\
+</div>"
+                );
+                let _ = writeln!(html, "</div>"); // end plan-overview
+
+                // Critical path
+                if !plan.score.longest_delay_chain.is_empty() {
+                    let path_str = plan.score.longest_delay_chain.join(" → ");
+                    let _ = writeln!(
+                        html,
+                        "<div class=\"critical-path\"><strong>Critical Path:</strong> {path_str}</div>"
+                    );
+                }
+
+                // Curriculum Graph with legend
+                let _ = writeln!(html, "<h4>Curriculum Graph</h4>");
+                let _ = writeln!(html, "<div class=\"graph-legend\">");
+                let _ = writeln!(
+                    html,
+                    "<div class=\"legend-item\"><div class=\"legend-color complexity-low\"></div><span>Low (1-5)</span></div>"
+                );
+                let _ = writeln!(
+                    html,
+                    "<div class=\"legend-item\"><div class=\"legend-color complexity-medium\"></div><span>Med (6-15)</span></div>"
+                );
+                let _ = writeln!(
+                    html,
+                    "<div class=\"legend-item\"><div class=\"legend-color complexity-high\"></div><span>High (16+)</span></div>"
+                );
+                let _ = writeln!(
+                    html,
+                    "<div class=\"legend-item\"><div class=\"legend-line solid\"></div><span>Prereq</span></div>"
+                );
+                let _ = writeln!(
+                    html,
+                    "<div class=\"legend-item\"><div class=\"legend-line dashed\"></div><span>Coreq</span></div>"
+                );
+                let _ = writeln!(
+                    html,
+                    "<div class=\"legend-item\"><div class=\"legend-line critical\"></div><span>Critical</span></div>"
+                );
+                let _ = writeln!(html, "</div>");
+
+                // Generate curriculum graph HTML
+                let graph_html = Self::render_curriculum_graph(ctx, plan, &plan_id);
+                let _ = write!(html, "{graph_html}");
+
+                // Term schedule table
+                let _ = writeln!(html, "<div class=\"term-schedule\">");
+                let _ = writeln!(html, "<h4>Term Schedule</h4>");
+                let _ = writeln!(
+                    html,
+                    "<table>\n\
+<thead><tr><th>Term</th><th>Courses</th><th>Credits</th></tr></thead>\n\
+<tbody>"
+                );
+
+                for term in &plan.schedule.terms {
+                    if term.courses.is_empty() {
+                        continue;
+                    }
+
+                    let courses_html: Vec<String> = term
+                        .courses
+                        .iter()
+                        .map(|key| {
+                            let name = ctx.school.get_course(key).map_or(key.as_str(), |c| &c.name);
+                            format!(
+                                "<span class=\"course-badge\">{key}</span> {}",
+                                Self::escape_html(name)
+                            )
+                        })
+                        .collect();
+
+                    let _ = writeln!(
+                        html,
+                        "<tr><td>{}</td><td>{}</td><td>{:.1}</td></tr>",
+                        term.number,
+                        courses_html.join("<br>"),
+                        term.total_credits
+                    );
+                }
+
+                let _ = writeln!(html, "</tbody></table>");
+                let _ = writeln!(html, "</div>"); // end term-schedule
+                let _ = writeln!(html, "</div>"); // end special-plan
+            }
+        }
+
+        html
+    }
+
+    /// Render the curriculum graph for a special plan
+    fn render_curriculum_graph(
+        ctx: &DegreeReportContext,
+        plan: &ScoredPlan,
+        plan_id: &str,
+    ) -> String {
+        let mut html = String::new();
+
+        // Create a set of courses in this plan for filtering edges
+        let plan_courses: std::collections::HashSet<&str> =
+            plan.variant.courses.iter().map(String::as_str).collect();
+
+        // Build edges from course prerequisites
+        let mut edges: Vec<(String, String, bool)> = Vec::new(); // (from, to, is_coreq)
+
+        for course_key in &plan.variant.courses {
+            if let Some(course) = ctx.school.get_course(course_key) {
+                // Add prerequisite edges
+                for prereq in &course.prerequisites {
+                    if plan_courses.contains(prereq.as_str()) {
+                        edges.push((prereq.clone(), course_key.clone(), false));
+                    }
+                }
+                // Add corequisite edges
+                for coreq in &course.corequisites {
+                    if plan_courses.contains(coreq.as_str()) {
+                        edges.push((coreq.clone(), course_key.clone(), true));
+                    }
+                }
+                for coreq in &course.strict_corequisites {
+                    if plan_courses.contains(coreq.as_str()) {
+                        edges.push((coreq.clone(), course_key.clone(), true));
+                    }
+                }
+            }
+        }
+
+        // Generate graph wrapper
+        let _ = writeln!(html, "<div class=\"curriculum-graph-wrapper\">");
+        let _ = writeln!(
+            html,
+            "<div class=\"curriculum-graph\" id=\"graph-{plan_id}\">"
+        );
+
+        // Generate term columns
+        for term in &plan.schedule.terms {
+            if term.courses.is_empty() {
+                continue;
+            }
+
+            let _ = writeln!(html, "<div class=\"term-column\">");
+            let _ = writeln!(
+                html,
+                "<div class=\"term-header\">Term {}</div>",
+                term.number
+            );
+            let _ = writeln!(html, "<div class=\"term-courses\">");
+
+            for course_key in &term.courses {
+                let course = ctx.school.get_course(course_key);
+                let metrics = plan.course_metrics.get(course_key);
+
+                let name = course.map_or("", |c| &c.name);
+                let short_name = if name.len() > 20 { &name[..17] } else { name };
+                let complexity = metrics.map_or(0, |m| m.complexity);
+
+                let complexity_class = match complexity {
+                    0..=5 => "complexity-low",
+                    6..=15 => "complexity-medium",
+                    _ => "complexity-high",
+                };
+
+                let _ = writeln!(
+                    html,
+                    "<div class=\"course-node\" data-course-id=\"{course_key}\" data-plan=\"{plan_id}\">"
+                );
+                let _ = writeln!(
+                    html,
+                    "<span class=\"complexity-badge {complexity_class}\">{complexity}</span>"
+                );
+                let _ = writeln!(html, "<div class=\"course-id\">{course_key}</div>");
+                let _ = writeln!(
+                    html,
+                    "<div class=\"course-name\">{}</div>",
+                    Self::escape_html(short_name)
+                );
+                let _ = writeln!(html, "</div>");
+            }
+
+            let _ = writeln!(html, "</div>"); // term-courses
+            let _ = writeln!(html, "</div>"); // term-column
+        }
+
+        let _ = writeln!(html, "</div>"); // curriculum-graph
+
+        // Generate SVG for connections
+        let _ = writeln!(
+            html,
+            "<svg class=\"connections-svg\" id=\"svg-{plan_id}\"></svg>"
+        );
+        let _ = writeln!(html, "</div>"); // curriculum-graph-wrapper
+
+        // Generate edge data as JSON for JavaScript
+        let edges_json: Vec<String> = edges
+            .iter()
+            .map(|(from, to, is_coreq)| {
+                format!("{{ \"from\": \"{from}\", \"to\": \"{to}\", \"dashes\": {is_coreq} }}")
+            })
+            .collect();
+
+        // Generate critical path set
+        let critical_ids: Vec<String> = plan
+            .score
+            .longest_delay_chain
+            .iter()
+            .map(|s| format!("\"{s}\""))
+            .collect();
+
+        // Add JavaScript data block for this plan's graph
+        let _ = writeln!(
+            html,
+            "<script>\n\
+if (!window.planGraphs) window.planGraphs = {{}};\n\
+window.planGraphs['{plan_id}'] = {{\n\
+    edges: [{}],\n\
+    criticalPath: [{}]\n\
+}};\n\
+</script>",
+            edges_json.join(", "),
+            critical_ids.join(", ")
+        );
+
+        html
+    }
+
+    /// Render random samples section with compact course lists
+    fn render_random_samples(ctx: &DegreeReportContext) -> String {
+        let mut html = String::new();
+
+        for (idx, plan) in ctx.selected_plans.random_samples.iter().enumerate() {
+            let _ = writeln!(html, "<div class=\"plan-card\">");
+            let _ = writeln!(html, "<h3>Random Sample {}</h3>", idx + 1);
+
+            // Summary stats
+            let _ = writeln!(
+                html,
+                "<div class=\"plan-stats\">\n\
+    <div class=\"plan-stat\"><span class=\"label\">Terms:</span> <span class=\"value\">{}</span></div>\n\
+    <div class=\"plan-stat\"><span class=\"label\">Complexity:</span> <span class=\"value\">{}</span></div>\n\
+    <div class=\"plan-stat\"><span class=\"label\">Longest Delay:</span> <span class=\"value\">{}</span></div>\n\
+</div>",
+                plan.score.terms_required, plan.score.total_complexity, plan.score.longest_delay
+            );
+
+            // Collapsible course list
+            let _ = writeln!(html, "<details><summary>View Courses</summary><ul>");
+            for course in &plan.variant.courses {
+                let name = ctx
+                    .school
+                    .get_course(course)
+                    .map_or("", |c| c.name.as_str());
+                if name.is_empty() {
+                    let _ = writeln!(html, "<li>{course}</li>");
+                } else {
+                    let _ = writeln!(
+                        html,
+                        "<li><strong>{course}</strong> - {}</li>",
+                        Self::escape_html(name)
+                    );
+                }
+            }
+            let _ = writeln!(html, "</ul></details>");
+            let _ = writeln!(html, "</div>");
+        }
+
+        if ctx.selected_plans.random_samples.is_empty() {
+            let _ = writeln!(
+                html,
+                "<p style=\"color: #666; font-style: italic;\">No random samples collected</p>"
+            );
+        }
+
+        html
+    }
+
+    /// Render selected plans section (legacy - kept for compatibility)
+    #[allow(dead_code)]
     fn render_selected_plans(ctx: &DegreeReportContext) -> String {
         let mut html = String::new();
 
@@ -307,7 +724,8 @@ impl DegreeReportGenerator {
         html
     }
 
-    /// Render details for a single plan
+    /// Render details for a single plan (legacy - kept for compatibility)
+    #[allow(dead_code)]
     fn render_plan_details(plan: &ScoredPlan, category: PlanCategory) -> String {
         let mut html = String::new();
 
