@@ -395,6 +395,7 @@ mod tests {
                     terms_required: 8,
                     total_complexity: 100,
                     longest_delay: 5,
+                    longest_delay_chain: Vec::new(),
                     is_calc_ready: false,
                 },
                 schedule: TermPlan::new(8, false, 15.0),

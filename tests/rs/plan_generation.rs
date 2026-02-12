@@ -231,6 +231,7 @@ fn test_plan_score_comparison() {
         terms_required: 8,
         total_complexity: 150,
         longest_delay: 6,
+        longest_delay_chain: Vec::new(),
         is_calc_ready: false,
     };
 
@@ -238,6 +239,7 @@ fn test_plan_score_comparison() {
         terms_required: 9,
         total_complexity: 160,
         longest_delay: 7,
+        longest_delay_chain: Vec::new(),
         is_calc_ready: false,
     };
 
@@ -245,6 +247,7 @@ fn test_plan_score_comparison() {
         terms_required: 8,
         total_complexity: 140,
         longest_delay: 5,
+        longest_delay_chain: Vec::new(),
         is_calc_ready: false,
     };
 

@@ -95,6 +95,11 @@ pub struct DegreeAnalysisConfig {
     /// Skip equivalent plan combinations
     #[serde(default = "default_ignore_duplicates")]
     pub ignore_duplicates: bool,
+
+    /// Sampling strategy for plan enumeration ("sequential", "shuffled", "stratified")
+    /// Defaults to "shuffled" for unbiased statistics
+    #[serde(default = "default_sampling_strategy")]
+    pub sampling_strategy: String,
 }
 
 fn default_calc_strategy() -> String {
@@ -113,6 +118,10 @@ const fn default_ignore_duplicates() -> bool {
     true
 }
 
+fn default_sampling_strategy() -> String {
+    "shuffled".to_string()
+}
+
 impl Default for DegreeAnalysisConfig {
     fn default() -> Self {
         Self {
@@ -120,6 +129,7 @@ impl Default for DegreeAnalysisConfig {
             sample_plan_count: default_sample_plan_count(),
             max_plans: default_max_plans(),
             ignore_duplicates: default_ignore_duplicates(),
+            sampling_strategy: default_sampling_strategy(),
         }
     }
 }
@@ -534,6 +544,9 @@ impl Config {
             "ignore_duplicates" | "ignore-duplicates" => {
                 Some(self.degree_analysis.ignore_duplicates.to_string())
             }
+            "sampling_strategy" | "sampling-strategy" => {
+                Some(self.degree_analysis.sampling_strategy.clone())
+            }
             _ => None,
         }
     }
@@ -611,6 +624,16 @@ impl Config {
                     .parse::<bool>()
                     .map_err(|_| format!("Invalid boolean for 'ignore_duplicates': '{value}'"))?;
             }
+            "sampling_strategy" | "sampling-strategy" => {
+                let valid = ["sequential", "shuffled", "stratified"];
+                let lower = value.to_lowercase();
+                if !valid.contains(&lower.as_str()) {
+                    return Err(format!(
+                        "Invalid sampling_strategy '{value}': must be 'sequential', 'shuffled', or 'stratified'"
+                    ));
+                }
+                self.degree_analysis.sampling_strategy = lower;
+            }
             _ => return Err(format!("Unknown config key: '{key}'")),
         }
         Ok(())
@@ -677,6 +700,11 @@ impl Config {
             }
             "ignore_duplicates" | "ignore-duplicates" => {
                 self.degree_analysis.ignore_duplicates = defaults.degree_analysis.ignore_duplicates;
+            }
+            "sampling_strategy" | "sampling-strategy" => {
+                self.degree_analysis
+                    .sampling_strategy
+                    .clone_from(&defaults.degree_analysis.sampling_strategy);
             }
             _ => return Err(format!("Unknown config key: '{key}'")),
         }
@@ -755,6 +783,11 @@ impl fmt::Display for Config {
             f,
             "  ignore_duplicates = {}",
             self.degree_analysis.ignore_duplicates
+        )?;
+        writeln!(
+            f,
+            "  sampling_strategy = \"{}\"",
+            self.degree_analysis.sampling_strategy
         )?;
 
         Ok(())

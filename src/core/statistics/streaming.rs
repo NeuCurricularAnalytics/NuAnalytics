@@ -293,6 +293,136 @@ impl Default for QuantileReservoir {
     }
 }
 
+/// Exact quantile accumulator that stores all values
+///
+/// Use when exact quantiles are required and memory allows.
+/// For large datasets (>100k values), consider `QuantileReservoir` instead.
+#[derive(Debug, Clone, Default)]
+pub struct ExactQuantileAccumulator {
+    /// All stored values
+    values: Vec<f64>,
+}
+
+impl ExactQuantileAccumulator {
+    /// Create a new exact accumulator
+    #[must_use]
+    pub const fn new() -> Self {
+        Self { values: Vec::new() }
+    }
+
+    /// Create with pre-allocated capacity
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            values: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// Add a value
+    pub fn push(&mut self, value: f64) {
+        self.values.push(value);
+    }
+
+    /// Get the count of values
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)] // Vec::len() is not const
+    pub fn count(&self) -> usize {
+        self.values.len()
+    }
+
+    /// Check if empty
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)] // Vec::is_empty() is not const
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    /// Get a sorted copy of values for percentile calculation
+    fn sorted_values(&self) -> Vec<f64> {
+        let mut sorted = self.values.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted
+    }
+
+    /// Get exact percentile
+    ///
+    /// # Arguments
+    /// * `percentile` - Percentile to compute (0-100)
+    #[must_use]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    pub fn percentile(&self, percentile: f64) -> f64 {
+        if self.values.is_empty() {
+            return 0.0;
+        }
+
+        let sorted = self.sorted_values();
+        let n = sorted.len();
+        if n == 1 {
+            return sorted[0];
+        }
+
+        let rank = (percentile / 100.0) * (n - 1) as f64;
+        let lower_idx = rank.floor() as usize;
+        let upper_idx = (lower_idx + 1).min(n - 1);
+
+        let fraction = rank - lower_idx as f64;
+        fraction.mul_add(sorted[upper_idx] - sorted[lower_idx], sorted[lower_idx])
+    }
+
+    /// Get exact median
+    #[must_use]
+    pub fn median(&self) -> f64 {
+        self.percentile(50.0)
+    }
+
+    /// Get exact Q1
+    #[must_use]
+    pub fn q1(&self) -> f64 {
+        self.percentile(25.0)
+    }
+
+    /// Get exact Q3
+    #[must_use]
+    pub fn q3(&self) -> f64 {
+        self.percentile(75.0)
+    }
+
+    /// Get minimum value
+    #[must_use]
+    pub fn min(&self) -> f64 {
+        self.values
+            .iter()
+            .copied()
+            .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(0.0)
+    }
+
+    /// Get maximum value
+    #[must_use]
+    pub fn max(&self) -> f64 {
+        self.values
+            .iter()
+            .copied()
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(0.0)
+    }
+
+    /// Merge another accumulator into this one
+    pub fn merge(&mut self, other: &Self) {
+        self.values.extend_from_slice(&other.values);
+    }
+
+    /// Get all values (for box plot generation)
+    #[must_use]
+    pub fn values(&self) -> &[f64] {
+        &self.values
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,5 +557,80 @@ mod tests {
         assert!((reservoir.median() - 42.0).abs() < f64::EPSILON);
         assert!((reservoir.q1() - 42.0).abs() < f64::EPSILON);
         assert!((reservoir.q3() - 42.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_exact_accumulator_basic() {
+        let mut acc = ExactQuantileAccumulator::new();
+        for i in 1..=100 {
+            acc.push(f64::from(i));
+        }
+
+        assert_eq!(acc.count(), 100);
+        // Exact median of 1-100 is 50.5
+        assert!((acc.median() - 50.5).abs() < 0.01);
+        assert!((acc.min() - 1.0).abs() < f64::EPSILON);
+        assert!((acc.max() - 100.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_exact_accumulator_quartiles() {
+        let mut acc = ExactQuantileAccumulator::new();
+        for i in 1..=100 {
+            acc.push(f64::from(i));
+        }
+
+        // For uniform 1-100: Q1 ≈ 25.75, Q3 ≈ 75.25
+        assert!(acc.q1() > 25.0 && acc.q1() < 26.0);
+        assert!(acc.q3() > 75.0 && acc.q3() < 76.0);
+    }
+
+    #[test]
+    fn test_exact_accumulator_empty() {
+        let acc = ExactQuantileAccumulator::new();
+        assert!(acc.is_empty());
+        assert!((acc.median() - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_exact_accumulator_single() {
+        let mut acc = ExactQuantileAccumulator::new();
+        acc.push(42.0);
+
+        assert!((acc.median() - 42.0).abs() < f64::EPSILON);
+        assert!((acc.q1() - 42.0).abs() < f64::EPSILON);
+        assert!((acc.q3() - 42.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_exact_accumulator_merge() {
+        let mut acc1 = ExactQuantileAccumulator::new();
+        let mut acc2 = ExactQuantileAccumulator::new();
+
+        for i in 1..=50 {
+            acc1.push(f64::from(i));
+        }
+        for i in 51..=100 {
+            acc2.push(f64::from(i));
+        }
+
+        acc1.merge(&acc2);
+
+        assert_eq!(acc1.count(), 100);
+        assert!((acc1.median() - 50.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_exact_vs_reservoir_accuracy() {
+        // Test that exact mode gives consistent results regardless of order
+        let mut exact = ExactQuantileAccumulator::new();
+
+        // Add values in ascending order (worst case for reservoir)
+        for i in 1..=1000 {
+            exact.push(f64::from(i));
+        }
+
+        // Exact should give median of 500.5
+        assert!((exact.median() - 500.5).abs() < 0.01);
     }
 }

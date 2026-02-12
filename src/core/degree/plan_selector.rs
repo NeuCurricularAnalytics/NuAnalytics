@@ -24,6 +24,9 @@ pub struct PlanScore {
     /// Longest delay factor in the plan
     pub longest_delay: usize,
 
+    /// Chain of courses that creates the longest delay (from start to end)
+    pub longest_delay_chain: Vec<String>,
+
     /// Whether this plan assumes calculus readiness
     pub is_calc_ready: bool,
 }
@@ -260,10 +263,15 @@ impl<'a> PlanSelector<'a> {
         let total_complexity: usize = course_metrics.values().map(|m| m.complexity).sum();
         let longest_delay = course_metrics.values().map(|m| m.delay).max().unwrap_or(0);
 
+        // Find the course(s) with the longest delay and trace back to find the chain
+        let longest_delay_chain =
+            self.compute_longest_delay_chain(&variant.courses, &course_metrics, longest_delay);
+
         let score = PlanScore {
             terms_required: schedule.terms_used(),
             total_complexity,
             longest_delay,
+            longest_delay_chain,
             is_calc_ready: false,
         };
 
@@ -273,6 +281,59 @@ impl<'a> PlanSelector<'a> {
             schedule,
             course_metrics,
         }
+    }
+
+    /// Compute the chain of courses that creates the longest delay
+    ///
+    /// Traces forward from a course with high delay through its dependents
+    /// to find the complete prerequisite chain that creates the longest path.
+    /// The delay factor represents the longest path THROUGH a course, so courses
+    /// at the START of long chains have high delay (they block many courses).
+    fn compute_longest_delay_chain(
+        &self,
+        courses: &[String],
+        course_metrics: &HashMap<String, CourseMetrics>,
+        longest_delay: usize,
+    ) -> Vec<String> {
+        // Find course(s) with the longest delay
+        let start_course = course_metrics
+            .iter()
+            .filter(|(_, m)| m.delay == longest_delay)
+            .max_by_key(|(_, m)| m.blocking) // Prefer courses that block more (start of chain)
+            .map(|(k, _)| k.clone());
+
+        let Some(start) = start_course else {
+            return Vec::new();
+        };
+
+        // Build set of courses in plan for filtering
+        let plan_set: std::collections::HashSet<&str> =
+            courses.iter().map(String::as_str).collect();
+
+        // Trace forward through dependents to build the chain
+        let mut chain = vec![start.clone()];
+        let mut current = start;
+
+        while let Some(dependents) = self.dag.get_dependents(&current) {
+            // Find the dependent in this plan with the highest delay
+            // (continues the longest path)
+            let next = dependents
+                .iter()
+                .filter(|d| plan_set.contains(d.as_str()))
+                .filter_map(|d| course_metrics.get(d).map(|m| (d, m.delay)))
+                .max_by_key(|(_, delay)| *delay)
+                .map(|(d, _)| d.clone());
+
+            match next {
+                Some(dependent) => {
+                    chain.push(dependent.clone());
+                    current = dependent;
+                }
+                None => break,
+            }
+        }
+
+        chain
     }
 
     /// Score a plan assuming calculus readiness (skip calc prereqs)
@@ -298,10 +359,14 @@ impl<'a> PlanSelector<'a> {
     }
 
     /// Check if plan should replace current longest
+    ///
+    /// Prefers plans with more terms required, using higher complexity as tiebreaker.
     fn should_update_longest(&self, scored: &ScoredPlan) -> bool {
-        self.longest
-            .as_ref()
-            .is_none_or(|current| scored.score.is_longer_than(&current.score))
+        self.longest.as_ref().is_none_or(|current| {
+            scored.score.is_longer_than(&current.score)
+                || (scored.score.terms_required == current.score.terms_required
+                    && scored.score.total_complexity > current.score.total_complexity)
+        })
     }
 
     /// Check if plan should replace current calc-ready shortest
@@ -514,12 +579,14 @@ mod tests {
             terms_required: 8,
             total_complexity: 150,
             longest_delay: 6,
+            longest_delay_chain: Vec::new(),
             is_calc_ready: false,
         };
         let score2 = PlanScore {
             terms_required: 9,
             total_complexity: 160,
             longest_delay: 7,
+            longest_delay_chain: Vec::new(),
             is_calc_ready: false,
         };
 

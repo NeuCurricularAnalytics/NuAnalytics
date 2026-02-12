@@ -3,13 +3,15 @@
 use nu_analytics::config::Config;
 use nu_analytics::core::degree::{
     load_degree_from_yaml, PlanGenerator, PlanGeneratorConfig, PlanSelector, PlanSelectorConfig,
-    PlanValidator, PlanValidatorConfig, PlanVariant,
+    PlanValidator, PlanValidatorConfig, PlanVariant, SamplingStrategy,
 };
 use nu_analytics::core::metrics::compute_all_metrics;
 use nu_analytics::core::models::degree::Requirement;
 use nu_analytics::core::models::{CourseGraph, School, DAG};
 use nu_analytics::core::report::degree_report::{DegreeReportContext, DegreeReportGenerator};
-use nu_analytics::core::report::plan_export::{export_selected_plans, PlanExportConfig};
+use nu_analytics::core::report::plan_export::{
+    export_degree_summary_jsonl, export_index_csv, export_selected_plans, PlanExportConfig,
+};
 use nu_analytics::core::report::term_scheduler::SchedulerConfig;
 use nu_analytics::core::statistics::aggregator::{AggregatorConfig, MetricsAggregator};
 use nu_analytics::core::validate_degree_program;
@@ -660,6 +662,8 @@ pub struct DegreeOptions {
     /// Calculation strategy override ("median" or "mean") - reserved for future use
     #[allow(dead_code)]
     pub calc_strategy: Option<String>,
+    /// Sampling strategy override ("sequential", "shuffled", "stratified")
+    pub sampling_strategy: Option<String>,
     /// Number of random plans to sample
     pub sample_plans: Option<usize>,
     /// Maximum plans to generate
@@ -822,6 +826,19 @@ fn analyze_degree(
         graph_result.cycles.clear();
     }
 
+    // Parse sampling strategy: CLI option takes precedence over config
+    let sampling_strategy = options
+        .sampling_strategy
+        .as_ref()
+        .and_then(|s| s.parse::<SamplingStrategy>().ok())
+        .unwrap_or_else(|| {
+            config
+                .degree_analysis
+                .sampling_strategy
+                .parse::<SamplingStrategy>()
+                .unwrap_or_default()
+        });
+
     // Build analysis context
     let ctx = AnalysisContext {
         program: &program,
@@ -838,6 +855,7 @@ fn analyze_degree(
                 .sample_plans
                 .unwrap_or(config.degree_analysis.sample_plan_count),
             target_credits: program.degree.total_credits,
+            sampling_strategy,
             ..Default::default()
         },
         verbose,
@@ -1062,11 +1080,49 @@ fn generate_analysis_outputs(
         outputs_generated.push(format!("Report: {}", report_path.display()));
     }
 
-    // Export CSV files
+    // Export CSV files (including JSONL and index for aggregation)
     if !options.no_csv {
         let exported = export_csv_files(ctx, options, selected)?;
         for path in exported {
             outputs_generated.push(format!("CSV: {path}"));
+        }
+
+        // Export JSONL and index CSV for aggregation (only when CSV export is enabled)
+        let metrics_dir = options
+            .metrics_dir
+            .as_ref()
+            .map_or_else(|| std::path::PathBuf::from("metrics"), Clone::clone);
+
+        // Export degree summary JSONL
+        match export_degree_summary_jsonl(
+            &ctx.school,
+            &ctx.program.degree,
+            aggregator,
+            selected,
+            &metrics_dir,
+        ) {
+            Ok(path) => outputs_generated.push(format!("JSONL: {}", path.display())),
+            Err(e) => {
+                if ctx.verbose {
+                    eprintln!("Warning: Failed to export JSONL summary: {e}");
+                }
+            }
+        }
+
+        // Export to index CSV for multi-degree analysis
+        match export_index_csv(
+            &ctx.school,
+            &ctx.program.degree,
+            aggregator,
+            selected,
+            &metrics_dir,
+        ) {
+            Ok(path) => outputs_generated.push(format!("Index: {}", path.display())),
+            Err(e) => {
+                if ctx.verbose {
+                    eprintln!("Warning: Failed to export index CSV: {e}");
+                }
+            }
         }
     }
 

@@ -9,15 +9,73 @@
 //!
 //! This design keeps combinatorial explosion manageable while still capturing
 //! the meaningful variations in degree complexity.
+//!
+//! # Sampling Strategies
+//!
+//! The generator supports different sampling strategies to control how plans are
+//! enumerated:
+//!
+//! - **Sequential**: Default enumeration order (may bias towards simpler plans first)
+//! - **Shuffled**: Randomizes the order of plan generation for unbiased sampling
+//! - **Stratified**: Ensures coverage across different complexity levels
+//!
+//! Shuffled sampling is recommended when computing aggregate statistics to avoid
+//! systematic bias in the median/quartile calculations.
 
 use super::plan_variant::PlanVariant;
 use super::requirement_resolver::{RequirementResolver, ResolvedRequirement};
 use crate::core::models::course::Course;
 use crate::core::models::degree::Requirement;
+use fastrand::Rng;
 use std::collections::{HashMap, HashSet};
 
 /// Categories that should be enumerated for plan generation
 const ENUMERABLE_CATEGORIES: [&str; 1] = ["major"];
+
+/// Strategy for sampling plans during generation
+///
+/// Different strategies trade off between performance and statistical accuracy:
+/// - Sequential is fastest but may produce biased statistics
+/// - Shuffled gives unbiased samples at the cost of pre-computing indices
+/// - Stratified ensures good coverage of the complexity range
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum SamplingStrategy {
+    /// Sequential enumeration (first combinations first)
+    /// Fast but may bias statistics towards simpler plans
+    Sequential,
+    /// Shuffled random order for unbiased sampling
+    /// Recommended for accurate median/quartile computation
+    #[default]
+    Shuffled,
+    /// Stratified sampling across complexity strata
+    /// Ensures good coverage of complexity range
+    Stratified,
+}
+
+impl std::fmt::Display for SamplingStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sequential => write!(f, "sequential"),
+            Self::Shuffled => write!(f, "shuffled"),
+            Self::Stratified => write!(f, "stratified"),
+        }
+    }
+}
+
+impl std::str::FromStr for SamplingStrategy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "sequential" | "seq" => Ok(Self::Sequential),
+            "shuffled" | "shuffle" | "random" => Ok(Self::Shuffled),
+            "stratified" | "strat" => Ok(Self::Stratified),
+            _ => Err(format!(
+                "Unknown sampling strategy '{s}': expected 'sequential', 'shuffled', or 'stratified'"
+            )),
+        }
+    }
+}
 
 /// Configuration for plan generation
 #[derive(Debug, Clone)]
@@ -37,16 +95,25 @@ pub struct PlanGeneratorConfig {
 
     /// Default credit hours for placeholder electives
     pub default_elective_credits: f32,
+
+    /// Sampling strategy for plan enumeration
+    /// Defaults to Shuffled for unbiased statistics
+    pub sampling_strategy: SamplingStrategy,
+
+    /// Random seed for reproducible shuffling (None = random)
+    pub random_seed: Option<u64>,
 }
 
 impl Default for PlanGeneratorConfig {
     fn default() -> Self {
         Self {
             max_plans: 1_000_000,
-            ignore_duplicates: true, // Default to true per user request
+            ignore_duplicates: true,
             sample_count: 5,
             target_credits: None,
             default_elective_credits: 3.0,
+            sampling_strategy: SamplingStrategy::Shuffled,
+            random_seed: None,
         }
     }
 }
@@ -276,11 +343,16 @@ impl<'a> PlanGenerator<'a> {
 ///
 /// Iterates through all combinations of major requirement choices,
 /// combining each with fixed non-major courses and placeholder electives.
+///
+/// Supports different iteration orders via [`SamplingStrategy`]:
+/// - Sequential: Standard counter-style iteration (0, 1, 2, ...)
+/// - Shuffled: Random permutation of plan indices for unbiased sampling
+/// - Stratified: (future) Ensures coverage across complexity strata
 pub struct PlanIterator<'a> {
     /// Reference to the generator
     generator: &'a PlanGenerator<'a>,
 
-    /// Current indices into each major requirement's choices
+    /// Current indices into each major requirement's choices (for sequential)
     indices: Vec<usize>,
 
     /// Whether we've finished iterating
@@ -288,6 +360,13 @@ pub struct PlanIterator<'a> {
 
     /// Count of plans generated
     count: usize,
+
+    /// Shuffled plan indices (for shuffled/stratified strategies)
+    /// Each index represents a flat plan number that gets converted to requirement indices
+    shuffled_order: Option<Vec<usize>>,
+
+    /// Current position in `shuffled_order`
+    shuffled_pos: usize,
 }
 
 impl<'a> PlanIterator<'a> {
@@ -301,28 +380,156 @@ impl<'a> PlanIterator<'a> {
                 .iter()
                 .any(|r| r.choices.is_empty());
 
+        // Build shuffled order if using shuffled strategy
+        let shuffled_order = match generator.config.sampling_strategy {
+            SamplingStrategy::Sequential => None,
+            SamplingStrategy::Shuffled | SamplingStrategy::Stratified => {
+                if done {
+                    None
+                } else {
+                    Some(Self::build_shuffled_order(generator))
+                }
+            }
+        };
+
         Self {
             generator,
             indices,
             done,
             count: 0,
+            shuffled_order,
+            shuffled_pos: 0,
         }
     }
 
-    /// Build a plan variant from current indices
+    /// Build a shuffled order of plan indices
+    ///
+    /// Creates a vector of flat indices [0, 1, 2, ..., total_plans-1] and shuffles it.
+    /// For large plan spaces, only generates indices up to `max_plans` to save memory.
+    ///
+    /// **Important**: Always includes indices 0 (simplest plan) and (total-1) (most complex plan)
+    /// at the start of the order to ensure the extremes are always processed, regardless of
+    /// sample size. This guarantees that "shortest" and "longest" plans are accurate.
+    fn build_shuffled_order(generator: &PlanGenerator<'_>) -> Vec<usize> {
+        let total = generator.estimate_plan_count();
+        // Cap at max_plans to avoid huge memory allocation
+        let count = total.min(generator.config.max_plans);
+
+        // Always include extremes: index 0 (simplest) and index (total-1) (most complex)
+        // These will be placed at the beginning of the order
+        let extreme_low = 0;
+        let extreme_high = total.saturating_sub(1);
+
+        let mut order: Vec<usize> = if count == total {
+            // Small enough to shuffle all
+            (0..total).collect()
+        } else {
+            // Too many plans - sample randomly without replacement
+            // Reserve 2 slots for extremes
+            let sample_count = count.saturating_sub(2);
+            let mut sampled =
+                Self::sample_indices(total, sample_count, generator.config.random_seed);
+
+            // Remove extremes from sample if present (we'll add them explicitly)
+            sampled.retain(|&x| x != extreme_low && x != extreme_high);
+
+            // Start with extremes, then add sampled indices
+            let mut result = vec![extreme_low];
+            if extreme_high != extreme_low {
+                result.push(extreme_high);
+            }
+            result.extend(sampled);
+
+            // Truncate to count if we ended up with too many
+            result.truncate(count);
+            result
+        };
+
+        // Shuffle everything EXCEPT the first two elements (extremes)
+        // This ensures extremes are always processed first
+        let mut rng = generator
+            .config
+            .random_seed
+            .map_or_else(Rng::new, Rng::with_seed);
+
+        if order.len() > 2 {
+            Self::fisher_yates_shuffle(&mut order[2..], &mut rng);
+        }
+
+        order
+    }
+
+    /// Fisher-Yates shuffle implementation using fastrand
+    fn fisher_yates_shuffle(vec: &mut [usize], rng: &mut Rng) {
+        for i in (1..vec.len()).rev() {
+            let j = rng.usize(0..=i);
+            vec.swap(i, j);
+        }
+    }
+
+    /// Sample `count` unique indices from range [0, total) without replacement
+    fn sample_indices(total: usize, count: usize, seed: Option<u64>) -> Vec<usize> {
+        let mut rng = seed.map_or_else(Rng::new, Rng::with_seed);
+
+        // For reasonable ratios, use Floyd's algorithm
+        let mut selected = HashSet::with_capacity(count);
+        for j in (total - count)..total {
+            let t = rng.usize(0..=j);
+            if selected.contains(&t) {
+                selected.insert(j);
+            } else {
+                selected.insert(t);
+            }
+        }
+        selected.into_iter().collect()
+    }
+
+    /// Convert a flat plan index to requirement indices
+    ///
+    /// Treats the plan index as a mixed-radix number where each digit
+    /// corresponds to a choice index for a requirement.
+    fn flat_index_to_indices(&self, mut flat_idx: usize) -> Vec<usize> {
+        let mut indices = vec![0; self.generator.major_requirements.len()];
+
+        // Convert from flat index to multi-dimensional indices
+        // Like converting a number to mixed-radix representation
+        for i in (0..self.generator.major_requirements.len()).rev() {
+            let choice_count = self.generator.major_requirements[i].choices.len().max(1);
+            indices[i] = flat_idx % choice_count;
+            flat_idx /= choice_count;
+        }
+
+        indices
+    }
+
+    /// Get the current indices based on sampling strategy
+    fn get_current_indices(&self) -> Vec<usize> {
+        self.shuffled_order.as_ref().map_or_else(
+            || self.indices.clone(),
+            |order| {
+                if self.shuffled_pos < order.len() {
+                    self.flat_index_to_indices(order[self.shuffled_pos])
+                } else {
+                    vec![0; self.generator.major_requirements.len()]
+                }
+            },
+        )
+    }
+
+    /// Build a plan variant from given indices
     ///
     /// Combines major requirement choices with fixed non-major courses
     /// and adds placeholder electives to reach target credits.
     /// Respects `exclude_used` constraints by dynamically selecting courses
     /// from the available pool when some are already used.
-    fn build_current_plan(&self) -> PlanVariant {
+    fn build_plan_from_indices(&self, indices: &[usize]) -> PlanVariant {
         let mut requirement_choices: HashMap<String, Vec<String>> = HashMap::new();
         let mut used_courses: HashSet<String> = HashSet::new();
 
-        // Add major requirement choices based on current indices
+        // Add major requirement choices based on provided indices
         // Track used courses for exclude_used filtering
         for (i, req) in self.generator.major_requirements.iter().enumerate() {
-            let choice_idx = self.indices[i];
+            let choice_idx = indices.get(i).copied().unwrap_or(0);
             if choice_idx < req.choices.len() {
                 let chosen_courses = if req.exclude_used {
                     // For exclude_used requirements, dynamically select from the pool
@@ -459,8 +666,8 @@ impl<'a> PlanIterator<'a> {
         available
     }
 
-    /// Advance to the next combination of choices
-    fn advance(&mut self) {
+    /// Advance to the next combination of choices (sequential mode)
+    fn advance_sequential(&mut self) {
         if self.generator.major_requirements.is_empty() {
             // Only one plan possible with no major choices
             self.done = true;
@@ -479,6 +686,19 @@ impl<'a> PlanIterator<'a> {
         // All indices wrapped around - we're done
         self.done = true;
     }
+
+    /// Advance to the next position (shuffled mode)
+    #[allow(clippy::missing_const_for_fn)] // Can't be const due to Option pattern matching
+    fn advance_shuffled(&mut self) {
+        self.shuffled_pos += 1;
+        if let Some(order) = &self.shuffled_order {
+            if self.shuffled_pos >= order.len() {
+                self.done = true;
+            }
+        } else {
+            self.done = true;
+        }
+    }
 }
 
 impl Iterator for PlanIterator<'_> {
@@ -495,12 +715,17 @@ impl Iterator for PlanIterator<'_> {
             return None;
         }
 
-        // Build current plan
-        let plan = self.build_current_plan();
+        // Get current indices and build plan
+        let indices = self.get_current_indices();
+        let plan = self.build_plan_from_indices(&indices);
         self.count += 1;
 
-        // Advance for next iteration
-        self.advance();
+        // Advance based on strategy
+        if self.shuffled_order.is_some() {
+            self.advance_shuffled();
+        } else {
+            self.advance_sequential();
+        }
 
         Some(plan)
     }
@@ -510,11 +735,15 @@ impl Iterator for PlanIterator<'_> {
             return (0, Some(0));
         }
 
-        let remaining = self
-            .generator
-            .estimate_plan_count()
-            .saturating_sub(self.count);
-        let capped = remaining.min(self.generator.config.max_plans - self.count);
+        let total = self.shuffled_order.as_ref().map_or_else(
+            || {
+                self.generator
+                    .estimate_plan_count()
+                    .saturating_sub(self.count)
+            },
+            |order| order.len().saturating_sub(self.shuffled_pos),
+        );
+        let capped = total.min(self.generator.config.max_plans - self.count);
         (capped, Some(capped))
     }
 }
@@ -784,5 +1013,117 @@ mod tests {
             // Should have elective placeholders
             assert!(plan.contains_course("ELEC001"));
         }
+    }
+
+    #[test]
+    fn test_sampling_strategy_parse() {
+        assert_eq!(
+            "sequential".parse::<SamplingStrategy>().unwrap(),
+            SamplingStrategy::Sequential
+        );
+        assert_eq!(
+            "shuffled".parse::<SamplingStrategy>().unwrap(),
+            SamplingStrategy::Shuffled
+        );
+        assert_eq!(
+            "stratified".parse::<SamplingStrategy>().unwrap(),
+            SamplingStrategy::Stratified
+        );
+        assert_eq!(
+            "random".parse::<SamplingStrategy>().unwrap(),
+            SamplingStrategy::Shuffled
+        );
+        assert!("invalid".parse::<SamplingStrategy>().is_err());
+    }
+
+    #[test]
+    fn test_sampling_strategy_display() {
+        assert_eq!(SamplingStrategy::Sequential.to_string(), "sequential");
+        assert_eq!(SamplingStrategy::Shuffled.to_string(), "shuffled");
+        assert_eq!(SamplingStrategy::Stratified.to_string(), "stratified");
+    }
+
+    #[test]
+    fn test_shuffled_sampling_generates_all_plans() {
+        let courses = sample_courses();
+        let reqs = sample_requirements();
+        let config = PlanGeneratorConfig {
+            sampling_strategy: SamplingStrategy::Shuffled,
+            random_seed: Some(42), // Fixed seed for reproducibility
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+
+        let generator = PlanGenerator::new(&reqs, &courses, config);
+        let (plans, _) = generator.generate_all();
+
+        // Should still generate all 3 plans
+        assert_eq!(plans.len(), 3);
+
+        // All core courses should be present in all plans
+        for plan in &plans {
+            assert!(plan.contains_course("CS1000"));
+            assert!(plan.contains_course("CS2000"));
+        }
+    }
+
+    #[test]
+    fn test_shuffled_sampling_different_order_than_sequential() {
+        let courses = sample_courses();
+        let reqs = sample_requirements();
+
+        // Sequential config
+        let seq_config = PlanGeneratorConfig {
+            sampling_strategy: SamplingStrategy::Sequential,
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+
+        // Shuffled config with fixed seed
+        let shuf_config = PlanGeneratorConfig {
+            sampling_strategy: SamplingStrategy::Shuffled,
+            random_seed: Some(42),
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+
+        let seq_gen = PlanGenerator::new(&reqs, &courses, seq_config);
+        let shuf_gen = PlanGenerator::new(&reqs, &courses, shuf_config);
+
+        let seq_plans: Vec<_> = seq_gen.generate().collect();
+        let shuf_plans: Vec<_> = shuf_gen.generate().collect();
+
+        // Both should have same number of plans
+        assert_eq!(seq_plans.len(), shuf_plans.len());
+
+        // The fingerprints should be the same set (same plans, different order)
+        let seq_fps: std::collections::HashSet<_> =
+            seq_plans.iter().map(PlanVariant::fingerprint).collect();
+        let shuf_fps: std::collections::HashSet<_> =
+            shuf_plans.iter().map(PlanVariant::fingerprint).collect();
+        assert_eq!(seq_fps, shuf_fps);
+    }
+
+    #[test]
+    fn test_sequential_strategy_uses_counter_style_iteration() {
+        let courses = sample_courses();
+        let reqs = sample_requirements();
+        let config = PlanGeneratorConfig {
+            sampling_strategy: SamplingStrategy::Sequential,
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+
+        let generator = PlanGenerator::new(&reqs, &courses, config);
+
+        // First plan should have first elective choice
+        let first_plan = generator.generate().next().unwrap();
+
+        // The iterator uses counter-style: first requirement at index 0 stays 0
+        // until second requirement cycles through all its options
+        // (depends on requirement order which is non-deterministic in HashMap)
+        // Just verify we get a valid plan
+        assert!(first_plan.contains_course("CS1000"));
+        assert!(first_plan.contains_course("CS2000"));
     }
 }

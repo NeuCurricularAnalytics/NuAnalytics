@@ -19,7 +19,8 @@ use std::path::Path;
 pub use degree_report::{DegreeReportContext, DegreeReportGenerator};
 pub use formats::{HtmlReporter, MarkdownReporter, PdfReporter, ReportFormat};
 pub use plan_export::{
-    export_plan_csv, export_selected_plans, export_summary_csv, PlanExportConfig,
+    append_degree_summary_jsonl, export_degree_summary_jsonl, export_index_csv, export_plan_csv,
+    export_selected_plans, export_summary_csv, DegreeSummary, PlanExportConfig, PlanSummary,
 };
 pub use term_scheduler::{SchedulerConfig, TermPlan, TermScheduler};
 pub use visualization::MermaidGenerator;

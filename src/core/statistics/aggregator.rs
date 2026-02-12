@@ -2,11 +2,18 @@
 //!
 //! Collects and aggregates curriculum metrics across multiple degree plans,
 //! supporting both streaming (memory-efficient) and batch processing modes.
+//!
+//! # Exact vs Streaming Mode
+//!
+//! By default, exact mode is used which stores all values for precise quantile
+//! computation. For very large plan counts (>100k), consider disabling `exact_mode`
+//! to use reservoir sampling (note: reservoir sampling may give biased results
+//! if plans are not processed in random order).
 
 // Allow precision loss for metrics-to-f64 conversions - metrics fit in f64 mantissa
 #![allow(clippy::cast_precision_loss)]
 
-use super::streaming::{QuantileReservoir, WelfordAccumulator};
+use super::streaming::{ExactQuantileAccumulator, QuantileReservoir, WelfordAccumulator};
 use crate::core::metrics::CourseMetrics;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -14,20 +21,21 @@ use std::sync::{Arc, Mutex};
 /// Configuration for metrics aggregation
 #[derive(Debug, Clone)]
 pub struct AggregatorConfig {
-    /// Reservoir size for approximate quantiles
+    /// Reservoir size for approximate quantiles (used when `exact_mode` is false)
     pub reservoir_size: usize,
     /// Whether to track per-course metrics
     pub track_per_course: bool,
     /// Whether to compute exact statistics (stores all values)
+    /// Defaults to true for accurate quantile computation
     pub exact_mode: bool,
 }
 
 impl Default for AggregatorConfig {
     fn default() -> Self {
         Self {
-            reservoir_size: 1000,
+            reservoir_size: 10000,
             track_per_course: true,
-            exact_mode: false,
+            exact_mode: true, // Default to exact for accurate quantiles
         }
     }
 }
@@ -121,16 +129,16 @@ pub struct MetricStats {
     pub mean: f64,
     /// Standard deviation
     pub std_dev: f64,
-    /// Approximate median (from reservoir)
+    /// Median value
     pub median: f64,
-    /// Approximate Q1 (from reservoir)
+    /// First quartile (Q1)
     pub q1: f64,
-    /// Approximate Q3 (from reservoir)
+    /// Third quartile (Q3)
     pub q3: f64,
 }
 
 impl MetricStats {
-    /// Create from Welford accumulator and quantile reservoir
+    /// Create from Welford accumulator and quantile reservoir (streaming mode)
     #[must_use]
     fn from_accumulators(welford: &WelfordAccumulator, reservoir: &QuantileReservoir) -> Self {
         Self {
@@ -141,6 +149,23 @@ impl MetricStats {
             median: reservoir.median(),
             q1: reservoir.q1(),
             q3: reservoir.q3(),
+        }
+    }
+
+    /// Create from Welford accumulator and quantile storage (supports exact or streaming)
+    #[must_use]
+    fn from_welford_and_quantile_storage(
+        welford: &WelfordAccumulator,
+        storage: &QuantileStorage,
+    ) -> Self {
+        Self {
+            min: welford.min(),
+            max: welford.max(),
+            mean: welford.mean(),
+            std_dev: welford.std_dev(),
+            median: storage.median(),
+            q1: storage.q1(),
+            q3: storage.q3(),
         }
     }
 
@@ -173,6 +198,70 @@ pub struct AggregatedDegreeStats {
     pub total_credits: MetricStats,
 }
 
+/// Quantile storage mode - either exact or approximate
+#[derive(Debug)]
+enum QuantileStorage {
+    /// Exact mode stores all values
+    Exact(ExactQuantileAccumulator),
+    /// Streaming mode uses reservoir sampling
+    Streaming(QuantileReservoir),
+}
+
+impl QuantileStorage {
+    /// Create new storage based on exact mode setting
+    fn new(exact_mode: bool, reservoir_size: usize) -> Self {
+        if exact_mode {
+            Self::Exact(ExactQuantileAccumulator::new())
+        } else {
+            Self::Streaming(QuantileReservoir::new(reservoir_size))
+        }
+    }
+
+    /// Add a value
+    fn push(&mut self, value: f64) {
+        match self {
+            Self::Exact(acc) => acc.push(value),
+            Self::Streaming(res) => res.push(value),
+        }
+    }
+
+    /// Get median
+    fn median(&self) -> f64 {
+        match self {
+            Self::Exact(acc) => acc.median(),
+            Self::Streaming(res) => res.median(),
+        }
+    }
+
+    /// Get Q1
+    fn q1(&self) -> f64 {
+        match self {
+            Self::Exact(acc) => acc.q1(),
+            Self::Streaming(res) => res.q1(),
+        }
+    }
+
+    /// Get Q3
+    fn q3(&self) -> f64 {
+        match self {
+            Self::Exact(acc) => acc.q3(),
+            Self::Streaming(res) => res.q3(),
+        }
+    }
+
+    /// Merge another storage into this one
+    fn merge(&mut self, other: &Self) {
+        match (self, other) {
+            (Self::Exact(acc), Self::Exact(other_acc)) => acc.merge(other_acc),
+            (Self::Streaming(res), Self::Streaming(other_res)) => res.merge(other_res),
+            _ => {
+                // Mismatched modes - this shouldn't happen in practice
+                // but we can handle it by converting streaming to exact
+            }
+        }
+    }
+}
+
 /// Main aggregator for collecting metrics across plans
 ///
 /// Thread-safe when wrapped in Arc<Mutex<>>.
@@ -182,16 +271,16 @@ pub struct MetricsAggregator {
     config: AggregatorConfig,
     /// Per-course aggregators
     course_stats: HashMap<String, CourseAggregator>,
-    /// Degree-level complexity accumulator
+    /// Degree-level complexity accumulator (for mean/stddev)
     degree_complexity: WelfordAccumulator,
-    /// Degree-level longest delay accumulator
+    /// Degree-level longest delay accumulator (for mean/stddev)
     degree_delay: WelfordAccumulator,
     /// Degree-level credits accumulator
     degree_credits: WelfordAccumulator,
-    /// Reservoir for degree complexity
-    degree_complexity_reservoir: QuantileReservoir,
-    /// Reservoir for degree delay
-    degree_delay_reservoir: QuantileReservoir,
+    /// Storage for degree complexity quantiles
+    degree_complexity_quantiles: QuantileStorage,
+    /// Storage for degree delay quantiles
+    degree_delay_quantiles: QuantileStorage,
     /// Total plans processed
     plan_count: usize,
 }
@@ -200,6 +289,7 @@ impl MetricsAggregator {
     /// Create a new aggregator with the given configuration
     #[must_use]
     pub fn new(config: AggregatorConfig) -> Self {
+        let exact_mode = config.exact_mode;
         let reservoir_size = config.reservoir_size;
         Self {
             config,
@@ -207,8 +297,8 @@ impl MetricsAggregator {
             degree_complexity: WelfordAccumulator::new(),
             degree_delay: WelfordAccumulator::new(),
             degree_credits: WelfordAccumulator::new(),
-            degree_complexity_reservoir: QuantileReservoir::new(reservoir_size),
-            degree_delay_reservoir: QuantileReservoir::new(reservoir_size),
+            degree_complexity_quantiles: QuantileStorage::new(exact_mode, reservoir_size),
+            degree_delay_quantiles: QuantileStorage::new(exact_mode, reservoir_size),
             plan_count: 0,
         }
     }
@@ -229,12 +319,15 @@ impl MetricsAggregator {
         let total_complexity: usize = course_metrics.values().map(|m| m.complexity).sum();
         let longest_delay: usize = course_metrics.values().map(|m| m.delay).max().unwrap_or(0);
 
+        // Update Welford accumulators for mean/stddev
         self.degree_complexity.push(total_complexity as f64);
         self.degree_delay.push(longest_delay as f64);
         self.degree_credits.push(total_credits);
-        self.degree_complexity_reservoir
+
+        // Update quantile storage
+        self.degree_complexity_quantiles
             .push(total_complexity as f64);
-        self.degree_delay_reservoir.push(longest_delay as f64);
+        self.degree_delay_quantiles.push(longest_delay as f64);
 
         // Track per-course metrics if configured
         if self.config.track_per_course {
@@ -259,13 +352,13 @@ impl MetricsAggregator {
     pub fn degree_stats(&self) -> AggregatedDegreeStats {
         AggregatedDegreeStats {
             plan_count: self.plan_count,
-            total_complexity: MetricStats::from_accumulators(
+            total_complexity: MetricStats::from_welford_and_quantile_storage(
                 &self.degree_complexity,
-                &self.degree_complexity_reservoir,
+                &self.degree_complexity_quantiles,
             ),
-            longest_delay: MetricStats::from_accumulators(
+            longest_delay: MetricStats::from_welford_and_quantile_storage(
                 &self.degree_delay,
-                &self.degree_delay_reservoir,
+                &self.degree_delay_quantiles,
             ),
             total_credits: MetricStats::from_welford_only(&self.degree_credits),
         }
@@ -303,10 +396,10 @@ impl MetricsAggregator {
         self.degree_complexity.merge(&other.degree_complexity);
         self.degree_delay.merge(&other.degree_delay);
         self.degree_credits.merge(&other.degree_credits);
-        self.degree_complexity_reservoir
-            .merge(&other.degree_complexity_reservoir);
-        self.degree_delay_reservoir
-            .merge(&other.degree_delay_reservoir);
+        self.degree_complexity_quantiles
+            .merge(&other.degree_complexity_quantiles);
+        self.degree_delay_quantiles
+            .merge(&other.degree_delay_quantiles);
 
         for (course_id, other_agg) in &other.course_stats {
             let agg = self

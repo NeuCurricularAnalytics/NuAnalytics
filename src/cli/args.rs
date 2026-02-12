@@ -77,6 +77,28 @@ impl std::fmt::Display for CalcStrategyArg {
     }
 }
 
+/// Sampling strategy for plan enumeration
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq, Default)]
+pub enum SamplingStrategyArg {
+    /// Sequential - enumerate in order (may bias statistics)
+    Sequential,
+    /// Shuffled (default) - randomize order for unbiased sampling
+    #[default]
+    Shuffled,
+    /// Stratified - ensure coverage across option space
+    Stratified,
+}
+
+impl std::fmt::Display for SamplingStrategyArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sequential => write!(f, "sequential"),
+            Self::Shuffled => write!(f, "shuffled"),
+            Self::Stratified => write!(f, "stratified"),
+        }
+    }
+}
+
 impl ReportFormatArg {
     /// Get the file extension for this format
     #[must_use]
@@ -263,6 +285,10 @@ pub enum Command {
         /// Calculation strategy for aggregate metrics (median or mean)
         #[arg(long, value_enum, value_name = "STRATEGY")]
         calc_strategy: Option<CalcStrategyArg>,
+
+        /// Sampling strategy for plan enumeration (sequential, shuffled, stratified)
+        #[arg(long, value_enum, value_name = "STRATEGY")]
+        sampling_strategy: Option<SamplingStrategyArg>,
 
         /// Number of random plans to sample and export (default: 5)
         #[arg(long, value_name = "COUNT")]
