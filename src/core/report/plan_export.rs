@@ -182,9 +182,9 @@ pub fn export_plan_csv(
 
         writeln!(
             file,
-            "{},{},\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",{},\"{}\",\"{}\",{:.1},{},{},{}",
+            "{},\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",{},\"{}\",\"{}\",{:.1},{},{},{}",
             idx + 1,
-            course_info.name,
+            csv_escape(&course_info.name),
             course_info.prefix,
             course_info.number,
             prereqs,
