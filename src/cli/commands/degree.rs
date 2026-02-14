@@ -1166,8 +1166,13 @@ fn generate_html_report(
         eprintln!("Generating HTML report: {}", report_path.display());
     }
 
-    let report_ctx =
-        DegreeReportContext::new(&ctx.school, &ctx.program.degree, aggregator, selected);
+    let report_ctx = DegreeReportContext::new(
+        &ctx.school,
+        &ctx.program.degree,
+        aggregator,
+        selected,
+        &ctx.dag,
+    );
     let generator = DegreeReportGenerator::new();
     generator
         .generate(&report_ctx, &report_path)

@@ -4,7 +4,7 @@
 //! statistics, and selected plan details.
 
 use crate::core::degree::plan_selector::{PlanCategory, ScoredPlan, SelectedPlans};
-use crate::core::models::{Degree, School};
+use crate::core::models::{Degree, School, DAG};
 use crate::core::statistics::aggregator::{AggregatedDegreeStats, MetricsAggregator};
 use crate::core::statistics::box_plot::{BoxPlotData, BoxPlotGenerator};
 use std::error::Error;
@@ -26,6 +26,8 @@ pub struct DegreeReportContext<'a> {
     pub aggregator: &'a MetricsAggregator,
     /// Selected special plans
     pub selected_plans: &'a SelectedPlans,
+    /// DAG for prerequisite/corequisite edges
+    pub dag: &'a DAG,
 }
 
 impl<'a> DegreeReportContext<'a> {
@@ -36,12 +38,14 @@ impl<'a> DegreeReportContext<'a> {
         degree: &'a Degree,
         aggregator: &'a MetricsAggregator,
         selected_plans: &'a SelectedPlans,
+        dag: &'a DAG,
     ) -> Self {
         Self {
             school,
             degree,
             aggregator,
             selected_plans,
+            dag,
         }
     }
 
@@ -520,6 +524,10 @@ impl DegreeReportGenerator {
     }
 
     /// Render the curriculum graph for a special plan
+    ///
+    /// Uses the DAG to get proper prerequisite/corequisite edges that are
+    /// resolved for the specific plan, rather than raw course prerequisites.
+    #[allow(clippy::too_many_lines)]
     fn render_curriculum_graph(
         ctx: &DegreeReportContext,
         plan: &ScoredPlan,
@@ -531,27 +539,29 @@ impl DegreeReportGenerator {
         let plan_courses: std::collections::HashSet<&str> =
             plan.variant.courses.iter().map(String::as_str).collect();
 
-        // Build edges from course prerequisites
+        // Build edges from DAG dependencies (resolved prerequisites)
         let mut edges: Vec<(String, String, bool)> = Vec::new(); // (from, to, is_coreq)
 
-        for course_key in &plan.variant.courses {
-            if let Some(course) = ctx.school.get_course(course_key) {
-                // Add prerequisite edges
-                for prereq in &course.prerequisites {
-                    if plan_courses.contains(prereq.as_str()) {
-                        edges.push((prereq.clone(), course_key.clone(), false));
-                    }
+        // Add prerequisite edges from DAG
+        for (course, prereqs) in &ctx.dag.dependencies {
+            if !plan_courses.contains(course.as_str()) {
+                continue;
+            }
+            for prereq in prereqs {
+                if plan_courses.contains(prereq.as_str()) {
+                    edges.push((prereq.clone(), course.clone(), false));
                 }
-                // Add corequisite edges
-                for coreq in &course.corequisites {
-                    if plan_courses.contains(coreq.as_str()) {
-                        edges.push((coreq.clone(), course_key.clone(), true));
-                    }
-                }
-                for coreq in &course.strict_corequisites {
-                    if plan_courses.contains(coreq.as_str()) {
-                        edges.push((coreq.clone(), course_key.clone(), true));
-                    }
+            }
+        }
+
+        // Add corequisite edges from DAG
+        for (course, coreqs) in &ctx.dag.corequisites {
+            if !plan_courses.contains(course.as_str()) {
+                continue;
+            }
+            for coreq in coreqs {
+                if plan_courses.contains(coreq.as_str()) {
+                    edges.push((coreq.clone(), course.clone(), true));
                 }
             }
         }
@@ -789,6 +799,10 @@ mod tests {
         )
     }
 
+    fn create_test_dag() -> DAG {
+        DAG::new()
+    }
+
     fn create_test_aggregator() -> MetricsAggregator {
         let mut agg = MetricsAggregator::new(AggregatorConfig::default());
         let mut metrics = HashMap::new();
@@ -845,8 +859,9 @@ mod tests {
         let degree = create_test_degree();
         let aggregator = create_test_aggregator();
         let selected = create_test_selected_plans();
+        let dag = create_test_dag();
 
-        let ctx = DegreeReportContext::new(&school, &degree, &aggregator, &selected);
+        let ctx = DegreeReportContext::new(&school, &degree, &aggregator, &selected, &dag);
         let gen = DegreeReportGenerator::new();
 
         let result = gen.render(&ctx);
@@ -872,8 +887,9 @@ mod tests {
         let degree = create_test_degree();
         let aggregator = create_test_aggregator();
         let selected = create_test_selected_plans();
+        let dag = create_test_dag();
 
-        let ctx = DegreeReportContext::new(&school, &degree, &aggregator, &selected);
+        let ctx = DegreeReportContext::new(&school, &degree, &aggregator, &selected, &dag);
         assert_eq!(ctx.degree.name, "Computer Science");
         assert_eq!(ctx.school.name, "Test University");
     }
