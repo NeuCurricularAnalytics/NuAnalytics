@@ -1017,9 +1017,9 @@ fn process_plan_variants(
             .sum::<f64>();
         aggregator.add_plan(&course_metrics, total_credits);
 
-        // Update plan selection (pass expanded variant)
+        // Update plan selection (pass expanded variant and plan-specific DAG)
         let expanded_variant = create_expanded_variant(&variant, &expanded_courses);
-        selector.process_plan(&expanded_variant, &course_metrics);
+        selector.process_plan(&expanded_variant, &course_metrics, &plan_dag);
 
         plans_processed += 1;
 

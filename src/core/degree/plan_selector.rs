@@ -177,9 +177,6 @@ pub struct PlanSelector<'a> {
     /// Reference to school for course lookup
     school: &'a School,
 
-    /// Reference to DAG for scheduling
-    dag: &'a DAG,
-
     /// Configuration
     config: PlanSelectorConfig,
 
@@ -201,11 +198,13 @@ pub struct PlanSelector<'a> {
 
 impl<'a> PlanSelector<'a> {
     /// Create a new plan selector
+    ///
+    /// Note: The DAG parameter is kept for API compatibility but is not used.
+    /// Plan-specific DAGs are now passed to `process_plan` instead.
     #[must_use]
-    pub const fn new(school: &'a School, dag: &'a DAG, config: PlanSelectorConfig) -> Self {
+    pub const fn new(school: &'a School, _dag: &'a DAG, config: PlanSelectorConfig) -> Self {
         Self {
             school,
-            dag,
             config,
             shortest: None,
             longest: None,
@@ -218,15 +217,18 @@ impl<'a> PlanSelector<'a> {
     /// Process a plan and update selections
     ///
     /// This should be called for each plan generated during enumeration.
+    /// The `plan_dag` should contain only courses in the plan with their
+    /// resolved prerequisite edges.
     pub fn process_plan(
         &mut self,
         variant: &PlanVariant,
         course_metrics: &HashMap<String, CourseMetrics>,
+        plan_dag: &DAG,
     ) {
         self.plans_seen += 1;
 
-        // Score the plan
-        let scored = self.score_plan(variant.clone(), course_metrics.clone());
+        // Score the plan using plan-specific DAG
+        let scored = self.score_plan(variant.clone(), course_metrics.clone(), plan_dag);
 
         // Update shortest
         if self.should_update_shortest(&scored) {
@@ -242,7 +244,7 @@ impl<'a> PlanSelector<'a> {
         if self.is_calc_ready_plan(variant) && self.should_update_calc_ready(&scored) {
             // Re-score with calc-ready scheduling
             let calc_ready_scored =
-                self.score_plan_calc_ready(variant.clone(), course_metrics.clone());
+                self.score_plan_calc_ready(variant.clone(), course_metrics.clone(), plan_dag);
             self.calc_ready_shortest = Some(calc_ready_scored);
         }
 
@@ -251,21 +253,31 @@ impl<'a> PlanSelector<'a> {
     }
 
     /// Score a plan by scheduling it and computing metrics
+    ///
+    /// Uses the plan-specific DAG for accurate term scheduling.
     fn score_plan(
         &self,
         variant: PlanVariant,
         course_metrics: HashMap<String, CourseMetrics>,
+        plan_dag: &DAG,
     ) -> ScoredPlan {
+        // Use plan-specific DAG for scheduling to ensure only courses in the plan
+        // are considered for prerequisite ordering
         let scheduler =
-            TermScheduler::new(self.school, self.dag, self.config.scheduler_config.clone());
+            TermScheduler::new(self.school, plan_dag, self.config.scheduler_config.clone());
         let schedule = scheduler.schedule(&variant.courses);
 
         let total_complexity: usize = course_metrics.values().map(|m| m.complexity).sum();
         let longest_delay = course_metrics.values().map(|m| m.delay).max().unwrap_or(0);
 
         // Find the course(s) with the longest delay and trace back to find the chain
-        let longest_delay_chain =
-            self.compute_longest_delay_chain(&variant.courses, &course_metrics, longest_delay);
+        // Use plan_dag for chain computation too
+        let longest_delay_chain = self.compute_longest_delay_chain(
+            &variant.courses,
+            &course_metrics,
+            longest_delay,
+            plan_dag,
+        );
 
         let score = PlanScore {
             terms_required: schedule.terms_used(),
@@ -289,11 +301,13 @@ impl<'a> PlanSelector<'a> {
     /// to find the complete prerequisite chain that creates the longest path.
     /// The delay factor represents the longest path THROUGH a course, so courses
     /// at the START of long chains have high delay (they block many courses).
+    #[allow(clippy::unused_self)]
     fn compute_longest_delay_chain(
         &self,
         courses: &[String],
         course_metrics: &HashMap<String, CourseMetrics>,
         longest_delay: usize,
+        plan_dag: &DAG,
     ) -> Vec<String> {
         // Find course(s) with the longest delay
         let start_course = course_metrics
@@ -311,10 +325,11 @@ impl<'a> PlanSelector<'a> {
             courses.iter().map(String::as_str).collect();
 
         // Trace forward through dependents to build the chain
+        // Use plan_dag.dependents for accurate plan-specific edges
         let mut chain = vec![start.clone()];
         let mut current = start;
 
-        while let Some(dependents) = self.dag.get_dependents(&current) {
+        while let Some(dependents) = plan_dag.get_dependents(&current) {
             // Find the dependent in this plan with the highest delay
             // (continues the longest path)
             let next = dependents
@@ -341,10 +356,11 @@ impl<'a> PlanSelector<'a> {
         &self,
         variant: PlanVariant,
         course_metrics: HashMap<String, CourseMetrics>,
+        plan_dag: &DAG,
     ) -> ScoredPlan {
         // For calc-ready, we'd ideally modify the DAG to remove calc prereqs
         // For now, we use the standard scheduling but mark it as calc-ready
-        let mut scored = self.score_plan(variant, course_metrics);
+        let mut scored = self.score_plan(variant, course_metrics, plan_dag);
         scored.score.is_calc_ready = true;
         scored
     }
@@ -616,7 +632,7 @@ mod tests {
         // First plan
         let variant1 = create_test_variant(&["CS1000", "CS2000", "CS3000"]);
         let metrics1 = create_test_metrics(&["CS1000", "CS2000", "CS3000"]);
-        selector.process_plan(&variant1, &metrics1);
+        selector.process_plan(&variant1, &metrics1, &dag);
 
         assert!(selector.shortest_plan().is_some());
         assert_eq!(selector.plans_seen(), 1);
@@ -636,7 +652,7 @@ mod tests {
         for _i in 0..10 {
             let variant = create_test_variant(&["CS1000", "CS2000"]);
             let metrics = create_test_metrics(&["CS1000", "CS2000"]);
-            selector.process_plan(&variant, &metrics);
+            selector.process_plan(&variant, &metrics, &dag);
         }
 
         // Should have exactly 3 random samples
