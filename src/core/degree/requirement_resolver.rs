@@ -104,6 +104,10 @@ pub struct RequirementResolver<'a> {
 
     /// Cache of pattern match results
     pattern_cache: HashMap<String, Vec<String>>,
+
+    /// Courses from fixed (type: all) requirements that should be excluded
+    /// from select requirements with `exclude_used`
+    fixed_courses: HashSet<String>,
 }
 
 impl<'a> RequirementResolver<'a> {
@@ -113,6 +117,7 @@ impl<'a> RequirementResolver<'a> {
         Self {
             courses,
             pattern_cache: HashMap::new(),
+            fixed_courses: HashSet::new(),
         }
     }
 
@@ -131,9 +136,26 @@ impl<'a> RequirementResolver<'a> {
         &mut self,
         requirements: &HashMap<String, Requirement>,
     ) -> Vec<ResolvedRequirement> {
-        // Sort requirements: non-exclude_used first, then exclude_used
+        // Clear fixed courses from any previous resolution
+        self.fixed_courses.clear();
+
+        // Sort requirements: fixed (type: all) first, then non-exclude_used, then exclude_used
+        // This ensures we know which courses are fixed before processing select requirements
         let mut sorted_reqs: Vec<_> = requirements.iter().collect();
         sorted_reqs.sort_by(|(id_a, req_a), (id_b, req_b)| {
+            // Fixed requirements (type: all) come first
+            let a_is_fixed = req_a.req_type == RequirementType::All;
+            let b_is_fixed = req_b.req_type == RequirementType::All;
+
+            if a_is_fixed != b_is_fixed {
+                return if a_is_fixed {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                };
+            }
+
+            // Then sort by exclude_used
             let a_excludes = req_a
                 .constraints
                 .as_ref()
@@ -172,8 +194,11 @@ impl<'a> RequirementResolver<'a> {
     }
 
     /// Resolve an "all" requirement (fixed courses)
+    ///
+    /// Also tracks the courses in `fixed_courses` so that select requirements
+    /// with `exclude_used` can filter them out of their choice pools.
     fn resolve_all_requirement(
-        &self,
+        &mut self,
         id: &str,
         name: &str,
         category: Option<String>,
@@ -182,6 +207,12 @@ impl<'a> RequirementResolver<'a> {
         let courses = req.courses.clone().unwrap_or_default();
         // Expand any bundles/equivalents in the course list
         let expanded = self.expand_course_list(&courses);
+
+        // Track these as fixed courses for exclude_used filtering
+        for course in &expanded {
+            self.fixed_courses.insert(course.clone());
+        }
+
         let exclude_used = req
             .constraints
             .as_ref()
@@ -192,6 +223,9 @@ impl<'a> RequirementResolver<'a> {
     }
 
     /// Resolve a "select" requirement (choose N from options)
+    ///
+    /// When `exclude_used` is true, filters out courses from fixed requirements
+    /// before generating combinations to avoid overlap.
     fn resolve_select_requirement(
         &mut self,
         id: &str,
@@ -221,7 +255,13 @@ impl<'a> RequirementResolver<'a> {
         }
 
         // Get the pool of courses to select from
-        let pool = self.get_selection_pool(req.from.as_ref());
+        let mut pool = self.get_selection_pool(req.from.as_ref());
+
+        // If exclude_used is true, filter out courses from fixed requirements
+        // This prevents generating combinations that include courses already required elsewhere
+        if exclude_used && !self.fixed_courses.is_empty() {
+            pool.retain(|c| !self.fixed_courses.contains(c));
+        }
 
         // If pool is empty but credits are specified, generate placeholder courses
         if pool.is_empty() {
