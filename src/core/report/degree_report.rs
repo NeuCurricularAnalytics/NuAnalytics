@@ -5,6 +5,7 @@
 
 use crate::core::degree::plan_selector::{PlanCategory, ScoredPlan, SelectedPlans};
 use crate::core::models::{Degree, School, DAG};
+use crate::core::prerequisite_parser::parse_to_dnf;
 use crate::core::statistics::aggregator::{AggregatedDegreeStats, MetricsAggregator};
 use crate::core::statistics::box_plot::{BoxPlotData, BoxPlotGenerator};
 use std::error::Error;
@@ -539,29 +540,65 @@ impl DegreeReportGenerator {
         let plan_courses: std::collections::HashSet<&str> =
             plan.variant.courses.iter().map(String::as_str).collect();
 
-        // Build edges from DAG dependencies (resolved prerequisites)
+        // Build edges from course prerequisite expressions (properly resolving OR groups)
         let mut edges: Vec<(String, String, bool)> = Vec::new(); // (from, to, is_coreq)
 
-        // Add prerequisite edges from DAG
-        for (course, prereqs) in &ctx.dag.dependencies {
-            if !plan_courses.contains(course.as_str()) {
-                continue;
-            }
-            for prereq in prereqs {
-                if plan_courses.contains(prereq.as_str()) {
-                    edges.push((prereq.clone(), course.clone(), false));
-                }
-            }
-        }
+        // Add prerequisite edges by parsing each course's prerequisites
+        // and selecting only the courses that are in this plan
+        for course_key in &plan.variant.courses {
+            let course = ctx.school.get_course(course_key);
+            if let Some(c) = course {
+                // Get prerequisite expression
+                let prereq_raw = c.prerequisites_raw.clone().unwrap_or_else(|| {
+                    if c.prerequisites.is_empty() {
+                        String::new()
+                    } else {
+                        c.prerequisites.join(" & ")
+                    }
+                });
 
-        // Add corequisite edges from DAG
-        for (course, coreqs) in &ctx.dag.corequisites {
-            if !plan_courses.contains(course.as_str()) {
-                continue;
-            }
-            for coreq in coreqs {
-                if plan_courses.contains(coreq.as_str()) {
-                    edges.push((coreq.clone(), course.clone(), true));
+                if !prereq_raw.is_empty() {
+                    // Parse to DNF and select the satisfied path
+                    let dnf_paths = parse_to_dnf(&prereq_raw);
+
+                    // Find the first path where all prereqs are in the plan
+                    let mut selected_prereqs: Vec<String> = Vec::new();
+                    for path in &dnf_paths {
+                        if path.iter().all(|p| plan_courses.contains(p.as_str())) {
+                            selected_prereqs.clone_from(path);
+                            break;
+                        }
+                    }
+
+                    // If no complete path, find the best partial match
+                    if selected_prereqs.is_empty() {
+                        let mut best: Vec<String> = Vec::new();
+                        for path in &dnf_paths {
+                            let in_plan: Vec<String> = path
+                                .iter()
+                                .filter(|p| plan_courses.contains(p.as_str()))
+                                .cloned()
+                                .collect();
+                            if in_plan.len() > best.len() {
+                                best = in_plan;
+                            }
+                        }
+                        selected_prereqs = best;
+                    }
+
+                    // Add edges for selected prerequisites
+                    for prereq in selected_prereqs {
+                        edges.push((prereq, course_key.clone(), false));
+                    }
+                }
+
+                // Handle corequisites similarly
+                if !c.corequisites.is_empty() {
+                    for coreq in &c.corequisites {
+                        if plan_courses.contains(coreq.as_str()) {
+                            edges.push((coreq.clone(), course_key.clone(), true));
+                        }
+                    }
                 }
             }
         }
