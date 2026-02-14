@@ -644,17 +644,40 @@ impl CourseGraph {
     /// Returns a list of courses in the minimum chain, or None if course doesn't exist
     #[must_use]
     pub fn min_prerequisite_chain(&self, course_key: &str) -> Option<Vec<String>> {
-        let subject = extract_subject(course_key);
-        self.min_chain_recursive(course_key, subject.as_deref(), &mut HashSet::new())
+        self.min_prerequisite_chain_with_context(course_key, &HashSet::new())
     }
 
-    /// Recursive helper for building minimum chain
+    /// Get minimum prerequisite chain for a course, preferring courses already in a plan
     ///
-    /// Uses cycle detection to process prerequisites in order of preference.
-    fn min_chain_recursive(
+    /// This is context-aware: when choosing between OR alternatives, it prefers:
+    /// 1. Courses already in the provided `plan_courses` set
+    /// 2. Courses with the same subject code
+    /// 3. Shortest chain length
+    ///
+    /// This prevents adding redundant prerequisites when a suitable one already exists.
+    #[must_use]
+    pub fn min_prerequisite_chain_with_context(
+        &self,
+        course_key: &str,
+        plan_courses: &HashSet<String>,
+    ) -> Option<Vec<String>> {
+        let subject = extract_subject(course_key);
+        self.min_chain_recursive_with_context(
+            course_key,
+            subject.as_deref(),
+            plan_courses,
+            &mut HashSet::new(),
+        )
+    }
+
+    /// Recursive helper for building minimum chain with plan context
+    ///
+    /// Uses cycle detection and prefers courses already in the plan.
+    fn min_chain_recursive_with_context(
         &self,
         course_key: &str,
         preferred_subject: Option<&str>,
+        plan_courses: &HashSet<String>,
         visiting: &mut HashSet<String>,
     ) -> Option<Vec<String>> {
         // Cycle detection
@@ -670,20 +693,26 @@ impl CourseGraph {
         }
 
         visiting.insert(course_key.to_string());
-        let result = self.collect_min_chain_from_edges(&prereq_edges, preferred_subject, visiting);
+        let result = self.collect_min_chain_from_edges_with_context(
+            &prereq_edges,
+            preferred_subject,
+            plan_courses,
+            visiting,
+        );
         visiting.remove(course_key);
 
         result
     }
 
-    /// Collect minimum chain from prerequisite edges
+    /// Collect minimum chain from prerequisite edges with plan context
     ///
     /// Separates required and optional prerequisites, processes each group,
-    /// and combines results into a deduplicated chain.
-    fn collect_min_chain_from_edges(
+    /// and combines results. For OR groups, prefers courses already in plan.
+    fn collect_min_chain_from_edges_with_context(
         &self,
         prereq_edges: &[&PrerequisiteEdge],
         preferred_subject: Option<&str>,
+        plan_courses: &HashSet<String>,
         visiting: &mut HashSet<String>,
     ) -> Option<Vec<String>> {
         let mut result_chain = Vec::new();
@@ -691,8 +720,12 @@ impl CourseGraph {
 
         // Process each edge by type
         for edge in prereq_edges {
-            let prereq_chain =
-                self.min_chain_recursive(&edge.prerequisite, preferred_subject, visiting);
+            let prereq_chain = self.min_chain_recursive_with_context(
+                &edge.prerequisite,
+                preferred_subject,
+                plan_courses,
+                visiting,
+            );
 
             match edge.prereq_type {
                 PrerequisiteType::Required => {
@@ -716,14 +749,16 @@ impl CourseGraph {
             }
         }
 
-        // Select best option from each OR-group
+        // Select best option from each OR-group, preferring courses in plan
         for (_group, options) in or_groups {
             if options.is_empty() {
                 return None; // All options in this OR-group led to cycles
             }
-            if let Some((best_prereq, best_chain)) =
-                select_best_prerequisite_option(options, preferred_subject)
-            {
+            if let Some((best_prereq, best_chain)) = select_best_prerequisite_option_with_context(
+                options,
+                preferred_subject,
+                plan_courses,
+            ) {
                 result_chain.push(best_prereq);
                 result_chain.extend(best_chain);
             }
@@ -1349,6 +1384,69 @@ fn select_best_prerequisite_option(
     };
 
     candidates.into_iter().min_by_key(|(_, chain)| chain.len())
+}
+
+/// Select the best prerequisite option from an OR group with plan context
+///
+/// Prioritizes:
+/// 1. Courses already in the plan (to avoid adding redundant prerequisites)
+/// 2. Same-subject courses (if `preferred_subject` is provided)
+/// 3. Shortest chain length
+fn select_best_prerequisite_option_with_context(
+    options: Vec<(String, Vec<String>)>,
+    preferred_subject: Option<&str>,
+    plan_courses: &HashSet<String>,
+) -> Option<(String, Vec<String>)> {
+    if options.is_empty() {
+        return None;
+    }
+
+    // First priority: courses already in the plan (no new courses needed)
+    let (in_plan, not_in_plan): (Vec<_>, Vec<_>) = options
+        .into_iter()
+        .partition(|(prereq, _)| plan_courses.contains(prereq));
+
+    if !in_plan.is_empty() {
+        // If multiple are in plan, prefer same-subject, then shortest
+        return select_best_prerequisite_option(in_plan, preferred_subject);
+    }
+
+    // Count how many NEW courses each option would add (prereq + chain courses not in plan)
+    // Prefer options that add the fewest new courses
+    let mut scored_options: Vec<(String, Vec<String>, usize)> = not_in_plan
+        .into_iter()
+        .map(|(prereq, chain)| {
+            let new_count = 1 + chain.iter().filter(|c| !plan_courses.contains(*c)).count();
+            (prereq, chain, new_count)
+        })
+        .collect();
+
+    // Sort by: 1) fewest new courses, 2) same subject preference, 3) alphabetical
+    scored_options.sort_by(|(prereq_a, _, count_a), (prereq_b, _, count_b)| {
+        // First by new course count
+        match count_a.cmp(count_b) {
+            std::cmp::Ordering::Equal => {
+                // Then by subject preference
+                let a_same_subject = preferred_subject.is_some_and(|subj| {
+                    extract_subject(prereq_a).is_some_and(|s| s.eq_ignore_ascii_case(subj))
+                });
+                let b_same_subject = preferred_subject.is_some_and(|subj| {
+                    extract_subject(prereq_b).is_some_and(|s| s.eq_ignore_ascii_case(subj))
+                });
+                match (a_same_subject, b_same_subject) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => prereq_a.cmp(prereq_b), // Alphabetical as tiebreaker
+                }
+            }
+            other => other,
+        }
+    });
+
+    scored_options
+        .into_iter()
+        .next()
+        .map(|(prereq, chain, _)| (prereq, chain))
 }
 
 /// Flatten a structured chain into a single ordered branch (leaf to root)

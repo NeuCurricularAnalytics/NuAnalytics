@@ -8,6 +8,7 @@
 
 use crate::core::degree::plan_selector::{PlanCategory, ScoredPlan, SelectedPlans};
 use crate::core::models::{Course, Degree, Plan, School};
+use crate::core::prerequisite_parser::parse_to_dnf;
 use crate::core::statistics::aggregator::{AggregatedDegreeStats, MetricStats, MetricsAggregator};
 use std::error::Error;
 use std::fs::{self, File};
@@ -205,6 +206,10 @@ pub fn export_plan_csv(
 /// Filter prerequisites to only include courses that are in the plan
 /// and convert to row IDs for CSV output.
 ///
+/// This uses DNF (Disjunctive Normal Form) parsing to properly handle OR prerequisites.
+/// For OR groups, only ONE satisfying option is included (the first one found in the plan).
+/// For AND groups, all prerequisites are included.
+///
 /// This ensures the CSV shows the actual prerequisites used in this specific plan,
 /// not all possible prerequisite options from the YAML.
 fn filter_prerequisites_for_plan_as_ids(
@@ -216,20 +221,57 @@ fn filter_prerequisites_for_plan_as_ids(
         return String::new();
     };
 
-    // Parse all prerequisite course codes from raw string
-    let all_prereqs = if let Some(raw) = &c.prerequisites_raw {
-        parse_prerequisite_course_codes(raw)
-    } else if !c.prerequisites.is_empty() {
-        c.prerequisites.clone()
-    } else {
-        return String::new();
+    let raw = match &c.prerequisites_raw {
+        Some(r) if !r.is_empty() => r.clone(),
+        _ if !c.prerequisites.is_empty() => c.prerequisites.join(" & "),
+        _ => return String::new(),
     };
 
-    // Filter to only include courses in the plan and convert to row IDs
-    let filtered: Vec<String> = all_prereqs
+    // Parse to DNF form: Vec<Vec<String>> where outer is OR, inner is AND
+    let dnf_paths = parse_to_dnf(&raw);
+
+    if dnf_paths.is_empty() {
+        return String::new();
+    }
+
+    // Find the first path (AND group) where ALL courses are in the plan
+    // This gives us the actual prerequisites used
+    let mut selected_prereqs: Vec<&str> = Vec::new();
+
+    for path in &dnf_paths {
+        let all_in_plan = path
+            .iter()
+            .all(|prereq| plan_courses.contains(prereq.as_str()));
+        if all_in_plan {
+            selected_prereqs = path.iter().map(String::as_str).collect();
+            break;
+        }
+    }
+
+    // If no complete path found, find the path with the most courses in the plan
+    // and use only the courses that ARE in the plan from that path
+    if selected_prereqs.is_empty() {
+        let mut best_path: Vec<&str> = Vec::new();
+        let mut best_count = 0;
+
+        for path in &dnf_paths {
+            let in_plan: Vec<&str> = path
+                .iter()
+                .map(String::as_str)
+                .filter(|prereq| plan_courses.contains(*prereq))
+                .collect();
+            if in_plan.len() > best_count {
+                best_count = in_plan.len();
+                best_path = in_plan;
+            }
+        }
+        selected_prereqs = best_path;
+    }
+
+    // Convert to row IDs
+    let filtered: Vec<String> = selected_prereqs
         .into_iter()
-        .filter(|prereq| plan_courses.contains(prereq.as_str()))
-        .filter_map(|prereq| course_to_row.get(prereq.as_str()).map(usize::to_string))
+        .filter_map(|prereq| course_to_row.get(prereq).map(usize::to_string))
         .collect();
 
     filtered.join(";")
@@ -277,43 +319,6 @@ fn filter_strict_coreqs_for_plan_as_ids(
         .collect();
 
     filtered.join(";")
-}
-
-/// Parse prerequisite course codes from a raw prerequisite string
-///
-/// Extracts course codes from expressions like:
-/// - `"CS165[C]"` → `["CS165"]`
-/// - `"(CS220[C] & CS165[C])"` → `["CS220", "CS165"]`
-/// - `"CS162[C] | CS163[C] | CS164[C]"` → `["CS162", "CS163", "CS164"]`
-fn parse_prerequisite_course_codes(raw: &str) -> Vec<String> {
-    let mut prereqs = Vec::new();
-
-    // Replace operators and brackets with spaces
-    let cleaned = raw.replace(['(', ')', '&', '|', '[', ']'], " ");
-
-    for part in cleaned.split_whitespace() {
-        // Skip grade requirements like "B", "C", etc.
-        if part.len() <= 2
-            && part
-                .chars()
-                .all(|c| c.is_alphabetic() || c == '-' || c == '+')
-        {
-            continue;
-        }
-
-        // Must start with a letter (course code)
-        if part.chars().next().is_some_and(char::is_alphabetic) {
-            // Remove any trailing grade requirement
-            let key = part
-                .find(|c: char| !c.is_alphanumeric())
-                .map_or(part, |idx| &part[..idx]);
-            if !key.is_empty() && !prereqs.contains(&key.to_string()) {
-                prereqs.push(key.to_string());
-            }
-        }
-    }
-
-    prereqs
 }
 
 /// Classification info for a course (real or placeholder)

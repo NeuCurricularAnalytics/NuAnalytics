@@ -1389,13 +1389,18 @@ fn build_dag_from_graph(graph: &CourseGraph) -> DAG {
 /// For each course in the plan, finds the minimum prerequisite chain and adds
 /// any missing prerequisites to the course list. This ensures the plan is
 /// complete and can be properly scheduled.
+///
+/// Uses context-aware prerequisite selection to prefer courses already in the plan,
+/// avoiding redundant prerequisites when a suitable alternative exists.
 fn expand_courses_with_prerequisites(courses: &[String], graph: &CourseGraph) -> Vec<String> {
     let mut expanded: HashSet<String> = courses.iter().cloned().collect();
     let mut to_process: Vec<String> = courses.to_vec();
 
     while let Some(course_key) = to_process.pop() {
-        // Get the minimum prerequisite chain for this course
-        if let Some(prereq_chain) = graph.min_prerequisite_chain(&course_key) {
+        // Get the minimum prerequisite chain, preferring courses already in the plan
+        if let Some(prereq_chain) =
+            graph.min_prerequisite_chain_with_context(&course_key, &expanded)
+        {
             for prereq in prereq_chain {
                 if !expanded.contains(&prereq) {
                     expanded.insert(prereq.clone());
