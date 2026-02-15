@@ -1018,7 +1018,12 @@ fn process_plan_variants(
         aggregator.add_plan(&course_metrics, total_credits);
 
         // Update plan selection (pass expanded variant and plan-specific DAG)
-        let expanded_variant = create_expanded_variant(&variant, &expanded_courses);
+        let expanded_variant = create_expanded_variant(
+            &variant,
+            &expanded_courses,
+            &ctx.school,
+            ctx.gen_config.target_credits,
+        );
         selector.process_plan(&expanded_variant, &course_metrics, &plan_dag);
 
         plans_processed += 1;
@@ -1542,8 +1547,20 @@ fn find_redundant_prerequisites(courses: &HashSet<String>, graph: &CourseGraph) 
 /// Create an expanded plan variant with additional prerequisite courses
 ///
 /// Takes the original variant and creates a new one with the expanded course list,
-/// preserving requirement choice metadata.
-fn create_expanded_variant(original: &PlanVariant, expanded_courses: &[String]) -> PlanVariant {
+/// preserving requirement choice metadata. Adjusts elective placeholders to ensure
+/// the plan exactly reaches the target credits (not more).
+///
+/// # Arguments
+/// * `original` - The original plan variant before prerequisite expansion
+/// * `expanded_courses` - All courses including added prerequisites
+/// * `school` - School data for credit lookup
+/// * `target_credits` - Target total credits for the degree
+fn create_expanded_variant(
+    original: &PlanVariant,
+    expanded_courses: &[String],
+    school: &School,
+    target_credits: Option<u32>,
+) -> PlanVariant {
     let mut new_choices = original.requirement_choices.clone();
 
     // Find courses that were added (prerequisites not in original plan)
@@ -1559,12 +1576,103 @@ fn create_expanded_variant(original: &PlanVariant, expanded_courses: &[String]) 
         new_choices.insert("_prerequisites".to_string(), added_prereqs);
     }
 
-    // Create new variant with empty credits map (credits will be calculated externally)
-    PlanVariant::from_parts(
-        expanded_courses.to_vec(),
-        new_choices,
-        original.total_credits, // Preserve original credits for now
-    )
+    // Calculate actual credits from non-elective courses
+    let non_elective_credits: f32 = expanded_courses
+        .iter()
+        .filter(|c| !c.starts_with("ELEC"))
+        .map(|c| {
+            school
+                .get_course(c)
+                .map_or_else(|| placeholder_credits(c), |course| course.credit_hours)
+        })
+        .sum();
+
+    // Adjust electives if we have a target
+    #[allow(clippy::option_if_let_else)] // More readable with if-let here
+    #[allow(clippy::cast_precision_loss)] // Safe: target credits < 1000
+    let final_courses = if let Some(target) = target_credits {
+        let target_f32 = target as f32;
+        if non_elective_credits >= target_f32 {
+            // Already at or over target - remove all electives
+            new_choices.remove("_elective_placeholders");
+            expanded_courses
+                .iter()
+                .filter(|c| !c.starts_with("ELEC"))
+                .cloned()
+                .collect()
+        } else {
+            // Need some electives - calculate exactly how many
+            let elective_credits_needed = target_f32 - non_elective_credits;
+            let new_electives = generate_elective_placeholders(elective_credits_needed);
+
+            // Replace elective placeholders with exact amount needed
+            if new_electives.is_empty() {
+                new_choices.remove("_elective_placeholders");
+            } else {
+                new_choices.insert("_elective_placeholders".to_string(), new_electives.clone());
+            }
+
+            // Build final course list with new electives
+            let mut courses: Vec<String> = expanded_courses
+                .iter()
+                .filter(|c| !c.starts_with("ELEC"))
+                .cloned()
+                .collect();
+            courses.extend(new_electives);
+            courses.sort();
+            courses
+        }
+    } else {
+        expanded_courses.to_vec()
+    };
+
+    // Calculate final total credits
+    let total_credits: f32 = final_courses
+        .iter()
+        .map(|c| {
+            school
+                .get_course(c)
+                .map_or_else(|| placeholder_credits(c), |course| course.credit_hours)
+        })
+        .sum();
+
+    PlanVariant::from_parts(final_courses, new_choices, total_credits)
+}
+
+/// Generate placeholder elective courses for a given credit amount
+///
+/// Creates 3-credit electives with a possible 2-credit "small" elective
+/// for the remainder.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn generate_elective_placeholders(credits_needed: f32) -> Vec<String> {
+    if credits_needed <= 0.0 {
+        return Vec::new();
+    }
+
+    let full_electives = (credits_needed / 3.0).floor() as usize;
+    let remainder = credits_needed % 3.0;
+
+    let mut electives = Vec::new();
+
+    for i in 0..full_electives {
+        electives.push(format!("ELEC{:03}", i + 1));
+    }
+
+    // Add partial elective if remainder is significant (> 0.5 credits)
+    if remainder > 0.5 {
+        electives.push(format!("ELEC{:03}S", full_electives + 1));
+    }
+
+    electives
+}
+
+/// Get credits for a placeholder course based on naming convention
+fn placeholder_credits(course_key: &str) -> f32 {
+    if course_key.ends_with('S') {
+        2.0
+    } else {
+        3.0
+    }
 }
 
 /// Build a DAG containing only the courses in a specific plan
