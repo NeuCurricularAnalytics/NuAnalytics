@@ -429,6 +429,9 @@ impl<'a> RequirementResolver<'a> {
     /// 1. Courses with no prerequisites
     /// 2. Courses with same major subject (CS, etc.)
     /// 3. Alphabetical order
+    ///
+    /// For credit-based requirements, bundles are kept as single units.
+    /// For count-based requirements, bundles are expanded into individual courses.
     fn get_selection_pool(&mut self, from: Option<&FromClause>) -> Vec<String> {
         let Some(from) = from else {
             return Vec::new();
@@ -436,14 +439,15 @@ impl<'a> RequirementResolver<'a> {
 
         let mut pool: HashSet<String> = HashSet::new();
 
-        // Add explicit course list
+        // Add explicit course list - keep bundles as-is, don't expand them
+        // This allows credit-based selection to work correctly with bundles
         if let Some(courses) = &from.courses {
-            for course in self.expand_course_list(courses) {
-                pool.insert(course);
+            for course_ref in courses {
+                pool.insert(course_ref.clone());
             }
         }
 
-        // Add pattern matches
+        // Add pattern matches (these are always individual courses)
         if let Some(pattern) = &from.pattern {
             for course in self.match_pattern(pattern) {
                 pool.insert(course);
@@ -478,31 +482,38 @@ impl<'a> RequirementResolver<'a> {
         // Sort by preference: courses with fewer prerequisites first, then CS courses, then alphabetical
         let mut result: Vec<String> = pool.into_iter().collect();
         result.sort_by(|a, b| {
-            // First: prefer courses that exist in course catalog (have known data)
-            let a_exists = self.courses.contains_key(a);
-            let b_exists = self.courses.contains_key(b);
-            if a_exists != b_exists {
-                return b_exists.cmp(&a_exists); // true > false
+            // First: prefer items with known credits (not bundles without course data)
+            let a_credits = self.get_item_credits(a);
+            let b_credits = self.get_item_credits(b);
+            let a_known = a_credits > 0;
+            let b_known = b_credits > 0;
+            if a_known != b_known {
+                return b_known.cmp(&a_known); // known > unknown
             }
 
-            // Second: prefer courses with no prerequisites
-            let a_has_prereqs = self
-                .courses
-                .get(a)
-                .is_some_and(|c| c.prerequisites_raw.is_some() || !c.prerequisites.is_empty());
-            let b_has_prereqs = self
-                .courses
-                .get(b)
-                .is_some_and(|c| c.prerequisites_raw.is_some() || !c.prerequisites.is_empty());
-            if a_has_prereqs != b_has_prereqs {
-                return a_has_prereqs.cmp(&b_has_prereqs); // false < true (no prereqs first)
-            }
+            // Second: for non-bundles, prefer courses with no prerequisites
+            let a_is_bundle = a.starts_with('[') || a.starts_with('{');
+            let b_is_bundle = b.starts_with('[') || b.starts_with('{');
 
-            // Third: prefer major subjects (CS, CT, DSCI) for CS degrees
-            let a_is_major = is_major_subject(a);
-            let b_is_major = is_major_subject(b);
-            if a_is_major != b_is_major {
-                return b_is_major.cmp(&a_is_major); // true > false
+            if !a_is_bundle && !b_is_bundle {
+                let a_has_prereqs = self
+                    .courses
+                    .get(a)
+                    .is_some_and(|c| c.prerequisites_raw.is_some() || !c.prerequisites.is_empty());
+                let b_has_prereqs = self
+                    .courses
+                    .get(b)
+                    .is_some_and(|c| c.prerequisites_raw.is_some() || !c.prerequisites.is_empty());
+                if a_has_prereqs != b_has_prereqs {
+                    return a_has_prereqs.cmp(&b_has_prereqs); // false < true (no prereqs first)
+                }
+
+                // Third: prefer major subjects (CS, CT, DSCI) for CS degrees
+                let a_is_major = is_major_subject(a);
+                let b_is_major = is_major_subject(b);
+                if a_is_major != b_is_major {
+                    return b_is_major.cmp(&a_is_major); // true > false
+                }
             }
 
             // Finally: alphabetical
@@ -511,26 +522,86 @@ impl<'a> RequirementResolver<'a> {
         result
     }
 
-    /// Determine how many courses to select
-    #[allow(clippy::unused_self, clippy::missing_const_for_fn)]
+    /// Determine how many courses/bundles to select
+    ///
+    /// For credit-based requirements, calculates based on actual course credits
+    /// rather than assuming a fixed credit value. This handles bundles correctly.
     fn determine_selection_count(&self, req: &Requirement, pool: &[String]) -> usize {
         // Priority: count > credits-based > all
         if let Some(count) = req.count {
             return count as usize;
         }
 
-        if let Some(credits) = req.credits {
-            // Estimate based on average credits per course (assume ~4 credits)
-            return (credits as usize).div_ceil(4);
-        }
+        let credits_needed = req
+            .credits
+            .or_else(|| req.credit_range.as_ref().map(|r| r.min));
 
-        if let Some(range) = &req.credit_range {
-            // Use minimum of range
-            return (range.min as usize).div_ceil(4);
+        if let Some(target_credits) = credits_needed {
+            // Calculate how many items from pool are needed to reach target credits
+            // Sort pool by credits (ascending) to prefer smaller combinations
+            let mut pool_with_credits: Vec<(usize, &String, u32)> = pool
+                .iter()
+                .enumerate()
+                .map(|(i, item)| (i, item, self.get_item_credits(item)))
+                .collect();
+
+            // Sort by credits (prefer items that get us closer to target)
+            pool_with_credits.sort_by_key(|(_, _, credits)| *credits);
+
+            // Greedily select items until we reach target credits
+            let mut total = 0u32;
+            let mut count = 0usize;
+            for (_, _, credits) in &pool_with_credits {
+                if total >= target_credits {
+                    break;
+                }
+                total += credits;
+                count += 1;
+            }
+
+            // Ensure we have at least 1 if credits are needed
+            return count.max(1);
         }
 
         // Default: select all
         pool.len()
+    }
+
+    /// Get credits for a course or bundle
+    ///
+    /// For bundles like `[AA100, AA101]`, sums the credits of all courses.
+    /// For equivalents like `{CS201, PHIL201}`, uses the first course's credits.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn get_item_credits(&self, item: &str) -> u32 {
+        // Handle bundle syntax: "[CS1800, CS1802]"
+        if item.starts_with('[') && item.ends_with(']') {
+            let inner = &item[1..item.len() - 1];
+            let total: f32 = inner
+                .split(',')
+                .filter_map(|part| {
+                    let trimmed = part.trim();
+                    self.courses.get(trimmed).map(|c| c.credit_hours)
+                })
+                .sum();
+            return total.ceil() as u32;
+        }
+
+        // Handle equivalent syntax: "{CS4530, CS4535}" - use first course's credits
+        if item.starts_with('{') && item.ends_with('}') {
+            let inner = &item[1..item.len() - 1];
+            if let Some(first) = inner.split(',').next() {
+                let trimmed = first.trim();
+                if let Some(course) = self.courses.get(trimmed) {
+                    return course.credit_hours.ceil() as u32;
+                }
+            }
+            return 4; // Default for equivalents
+        }
+
+        // Regular course - look up credits
+        self.courses
+            .get(item)
+            .map_or(4, |c| c.credit_hours.ceil() as u32) // Default to 4 credits if unknown
     }
 
     /// Expand a course list, handling bundles and equivalents

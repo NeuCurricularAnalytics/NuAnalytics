@@ -6,6 +6,7 @@
 //! - Direct conversion to unified `Degree` and `Course` models for metrics/plans
 //! - Plan generation for degree analysis
 //! - Plan selection for identifying special plans (shortest, longest, etc.)
+//! - Gen-ed tracking for cross-category course sharing
 //!
 //! # Example
 //! ```no_run
@@ -22,6 +23,7 @@
 //! ```
 
 pub mod course_reference;
+pub mod gen_ed_tracker;
 pub mod plan_generator;
 pub mod plan_selector;
 pub mod plan_validation;
@@ -75,3 +77,6 @@ pub use plan_validation::{
     PlanValidationError, PlanValidationResult, PlanValidationStats, PlanValidationWarning,
     PlanValidator, PlanValidatorConfig,
 };
+
+// Re-export gen-ed tracking types
+pub use gen_ed_tracker::{GenEdSummary, GenEdTracker};

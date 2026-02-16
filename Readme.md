@@ -10,6 +10,8 @@ It is based off the work of Greg Heileman, and CurricularAnalytics.org. Current 
 
 - **Curriculum Analysis**: Parse CSV-formatted curriculum files and analyze course dependencies
 - **Degree Program Validation**: Validate YAML-based degree programs with comprehensive checks
+- **Degree Plan Generation**: Generate all possible degree plans and compute aggregate statistics
+- **Gen-Ed Tracking**: Track how major courses satisfy general education requirements
 - **Graph Analysis**: Build and analyze course prerequisite graphs
 - **Curriculum Auditing**: Identify issues like missing prerequisites and complex prerequisite chains
 - **Metric Computation**: Calculate comprehensive metrics including:
@@ -18,7 +20,7 @@ It is based off the work of Greg Heileman, and CurricularAnalytics.org. Current 
   - **Delay**: Longest path from a course to course with no prerequisites
   - **Centrality**: Importance of a course in the curriculum network
 - **Report Generation**: Create visual reports in multiple formats:
-  - **HTML**: Interactive web-based reports with dependency graphs
+  - **HTML**: Interactive web-based reports with box plots and statistics
   - **PDF**: Print-ready reports via Chrome/Chromium conversion
   - **Markdown**: Text-based reports for documentation
 - **Term Scheduling**: Automatic course scheduling respecting prerequisites and credit limits
@@ -74,28 +76,35 @@ Generate only CSV metrics (no report):
 nuanalytics planner path/to/curriculum.csv --no-report
 ```
 
-Manage configuration:
+Analyze a degree program (generates plans, metrics, and reports):
 
 ```bash
-nuanalytics config get level
-nuanalytics config set level debug
+nuanalytics degree samples/degrees/csu-cs-bscs-general.yaml
 ```
 
-Validate a degree program:
+Validate a degree program only:
 
 ```bash
-nuanalytics degree --validate samples/neu_cs_2024.yaml
+nuanalytics degree --validate samples/degrees/csu-cs-bscs-general.yaml
 ```
 
 Audit a degree program for issues:
 
 ```bash
-nuanalytics degree --audit samples/neu_cs_2024.yaml
+nuanalytics degree --audit samples/degrees/csu-cs-bscs-general.yaml
+```
+
+Manage configuration:
+
+```bash
+nuanalytics config get level
+nuanalytics config set level debug
+nuanalytics config set degree_analysis.max_plans 5000
 ```
 
 ## Documentation
 
-- **[Config Command](docs/config.md)** - Configure NuAnalytics settings (logging, database, output directories)
+- **[Config Command](docs/config.md)** - Configure NuAnalytics settings (logging, database, output directories, degree analysis)
 - **[Planner Command](docs/planner.md)** - Analyze curricula for a degree plan, compute metrics, and generate reports
 - **[Degree Command](docs/degree.md)** - Validate, analyze, and audit degree program YAML files
 
@@ -116,6 +125,10 @@ If you are contributing or working locally, see [Development.md](Development.md)
 │   │   ├── metrics.rs    # Metric computation algorithms
 │   │   ├── metrics_export.rs  # CSV export functionality
 │   │   ├── models/       # Data structures (Course, Degree, Plan, School, DAG)
+│   │   ├── degree/       # Degree program analysis
+│   │   │   ├── gen_ed_tracker.rs  # Gen-ed satisfaction tracking
+│   │   │   ├── plan_generator.rs  # Plan enumeration
+│   │   │   └── plan_validation.rs # Plan validation
 │   │   ├── planner/      # CSV parsing and planning
 │   │   └── report/       # Report generation
 │   │       ├── formats/  # HTML, PDF, Markdown reporters
@@ -132,9 +145,10 @@ If you are contributing or working locally, see [Development.md](Development.md)
 ### HTML Reports
 Self-contained HTML files with:
 - Interactive course dependency visualization
-- Color-coded complexity indicators
+- Box plots for curriculum metrics distribution
 - Term-by-term schedule view
 - Detailed metrics table
+- Plan comparison (shortest/longest/random samples)
 
 ### PDF Reports
 Generated via headless Chrome/Chromium:

@@ -22,6 +22,7 @@
 //! Shuffled sampling is recommended when computing aggregate statistics to avoid
 //! systematic bias in the median/quartile calculations.
 
+use super::gen_ed_tracker::GenEdTracker;
 use super::plan_variant::PlanVariant;
 use super::requirement_resolver::{RequirementResolver, ResolvedRequirement};
 use crate::core::models::course::Course;
@@ -31,6 +32,114 @@ use std::collections::{HashMap, HashSet};
 
 /// Categories that should be enumerated for plan generation
 const ENUMERABLE_CATEGORIES: [&str; 1] = ["major"];
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Expand a course reference, handling bundles and equivalents
+///
+/// - Bundles `[CS1800, CS1802]` expand to multiple courses (all required)
+/// - Equivalents `{CS201, PHIL201}` expand to the first course (pick one)
+/// - Regular courses pass through unchanged
+fn expand_course_reference(course_ref: &str) -> Vec<String> {
+    // Handle bundle syntax: "[CS1800, CS1802]"
+    if course_ref.starts_with('[') && course_ref.ends_with(']') {
+        let inner = &course_ref[1..course_ref.len() - 1];
+        return inner
+            .split(',')
+            .map(|part| part.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+    }
+
+    // Handle equivalent syntax: "{CS4530, CS4535}" - pick first as default
+    if course_ref.starts_with('{') && course_ref.ends_with('}') {
+        let inner = &course_ref[1..course_ref.len() - 1];
+        if let Some(first) = inner.split(',').next() {
+            let trimmed = first.trim();
+            if !trimmed.is_empty() {
+                return vec![trimmed.to_string()];
+            }
+        }
+        return Vec::new();
+    }
+
+    // Regular course - return as-is
+    vec![course_ref.to_string()]
+}
+
+/// Expand a list of course references, handling bundles and equivalents
+fn expand_course_list(courses: &[String]) -> Vec<String> {
+    courses
+        .iter()
+        .flat_map(|c| expand_course_reference(c))
+        .collect()
+}
+
+/// Check if a course key represents a placeholder course
+///
+/// Placeholder courses are generated for requirements that use wildcard patterns
+/// or when specific courses aren't enumerated. They follow naming conventions like:
+/// - "ELEC001", "ELEC002" - free electives
+/// - "GE01", "GE02" - generic gen-ed placeholders
+/// - "FQ01", "FW01" - specific gen-ed category placeholders
+fn is_placeholder_course(course_key: &str) -> bool {
+    // Check for common placeholder patterns
+    if course_key.starts_with("ELEC") {
+        return true;
+    }
+
+    // Check for 2-4 letter prefix followed by digits
+    let prefix_len = course_key
+        .chars()
+        .take_while(char::is_ascii_alphabetic)
+        .count();
+    if (2..=4).contains(&prefix_len) {
+        let suffix = &course_key[prefix_len..];
+        // Placeholder if suffix is just digits (possibly with 'S' for small)
+        if suffix.chars().all(|c| c.is_ascii_digit() || c == 'S') && !suffix.is_empty() {
+            // Check if it looks like a placeholder (short number)
+            let digits: String = suffix.chars().filter(char::is_ascii_digit).collect();
+            if let Ok(num) = digits.parse::<u32>() {
+                // Real course numbers are typically 3-4 digits (100-9999)
+                // Placeholders are typically 1-2 digits (01-99)
+                return num < 100;
+            }
+        }
+    }
+
+    false
+}
+
+/// Extract gen-ed attribute code from a requirement name
+///
+/// Looks for patterns like "(FQ)", "(FW)", "(DA/DH/DL)" in requirement names.
+/// Returns the first code found in parentheses.
+///
+/// # Examples
+/// - "Quantitative Reasoning (FQ)" → Some("FQ")
+/// - "Written Communication (FW)" → Some("FW")
+/// - "Arts, Humanities, and Literature (DA/DH/DL)" → Some("DA")
+/// - "Core Courses" → None
+fn extract_gen_ed_code(name: &str) -> Option<String> {
+    // Find text within parentheses at the end of the name
+    if let Some(start) = name.rfind('(') {
+        if let Some(end) = name.rfind(')') {
+            if start < end {
+                let code_section = &name[start + 1..end];
+                // Handle multiple codes separated by /
+                // Return the first one as the primary code
+                let first_code = code_section.split('/').next()?;
+                let trimmed = first_code.trim();
+                if !trimmed.is_empty() && trimmed.chars().all(|c| c.is_ascii_alphanumeric()) {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+    }
+    None
+}
 
 /// Strategy for sampling plans during generation
 ///
@@ -159,6 +268,7 @@ impl PlanGenerationStats {
 /// The generator separates requirements by category:
 /// - Major requirements are enumerated to generate all combinations
 /// - Non-major requirements (`gen_ed`, supporting, elective) use simplest option
+/// - Gen-ed requirements are reduced/skipped if already satisfied by major courses
 /// - Placeholder electives are added to reach target credits if specified
 pub struct PlanGenerator<'a> {
     /// Major requirements to enumerate (category = "major")
@@ -178,12 +288,18 @@ pub struct PlanGenerator<'a> {
 
     /// Reference to courses for credit lookup
     _courses: &'a HashMap<String, Course>,
+
+    /// Gen-ed tracker for cross-category satisfaction
+    /// Currently used during construction; will be used for dynamic plan building
+    #[allow(dead_code)]
+    gen_ed_tracker: GenEdTracker,
 }
 
 impl<'a> PlanGenerator<'a> {
     /// Create a new plan generator
     ///
     /// Separates requirements into major (enumerated) and non-major (simplified).
+    /// Tracks gen-ed attributes from major/supporting courses to reduce duplicate credits.
     ///
     /// # Arguments
     /// * `requirements` - Degree requirements to generate plans from
@@ -205,34 +321,71 @@ impl<'a> PlanGenerator<'a> {
             .map(|(k, c)| (k.clone(), c.credit_hours))
             .collect();
 
-        // Separate major vs non-major requirements
-        let (major_requirements, non_major_requirements): (Vec<_>, Vec<_>) =
+        // Partition into major, supporting, gen_ed, and other requirements
+        let (major_requirements, other_requirements): (Vec<_>, Vec<_>) =
             resolved.into_iter().partition(|r| {
                 r.category
                     .as_ref()
                     .is_some_and(|cat| ENUMERABLE_CATEGORIES.contains(&cat.as_str()))
             });
 
-        // For non-major requirements, pick the first/simplest choice
-        let mut non_major_courses = Vec::new();
-        let mut non_major_credits = 0.0f32;
+        // Further partition non-major requirements
+        let (supporting_requirements, remaining_requirements): (Vec<_>, Vec<_>) =
+            other_requirements
+                .into_iter()
+                .partition(|r| r.category.as_ref().is_some_and(|cat| cat == "supporting"));
 
-        for req in &non_major_requirements {
-            if let Some(first_choice) = req.choices.first() {
-                for course in first_choice {
-                    let credits = course_credits
-                        .get(course)
-                        .copied()
-                        .unwrap_or_else(|| placeholder_credits(course));
-                    non_major_credits += credits;
-                    non_major_courses.push(course.clone());
-                }
-            }
+        let (gen_ed_requirements, elective_requirements): (Vec<_>, Vec<_>) = remaining_requirements
+            .into_iter()
+            .partition(|r| r.category.as_ref().is_some_and(|cat| cat == "gen_ed"));
+
+        // Build gen-ed tracker with requirements from gen_ed category
+        let gen_ed_tracker =
+            Self::build_gen_ed_tracker(&gen_ed_requirements, &course_credits, requirements);
+
+        // Track gen-ed satisfaction from major courses (first choice of each)
+        let mut gen_ed_satisfied = gen_ed_tracker;
+        Self::track_gen_ed_from_requirements(&major_requirements, courses, &mut gen_ed_satisfied);
+
+        // Track gen-ed satisfaction from supporting courses
+        let supporting_courses =
+            Self::collect_courses_from_requirements(&supporting_requirements, &course_credits);
+        for course_key in &supporting_courses {
+            gen_ed_satisfied.record_course_by_key(course_key, courses);
         }
+
+        // Process gen-ed requirements, reducing credits based on satisfaction
+        let gen_ed_courses = Self::process_gen_ed_requirements(
+            &gen_ed_requirements,
+            &gen_ed_satisfied,
+            &course_credits,
+            requirements,
+        );
+
+        // Collect elective courses
+        let elective_courses =
+            Self::collect_courses_from_requirements(&elective_requirements, &course_credits);
+
+        // Combine all non-major courses
+        let mut non_major_courses = Vec::new();
+        non_major_courses.extend(supporting_courses);
+        non_major_courses.extend(gen_ed_courses);
+        non_major_courses.extend(elective_courses);
 
         // Sort and dedupe non-major courses
         non_major_courses.sort();
         non_major_courses.dedup();
+
+        // Calculate non-major credits after deduplication
+        let non_major_credits: f32 = non_major_courses
+            .iter()
+            .map(|c| {
+                course_credits
+                    .get(c)
+                    .copied()
+                    .unwrap_or_else(|| placeholder_credits(c))
+            })
+            .sum();
 
         Self {
             major_requirements,
@@ -241,7 +394,189 @@ impl<'a> PlanGenerator<'a> {
             course_credits,
             config,
             _courses: courses,
+            gen_ed_tracker: gen_ed_satisfied,
         }
+    }
+
+    /// Build a gen-ed tracker from gen-ed requirements
+    ///
+    /// Extracts gen-ed attribute codes from requirement names (e.g., "(FQ)" from
+    /// "Quantitative Reasoning (FQ)") and sets up credit tracking.
+    fn build_gen_ed_tracker(
+        gen_ed_requirements: &[ResolvedRequirement],
+        _course_credits: &HashMap<String, f32>,
+        requirements: &HashMap<String, Requirement>,
+    ) -> GenEdTracker {
+        let mut tracker = GenEdTracker::new();
+
+        // Extract gen-ed requirements and their credit needs
+        for resolved in gen_ed_requirements {
+            // Look up original requirement for credit info
+            if let Some(req) = requirements.get(&resolved.id) {
+                // Try to extract gen-ed attribute code from requirement name
+                let attr_code = req
+                    .name
+                    .as_ref()
+                    .and_then(|name| extract_gen_ed_code(name))
+                    .unwrap_or_else(|| resolved.id.clone());
+
+                // Track credits for this gen-ed attribute
+                if let Some(credits) = req.credits {
+                    #[allow(clippy::cast_precision_loss)]
+                    tracker
+                        .required_credits
+                        .insert(attr_code.clone(), credits as f32);
+                } else if req.count.is_some() {
+                    // For count-based requirements, estimate credits (usually 3-4 per course)
+                    // count is typically small (1-10), so conversion to f32 is safe
+                    let count = req.count.unwrap_or(1);
+                    #[allow(clippy::cast_precision_loss)]
+                    let estimated_credits = (count as f32) * 3.0;
+                    tracker
+                        .required_credits
+                        .insert(attr_code.clone(), estimated_credits);
+                }
+
+                // Store mapping from requirement ID to attribute code for later lookup
+                if attr_code != resolved.id {
+                    tracker.required_credits.insert(
+                        resolved.id.clone(),
+                        tracker
+                            .required_credits
+                            .get(&attr_code)
+                            .copied()
+                            .unwrap_or(0.0),
+                    );
+                }
+            }
+        }
+
+        tracker
+    }
+
+    /// Track gen-ed satisfaction from a set of requirements
+    ///
+    /// Records courses from major/supporting requirements and tracks their
+    /// gen-ed attribute contributions.
+    fn track_gen_ed_from_requirements(
+        requirements: &[ResolvedRequirement],
+        courses: &HashMap<String, Course>,
+        tracker: &mut GenEdTracker,
+    ) {
+        for req in requirements {
+            // Use first choice as the representative courses
+            if let Some(first_choice) = req.choices.first() {
+                let expanded = expand_course_list(first_choice);
+                for course_key in &expanded {
+                    tracker.record_course_by_key(course_key, courses);
+                }
+            }
+        }
+    }
+
+    /// Collect courses from requirements (first choice, expanded)
+    fn collect_courses_from_requirements(
+        requirements: &[ResolvedRequirement],
+        course_credits: &HashMap<String, f32>,
+    ) -> Vec<String> {
+        let mut courses = Vec::new();
+        for req in requirements {
+            if let Some(first_choice) = req.choices.first() {
+                let expanded = expand_course_list(first_choice);
+                for course in expanded {
+                    // Only add if not a placeholder or if credits are tracked
+                    if course_credits.contains_key(&course) || is_placeholder_course(&course) {
+                        courses.push(course);
+                    }
+                }
+            }
+        }
+        courses
+    }
+
+    /// Process gen-ed requirements, reducing credits based on satisfaction
+    ///
+    /// If a gen-ed requirement is already satisfied by major/supporting courses,
+    /// we skip adding those courses. If partially satisfied, we reduce the credits.
+    /// Checks satisfaction by both requirement ID and gen-ed attribute code.
+    fn process_gen_ed_requirements(
+        gen_ed_requirements: &[ResolvedRequirement],
+        gen_ed_satisfied: &GenEdTracker,
+        course_credits: &HashMap<String, f32>,
+        requirements: &HashMap<String, Requirement>,
+    ) -> Vec<String> {
+        let mut courses = Vec::new();
+
+        for resolved in gen_ed_requirements {
+            // Look up original requirement to get the attribute code
+            let attr_code = requirements
+                .get(&resolved.id)
+                .and_then(|req| req.name.as_ref())
+                .and_then(|name| extract_gen_ed_code(name));
+
+            // Check satisfaction by attribute code first (if available), then by requirement ID
+            let is_satisfied = attr_code.as_ref().map_or_else(
+                || gen_ed_satisfied.is_satisfied(&resolved.id),
+                |code| {
+                    gen_ed_satisfied.is_satisfied(code)
+                        || gen_ed_satisfied.satisfied_credits(code) > 0.0
+                },
+            );
+
+            // Get remaining credits needed
+            let remaining = attr_code.as_ref().map_or_else(
+                || gen_ed_satisfied.remaining_credits(&resolved.id),
+                |code| gen_ed_satisfied.remaining_credits(code),
+            );
+
+            // Check if this gen-ed requirement has a credit-based requirement tracked
+            let has_credit_requirement = attr_code
+                .as_ref()
+                .is_some_and(|c| gen_ed_satisfied.required_credits.contains_key(c))
+                || gen_ed_satisfied.required_credits.contains_key(&resolved.id);
+
+            if has_credit_requirement {
+                // Credit-based gen-ed requirement
+                // If fully satisfied by courses with matching gen-ed attributes, skip
+                if is_satisfied || remaining <= 0.0 {
+                    continue;
+                }
+
+                // Add courses to cover remaining credits
+                if let Some(first_choice) = resolved.choices.first() {
+                    let expanded = expand_course_list(first_choice);
+                    let mut credits_added = 0.0f32;
+
+                    for course in expanded {
+                        if credits_added >= remaining {
+                            break;
+                        }
+
+                        let course_creds = course_credits
+                            .get(&course)
+                            .copied()
+                            .unwrap_or_else(|| placeholder_credits(&course));
+
+                        courses.push(course);
+                        credits_added += course_creds;
+                    }
+                }
+            } else {
+                // Count-based or simple requirement
+                // Skip if already satisfied by a course with matching gen-ed attributes
+                if is_satisfied {
+                    continue;
+                }
+
+                // Add first choice
+                if let Some(first_choice) = resolved.choices.first() {
+                    let expanded = expand_course_list(first_choice);
+                    courses.extend(expanded);
+                }
+            }
+        }
+
+        courses
     }
 
     /// Estimate the total number of possible plans (major requirements only)
@@ -522,6 +857,7 @@ impl<'a> PlanIterator<'a> {
     /// and adds placeholder electives to reach target credits.
     /// Respects `exclude_used` constraints by dynamically selecting courses
     /// from the available pool when some are already used.
+    /// Expands bundles and equivalents to their component courses.
     fn build_plan_from_indices(&self, indices: &[usize]) -> PlanVariant {
         let mut requirement_choices: HashMap<String, Vec<String>> = HashMap::new();
         let mut used_courses: HashSet<String> = HashSet::new();
@@ -531,12 +867,15 @@ impl<'a> PlanIterator<'a> {
         for (i, req) in self.generator.major_requirements.iter().enumerate() {
             let choice_idx = indices.get(i).copied().unwrap_or(0);
             if choice_idx < req.choices.len() {
-                let chosen_courses = if req.exclude_used {
+                let raw_chosen = if req.exclude_used {
                     // For exclude_used requirements, dynamically select from the pool
                     self.select_courses_excluding_used(req, choice_idx, &used_courses)
                 } else {
                     req.choices[choice_idx].clone()
                 };
+
+                // Expand bundles and equivalents to individual courses
+                let chosen_courses = expand_course_list(&raw_chosen);
 
                 // Add chosen courses to used set
                 for course in &chosen_courses {
@@ -549,10 +888,10 @@ impl<'a> PlanIterator<'a> {
 
         // Add non-major courses as a fixed "non_major" requirement
         // Filter out any courses already used in major requirements
+        // Also expand any bundles/equivalents in non-major courses
         if !self.generator.non_major_courses.is_empty() {
-            let non_major: Vec<String> = self
-                .generator
-                .non_major_courses
+            let expanded_non_major = expand_course_list(&self.generator.non_major_courses);
+            let non_major: Vec<String> = expanded_non_major
                 .iter()
                 .filter(|c| !used_courses.contains(*c))
                 .cloned()

@@ -425,3 +425,68 @@ fn test_different_plans_different_metrics() {
         "Different curricula should have different complexities"
     );
 }
+
+// ============================================================================
+// Gen-Ed Tracking Integration Tests
+// ============================================================================
+
+/// Test that gen-ed tracking correctly identifies satisfied requirements
+#[test]
+fn test_gen_ed_tracking_in_degree() {
+    use nu_analytics::core::degree::GenEdTracker;
+
+    // Load UHM degree which has gen-ed requirements
+    let program = load_degree_from_yaml("samples/degrees/uhm-ics-bscs-general.yaml")
+        .unwrap_or_else(|_| panic!("Failed to load UHM degree"));
+
+    // Build gen-ed tracker and record some courses
+    let mut tracker = GenEdTracker::new();
+
+    // Set up FQ requirement (3 credits)
+    tracker.required_credits.insert("FQ".to_string(), 3.0);
+
+    // Record ICS141 which has FQ attribute
+    if let Some(course) = program.courses.get("ICS141") {
+        tracker.record_course("ICS141", course);
+    }
+
+    // FQ should now be satisfied
+    assert!(
+        tracker.satisfied_credits("FQ") >= 3.0,
+        "FQ should be satisfied by ICS141"
+    );
+    assert!(
+        tracker.is_satisfied("FQ"),
+        "FQ requirement should be marked satisfied"
+    );
+}
+
+/// Test that plan credits are reasonable for degrees
+#[test]
+fn test_degree_credit_totals_reasonable() {
+    let degrees = [
+        ("samples/degrees/csu-cs-bscs-general.yaml", 90.0, 150.0), // Target: 120
+        ("samples/degrees/uhm-ics-bscs-general.yaml", 90.0, 150.0), // Target: 120
+    ];
+
+    for (path, min_credits, max_credits) in &degrees {
+        let program =
+            load_degree_from_yaml(path).unwrap_or_else(|_| panic!("Failed to load {path}"));
+
+        let config = PlanGeneratorConfig {
+            max_plans: 1,
+            ..Default::default()
+        };
+
+        let generator = PlanGenerator::new(&program.requirements, &program.courses, config);
+        let (plans, _stats) = generator.generate_all();
+
+        assert!(!plans.is_empty(), "Should generate at least one plan");
+
+        let total_credits = plans[0].total_credits;
+        assert!(
+            total_credits >= *min_credits && total_credits <= *max_credits,
+            "{path}: Credits {total_credits} should be between {min_credits} and {max_credits}"
+        );
+    }
+}

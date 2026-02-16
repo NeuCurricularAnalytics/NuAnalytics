@@ -15,7 +15,7 @@ use nu_analytics::core::report::plan_export::{
 use nu_analytics::core::report::term_scheduler::SchedulerConfig;
 use nu_analytics::core::statistics::aggregator::{AggregatorConfig, MetricsAggregator};
 use nu_analytics::core::validate_degree_program;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process;
 
@@ -785,6 +785,92 @@ struct AnalysisContext<'a> {
     graph: &'a CourseGraph,
     gen_config: PlanGeneratorConfig,
     verbose: bool,
+    /// Map from course key to all equivalent courses (including itself)
+    /// Built from requirement definitions using `{A, B, C}` syntax
+    equivalences: HashMap<String, HashSet<String>>,
+}
+
+/// Build an equivalence map from requirement definitions
+///
+/// Scans requirements for equivalent course syntax like `{MATH215, MATH241, MATH251A}`
+/// and builds a bidirectional map where each course maps to all its equivalents.
+fn build_equivalence_map(
+    requirements: &HashMap<String, Requirement>,
+) -> HashMap<String, HashSet<String>> {
+    let mut equivalences: HashMap<String, HashSet<String>> = HashMap::new();
+
+    for req in requirements.values() {
+        // Check courses list for equivalent syntax
+        if let Some(courses) = &req.courses {
+            for course_ref in courses {
+                if let Some(equiv_set) = parse_equivalent_courses(course_ref) {
+                    // Add bidirectional mappings
+                    for course in &equiv_set {
+                        equivalences
+                            .entry(course.clone())
+                            .or_default()
+                            .extend(equiv_set.iter().cloned());
+                    }
+                }
+            }
+        }
+
+        // Check from.courses for equivalent syntax
+        if let Some(from) = &req.from {
+            if let Some(courses) = &from.courses {
+                for course_ref in courses {
+                    if let Some(equiv_set) = parse_equivalent_courses(course_ref) {
+                        for course in &equiv_set {
+                            equivalences
+                                .entry(course.clone())
+                                .or_default()
+                                .extend(equiv_set.iter().cloned());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check nested options
+        if let Some(options) = &req.options {
+            for option in options {
+                for nested in &option.requirements {
+                    if let Some(courses) = &nested.courses {
+                        for course_ref in courses {
+                            if let Some(equiv_set) = parse_equivalent_courses(course_ref) {
+                                for course in &equiv_set {
+                                    equivalences
+                                        .entry(course.clone())
+                                        .or_default()
+                                        .extend(equiv_set.iter().cloned());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    equivalences
+}
+
+/// Parse equivalent courses from `{A, B, C}` syntax
+///
+/// Returns `Some(set)` if the input is an equivalent group, `None` otherwise.
+fn parse_equivalent_courses(course_ref: &str) -> Option<HashSet<String>> {
+    if course_ref.starts_with('{') && course_ref.ends_with('}') {
+        let inner = &course_ref[1..course_ref.len() - 1];
+        let courses: HashSet<String> = inner
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if courses.len() > 1 {
+            return Some(courses);
+        }
+    }
+    None
 }
 
 /// Run full degree analysis: generate plans, compute metrics, produce report
@@ -839,6 +925,9 @@ fn analyze_degree(
                 .unwrap_or_default()
         });
 
+    // Build equivalence map from requirements
+    let equivalences = build_equivalence_map(&program.requirements);
+
     // Build analysis context
     let ctx = AnalysisContext {
         program: &program,
@@ -859,6 +948,7 @@ fn analyze_degree(
             ..Default::default()
         },
         verbose,
+        equivalences,
     };
 
     // Run plan enumeration and metrics aggregation
@@ -994,7 +1084,8 @@ fn process_plan_variants(
         }
 
         // Expand courses to include all prerequisites
-        let expanded_courses = expand_courses_with_prerequisites(&variant.courses, ctx.graph);
+        let expanded_courses =
+            expand_courses_with_prerequisites(&variant.courses, ctx.graph, &ctx.equivalences);
 
         // Build plan-specific DAG and compute metrics
         let plan_dag = build_dag_for_plan(&expanded_courses, ctx.graph);
@@ -1407,7 +1498,14 @@ fn build_dag_from_graph(graph: &CourseGraph) -> DAG {
 ///
 /// This prevents adding MATH117 for STAT301 when MATH127 (needed by MATH156)
 /// would also satisfy STAT301's prerequisite.
-fn expand_courses_with_prerequisites(courses: &[String], graph: &CourseGraph) -> Vec<String> {
+///
+/// Uses the equivalence map to check if a prerequisite is satisfied by an
+/// equivalent course already in the plan.
+fn expand_courses_with_prerequisites(
+    courses: &[String],
+    graph: &CourseGraph,
+    equivalences: &HashMap<String, HashSet<String>>,
+) -> Vec<String> {
     // Phase 1: Sort courses by prerequisite depth (deepest chains first)
     // This ensures courses like MATH156 (which needs MATH127) are processed
     // before courses like STAT301 (which can use MATH127 as an alternative)
@@ -1429,7 +1527,12 @@ fn expand_courses_with_prerequisites(courses: &[String], graph: &CourseGraph) ->
             graph.min_prerequisite_chain_with_context(&course_key, &expanded)
         {
             for prereq in prereq_chain {
-                if !expanded.contains(&prereq) {
+                // Check if this prerequisite is satisfied by an equivalent course
+                let has_equivalent = equivalences
+                    .get(&prereq)
+                    .is_some_and(|equivs| equivs.iter().any(|e| expanded.contains(e)));
+
+                if !has_equivalent && !expanded.contains(&prereq) {
                     expanded.insert(prereq.clone());
                     to_process.push(prereq); // Process this prereq's chain too
                 }
@@ -1441,8 +1544,9 @@ fn expand_courses_with_prerequisites(courses: &[String], graph: &CourseGraph) ->
     // A prerequisite is redundant if:
     // - It was added as an OR-alternative for some course
     // - Another course in the plan would also satisfy that OR requirement
+    // - OR an equivalent course is already in the plan
     let expanded_clone = expanded.clone();
-    let redundant = find_redundant_prerequisites(&expanded_clone, graph);
+    let redundant = find_redundant_prerequisites(&expanded_clone, graph, equivalences);
     for course in redundant {
         expanded.remove(&course);
     }
@@ -1457,10 +1561,16 @@ fn expand_courses_with_prerequisites(courses: &[String], graph: &CourseGraph) ->
 /// For each course in the plan, checks if any of its OR-prerequisites could be
 /// satisfied by a different course already in the plan. If so, and the current
 /// prerequisite is ONLY used for this OR-group (not required elsewhere), it's redundant.
-fn find_redundant_prerequisites(courses: &HashSet<String>, graph: &CourseGraph) -> Vec<String> {
+///
+/// Also considers equivalent courses: if MATH241 is a prereq but MATH215 (equivalent)
+/// is in the plan, MATH241 is redundant.
+fn find_redundant_prerequisites(
+    courses: &HashSet<String>,
+    graph: &CourseGraph,
+    equivalences: &HashMap<String, HashSet<String>>,
+) -> Vec<String> {
     let mut redundant = Vec::new();
-    let mut prereq_usage: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
+    let mut prereq_usage: HashMap<String, Vec<String>> = HashMap::new();
 
     // Build a map of which courses use which prerequisites
     for course_key in courses {
@@ -1476,12 +1586,40 @@ fn find_redundant_prerequisites(courses: &HashSet<String>, graph: &CourseGraph) 
         }
     }
 
+    // Check for courses that are redundant because an equivalent is in the plan
+    for course in courses {
+        if let Some(equivs) = equivalences.get(course) {
+            // If another equivalent course is also in the plan, one might be redundant
+            for equiv in equivs {
+                if equiv != course && courses.contains(equiv) {
+                    // Check if this course is only used as a prerequisite
+                    // If so, and the equivalent satisfies those same prereqs, it's redundant
+                    let usages = prereq_usage.get(course);
+                    if usages.is_none() || usages.is_some_and(std::vec::Vec::is_empty) {
+                        // This course has no dependents - check if it was added as a prereq
+                        // for something that the equivalent would satisfy
+                        let equiv_satisfies_same =
+                            prereq_usage.get(equiv).is_some_and(|equiv_usages| {
+                                // Check if equivalent is used by any course
+                                !equiv_usages.is_empty()
+                            });
+
+                        if equiv_satisfies_same {
+                            // The equivalent course is being used - this one might be redundant
+                            // Only mark redundant if this course was added as a prereq, not from requirements
+                            redundant.push(course.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // For each course, check its OR-groups for redundant prerequisites
     for course_key in courses {
         if let Some(node) = graph.get(course_key) {
             // Group prerequisites by OR-group
-            let mut or_groups: std::collections::HashMap<usize, Vec<&str>> =
-                std::collections::HashMap::new();
+            let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
             for edge in &node.prerequisites {
                 if let Some(group) = edge.or_group {
                     if edge.prereq_type
