@@ -6,6 +6,7 @@
 //! - [`config`] - Configuration management
 //! - [`degree`] - Degree program validation
 //! - [`planner`] - Curriculum planning and CSV export
+//! - [`mcp`] - MCP server for AI model integration (feature-gated)
 //!
 //! ## Utilities
 //! - [`report`] - Report generation utilities (used by multiple commands)
@@ -14,3 +15,6 @@ pub mod config;
 pub mod degree;
 pub mod planner;
 pub mod report;
+
+#[cfg(feature = "mcp")]
+pub mod mcp;

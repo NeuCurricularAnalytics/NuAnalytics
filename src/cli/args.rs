@@ -228,6 +228,21 @@ pub enum Command {
         #[arg(long)]
         audit: bool,
     },
+    /// Run the MCP (Model Context Protocol) server.
+    ///
+    /// Starts a server that exposes NuAnalytics tools for AI model integration.
+    /// By default, uses stdio transport (for Claude Desktop and MCP clients).
+    ///
+    /// # Examples
+    /// ```sh
+    /// # Start MCP server (stdio mode for Claude)
+    /// nuanalytics mcp
+    ///
+    /// # Start MCP server with debug logging
+    /// nuanalytics --log-level debug mcp
+    /// ```
+    #[cfg(feature = "mcp")]
+    Mcp,
 }
 
 #[derive(Parser, Debug)]

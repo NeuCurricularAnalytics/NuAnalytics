@@ -109,6 +109,13 @@ fn main() {
             };
             commands::degree::run(file.as_deref(), &options, &config);
         }
+        #[cfg(feature = "mcp")]
+        Command::Mcp => {
+            if let Err(e) = commands::mcp::run() {
+                eprintln!("✗ MCP server error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 

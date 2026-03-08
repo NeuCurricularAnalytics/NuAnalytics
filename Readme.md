@@ -23,6 +23,7 @@ It is based off the work of Greg Heileman, and CurricularAnalytics.org. Current 
   - **Markdown**: Text-based reports for documentation
 - **Term Scheduling**: Automatic course scheduling respecting prerequisites and credit limits
 - **Configuration Management**: Flexible configuration system with CLI overrides
+- **MCP Server** (optional): AI model integration for interactive degree building via Model Context Protocol
 
 ## Quick Start
 
@@ -53,6 +54,14 @@ cargo build --release
 ```
 
 The executable will be at `target/release/nuanalytics`.
+
+### Building with MCP Support
+
+To enable the MCP (Model Context Protocol) server for AI integration:
+
+```bash
+cargo build --release --features mcp
+```
 
 ### Running (installed)
 
@@ -98,6 +107,7 @@ nuanalytics degree --audit samples/neu_cs_2024.yaml
 - **[Config Command](docs/config.md)** - Configure NuAnalytics settings (logging, database, output directories)
 - **[Planner Command](docs/planner.md)** - Analyze curricula for a degree plan, compute metrics, and generate reports
 - **[Degree Command](docs/degree.md)** - Validate, analyze, and audit degree program YAML files
+- **[MCP Server](docs/mcp.md)** - AI model integration via Model Context Protocol (optional feature)
 
 ## Development
 

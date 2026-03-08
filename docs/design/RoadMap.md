@@ -13,6 +13,7 @@ This roadmap organizes planned features by functional area. Items marked with �
 - **Term Scheduling**: Automatic course scheduling respecting prerequisites and credit limits
 - **Configuration System**: Persistent TOML config with CLI overrides
 - **Audit Reports**: Identify missing prerequisites and deep prerequisite chains
+- **MCP Server** (feature-gated): AI model integration for degree validation via `nuanalytics mcp`
 
 ---
 
@@ -172,52 +173,53 @@ This roadmap organizes planned features by functional area. Items marked with �
 
 ---
 
-## Phase 3: MCP Server Integration 📋
+## Phase 3: MCP Server Integration 🚧
 
 **Goal**: Expose NuAnalytics capabilities via Model Context Protocol for AI agent integration.
 
 ### 3.1 MCP Server Implementation
-- **Status**: 📋 Not Started
+- **Status**: ✅ Implemented (v0.2.0)
 - **Architecture**: 
-  - Standalone MCP server binary (`nuanalytics-mcp`)
-  - JSON-RPC interface following MCP specification
+  - Integrated into CLI via `nuanalytics mcp` command (feature-gated)
+  - stdio transport for MCP client compatibility (Claude Desktop, etc.)
   - Reuses core library (`nu_analytics` crate)
-- **Deployment**: 
-  - Local server for development
-  - Hosted service for production (with rate limiting)
-  - Authentication via API tokens
+- **Documentation**: See [docs/mcp.md](../mcp.md)
 
-### 3.2 MCP Tools - Degree Operations
+### 3.2 MCP Tools - Degree Validation
+- **Status**: ✅ Implemented
+- **Tools**:
+  
+  **Get Degree Schema** (`get_degree_schema`)
+  - Input: Optional section filter ("all", "degree", "requirements", "courses", "examples")
+  - Output: Markdown documentation with YAML examples
+  - Use case: Help models understand valid degree YAML structure
+  
+  **Validate Degree** (`validate_degree`)
+  - Input: YAML degree definition as string
+  - Output: Structured validation report (errors, warnings, context, suggestions)
+  - Use case: AI iteratively fixes degree definition until valid
+
+### 3.3 MCP Tools - Additional Degree Operations
 - **Status**: 📋 Not Started
 - **Tools**:
   
-  **Validate Degree** (`validate_degree`)
-  - Input: YAML degree definition (string or file path)
-  - Output: Validation report (errors, warnings, statistics)
-  - Use case: AI iteratively fixes degree definition until valid
-  
   **Audit Degree** (`audit_degree`)
-  - Input: Degree file path or YAML string
+  - Input: Degree YAML string
   - Output: Full audit report (validation + missing prereqs + deep chains)
   - Use case: Comprehensive degree quality assessment
   
-  **Generate Plans** (`generate_plans`)
-  - Input: Degree definition + constraints (require/exclude/match)
-  - Output: Multiple plan variations with metrics
-  - Use case: Explore curriculum options, compare strategies
-  
   **Analyze Degree** (`analyze_degree`)
-  - Input: Degree file path
+  - Input: Degree YAML string
   - Output: Metrics summary, complexity distribution, bottleneck courses
   - Use case: Quick degree assessment for curriculum designers
 
-### 3.3 MCP Tools - Plan Operations
+### 3.4 MCP Tools - Plan Operations
 - **Status**: 📋 Not Started
 - **Tools**:
   
   **Analyze Plan** (`analyze_plan`)
-  - Input: CSV plan file
-  - Output: Metrics CSV and HTML report URL
+  - Input: CSV plan content as string
+  - Output: Metrics and analysis results
   - Use case: Quick metrics computation from CSV
   
   **Schedule Plan** (`schedule_plan`)
@@ -225,8 +227,8 @@ This roadmap organizes planned features by functional area. Items marked with �
   - Output: Term-by-term schedule
   - Use case: Generate optimal course sequencing
 
-### 3.4 MCP Tools - Database Operations
-- **Status**: 📋 Not Started (requires Phase 2)
+### 3.5 MCP Tools - Future Operations
+- **Status**: 📋 Not Started (requires Phase 1 & 2)
 - **Tools**:
   
   **Search Institutions** (`search_institutions`)

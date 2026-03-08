@@ -4,4 +4,7 @@
 pub mod core;
 pub mod logger;
 
+#[cfg(feature = "mcp")]
+pub mod mcp;
+
 pub use core::*;
