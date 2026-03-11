@@ -69,4 +69,21 @@ mod tests {
         assert!(result.contains("Complete Example"));
         assert!(result.contains("Common Patterns"));
     }
+
+    #[test]
+    fn test_unknown_section_returns_all() {
+        let result = execute(Some("unknown_section"));
+        // Unknown sections should return all content
+        assert!(result.contains("Degree Program YAML Schema"));
+        assert!(result.contains("Degree Metadata Section"));
+    }
+
+    #[test]
+    fn test_case_insensitive_sections() {
+        let upper = execute(Some("DEGREE"));
+        let lower = execute(Some("degree"));
+        let mixed = execute(Some("Degree"));
+        assert_eq!(upper, lower);
+        assert_eq!(lower, mixed);
+    }
 }

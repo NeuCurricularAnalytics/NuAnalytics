@@ -456,4 +456,77 @@ courses:
         assert_eq!(context.total_requirements, 1);
         assert!(context.defined_courses.contains(&"CS101".to_string()));
     }
+
+    #[test]
+    fn test_execute_json_returns_valid_json() {
+        let json_str = execute_json(VALID_YAML);
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&json_str);
+        assert!(parsed.is_ok(), "Output should be valid JSON");
+        let value = parsed.unwrap();
+        assert!(value["is_valid"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn test_execute_json_with_errors() {
+        let json_str = execute_json(INVALID_YAML);
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&json_str);
+        assert!(parsed.is_ok(), "Output should be valid JSON");
+        let value = parsed.unwrap();
+        assert!(!value["is_valid"].as_bool().unwrap());
+        assert!(!value["errors"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_circular_prerequisite_detection() {
+        let yaml = r#"
+degree:
+  id: test-degree
+  institution: Test University
+  program: Test Program
+  total_credits: 120
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Introduction
+    type: all
+    category: major
+    courses:
+      - CS101
+
+courses:
+  CS101:
+    title: Intro to CS
+    prefix: CS
+    number: "101"
+    credits: 4
+    prerequisites_raw: "CS102"
+  CS102:
+    title: Data Structures
+    prefix: CS
+    number: "102"
+    credits: 4
+    prerequisites_raw: "CS101"
+"#;
+        let response = execute(yaml);
+        assert!(!response.is_valid);
+        assert!(response
+            .errors
+            .iter()
+            .any(|e| e.error_type == "CircularPrerequisite"));
+    }
+
+    #[test]
+    fn test_suggestions_for_valid_degree() {
+        let response = execute(VALID_YAML);
+        assert!(response.is_valid);
+        assert!(response.suggestions.iter().any(|s| s.contains("valid")));
+    }
+
+    #[test]
+    fn test_suggestions_for_invalid_degree() {
+        let response = execute(INVALID_YAML);
+        assert!(!response.is_valid);
+        assert!(response.suggestions.iter().any(|s| s.contains("Fix")));
+    }
 }

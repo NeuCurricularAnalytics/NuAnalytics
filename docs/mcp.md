@@ -48,6 +48,39 @@ cargo build --release --features mcp
 cargo install nu-analytics --features mcp
 ```
 
+### Local Development Setup
+
+For development and testing, you can run the MCP server directly from your local build:
+
+```bash
+# Clone and enter the repository
+git clone https://github.com/NeuCurricularAnalytics/NuAnalytics.git
+cd NuAnalytics
+
+# Build with MCP support (debug mode for development)
+cargo build --features mcp
+
+# Run the server directly
+cargo run --features mcp -- mcp
+
+# Or build release and run
+cargo build --release --features mcp
+./target/release/nuanalytics mcp
+```
+
+For Claude Desktop development, use the debug build path:
+
+```json
+{
+  "mcpServers": {
+    "nuanalytics-dev": {
+      "command": "/path/to/NuAnalytics/target/debug/nuanalytics",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
 ## Configuration
 
 ### Claude Desktop Integration
