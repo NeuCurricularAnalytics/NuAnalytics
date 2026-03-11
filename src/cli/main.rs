@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
 ///
 /// Parses command-line arguments, loads configuration, sets up logging,
 /// and dispatches to the appropriate subcommand handler.
-#[allow(clippy::too_many_lines)]
 fn main() {
     let args = Cli::parse();
 
@@ -26,45 +25,7 @@ fn main() {
     let defaults = Config::from_defaults();
     config.apply_overrides(&args.to_config_overrides());
 
-    // Determine effective runtime log level: CLI flag overrides config; otherwise use config logging.level; fallback warn
-    let effective_level = args
-        .log_level
-        .map(std::convert::Into::into)
-        .or_else(|| parse_level(&config.logging.level))
-        .unwrap_or(Level::Warn);
-
-    let mut level = effective_level;
-    if args.debug_flag || level == Level::Debug {
-        level = Level::Debug;
-        enable_debug();
-    }
-
-    // Verbose: enable if CLI flag OR config has verbose=true
-    let verbose = args.verbose || config.logging.verbose;
-    if verbose {
-        enable_verbose();
-    }
-    set_level(level);
-
-    // Initialize file logging: CLI flag wins, otherwise use config logging.file if set
-    let config_log_path: Option<std::path::PathBuf> = if config.logging.file.is_empty() {
-        None
-    } else {
-        Some(std::path::PathBuf::from(&config.logging.file))
-    };
-
-    if let Some(log_path) = args.log_file.as_ref().or(config_log_path.as_ref()) {
-        let display_path = log_path.to_string_lossy();
-        if init_file_logging(log_path) {
-            if verbose {
-                eprintln!("✓ File logging initialized at: {display_path}");
-            } else {
-                info!("File logging initialized at: {display_path}");
-            }
-        } else {
-            eprintln!("✗ Failed to initialize file logging at: {display_path}");
-        }
-    }
+    let verbose = setup_logging(&args, &config);
 
     // Handle subcommands
     match args.command {
@@ -150,6 +111,50 @@ fn main() {
             }
         }
     }
+}
+
+/// Configure logging from CLI args and config, returning whether verbose is enabled
+fn setup_logging(args: &Cli, config: &Config) -> bool {
+    // Determine effective runtime log level
+    let effective_level = args
+        .log_level
+        .map(std::convert::Into::into)
+        .or_else(|| parse_level(&config.logging.level))
+        .unwrap_or(Level::Warn);
+
+    let mut level = effective_level;
+    if args.debug_flag || level == Level::Debug {
+        level = Level::Debug;
+        enable_debug();
+    }
+
+    let verbose = args.verbose || config.logging.verbose;
+    if verbose {
+        enable_verbose();
+    }
+    set_level(level);
+
+    // Initialize file logging: CLI flag wins, then config
+    let config_log_path: Option<PathBuf> = if config.logging.file.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(&config.logging.file))
+    };
+
+    if let Some(log_path) = args.log_file.as_ref().or(config_log_path.as_ref()) {
+        let display_path = log_path.to_string_lossy();
+        if init_file_logging(log_path) {
+            if verbose {
+                eprintln!("✓ File logging initialized at: {display_path}");
+            } else {
+                info!("File logging initialized at: {display_path}");
+            }
+        } else {
+            eprintln!("✗ Failed to initialize file logging at: {display_path}");
+        }
+    }
+
+    verbose
 }
 
 /// Options for the planner command

@@ -205,30 +205,10 @@ impl QuantileReservoir {
     /// # Arguments
     /// * `percentile` - Percentile to compute (0-100)
     #[must_use]
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
-    )]
     pub fn percentile(&self, percentile: f64) -> f64 {
-        if self.samples.is_empty() {
-            return 0.0;
-        }
-
         let mut sorted = self.samples.clone();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-        let n = sorted.len();
-        if n == 1 {
-            return sorted[0];
-        }
-
-        let rank = (percentile / 100.0) * (n - 1) as f64;
-        let lower_idx = rank.floor() as usize;
-        let upper_idx = (lower_idx + 1).min(n - 1);
-
-        let fraction = rank - lower_idx as f64;
-        fraction.mul_add(sorted[upper_idx] - sorted[lower_idx], sorted[lower_idx])
+        super::compute_percentile(&sorted, percentile)
     }
 
     /// Get approximate median
@@ -349,28 +329,9 @@ impl ExactQuantileAccumulator {
     /// # Arguments
     /// * `percentile` - Percentile to compute (0-100)
     #[must_use]
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
-    )]
     pub fn percentile(&self, percentile: f64) -> f64 {
-        if self.values.is_empty() {
-            return 0.0;
-        }
-
         let sorted = self.sorted_values();
-        let n = sorted.len();
-        if n == 1 {
-            return sorted[0];
-        }
-
-        let rank = (percentile / 100.0) * (n - 1) as f64;
-        let lower_idx = rank.floor() as usize;
-        let upper_idx = (lower_idx + 1).min(n - 1);
-
-        let fraction = rank - lower_idx as f64;
-        fraction.mul_add(sorted[upper_idx] - sorted[lower_idx], sorted[lower_idx])
+        super::compute_percentile(&sorted, percentile)
     }
 
     /// Get exact median

@@ -334,7 +334,6 @@ impl<'a> TermScheduler<'a> {
     /// Compute a dependency-respecting order of groups using topological sort.
     /// Ties (multiple groups with no incoming edges) are broken by group priority
     /// derived from `chain_priority` (higher first), then lexicographically.
-    #[allow(clippy::too_many_lines)]
     fn order_groups_by_dependencies(
         &self,
         groups: &[Vec<String>],
@@ -364,11 +363,37 @@ impl<'a> TermScheduler<'a> {
             group_priority.push(pri);
         }
 
-        // Build group dependency graph: edge A -> B if any course in B depends (transitively) on a course in A
+        let (adj, indeg) = self.build_group_dependency_graph(groups, course_set, &course_to_group);
+
+        let order = Self::topological_sort_groups(groups, &group_priority, &adj, indeg);
+
+        // If cycle detected (shouldn't happen in DAG), fall back to priority sort
+        if order.len() != groups.len() {
+            let mut fallback = groups.to_vec();
+            self.sort_groups_by_priority(&mut fallback, chain_priority);
+            return fallback;
+        }
+
+        // Reorder groups by computed order
+        let mut result = Vec::with_capacity(groups.len());
+        for i in order {
+            result.push(groups[i].clone());
+        }
+        result
+    }
+
+    /// Build the group-level dependency graph (adjacency list and in-degree counts).
+    ///
+    /// For each group, collects transitive prerequisites restricted to `course_set`
+    /// and maps them back to group indices to produce edges between groups.
+    fn build_group_dependency_graph(
+        &self,
+        groups: &[Vec<String>],
+        course_set: &HashSet<&String>,
+        course_to_group: &HashMap<&str, usize>,
+    ) -> (Vec<Vec<usize>>, Vec<usize>) {
         let mut adj: Vec<Vec<usize>> = vec![Vec::new(); groups.len()];
         let mut indeg: Vec<usize> = vec![0; groups.len()];
-
-        // Cache for transitive prerequisites restricted to `course_set`
         let mut prereq_cache: HashMap<String, HashSet<String>> = HashMap::new();
 
         for (b_idx, group) in groups.iter().enumerate() {
@@ -394,7 +419,19 @@ impl<'a> TermScheduler<'a> {
             }
         }
 
-        // Kahn's algorithm with priority queue to break ties by group_priority (desc), then by lexicographic min key
+        (adj, indeg)
+    }
+
+    /// Run Kahn's algorithm with a priority queue to produce a topological ordering.
+    ///
+    /// Ties among groups with zero in-degree are broken by `group_priority`
+    /// (descending), then by lexicographic minimum course key.
+    fn topological_sort_groups(
+        groups: &[Vec<String>],
+        group_priority: &[usize],
+        adj: &[Vec<usize>],
+        mut indeg: Vec<usize>,
+    ) -> Vec<usize> {
         let mut heap = BinaryHeap::new();
         for i in 0..groups.len() {
             if indeg[i] == 0 {
@@ -423,19 +460,7 @@ impl<'a> TermScheduler<'a> {
             }
         }
 
-        // If cycle detected (shouldn't happen in DAG), fall back to priority sort
-        if order.len() != groups.len() {
-            let mut fallback = groups.to_vec();
-            self.sort_groups_by_priority(&mut fallback, chain_priority);
-            return fallback;
-        }
-
-        // Reorder groups by computed order
-        let mut result = Vec::with_capacity(groups.len());
-        for i in order {
-            result.push(groups[i].clone());
-        }
-        result
+        order
     }
 
     /// Collect transitive prerequisites of `course` restricted to `course_set`.

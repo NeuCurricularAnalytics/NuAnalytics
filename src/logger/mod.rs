@@ -290,3 +290,75 @@ macro_rules! verbose {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set_level_from_str_valid() {
+        assert!(set_level_from_str("error"));
+        assert!(set_level_from_str("err"));
+        assert!(set_level_from_str("warn"));
+        assert!(set_level_from_str("warning"));
+        assert!(set_level_from_str("info"));
+        assert!(set_level_from_str("debug"));
+        assert!(set_level_from_str("DEBUG")); // case insensitive
+        assert!(set_level_from_str("Info"));
+    }
+
+    #[test]
+    fn test_set_level_from_str_invalid() {
+        assert!(!set_level_from_str("trace"));
+        assert!(!set_level_from_str(""));
+        assert!(!set_level_from_str("verbose"));
+    }
+
+    #[test]
+    fn test_level_values() {
+        assert_eq!(Level::Error as u8, 1);
+        assert_eq!(Level::Warn as u8, 2);
+        assert_eq!(Level::Info as u8, 3);
+        assert_eq!(Level::Debug as u8, 4);
+    }
+
+    #[test]
+    fn test_debug_toggle() {
+        enable_debug();
+        assert!(is_debug_enabled());
+        disable_debug();
+        #[cfg(feature = "log-debug")]
+        assert!(!is_debug_enabled());
+        // Re-enable for other tests
+        enable_debug();
+    }
+
+    #[test]
+    fn test_verbose_toggle() {
+        enable_verbose();
+        assert!(is_verbose_enabled());
+        disable_verbose();
+        #[cfg(feature = "verbose")]
+        assert!(!is_verbose_enabled());
+    }
+
+    #[test]
+    fn test_should_log_at_various_levels() {
+        set_level(Level::Error);
+        assert!(should_log(Level::Error));
+        assert!(!should_log(Level::Warn));
+        assert!(!should_log(Level::Info));
+
+        set_level(Level::Warn);
+        assert!(should_log(Level::Error));
+        assert!(should_log(Level::Warn));
+        assert!(!should_log(Level::Info));
+
+        set_level(Level::Info);
+        assert!(should_log(Level::Error));
+        assert!(should_log(Level::Info));
+
+        // Reset to default
+        set_level(Level::Debug);
+    }
+}

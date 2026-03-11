@@ -108,6 +108,39 @@ Add NuAnalytics to your Claude Desktop configuration:
 > realpath ./target/release/nuanalytics  # if built locally
 > ```
 
+### Claude Code (CLI) Integration
+
+Add NuAnalytics as an MCP server in your Claude Code settings. You can configure it at
+the project level (`.claude/settings.json`) or user level (`~/.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "nuanalytics": {
+      "command": "/absolute/path/to/nuanalytics",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+For development, point to the debug build:
+
+```json
+{
+  "mcpServers": {
+    "nuanalytics-dev": {
+      "command": "cargo",
+      "args": ["run", "--features", "mcp", "--", "mcp"],
+      "cwd": "/path/to/NuAnalytics"
+    }
+  }
+}
+```
+
+After saving the config, restart Claude Code. The `get_degree_schema` and `validate_degree`
+tools will be available in your session. You can verify with `/mcp` to list connected servers.
+
 ### Other MCP Clients
 
 The server uses stdio transport, compatible with any MCP client. Configure your client to:

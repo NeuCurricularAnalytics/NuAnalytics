@@ -64,9 +64,9 @@ impl DescriptiveStats {
 
         let min = sorted[0];
         let max = sorted[count - 1];
-        let median = compute_percentile(&sorted, 50.0);
-        let q1 = compute_percentile(&sorted, 25.0);
-        let q3 = compute_percentile(&sorted, 75.0);
+        let median = super::compute_percentile(&sorted, 50.0);
+        let q1 = super::compute_percentile(&sorted, 25.0);
+        let q3 = super::compute_percentile(&sorted, 75.0);
 
         let mean = values.iter().sum::<f64>() / count as f64;
         let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / count as f64;
@@ -142,35 +142,6 @@ impl DescriptiveStats {
     #[must_use]
     pub fn default_representative(&self) -> f64 {
         self.representative_value(&MedianStrategy)
-    }
-}
-
-/// Compute a percentile from a sorted slice
-///
-/// Uses linear interpolation between adjacent values.
-#[allow(
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)]
-fn compute_percentile(sorted: &[f64], percentile: f64) -> f64 {
-    if sorted.is_empty() {
-        return 0.0;
-    }
-    if sorted.len() == 1 {
-        return sorted[0];
-    }
-
-    let n = sorted.len();
-    let rank = (percentile / 100.0) * (n - 1) as f64;
-    let lower_idx = rank.floor() as usize;
-    let upper_idx = rank.ceil() as usize;
-
-    if lower_idx == upper_idx {
-        sorted[lower_idx]
-    } else {
-        let fraction = rank - lower_idx as f64;
-        fraction.mul_add(sorted[upper_idx] - sorted[lower_idx], sorted[lower_idx])
     }
 }
 

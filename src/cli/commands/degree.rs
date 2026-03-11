@@ -882,7 +882,6 @@ fn parse_equivalent_courses(course_ref: &str) -> Option<HashSet<String>> {
 /// 4. Selects special plans (shortest, longest, calc-ready)
 /// 5. Generates HTML report with box plots and statistics
 /// 6. Exports CSV files for selected plans
-#[allow(clippy::too_many_lines)]
 fn analyze_degree(
     degree_path: &Path,
     options: &DegreeOptions,
