@@ -1,6 +1,6 @@
-//! MCP (Model Context Protocol) server for NuAnalytics
+//! MCP (Model Context Protocol) server for `NuAnalytics`
 //!
-//! This module provides an MCP server that exposes NuAnalytics tools for AI model integration.
+//! This module provides an MCP server that exposes `NuAnalytics` tools for AI model integration.
 //! The server allows AI models to:
 //!
 //! - Get schema documentation for degree YAML files

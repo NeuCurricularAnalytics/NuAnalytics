@@ -78,13 +78,14 @@ pub struct ValidationResponse {
 // Tool Implementation
 // ============================================================================
 
-/// Execute the validate_degree tool
+/// Execute the `validate_degree` tool
 ///
 /// # Arguments
 /// * `yaml_content` - The degree YAML content to validate
 ///
 /// # Returns
 /// Structured validation response
+#[must_use]
 pub fn execute(yaml_content: &str) -> ValidationResponse {
     // Try to parse the YAML
     let program = match parse_degree_yaml(yaml_content) {
@@ -145,6 +146,7 @@ pub fn execute(yaml_content: &str) -> ValidationResponse {
 ///
 /// # Returns
 /// JSON string representation of the validation response
+#[must_use]
 pub fn execute_json(yaml_content: &str) -> String {
     let response = execute(yaml_content);
     serde_json::to_string_pretty(&response)
@@ -408,7 +410,11 @@ courses:
     #[test]
     fn test_valid_degree() {
         let response = execute(VALID_YAML);
-        assert!(response.is_valid, "Expected valid but got errors: {:?}", response.errors);
+        assert!(
+            response.is_valid,
+            "Expected valid but got errors: {:?}",
+            response.errors
+        );
         assert!(response.parse_error.is_none());
         assert!(response.errors.is_empty());
         assert!(response.context.is_some());
@@ -418,7 +424,11 @@ courses:
     fn test_invalid_degree_missing_course() {
         let response = execute(INVALID_YAML);
         assert!(!response.is_valid);
-        assert!(response.parse_error.is_none(), "Got parse error: {:?}", response.parse_error);
+        assert!(
+            response.parse_error.is_none(),
+            "Got parse error: {:?}",
+            response.parse_error
+        );
         assert!(!response.errors.is_empty());
         assert!(response
             .errors
@@ -436,7 +446,11 @@ courses:
     #[test]
     fn test_context_populated() {
         let response = execute(VALID_YAML);
-        assert!(response.is_valid, "Expected valid but got errors: {:?}", response.errors);
+        assert!(
+            response.is_valid,
+            "Expected valid but got errors: {:?}",
+            response.errors
+        );
         let context = response.context.unwrap();
         assert_eq!(context.total_courses, 1);
         assert_eq!(context.total_requirements, 1);

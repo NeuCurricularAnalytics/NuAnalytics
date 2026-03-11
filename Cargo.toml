@@ -28,6 +28,8 @@ serde_json = "1.0"
 toml = "0.8"
 dirs = "5.0"
 askama = "0.12"
+fastrand = "2.0"
+chrono = "0.4"
 
 # MCP server dependencies (optional feature)
 rmcp = { version = "1.0.0-alpha", features = ["server", "transport-io"], optional = true }

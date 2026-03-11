@@ -1,8 +1,9 @@
 //! Validation framework for degree programs
 
 use super::degree::{FromClause, Requirement, RequirementType};
-use super::{Course, DAG, DegreeProgram};
+use super::{Course, DegreeProgram, DAG};
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 
 /// Result of validating a degree program
 #[derive(Debug, Clone)]
@@ -106,7 +107,7 @@ pub enum ValidationWarning {
 impl ValidationResult {
     /// Create a new validation result
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             is_valid: true,
             errors: Vec::new(),
@@ -137,16 +138,16 @@ impl ValidationResult {
         }
 
         if !self.errors.is_empty() {
-            report.push_str(&format!("\nErrors ({}): \n", self.errors.len()));
+            let _ = write!(report, "\nErrors ({}): \n", self.errors.len());
             for (i, error) in self.errors.iter().enumerate() {
-                report.push_str(&format!("  {}. {}\n", i + 1, format_error(error)));
+                let _ = writeln!(report, "  {}. {}", i + 1, format_error(error));
             }
         }
 
         if !self.warnings.is_empty() {
-            report.push_str(&format!("\nWarnings ({}): \n", self.warnings.len()));
+            let _ = write!(report, "\nWarnings ({}): \n", self.warnings.len());
             for (i, warning) in self.warnings.iter().enumerate() {
-                report.push_str(&format!("  {}. {}\n", i + 1, format_warning(warning)));
+                let _ = writeln!(report, "  {}. {}", i + 1, format_warning(warning));
             }
         }
 
@@ -263,10 +264,7 @@ fn detect_cycle(
 }
 
 /// Validate that all prerequisites and corequisites reference existing courses
-fn validate_course_prerequisites(
-    courses: &HashMap<String, Course>,
-    result: &mut ValidationResult,
-) {
+fn validate_course_prerequisites(courses: &HashMap<String, Course>, result: &mut ValidationResult) {
     for (key, course) in courses {
         // Check prerequisites
         for prereq in &course.prerequisites {
@@ -453,8 +451,7 @@ fn validate_pattern(
         result.add_error(ValidationError::InvalidPattern {
             pattern: pattern.to_string(),
             reason: format!(
-                "Invalid level specification '{}'. Valid formats: '*', '300+', '100-299'",
-                level_spec
+                "Invalid level specification '{level_spec}'. Valid formats: '*', '300+', '100-299'"
             ),
             requirement_id: req_id.to_string(),
         });
@@ -487,8 +484,7 @@ fn validate_level_spec(spec: &str) -> bool {
     }
 
     // Check for "300+" format
-    if spec.ends_with('+') {
-        let num_part = &spec[..spec.len() - 1];
+    if let Some(num_part) = spec.strip_suffix('+') {
         return num_part.parse::<u32>().is_ok();
     }
 
@@ -540,8 +536,8 @@ fn match_level(number: &str, level_spec: &str) -> bool {
     let course_num = extract_course_number(number);
 
     // "300+" format
-    if level_spec.ends_with('+') {
-        if let Ok(min_level) = level_spec[..level_spec.len() - 1].parse::<u32>() {
+    if let Some(min_level_str) = level_spec.strip_suffix('+') {
+        if let Ok(min_level) = min_level_str.parse::<u32>() {
             return course_num >= min_level;
         }
     }
@@ -567,7 +563,7 @@ fn match_level(number: &str, level_spec: &str) -> bool {
 /// Extract numeric course level from course number
 fn extract_course_number(number: &str) -> u32 {
     // Extract leading digits
-    let digits: String = number.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let digits: String = number.chars().take_while(char::is_ascii_digit).collect();
     digits.parse().unwrap_or(0)
 }
 
@@ -667,36 +663,28 @@ fn format_error(error: &ValidationError) -> String {
             requirement_id,
         } => {
             format!(
-                "Course '{}' referenced in requirement '{}' does not exist",
-                course_key, requirement_id
+                "Course '{course_key}' referenced in requirement '{requirement_id}' does not exist"
             )
         }
         ValidationError::PatternMatchesNoCourses {
             pattern,
             requirement_id,
         } => {
-            format!(
-                "Pattern '{}' in requirement '{}' matches no courses",
-                pattern, requirement_id
-            )
+            format!("Pattern '{pattern}' in requirement '{requirement_id}' matches no courses")
         }
         ValidationError::InvalidPattern {
             pattern,
             reason,
             requirement_id,
         } => {
-            format!(
-                "Invalid pattern '{}' in requirement '{}': {}",
-                pattern, requirement_id, reason
-            )
+            format!("Invalid pattern '{pattern}' in requirement '{requirement_id}': {reason}")
         }
         ValidationError::MissingPrerequisite {
             course_key,
             prerequisite_key,
         } => {
             format!(
-                "Course '{}' has prerequisite '{}' which does not exist",
-                course_key, prerequisite_key
+                "Course '{course_key}' has prerequisite '{prerequisite_key}' which does not exist"
             )
         }
         ValidationError::MissingCorequisite {
@@ -704,15 +692,14 @@ fn format_error(error: &ValidationError) -> String {
             corequisite_key,
         } => {
             format!(
-                "Course '{}' has corequisite '{}' which does not exist",
-                course_key, corequisite_key
+                "Course '{course_key}' has corequisite '{corequisite_key}' which does not exist"
             )
         }
         ValidationError::InvalidRequirement {
             requirement_id,
             reason,
         } => {
-            format!("Requirement '{}' is invalid: {}", requirement_id, reason)
+            format!("Requirement '{requirement_id}' is invalid: {reason}")
         }
     }
 }
@@ -721,10 +708,7 @@ fn format_error(error: &ValidationError) -> String {
 fn format_warning(warning: &ValidationWarning) -> String {
     match warning {
         ValidationWarning::UnreferencedCourse { course_key } => {
-            format!(
-                "Course '{}' is defined but never referenced in requirements",
-                course_key
-            )
+            format!("Course '{course_key}' is defined but never referenced in requirements")
         }
         ValidationWarning::BroadPattern {
             pattern,
@@ -732,15 +716,11 @@ fn format_warning(warning: &ValidationWarning) -> String {
             match_count,
         } => {
             format!(
-                "Pattern '{}' in requirement '{}' matches {} courses (very broad)",
-                pattern, requirement_id, match_count
+                "Pattern '{pattern}' in requirement '{requirement_id}' matches {match_count} courses (very broad)"
             )
         }
         ValidationWarning::IsolatedCourse { course_key } => {
-            format!(
-                "Course '{}' has no prerequisites and no courses depend on it",
-                course_key
-            )
+            format!("Course '{course_key}' has no prerequisites and no courses depend on it")
         }
     }
 }

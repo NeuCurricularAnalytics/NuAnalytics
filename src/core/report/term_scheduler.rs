@@ -181,6 +181,12 @@ pub struct TermScheduler<'a> {
     config: SchedulerConfig,
 }
 
+/// Default credit hours for placeholder courses not in the school catalog
+const DEFAULT_PLACEHOLDER_CREDITS: f32 = 3.0;
+
+/// Default credit hours for "small" placeholder courses (ending in 'S')
+const DEFAULT_SMALL_PLACEHOLDER_CREDITS: f32 = 2.0;
+
 impl<'a> TermScheduler<'a> {
     /// Create a new term scheduler
     #[must_use]
@@ -190,6 +196,25 @@ impl<'a> TermScheduler<'a> {
             dag,
             config,
         }
+    }
+
+    /// Get credit hours for a course, using defaults for placeholders
+    ///
+    /// If the course is not in the school catalog (e.g., placeholder courses
+    /// like ELEC001, FE01), returns a default based on the course key:
+    /// - Courses ending in 'S' get 2 credits (small courses)
+    /// - All others get 3 credits (standard elective)
+    fn get_credits(&self, course_key: &str) -> f32 {
+        self.school.get_course(course_key).map_or_else(
+            || {
+                if course_key.ends_with('S') {
+                    DEFAULT_SMALL_PLACEHOLDER_CREDITS
+                } else {
+                    DEFAULT_PLACEHOLDER_CREDITS
+                }
+            },
+            |course| course.credit_hours,
+        )
     }
 
     /// Schedule courses into terms
@@ -498,19 +523,14 @@ impl<'a> TermScheduler<'a> {
     ) {
         for group in groups {
             let min_term = self.calculate_earliest_term(group, course_term, course_set);
-            let group_credits: f32 = group
-                .iter()
-                .filter_map(|k| self.school.get_course(k))
-                .map(|c| c.credit_hours)
-                .sum();
+            let group_credits: f32 = group.iter().map(|k| self.get_credits(k)).sum();
 
             let term_idx = self.find_best_term(plan, min_term, group_credits);
 
             for key in group {
-                if let Some(course) = self.school.get_course(key) {
-                    plan.terms[term_idx].add_course(key.clone(), course.credit_hours);
-                    course_term.insert(key.clone(), term_idx);
-                }
+                let credits = self.get_credits(key);
+                plan.terms[term_idx].add_course(key.clone(), credits);
+                course_term.insert(key.clone(), term_idx);
             }
         }
     }
@@ -523,19 +543,14 @@ impl<'a> TermScheduler<'a> {
         course_term: &mut HashMap<String, usize>,
     ) {
         for group in groups {
-            let group_credits: f32 = group
-                .iter()
-                .filter_map(|k| self.school.get_course(k))
-                .map(|c| c.credit_hours)
-                .sum();
+            let group_credits: f32 = group.iter().map(|k| self.get_credits(k)).sum();
 
             let term_idx = self.find_underloaded_term(plan, group_credits);
 
             for key in group {
-                if let Some(course) = self.school.get_course(key) {
-                    plan.terms[term_idx].add_course(key.clone(), course.credit_hours);
-                    course_term.insert(key.clone(), term_idx);
-                }
+                let credits = self.get_credits(key);
+                plan.terms[term_idx].add_course(key.clone(), credits);
+                course_term.insert(key.clone(), term_idx);
             }
         }
     }
@@ -593,7 +608,7 @@ impl<'a> TermScheduler<'a> {
                     .iter()
                     .filter_map(|k| {
                         let delay = delay_factors.get(k).copied().unwrap_or(0);
-                        let credits = self.school.get_course(k).map_or(0.0, |c| c.credit_hours);
+                        let credits = self.get_credits(k);
                         // Only move low-complexity courses with no dependents in later terms
                         if delay <= 1 && !self.has_dependents_in_later_terms(k, over_idx, plan) {
                             Some((k.clone(), credits))

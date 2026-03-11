@@ -8,6 +8,60 @@ use crate::core::models::DegreeProgram;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
+// ============================================================================
+// Helper Functions - Common validation operations
+// ============================================================================
+
+/// Validate a course reference string and check all referenced courses exist
+///
+/// Parses the course reference (handling bundles and equivalents) and validates
+/// that all referenced courses exist in the course catalog.
+///
+/// # Arguments
+/// * `course_key` - Course reference string to validate
+/// * `req_id` - Requirement ID for error reporting
+/// * `courses` - Course catalog to check against
+/// * `result` - Validation result to add errors to
+fn validate_course_reference(
+    course_key: &str,
+    req_id: &str,
+    courses: &HashMap<String, Course>,
+    result: &mut ValidationResult,
+) {
+    match CourseReference::parse(course_key) {
+        Ok(course_ref) => {
+            for course in course_ref.courses() {
+                if !courses.contains_key(course) {
+                    result.add_error(ValidationError::MissingCourse {
+                        course_key: course.to_string(),
+                        requirement_id: req_id.to_string(),
+                    });
+                }
+            }
+        }
+        Err(err) => {
+            result.add_error(ValidationError::InvalidRequirement {
+                requirement_id: req_id.to_string(),
+                reason: format!("Invalid course reference '{course_key}': {err}"),
+            });
+        }
+    }
+}
+
+/// Validate a list of course references
+///
+/// Iterates over a list of course reference strings and validates each one.
+fn validate_course_list(
+    course_list: &[String],
+    req_id: &str,
+    courses: &HashMap<String, Course>,
+    result: &mut ValidationResult,
+) {
+    for course_key in course_list {
+        validate_course_reference(course_key, req_id, courses, result);
+    }
+}
+
 /// Result of validating a degree program
 #[derive(Debug, Clone)]
 pub struct ValidationResult {
@@ -556,77 +610,72 @@ fn validate_requirements(
         match req.req_type {
             RequirementType::All => {
                 if let Some(course_list) = &req.courses {
-                    for course_key in course_list {
-                        // Parse course reference to handle bundles and equivalents
-                        match CourseReference::parse(course_key) {
-                            Ok(course_ref) => {
-                                // For all referenced courses, check if they exist
-                                for course in course_ref.courses() {
-                                    if !courses.contains_key(course) {
-                                        result.add_error(ValidationError::MissingCourse {
-                                            course_key: course.to_string(),
-                                            requirement_id: req_id.clone(),
-                                        });
-                                    }
-                                }
-                            }
-                            Err(err) => {
-                                result.add_error(ValidationError::InvalidRequirement {
-                                    requirement_id: req_id.clone(),
-                                    reason: format!(
-                                        "Invalid course reference '{course_key}': {err}"
-                                    ),
-                                });
-                            }
-                        }
-                    }
+                    validate_course_list(course_list, req_id, courses, result);
                 }
             }
             RequirementType::Select => {
-                // Only validate if there's a 'from' clause present
-                if let Some(from) = &req.from {
-                    validate_from_clause(from, req_id, courses, result);
-
-                    // Validate count, credits, or groups_required are specified when using 'from'
-                    // Note: Some requirements use groups_required or per_group instead
-                    let has_selection_spec = req.count.is_some()
-                        || req.credits.is_some()
-                        || req.credit_range.is_some()
-                        || from.groups_required.is_some()
-                        || from.per_group.is_some();
-
-                    if !has_selection_spec {
-                        result.add_error(ValidationError::InvalidRequirement {
-                            requirement_id: req_id.clone(),
-                            reason:
-                                "Select requirement with 'from' must specify count, credits, credit_range, groups_required, or per_group"
-                                    .to_string(),
-                        });
-                    }
-                }
-                // If no 'from' clause, it might be an external requirement or use 'courses' directly
-                // These are special cases and we skip validation for now
+                validate_select_requirement(req, req_id, courses, result);
             }
             RequirementType::OneOf => {
-                if let Some(options) = &req.options {
-                    for option in options {
-                        // Recursively validate nested requirements
-                        let nested_reqs: HashMap<String, Requirement> = option
-                            .requirements
-                            .iter()
-                            .enumerate()
-                            .map(|(i, r)| (format!("{}:{}:{}", req_id, option.id, i), r.clone()))
-                            .collect();
-                        validate_requirements(&nested_reqs, courses, result);
-                    }
-                } else {
-                    result.add_error(ValidationError::InvalidRequirement {
-                        requirement_id: req_id.clone(),
-                        reason: "OneOf requirement missing 'options'".to_string(),
-                    });
-                }
+                validate_oneof_requirement(req, req_id, courses, result);
             }
         }
+    }
+}
+
+/// Validate a Select requirement's from clause and selection specification
+fn validate_select_requirement(
+    req: &Requirement,
+    req_id: &str,
+    courses: &HashMap<String, Course>,
+    result: &mut ValidationResult,
+) {
+    // Only validate if there's a 'from' clause present
+    if let Some(from) = &req.from {
+        validate_from_clause(from, req_id, courses, result);
+
+        // Validate count, credits, or groups_required are specified when using 'from'
+        let has_selection_spec = req.count.is_some()
+            || req.credits.is_some()
+            || req.credit_range.is_some()
+            || from.groups_required.is_some()
+            || from.per_group.is_some();
+
+        if !has_selection_spec {
+            result.add_error(ValidationError::InvalidRequirement {
+                requirement_id: req_id.to_string(),
+                reason:
+                    "Select requirement with 'from' must specify count, credits, credit_range, groups_required, or per_group"
+                        .to_string(),
+            });
+        }
+    }
+    // If no 'from' clause, it might be an external requirement or use 'courses' directly
+}
+
+/// Validate a `OneOf` requirement's options and nested requirements
+fn validate_oneof_requirement(
+    req: &Requirement,
+    req_id: &str,
+    courses: &HashMap<String, Course>,
+    result: &mut ValidationResult,
+) {
+    if let Some(options) = &req.options {
+        for option in options {
+            // Recursively validate nested requirements
+            let nested_reqs: HashMap<String, Requirement> = option
+                .requirements
+                .iter()
+                .enumerate()
+                .map(|(i, r)| (format!("{req_id}:{}:{i}", option.id), r.clone()))
+                .collect();
+            validate_requirements(&nested_reqs, courses, result);
+        }
+    } else {
+        result.add_error(ValidationError::InvalidRequirement {
+            requirement_id: req_id.to_string(),
+            reason: "OneOf requirement missing 'options'".to_string(),
+        });
     }
 }
 
@@ -639,28 +688,7 @@ fn validate_from_clause(
 ) {
     // Validate explicit course list
     if let Some(course_list) = &from.courses {
-        for course_key in course_list {
-            // Parse course reference to handle bundles and equivalents
-            match CourseReference::parse(course_key) {
-                Ok(course_ref) => {
-                    // For all referenced courses, check if they exist
-                    for course in course_ref.courses() {
-                        if !courses.contains_key(course) {
-                            result.add_error(ValidationError::MissingCourse {
-                                course_key: course.to_string(),
-                                requirement_id: req_id.to_string(),
-                            });
-                        }
-                    }
-                }
-                Err(err) => {
-                    result.add_error(ValidationError::InvalidRequirement {
-                        requirement_id: req_id.to_string(),
-                        reason: format!("Invalid course reference '{course_key}': {err}"),
-                    });
-                }
-            }
-        }
+        validate_course_list(course_list, req_id, courses, result);
     }
 
     // Validate pattern
@@ -678,27 +706,8 @@ fn validate_from_clause(
     // Validate groups
     if let Some(groups) = &from.groups {
         for group in groups {
-            for course_key in &group.courses {
-                // Parse course reference for group courses too
-                match CourseReference::parse(course_key) {
-                    Ok(course_ref) => {
-                        for course in course_ref.courses() {
-                            if !courses.contains_key(course) {
-                                result.add_error(ValidationError::MissingCourse {
-                                    course_key: course.to_string(),
-                                    requirement_id: format!("{req_id}:group:{}", group.id),
-                                });
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        result.add_error(ValidationError::InvalidRequirement {
-                            requirement_id: format!("{req_id}:group:{}", group.id),
-                            reason: format!("Invalid course reference '{course_key}': {err}"),
-                        });
-                    }
-                }
-            }
+            let group_req_id = format!("{req_id}:group:{}", group.id);
+            validate_course_list(&group.courses, &group_req_id, courses, result);
         }
     }
 }

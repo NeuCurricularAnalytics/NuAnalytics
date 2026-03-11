@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 ///
 /// Parses command-line arguments, loads configuration, sets up logging,
 /// and dispatches to the appropriate subcommand handler.
+#[allow(clippy::too_many_lines)]
 fn main() {
     let args = Cli::parse();
 
@@ -100,11 +101,43 @@ fn main() {
             validate,
             print_graph,
             audit,
+            analyze,
+            calc_strategy,
+            sampling_strategy,
+            sample_plans,
+            max_plans,
+            full_run,
+            report_dir,
+            metrics_dir,
+            no_csv,
+            no_report,
         } => {
             let options = commands::degree::DegreeOptions {
                 validate,
                 print_graph,
                 audit,
+                analyze,
+                calc_strategy: calc_strategy.map(|s| s.to_string()),
+                sampling_strategy: sampling_strategy.map(|s| s.to_string()),
+                sample_plans,
+                max_plans,
+                full_run,
+                report_dir: report_dir.or_else(|| {
+                    if config.paths.reports_dir.is_empty() {
+                        None
+                    } else {
+                        Some(PathBuf::from(&config.paths.reports_dir))
+                    }
+                }),
+                metrics_dir: metrics_dir.or_else(|| {
+                    if config.paths.metrics_dir.is_empty() {
+                        None
+                    } else {
+                        Some(PathBuf::from(&config.paths.metrics_dir))
+                    }
+                }),
+                no_csv,
+                no_report,
                 verbose,
             };
             commands::degree::run(file.as_deref(), &options, &config);

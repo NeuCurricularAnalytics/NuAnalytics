@@ -9,6 +9,7 @@
 ///
 /// # Returns
 /// Markdown-formatted documentation string
+#[must_use]
 pub fn get_schema_content(section: &str) -> String {
     match section.to_lowercase().as_str() {
         "degree" => SCHEMA_DEGREE.to_string(),
@@ -22,7 +23,7 @@ pub fn get_schema_content(section: &str) -> String {
 }
 
 /// Overview of the degree YAML schema
-pub const SCHEMA_OVERVIEW: &str = r#"# Degree Program YAML Schema
+pub const SCHEMA_OVERVIEW: &str = r"# Degree Program YAML Schema
 
 A degree program YAML file defines a complete degree including metadata, requirements, and courses.
 The file has three main sections: `degree`, `requirements`, and `courses`.
@@ -32,14 +33,14 @@ The file has three main sections: `degree`, `requirements`, and `courses`.
 ```yaml
 degree:
   # Metadata about the degree program
-  
+
 requirements:
   # Named requirements that students must satisfy
-  
+
 courses:
   # Course definitions with prerequisites
 ```
-"#;
+";
 
 /// Schema documentation for the degree metadata section
 pub const SCHEMA_DEGREE: &str = r#"## Degree Metadata Section
@@ -53,23 +54,23 @@ degree:
   program: string               # Full degree name
   catalog_year: string          # e.g., "2024-2025"
   source_url: string | null     # Link to official catalog
-  
+
   # Credit requirements
   total_credits: integer        # Minimum credits for graduation (e.g., 128)
   upper_division_credits: int | null  # Minimum 300+ level credits
   in_major_credits: int | null  # Minimum credits in major subjects
-  
+
   # GPA requirements
   gpa_minimum: number           # Overall GPA required (e.g., 2.0)
   gpa_major: number | null      # Major GPA if different
-  
+
   # Grade requirements
   grade_minimum: string | null  # Default minimum grade (e.g., "C")
   grade_minimum_note: string | null  # Clarification
-  
+
   # Major subjects
   major_subjects: [string] | null  # e.g., ["CS", "CY", "DS"]
-  
+
   # Double counting
   allow_double_counting: boolean  # Can courses satisfy multiple requirements?
 ```
@@ -192,17 +193,17 @@ courses:
     title: Fundamentals of Computer Science 1
     credits: 4
     prerequisites_raw: ""  # No prerequisites
-    
+
   CS2510:
     title: Fundamentals of Computer Science 2
     credits: 4
     prerequisites_raw: "CS2500"
-    
+
   CS3500:
     title: Object-Oriented Design
     credits: 4
     prerequisites_raw: "CS2510 & CS2810"
-    
+
   CS4500:
     title: Software Development
     credits: 4
@@ -267,7 +268,7 @@ requirements:
       - CS101
       - CS102
       - CS201
-      
+
   math_requirements:
     name: Mathematics
     type: all
@@ -275,7 +276,7 @@ requirements:
     courses:
       - MATH151
       - MATH152
-      
+
   cs_electives:
     name: CS Electives
     type: select
@@ -289,42 +290,42 @@ courses:
     title: Introduction to Programming
     credits: 4
     prerequisites_raw: ""
-    
+
   CS102:
     title: Data Structures
     credits: 4
     prerequisites_raw: "CS101"
-    
+
   CS201:
     title: Algorithms
     credits: 4
     prerequisites_raw: "CS102 & MATH151"
-    
+
   CS301:
     title: Operating Systems
     credits: 4
     prerequisites_raw: "CS201"
-    
+
   CS302:
     title: Databases
     credits: 4
     prerequisites_raw: "CS201"
-    
+
   CS401:
     title: Machine Learning
     credits: 4
     prerequisites_raw: "CS201 & MATH152"
-    
+
   CS402:
     title: Computer Networks
     credits: 4
     prerequisites_raw: "CS201"
-    
+
   MATH151:
     title: Calculus I
     credits: 4
     prerequisites_raw: ""
-    
+
   MATH152:
     title: Calculus II
     credits: 4

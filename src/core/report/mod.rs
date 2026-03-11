@@ -2,8 +2,11 @@
 //!
 //! This module provides functionality to generate curriculum reports in various formats
 //! (Markdown, HTML, PDF) with visualizations of the curriculum graph and term scheduling.
+//! Also includes degree analysis reports with aggregated statistics.
 
+pub mod degree_report;
 pub mod formats;
+pub mod plan_export;
 pub mod term_scheduler;
 pub mod visualization;
 
@@ -13,7 +16,12 @@ use crate::core::models::{Degree, Plan, School, DAG};
 use std::error::Error;
 use std::path::Path;
 
+pub use degree_report::{DegreeReportContext, DegreeReportGenerator};
 pub use formats::{HtmlReporter, MarkdownReporter, PdfReporter, ReportFormat};
+pub use plan_export::{
+    append_degree_summary_jsonl, export_degree_summary_jsonl, export_index_csv, export_plan_csv,
+    export_selected_plans, export_summary_csv, DegreeSummary, PlanExportConfig, PlanSummary,
+};
 pub use term_scheduler::{SchedulerConfig, TermPlan, TermScheduler};
 pub use visualization::MermaidGenerator;
 

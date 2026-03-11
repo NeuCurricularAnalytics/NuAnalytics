@@ -17,13 +17,14 @@ pub struct GetSchemaRequest {
     pub section: Option<String>,
 }
 
-/// Execute the get_degree_schema tool
+/// Execute the `get_degree_schema` tool
 ///
 /// # Arguments
 /// * `section` - Optional section filter
 ///
 /// # Returns
 /// Markdown-formatted schema documentation
+#[must_use]
 pub fn execute(section: Option<&str>) -> String {
     get_schema_content(section.unwrap_or("all"))
 }

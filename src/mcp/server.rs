@@ -1,6 +1,6 @@
 //! MCP server implementation
 //!
-//! This module provides the MCP server that exposes NuAnalytics tools.
+//! This module provides the MCP server that exposes `NuAnalytics` tools.
 
 use crate::mcp::tools::{schema, validate, GetSchemaRequest, ValidateDegreeRequest};
 use rmcp::{
@@ -15,7 +15,7 @@ use rmcp::{
 // MCP Server Implementation
 // ============================================================================
 
-/// NuAnalytics MCP Server
+/// `NuAnalytics` MCP Server
 ///
 /// Provides tools for validating degree program YAML files and retrieving schema documentation.
 #[derive(Debug, Clone)]
@@ -26,6 +26,7 @@ pub struct NuAnalyticsMcpServer {
 #[tool_router]
 impl NuAnalyticsMcpServer {
     /// Create a new MCP server instance
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tool_router: Self::tool_router(),
@@ -36,6 +37,7 @@ impl NuAnalyticsMcpServer {
     #[tool(
         description = "Get the degree YAML schema documentation. Returns structured information about how to create valid degree program YAML files, including field descriptions, requirement types, and examples."
     )]
+    #[allow(clippy::unused_self)]
     fn get_degree_schema(&self, Parameters(req): Parameters<GetSchemaRequest>) -> String {
         schema::execute(req.section.as_deref())
     }
@@ -44,6 +46,7 @@ impl NuAnalyticsMcpServer {
     #[tool(
         description = "Validate a degree program YAML string. Returns detailed validation results including errors, warnings, and suggestions for fixing issues. Use this iteratively to build a valid degree.yaml file."
     )]
+    #[allow(clippy::unused_self)]
     fn validate_degree(&self, Parameters(req): Parameters<ValidateDegreeRequest>) -> String {
         validate::execute_json(&req.yaml_content)
     }
