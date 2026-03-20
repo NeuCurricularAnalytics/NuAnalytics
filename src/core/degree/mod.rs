@@ -22,6 +22,7 @@
 //! }
 //! ```
 
+pub mod audit;
 pub mod course_reference;
 pub mod gen_ed_tracker;
 pub mod plan_generator;

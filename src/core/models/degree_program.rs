@@ -98,3 +98,96 @@ impl DegreeProgram {
         equivalents
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_program() -> DegreeProgram {
+        let mut courses = HashMap::new();
+
+        let cs101 = Course::new(
+            "Intro to CS".to_string(),
+            "CS".to_string(),
+            "101".to_string(),
+            4.0,
+        );
+        // No cross-listing
+
+        let mut cs201 = Course::new(
+            "Ethics in Computing".to_string(),
+            "CS".to_string(),
+            "201".to_string(),
+            4.0,
+        );
+        cs201.cross_listed_as = Some(vec!["PHIL201".to_string()]);
+
+        let mut phil201 = Course::new(
+            "Ethics in Computing".to_string(),
+            "PHIL".to_string(),
+            "201".to_string(),
+            4.0,
+        );
+        phil201.cross_listed_as = Some(vec!["CS201".to_string()]);
+
+        courses.insert("CS101".to_string(), cs101);
+        courses.insert("CS201".to_string(), cs201);
+        courses.insert("PHIL201".to_string(), phil201);
+
+        DegreeProgram {
+            degree: Degree::new(
+                "Computer Science".to_string(),
+                "BS".to_string(),
+                None,
+                "semester".to_string(),
+            ),
+            requirements: HashMap::new(),
+            courses,
+        }
+    }
+
+    #[test]
+    fn test_get_cross_listed_courses() {
+        let program = make_program();
+        let cross = program.get_cross_listed_courses("CS201");
+        assert_eq!(cross, vec!["PHIL201".to_string()]);
+    }
+
+    #[test]
+    fn test_get_cross_listed_courses_none() {
+        let program = make_program();
+        let cross = program.get_cross_listed_courses("CS101");
+        assert!(cross.is_empty());
+    }
+
+    #[test]
+    fn test_get_cross_listed_courses_missing() {
+        let program = make_program();
+        let cross = program.get_cross_listed_courses("NONEXISTENT");
+        assert!(cross.is_empty());
+    }
+
+    #[test]
+    fn test_are_cross_listed() {
+        let program = make_program();
+        assert!(program.are_cross_listed("CS201", "PHIL201"));
+        assert!(program.are_cross_listed("PHIL201", "CS201")); // symmetric
+        assert!(!program.are_cross_listed("CS101", "CS201"));
+    }
+
+    #[test]
+    fn test_get_equivalent_course_set() {
+        let program = make_program();
+        let equiv = program.get_equivalent_course_set("CS201");
+        assert!(equiv.contains(&"CS201".to_string()));
+        assert!(equiv.contains(&"PHIL201".to_string()));
+        assert_eq!(equiv.len(), 2);
+    }
+
+    #[test]
+    fn test_get_equivalent_course_set_no_cross_listing() {
+        let program = make_program();
+        let equiv = program.get_equivalent_course_set("CS101");
+        assert_eq!(equiv, vec!["CS101".to_string()]);
+    }
+}

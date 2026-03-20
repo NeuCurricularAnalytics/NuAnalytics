@@ -4,12 +4,14 @@
 //! of a degree YAML: validation, missing prerequisites detection, and deep
 //! prerequisite chain analysis.
 
+use crate::core::degree::audit::{
+    detect_lowest_course_level, find_deep_chains, find_upper_level_without_prereqs,
+};
 use crate::core::degree::{parse_degree_yaml, DegreeParseError};
-use crate::core::models::{CourseGraph, CourseGraphResult};
-use crate::core::{validate_degree_program, DegreeProgram};
+use crate::core::models::CourseGraph;
+use crate::core::validate_degree_program;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 // ============================================================================
 // Request/Response Types
@@ -119,10 +121,29 @@ pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditRespo
 
     // Find upper-level courses missing prerequisites
     let lowest_level = detect_lowest_course_level(&program);
-    let missing_prereqs = find_upper_level_without_prereqs(&graph_result, lowest_level);
+    let missing_prereqs: Vec<MissingPrereqInfo> =
+        find_upper_level_without_prereqs(&graph_result, lowest_level)
+            .into_iter()
+            .map(|(course, level)| MissingPrereqInfo { course, level })
+            .collect();
 
     // Find deep prerequisite chains
-    let deep_chains = find_deep_chains(&program, &graph_result, threshold);
+    let deep_chains: Vec<DeepChainInfo> = find_deep_chains(&program, &graph_result, threshold)
+        .into_iter()
+        .map(|(course, branch_lengths, chain)| {
+            let max_depth = branch_lengths
+                .split(", ")
+                .filter_map(|n| n.parse::<usize>().ok())
+                .max()
+                .unwrap_or(0);
+            DeepChainInfo {
+                course,
+                max_depth,
+                branch_lengths,
+                chain,
+            }
+        })
+        .collect();
 
     let passed =
         validation.errors.is_empty() && missing_prereqs.is_empty() && deep_chains.is_empty();
@@ -159,149 +180,6 @@ fn format_parse_error(e: &DegreeParseError) -> String {
         DegreeParseError::IoError(msg) => format!("File error: {msg}"),
         DegreeParseError::YamlError(msg) => format!("YAML syntax error: {msg}"),
     }
-}
-
-/// Detect the lowest course level in the degree program
-fn detect_lowest_course_level(program: &DegreeProgram) -> u32 {
-    program
-        .courses
-        .keys()
-        .filter_map(|k| extract_course_level(k))
-        .min()
-        .unwrap_or(100)
-}
-
-/// Extract numeric course level from a course key (e.g., CS1000 -> 1000, MATH156 -> 100)
-fn extract_course_level(key: &str) -> Option<u32> {
-    let digits: String = key.chars().filter(char::is_ascii_digit).collect();
-    let num: u32 = digits.parse().ok()?;
-    if num >= 1000 {
-        Some((num / 1000) * 1000)
-    } else {
-        Some((num / 100) * 100)
-    }
-}
-
-/// Find upper-level courses that have no prerequisites defined
-fn find_upper_level_without_prereqs(
-    graph_result: &CourseGraphResult,
-    lowest_level: u32,
-) -> Vec<MissingPrereqInfo> {
-    let mut missing = Vec::new();
-
-    for key in graph_result.graph.course_keys() {
-        if let Some(level) = extract_course_level(key) {
-            if level <= lowest_level {
-                continue;
-            }
-            if let Some(node) = graph_result.graph.get(key) {
-                if node.prerequisites.is_empty() {
-                    missing.push(MissingPrereqInfo {
-                        course: key.to_string(),
-                        level,
-                    });
-                }
-            }
-        }
-    }
-
-    missing.sort_by(|a, b| a.level.cmp(&b.level).then_with(|| a.course.cmp(&b.course)));
-    missing
-}
-
-/// Find courses with deep prerequisite chains
-fn find_deep_chains(
-    program: &DegreeProgram,
-    graph_result: &CourseGraphResult,
-    threshold: usize,
-) -> Vec<DeepChainInfo> {
-    let major_subjects = program.degree.major_subjects.as_ref();
-    let requirement_courses = collect_requirement_courses(program);
-    let mut deep = Vec::new();
-
-    for key in graph_result.graph.course_keys() {
-        if !is_course_in_scope(key, major_subjects, &requirement_courses) {
-            continue;
-        }
-
-        if let Some(chain) = graph_result.graph.structured_prerequisite_chain(key) {
-            let max_depth = chain.branch_lengths().into_iter().max().unwrap_or(0);
-            if max_depth >= threshold {
-                deep.push(DeepChainInfo {
-                    course: key.to_string(),
-                    max_depth,
-                    branch_lengths: chain.format_lengths(),
-                    chain: chain.format(),
-                });
-            }
-        }
-    }
-
-    deep.sort_by(|a, b| {
-        b.max_depth
-            .cmp(&a.max_depth)
-            .then_with(|| a.course.cmp(&b.course))
-    });
-    deep
-}
-
-/// Collect all course keys referenced in requirements
-fn collect_requirement_courses(program: &DegreeProgram) -> HashSet<String> {
-    let mut courses = HashSet::new();
-    for req in program.requirements.values() {
-        collect_from_requirement(req, &mut courses);
-    }
-    courses
-}
-
-/// Recursively collect course keys from a requirement
-fn collect_from_requirement(
-    req: &crate::core::models::degree::Requirement,
-    courses: &mut HashSet<String>,
-) {
-    if let Some(req_courses) = &req.courses {
-        courses.extend(req_courses.iter().cloned());
-    }
-    if let Some(from) = &req.from {
-        if let Some(from_courses) = &from.courses {
-            courses.extend(from_courses.iter().cloned());
-        }
-        if let Some(groups) = &from.groups {
-            for group in groups {
-                courses.extend(group.courses.iter().cloned());
-            }
-        }
-    }
-    if let Some(options) = &req.options {
-        for option in options {
-            for nested_req in &option.requirements {
-                collect_from_requirement(nested_req, courses);
-            }
-        }
-    }
-}
-
-/// Check if a course is in scope for audit (matches major subjects or is in requirements)
-fn is_course_in_scope(
-    course_key: &str,
-    major_subjects: Option<&Vec<String>>,
-    requirement_courses: &HashSet<String>,
-) -> bool {
-    if let Some(subjects) = major_subjects {
-        let digit_pos = course_key.find(|c: char| c.is_ascii_digit()).unwrap_or(0);
-        if digit_pos > 0 {
-            let subject = &course_key[..digit_pos];
-            if subjects.iter().any(|s| s.eq_ignore_ascii_case(subject)) {
-                return true;
-            }
-        }
-    }
-
-    if major_subjects.is_none() {
-        return requirement_courses.contains(course_key);
-    }
-
-    false
 }
 
 #[cfg(test)]
@@ -364,10 +242,11 @@ courses:
 
     #[test]
     fn test_extract_course_level() {
-        assert_eq!(super::extract_course_level("CS1000"), Some(1000));
-        assert_eq!(super::extract_course_level("CS2510"), Some(2000));
-        assert_eq!(super::extract_course_level("MATH156"), Some(100));
-        assert_eq!(super::extract_course_level("CS101"), Some(100));
+        use crate::core::degree::audit::extract_course_level;
+        assert_eq!(extract_course_level("CS1000"), Some(1000));
+        assert_eq!(extract_course_level("CS2510"), Some(2000));
+        assert_eq!(extract_course_level("MATH156"), Some(100));
+        assert_eq!(extract_course_level("CS101"), Some(100));
     }
 
     #[test]

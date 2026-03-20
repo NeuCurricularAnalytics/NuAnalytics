@@ -1,6 +1,6 @@
 # =============================================================================
 # Northeastern University - Bachelor of Science in Computer Science (Boston)
-# Schema v5.1 | Catalog 2025-2026
+# Schema v5.2 | Catalog 2025-2026
 # =============================================================================
 # Source: https://catalog.northeastern.edu/undergraduate/computer-information-science/computer-science/bscs/
 # Generated from official catalog. All course numbers verified against 2025-2026 catalog.
@@ -112,10 +112,16 @@ requirements:
     type: select
     category: major
     from:
-      pattern: "CS:2500+"
-      exclude: [CS5010]
-      # Note: Also includes CY 2000+ (except CY4930), DS 2500+ (except DS4900), MKTG4606
-      # These patterns would need to be combined in a more complex way
+      courses:
+        - MKTG4606               # Digital, Analytics, Technology, and Automation
+      include:
+        - "CS:2500+"
+        - "CY:2000+"
+        - "DS:2500+"
+      exclude:
+        - CS5010                 # Not eligible
+        - CY4930                 # Not eligible
+        - DS4900                 # Not eligible
     credits: 8
     constraints:
       exclude_used: true
