@@ -278,6 +278,7 @@ metrics, and identifies shortest/longest paths with term-by-term schedules.
 - "Analyze this degree program" → calls `analyze_degree`
 - "What is the shortest path through this degree?" → calls `analyze_degree`
 - "How complex is this curriculum?" → calls `analyze_degree`
+- "Analyze this degree and write a full curricular analytics report with metrics, shortest/longest paths, and recommendations for improving the curriculum" → calls `analyze_degree`, then formats results into a detailed report
 
 ## Testing
 
@@ -388,6 +389,66 @@ Summary:
 
 Would you like me to address the warnings or save this as your final degree.yaml?"
 ```
+
+### 5. Audit for Structural Issues
+
+```
+User: "Run an audit on this degree"
+
+AI: [calls audit_degree with the YAML]
+
+"The audit found a few things to review:
+- 3 upper-level courses have no prerequisites (CS301, CS302, CS401)
+- CS401 has a deep prerequisite chain of 5 courses: CS101 → CS102 → CS201 → CS301 → CS401
+
+These aren't errors, but you may want to verify CS301/CS302 intentionally have no prereqs."
+```
+
+### 6. Analyze and Generate Report
+
+```
+User: "Analyze this degree and give me a full curricular analytics report with
+your findings, including the shortest and longest paths, metrics summary,
+and any recommendations for improving the curriculum."
+
+AI: [calls analyze_degree with the YAML]
+
+"# Curricular Analytics Report: BS Computer Science — Example University
+
+## Overview
+- **Plans analyzed**: 500 (of ~2,400 possible)
+- **Total courses**: 45 across 12 requirements
+
+## Aggregate Metrics
+| Metric | Min | Median | Mean | Max | Std Dev |
+|--------|-----|--------|------|-----|---------|
+| Complexity | 120 | 168 | 170 | 240 | 25 |
+| Longest Delay | 4 | 5 | 5.2 | 6 | 0.5 |
+| Total Credits | 134 | 140 | 141 | 156 | 4.0 |
+
+## Shortest Path (8 terms, complexity 145)
+Critical path: CS2000 → CS2100 → CS3500 → CS4500
+
+| Term | Courses | Credits |
+|------|---------|---------|
+| 1 | CS2000, CS2001, CS1800, CS1802, DS2000 | 14 |
+| 2 | CS2100, CS2101, MATH1341, DS2500 | 17 |
+| ... | ... | ... |
+
+## Longest Path (9 terms, complexity 220)
+Critical path: CS2000 → CS2100 → CS3100 → CS3650 → CY4740 → CY4770
+
+## Recommendations
+1. **High-complexity bottleneck**: CS3100 appears on most critical paths — consider
+   adding an alternative prerequisite path to reduce delay.
+2. **Credit balance**: Median credits (140) are close to the minimum (134), meaning
+   most students take near-minimum courseloads.
+3. **Prerequisite chain depth**: The longest chain is 6 courses — students who fall
+   behind on early courses face significant delays."
+```
+
+This workflow shows how the AI can use the structured JSON from `analyze_degree` to
+produce a human-readable curriculum report with tables, recommendations, and insights.
 
 ## Error & Warning Reference
 
