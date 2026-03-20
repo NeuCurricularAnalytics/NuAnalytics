@@ -898,22 +898,18 @@ fn process_plan_variants(
             }
         };
 
-        // Aggregate metrics using expanded course credits
-        // Calculate total credits from expanded courses
-        let total_credits = expanded_courses
-            .iter()
-            .filter_map(|key| ctx.school.get_course(key))
-            .map(|c| f64::from(c.credit_hours))
-            .sum::<f64>();
-        aggregator.add_plan(&course_metrics, total_credits);
-
-        // Update plan selection (pass expanded variant and plan-specific DAG)
+        // Create the expanded variant (adds elective placeholders to reach target credits)
         let expanded_variant = create_expanded_variant(
             &variant,
             &expanded_courses,
             &ctx.school,
             ctx.gen_config.target_credits,
         );
+
+        // Use the variant's total_credits which includes elective placeholders
+        aggregator.add_plan(&course_metrics, f64::from(expanded_variant.total_credits));
+
+        // Update plan selection
         selector.process_plan(&expanded_variant, &course_metrics, &plan_dag);
 
         plans_processed += 1;
