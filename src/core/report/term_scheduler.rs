@@ -607,6 +607,9 @@ impl<'a> TermScheduler<'a> {
     fn rebalance_terms(&self, plan: &mut TermPlan, delay_factors: &HashMap<String, usize>) {
         let target = self.config.target_credits;
 
+        // Build a set of courses that have corequisite partners in the plan
+        let coreq_locked = self.build_corequisite_locked_set(plan);
+
         // Multiple passes to iteratively balance
         for _ in 0..3 {
             // Find overloaded and underloaded terms
@@ -627,15 +630,18 @@ impl<'a> TermScheduler<'a> {
                     break;
                 }
 
-                // Find movable courses (low delay, no prerequisite issues)
+                // Find movable courses (low delay, no prerequisite or corequisite issues)
                 let movable: Vec<(String, f32)> = plan.terms[over_idx]
                     .courses
                     .iter()
                     .filter_map(|k| {
                         let delay = delay_factors.get(k).copied().unwrap_or(0);
                         let credits = self.get_credits(k);
-                        // Only move low-complexity courses with no dependents in later terms
-                        if delay <= 1 && !self.has_dependents_in_later_terms(k, over_idx, plan) {
+                        // Don't move courses with corequisite partners in this term
+                        if delay <= 1
+                            && !coreq_locked.contains(k)
+                            && !self.has_dependents_in_later_terms(k, over_idx, plan)
+                        {
                             Some((k.clone(), credits))
                         } else {
                             None
@@ -665,6 +671,34 @@ impl<'a> TermScheduler<'a> {
                 }
             }
         }
+    }
+
+    /// Build a set of courses that should not be moved independently due to corequisites
+    ///
+    /// A course is "locked" if it shares a term with a corequisite partner.
+    fn build_corequisite_locked_set(&self, plan: &TermPlan) -> HashSet<String> {
+        let mut locked = HashSet::new();
+
+        for term in &plan.terms {
+            let term_courses: HashSet<&str> = term.courses.iter().map(String::as_str).collect();
+            for key in &term.courses {
+                if let Some(course) = self.school.get_course(key) {
+                    let has_coreq_in_term = course
+                        .corequisites
+                        .iter()
+                        .any(|coreq| term_courses.contains(coreq.as_str()))
+                        || course
+                            .strict_corequisites
+                            .iter()
+                            .any(|coreq| term_courses.contains(coreq.as_str()));
+                    if has_coreq_in_term {
+                        locked.insert(key.clone());
+                    }
+                }
+            }
+        }
+
+        locked
     }
 
     /// Check if a course has dependents scheduled in later terms
