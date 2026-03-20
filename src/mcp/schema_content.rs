@@ -1,6 +1,15 @@
-//! Static schema documentation content for degree YAML files
+//! Schema documentation content for degree YAML files
 //!
-//! This module contains the Markdown documentation returned by the `get_degree_schema` tool.
+//! Loads the degree schema from the embedded asset file (`src/assets/Degree-schema.yaml`)
+//! and serves sections on demand. The YAML file is the single source of truth for schema
+//! documentation; this module only handles section extraction.
+
+/// The full schema file, embedded at compile time from `src/assets/Degree-schema.yaml`
+const SCHEMA_YAML: &str = include_str!("../assets/Degree-schema.yaml");
+
+/// Section delimiter pattern used in the schema file
+const SECTION_DELIMITER: &str =
+    "# =============================================================================";
 
 /// Get schema content for a given section
 ///
@@ -8,351 +17,191 @@
 /// * `section` - One of: "all", "degree", "requirements", "courses", "examples"
 ///
 /// # Returns
-/// Markdown-formatted documentation string
+/// The relevant portion of the schema YAML (with comment-based documentation)
 #[must_use]
 pub fn get_schema_content(section: &str) -> String {
     match section.to_lowercase().as_str() {
-        "degree" => SCHEMA_DEGREE.to_string(),
-        "requirements" => SCHEMA_REQUIREMENTS.to_string(),
-        "courses" => SCHEMA_COURSES.to_string(),
-        "examples" => SCHEMA_EXAMPLES.to_string(),
-        _ => format!(
-            "{SCHEMA_OVERVIEW}\n\n{SCHEMA_DEGREE}\n\n{SCHEMA_REQUIREMENTS}\n\n{SCHEMA_COURSES}\n\n{SCHEMA_EXAMPLES}"
-        ),
+        "degree" => extract_sections(&["DEGREE METADATA"]),
+        "requirements" => {
+            extract_sections(&["^REQUIREMENTS", "FROM BLOCK", "COURSE REFERENCE SYNTAX"])
+        }
+        "courses" => extract_sections(&["^COURSES", "PREREQUISITE EXPRESSION SYNTAX"]),
+        "examples" => {
+            extract_sections(&["COMPLETE EXAMPLE", "GENERAL EDUCATION", "BEST PRACTICES"])
+        }
+        _ => SCHEMA_YAML.to_string(),
     }
 }
 
-/// Overview of the degree YAML schema
-pub const SCHEMA_OVERVIEW: &str = r"# Degree Program YAML Schema
+/// Extract one or more named sections from the schema file
+///
+/// Sections are delimited by `# ====...====` lines. A section starts at the
+/// delimiter line containing the header and ends just before the next top-level
+/// delimiter pair.
+fn extract_sections(headers: &[&str]) -> String {
+    let sections = parse_all_sections();
+    let mut result = String::new();
 
-A degree program YAML file defines a complete degree including metadata, requirements, and courses.
-The file has three main sections: `degree`, `requirements`, and `courses`.
+    for header in headers {
+        // A `^` prefix means "starts with" to avoid partial matches
+        // (e.g., "^REQUIREMENTS" won't match "DEGREE REQUIREMENTS SCHEMA")
+        let (starts_with, pattern) = header.strip_prefix('^').map_or_else(
+            || (false, header.to_uppercase()),
+            |stripped| (true, stripped.to_uppercase()),
+        );
 
-## File Structure
+        if let Some(content) = sections.iter().find_map(|(name, body)| {
+            let name_upper = name.to_uppercase();
+            let matches = if starts_with {
+                name_upper.starts_with(&pattern)
+            } else {
+                name_upper.contains(&pattern)
+            };
+            if matches {
+                Some(body.as_str())
+            } else {
+                None
+            }
+        }) {
+            if !result.is_empty() {
+                result.push('\n');
+            }
+            result.push_str(content);
+        }
+    }
 
-```yaml
-degree:
-  # Metadata about the degree program
+    if result.is_empty() {
+        SCHEMA_YAML.to_string()
+    } else {
+        result
+    }
+}
 
-requirements:
-  # Named requirements that students must satisfy
+/// Parse the schema file into named sections
+///
+/// Returns a list of `(section_name, section_content)` pairs. Each section
+/// includes its delimiter header and all content up to the next section.
+fn parse_all_sections() -> Vec<(String, String)> {
+    let mut sections = Vec::new();
+    let lines: Vec<&str> = SCHEMA_YAML.lines().collect();
+    let mut i = 0;
 
-courses:
-  # Course definitions with prerequisites
-```
-";
+    while i < lines.len() {
+        // Look for a section: delimiter, then header line, then delimiter
+        if lines[i].starts_with(SECTION_DELIMITER) && i + 2 < lines.len() {
+            let header_line = lines[i + 1].trim_start_matches('#').trim();
 
-/// Schema documentation for the degree metadata section
-pub const SCHEMA_DEGREE: &str = r#"## Degree Metadata Section
+            // Only treat as a section header if the next line is also a delimiter
+            if lines[i + 2].starts_with(SECTION_DELIMITER) && !header_line.is_empty() {
+                let section_name = header_line.to_string();
+                let start = i;
+                i += 3; // skip past the header block
 
-The `degree` section contains metadata about the degree program.
+                // Collect lines until the next section header
+                while i < lines.len() {
+                    if lines[i].starts_with(SECTION_DELIMITER)
+                        && i + 2 < lines.len()
+                        && lines[i + 2].starts_with(SECTION_DELIMITER)
+                    {
+                        break;
+                    }
+                    i += 1;
+                }
 
-```yaml
-degree:
-  id: string                    # Unique identifier, e.g., "neu-cs-bscs-2025"
-  institution: string           # Institution name
-  program: string               # Full degree name
-  catalog_year: string          # e.g., "2024-2025"
-  source_url: string | null     # Link to official catalog
+                let content: String = lines[start..i].to_vec().join("\n");
 
-  # Credit requirements
-  total_credits: integer        # Minimum credits for graduation (e.g., 128)
-  upper_division_credits: int | null  # Minimum 300+ level credits
-  in_major_credits: int | null  # Minimum credits in major subjects
+                sections.push((section_name, content));
+                continue;
+            }
+        }
+        i += 1;
+    }
 
-  # GPA requirements
-  gpa_minimum: number           # Overall GPA required (e.g., 2.0)
-  gpa_major: number | null      # Major GPA if different
+    sections
+}
 
-  # Grade requirements
-  grade_minimum: string | null  # Default minimum grade (e.g., "C")
-  grade_minimum_note: string | null  # Clarification
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-  # Major subjects
-  major_subjects: [string] | null  # e.g., ["CS", "CY", "DS"]
+    #[test]
+    fn test_schema_yaml_is_loaded() {
+        assert!(
+            !SCHEMA_YAML.is_empty(),
+            "Schema YAML should be embedded at compile time"
+        );
+        assert!(SCHEMA_YAML.contains("DEGREE REQUIREMENTS SCHEMA"));
+    }
 
-  # Double counting
-  allow_double_counting: boolean  # Can courses satisfy multiple requirements?
-```
+    #[test]
+    fn test_parse_all_sections_finds_sections() {
+        let sections = parse_all_sections();
+        let names: Vec<&str> = sections.iter().map(|(n, _)| n.as_str()).collect();
 
-### Required Fields
-- `id`, `institution`, `program`, `total_credits`, `gpa_minimum`
+        assert!(
+            names.iter().any(|n| n.contains("DEGREE METADATA")),
+            "Should find DEGREE METADATA section, found: {names:?}"
+        );
+        assert!(
+            names.iter().any(|n| n.contains("REQUIREMENTS")),
+            "Should find REQUIREMENTS section"
+        );
+        assert!(
+            names.iter().any(|n| n.contains("COURSES")),
+            "Should find COURSES section"
+        );
+    }
 
-### Example
-```yaml
-degree:
-  id: neu-khoury-bscs-2025
-  institution: Northeastern University
-  program: Bachelor of Science in Computer Science
-  catalog_year: "2025-2026"
-  total_credits: 134
-  gpa_minimum: 2.0
-  gpa_major: 2.0
-  grade_minimum: "C"
-  major_subjects: [CS, CY, DS, IS]
-  allow_double_counting: false
-```
-"#;
+    #[test]
+    fn test_get_all_returns_full_schema() {
+        let result = get_schema_content("all");
+        assert!(result.contains("DEGREE REQUIREMENTS SCHEMA"));
+        assert!(result.contains("DEGREE METADATA"));
+        assert!(result.contains("REQUIREMENTS"));
+        assert!(result.contains("COURSES"));
+    }
 
-/// Schema documentation for the requirements section
-pub const SCHEMA_REQUIREMENTS: &str = r#"## Requirements Section
+    #[test]
+    fn test_get_degree_section() {
+        let result = get_schema_content("degree");
+        assert!(result.contains("DEGREE METADATA"));
+        assert!(!result.contains("PREREQUISITE EXPRESSION SYNTAX"));
+    }
 
-Requirements define what students must complete. Three types are supported:
+    #[test]
+    fn test_get_requirements_section() {
+        let result = get_schema_content("requirements");
+        assert!(result.contains("REQUIREMENTS"));
+        assert!(result.contains("type: all"));
+    }
 
-| Type     | Use Case                          | Key Fields          |
-|----------|-----------------------------------|---------------------|
-| all      | Must complete ALL listed courses  | courses             |
-| select   | Choose N courses/credits          | from, count/credits |
-| one_of   | Choose one path (mutually exclusive) | options          |
+    #[test]
+    fn test_get_courses_section() {
+        let result = get_schema_content("courses");
+        assert!(result.contains("COURSES"));
+        assert!(result.contains("prerequisites"));
+    }
 
-### Type: all - Complete All Courses
+    #[test]
+    fn test_get_examples_section() {
+        let result = get_schema_content("examples");
+        assert!(result.contains("COMPLETE EXAMPLE"));
+        assert!(result.contains("BEST PRACTICES"));
+    }
 
-```yaml
-requirements:
-  cs_fundamentals:
-    name: Computer Science Fundamentals
-    type: all
-    category: major
-    courses:
-      - CS1000
-      - CS2500
-      - CS2510
-```
+    #[test]
+    fn test_unknown_section_returns_all() {
+        let result = get_schema_content("unknown_section");
+        assert!(result.contains("DEGREE REQUIREMENTS SCHEMA"));
+        assert!(result.contains("DEGREE METADATA"));
+    }
 
-### Type: select - Choose from Options
-
-```yaml
-requirements:
-  cs_electives:
-    name: CS Electives
-    type: select
-    category: major
-    from:
-      courses: [CS3500, CS3650, CS3700, CS3800]
-      # OR use pattern matching:
-      # pattern: "CS:3000+"
-    count: 2        # Number of courses to select
-    # OR use credits:
-    # credits: 8    # Total credits to reach
-```
-
-### Type: one_of - Mutually Exclusive Paths
-
-```yaml
-requirements:
-  math_track:
-    name: Mathematics Track
-    type: one_of
-    category: supporting
-    options:
-      - id: calc_track
-        name: Calculus Track
-        requirements:
-          - MATH1341
-          - MATH1342
-      - id: discrete_track
-        name: Discrete Track
-        requirements:
-          - MATH1365
-          - CS1800
-```
-
-### Category Values
-- `major` - Core major courses
-- `supporting` - Supporting/prerequisite courses
-- `gen_ed` - General education requirements
-- `elective` - Elective courses
-
-### Constraints (Optional)
-
-```yaml
-requirements:
-  advanced_electives:
-    name: Advanced Electives
-    type: select
-    category: major
-    from:
-      pattern: "CS:4000+"
-    credits: 12
-    constraints:
-      min_grade: "B"
-      min_upper_division: 8
-      max_from_subject:
-        CS: 8
-```
-"#;
-
-/// Schema documentation for the courses section
-pub const SCHEMA_COURSES: &str = r#"## Courses Section
-
-Define all courses referenced in requirements.
-
-```yaml
-courses:
-  CS2500:
-    title: Fundamentals of Computer Science 1
-    credits: 4
-    prerequisites_raw: ""  # No prerequisites
-
-  CS2510:
-    title: Fundamentals of Computer Science 2
-    credits: 4
-    prerequisites_raw: "CS2500"
-
-  CS3500:
-    title: Object-Oriented Design
-    credits: 4
-    prerequisites_raw: "CS2510 & CS2810"
-
-  CS4500:
-    title: Software Development
-    credits: 4
-    prerequisites_raw: "(CS3500 | CS3800) & CS3000"
-```
-
-### Course Fields
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| title | Yes | Course title |
-| credits | Yes | Credit hours (integer or decimal) |
-| prerequisites_raw | No | Prerequisite expression |
-| corequisites | No | Corequisite courses |
-| typically_offered | No | When offered: "fall", "spring", "both", "varies" |
-| gen_ed_attributes | No | Gen-ed categories satisfied |
-| cross_listed_as | No | Equivalent courses in other departments |
-| repeatable | No | Can course be repeated? |
-| max_repeat_credits | No | Max credits if repeatable |
-
-### Prerequisite Expression Syntax
-
-- `&` = AND (all required)
-- `|` = OR (any one)
-- `()` = Grouping
-- `[grade]` = Grade requirement (e.g., `CS2500[B]`)
-
-Examples:
-- `CS2500` - Single prerequisite
-- `CS2500 & CS2510` - Both required
-- `CS2500 | CS2510` - Either one
-- `(CS2500 & CS2510) | CS3000` - Complex logic
-- `MATH1341[C] & CS2500[B]` - With grade requirements
-
-### Course Key Format
-
-Course keys are typically: `{SUBJECT}{NUMBER}` (no space)
-- ✓ `CS2500`, `MATH1341`, `PHYS1151`
-- ✗ `CS 2500`, `cs2500`
-"#;
-
-/// Example degree YAML and common patterns
-pub const SCHEMA_EXAMPLES: &str = r#"## Complete Example
-
-```yaml
-degree:
-  id: example-bscs-2025
-  institution: Example University
-  program: Bachelor of Science in Computer Science
-  catalog_year: "2025-2026"
-  total_credits: 120
-  gpa_minimum: 2.0
-  major_subjects: [CS, MATH]
-  allow_double_counting: false
-
-requirements:
-  intro_sequence:
-    name: Introductory Sequence
-    type: all
-    category: major
-    courses:
-      - CS101
-      - CS102
-      - CS201
-
-  math_requirements:
-    name: Mathematics
-    type: all
-    category: supporting
-    courses:
-      - MATH151
-      - MATH152
-
-  cs_electives:
-    name: CS Electives
-    type: select
-    category: major
-    from:
-      courses: [CS301, CS302, CS401, CS402]
-    count: 2
-
-courses:
-  CS101:
-    title: Introduction to Programming
-    credits: 4
-    prerequisites_raw: ""
-
-  CS102:
-    title: Data Structures
-    credits: 4
-    prerequisites_raw: "CS101"
-
-  CS201:
-    title: Algorithms
-    credits: 4
-    prerequisites_raw: "CS102 & MATH151"
-
-  CS301:
-    title: Operating Systems
-    credits: 4
-    prerequisites_raw: "CS201"
-
-  CS302:
-    title: Databases
-    credits: 4
-    prerequisites_raw: "CS201"
-
-  CS401:
-    title: Machine Learning
-    credits: 4
-    prerequisites_raw: "CS201 & MATH152"
-
-  CS402:
-    title: Computer Networks
-    credits: 4
-    prerequisites_raw: "CS201"
-
-  MATH151:
-    title: Calculus I
-    credits: 4
-    prerequisites_raw: ""
-
-  MATH152:
-    title: Calculus II
-    credits: 4
-    prerequisites_raw: "MATH151"
-```
-
-## Common Patterns
-
-### Lecture + Lab Bundles
-Use bundle syntax `[course1, course2]` in requirements:
-```yaml
-courses:
-  - "[CHEM1211, CHEM1211L]"  # Both must be taken together
-```
-
-### Equivalent/Cross-listed Courses
-Use equivalent syntax `{course1, course2}` in requirements:
-```yaml
-courses:
-  - "{CS201, PHIL201}"  # Either satisfies requirement
-```
-
-Or define cross-listing in course:
-```yaml
-CS201:
-  title: Ethics in Computing
-  credits: 4
-  cross_listed_as: [PHIL201]
-```
-"#;
+    #[test]
+    fn test_case_insensitive_sections() {
+        let upper = get_schema_content("DEGREE");
+        let lower = get_schema_content("degree");
+        let mixed = get_schema_content("Degree");
+        assert_eq!(upper, lower);
+        assert_eq!(lower, mixed);
+    }
+}

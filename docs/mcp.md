@@ -17,68 +17,51 @@ NuAnalytics includes an MCP (Model Context Protocol) server that allows AI model
 ## Quick Start
 
 ```bash
-# Build with MCP support
-cargo build --release --features mcp
+# Install with MCP support
+cargo install nu-analytics --features mcp
 
 # Start the MCP server
-./target/release/nuanalytics mcp
+nuanalytics mcp
 ```
 
 The server communicates via stdio (standard input/output) using the MCP JSON-RPC protocol.
 
 ## Installation
 
-### From Source
+### Via Cargo (Recommended)
 
-```bash
-# Clone the repository
-git clone https://github.com/NeuCurricularAnalytics/NuAnalytics.git
-cd NuAnalytics
-
-# Build with MCP support
-cargo build --release --features mcp
-
-# Verify installation
-./target/release/nuanalytics --help
-```
-
-### From Cargo (when published)
+Install the CLI globally so `nuanalytics` is available on your PATH:
 
 ```bash
 cargo install nu-analytics --features mcp
 ```
 
-### Local Development Setup
-
-For development and testing, you can run the MCP server directly from your local build:
+Verify the installation:
 
 ```bash
-# Clone and enter the repository
+nuanalytics --help
+```
+
+### From Git (Latest)
+
+```bash
+cargo install --git https://github.com/NeuCurricularAnalytics/NuAnalytics --features mcp --bin nuanalytics
+```
+
+### Local Development Setup
+
+For development and testing, you can run the MCP server directly from a local checkout:
+
+```bash
 git clone https://github.com/NeuCurricularAnalytics/NuAnalytics.git
 cd NuAnalytics
 
-# Build with MCP support (debug mode for development)
-cargo build --features mcp
-
-# Run the server directly
+# Run directly (rebuilds as needed)
 cargo run --features mcp -- mcp
 
 # Or build release and run
 cargo build --release --features mcp
 ./target/release/nuanalytics mcp
-```
-
-For Claude Desktop development, use the debug build path:
-
-```json
-{
-  "mcpServers": {
-    "nuanalytics-dev": {
-      "command": "/path/to/NuAnalytics/target/debug/nuanalytics",
-      "args": ["mcp"]
-    }
-  }
-}
 ```
 
 ## Configuration
@@ -94,19 +77,15 @@ Add NuAnalytics to your Claude Desktop configuration:
 {
   "mcpServers": {
     "nuanalytics": {
-      "command": "/absolute/path/to/nuanalytics",
+      "command": "nuanalytics",
       "args": ["mcp"]
     }
   }
 }
 ```
 
-> **Note**: Use the absolute path to the `nuanalytics` binary. You can find it with:
-> ```bash
-> which nuanalytics  # if installed globally
-> # OR
-> realpath ./target/release/nuanalytics  # if built locally
-> ```
+> **Note**: If `nuanalytics` is not on your PATH, use the absolute path instead.
+> Find it with `which nuanalytics` or `realpath ./target/release/nuanalytics`.
 
 ### Claude Code (CLI) Integration
 
@@ -117,14 +96,14 @@ the project level (`.claude/settings.json`) or user level (`~/.claude/settings.j
 {
   "mcpServers": {
     "nuanalytics": {
-      "command": "/absolute/path/to/nuanalytics",
+      "command": "nuanalytics",
       "args": ["mcp"]
     }
   }
 }
 ```
 
-For development, point to the debug build:
+For development, point to a local checkout:
 
 ```json
 {

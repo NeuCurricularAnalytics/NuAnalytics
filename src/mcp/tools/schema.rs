@@ -23,7 +23,7 @@ pub struct GetSchemaRequest {
 /// * `section` - Optional section filter
 ///
 /// # Returns
-/// Markdown-formatted schema documentation
+/// Schema documentation sourced from the embedded `Degree-schema.yaml` asset
 #[must_use]
 pub fn execute(section: Option<&str>) -> String {
     get_schema_content(section.unwrap_or("all"))
@@ -36,46 +36,45 @@ mod tests {
     #[test]
     fn test_get_all_schema() {
         let result = execute(None);
-        assert!(result.contains("Degree Program YAML Schema"));
-        assert!(result.contains("Degree Metadata Section"));
-        assert!(result.contains("Requirements Section"));
-        assert!(result.contains("Courses Section"));
+        assert!(result.contains("DEGREE REQUIREMENTS SCHEMA"));
+        assert!(result.contains("DEGREE METADATA"));
+        assert!(result.contains("REQUIREMENTS"));
+        assert!(result.contains("COURSES"));
     }
 
     #[test]
     fn test_get_degree_section() {
         let result = execute(Some("degree"));
-        assert!(result.contains("Degree Metadata Section"));
-        assert!(!result.contains("Requirements Section"));
+        assert!(result.contains("DEGREE METADATA"));
+        assert!(!result.contains("PREREQUISITE EXPRESSION SYNTAX"));
     }
 
     #[test]
     fn test_get_requirements_section() {
         let result = execute(Some("requirements"));
-        assert!(result.contains("Requirements Section"));
+        assert!(result.contains("REQUIREMENTS"));
         assert!(result.contains("type: all"));
     }
 
     #[test]
     fn test_get_courses_section() {
         let result = execute(Some("courses"));
-        assert!(result.contains("Courses Section"));
-        assert!(result.contains("prerequisites_raw"));
+        assert!(result.contains("COURSES"));
+        assert!(result.contains("prerequisites"));
     }
 
     #[test]
     fn test_get_examples_section() {
         let result = execute(Some("examples"));
-        assert!(result.contains("Complete Example"));
-        assert!(result.contains("Common Patterns"));
+        assert!(result.contains("COMPLETE EXAMPLE"));
+        assert!(result.contains("BEST PRACTICES"));
     }
 
     #[test]
     fn test_unknown_section_returns_all() {
         let result = execute(Some("unknown_section"));
-        // Unknown sections should return all content
-        assert!(result.contains("Degree Program YAML Schema"));
-        assert!(result.contains("Degree Metadata Section"));
+        assert!(result.contains("DEGREE REQUIREMENTS SCHEMA"));
+        assert!(result.contains("DEGREE METADATA"));
     }
 
     #[test]
