@@ -41,7 +41,7 @@ tempfile = "3.10"
 # No WASM target dependencies; CLI-only
 
 [features]
-default = ["log-info", "log-debug", "verbose", "file-logging"]
+default = ["log-info", "log-debug", "verbose", "file-logging", "mcp"]
 log-info = []
 log-debug = []
 verbose = []

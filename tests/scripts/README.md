@@ -9,9 +9,9 @@ This directory contains integration test scripts for NuAnalytics.
 ### Prerequisites
 
 - Python 3.7+
-- NuAnalytics built with MCP feature:
+- NuAnalytics built (MCP is enabled by default):
   ```bash
-  cargo build --features mcp
+  cargo build
   ```
 
 ### Usage
@@ -62,12 +62,12 @@ python3 tests/scripts/test_mcp_server.py -v
 ### Troubleshooting
 
 **Server won't start:**
-- Ensure you've built with MCP feature: `cargo build --features mcp`
+- Ensure you've built the project: `cargo build`
 - Check that no other process is using stdin/stdout
 
 **Tests fail with timeout:**
 - The server may be slow to start on first run (compilation)
-- Try running `cargo build --features mcp` first
+- Try running `cargo build` first
 
 **YAML validation errors:**
 - Check that your YAML follows the schema (run `get_degree_schema` for docs)

@@ -17,8 +17,8 @@ NuAnalytics includes an MCP (Model Context Protocol) server that allows AI model
 ## Quick Start
 
 ```bash
-# Install with MCP support
-cargo install nu-analytics --features mcp
+# Install (MCP is included by default)
+cargo install nu-analytics
 
 # Start the MCP server
 nuanalytics mcp
@@ -33,7 +33,13 @@ The server communicates via stdio (standard input/output) using the MCP JSON-RPC
 Install the CLI globally so `nuanalytics` is available on your PATH:
 
 ```bash
-cargo install nu-analytics --features mcp
+cargo install nu-analytics
+```
+
+MCP support is enabled by default. To build *without* MCP (smaller binary):
+
+```bash
+cargo install nu-analytics --no-default-features --features log-info,log-debug,verbose,file-logging
 ```
 
 Verify the installation:
@@ -45,7 +51,7 @@ nuanalytics --help
 ### From Git (Latest)
 
 ```bash
-cargo install --git https://github.com/NeuCurricularAnalytics/NuAnalytics --features mcp --bin nuanalytics
+cargo install --git https://github.com/NeuCurricularAnalytics/NuAnalytics --bin nuanalytics
 ```
 
 ### Local Development Setup
@@ -57,10 +63,10 @@ git clone https://github.com/NeuCurricularAnalytics/NuAnalytics.git
 cd NuAnalytics
 
 # Run directly (rebuilds as needed)
-cargo run --features mcp -- mcp
+cargo run -- mcp
 
 # Or build release and run
-cargo build --release --features mcp
+cargo build --release
 ./target/release/nuanalytics mcp
 ```
 
@@ -193,7 +199,7 @@ The MCP Inspector provides an interactive web UI for testing:
 
 ```bash
 # Install and run the inspector
-npx @modelcontextprotocol/inspector cargo run --features mcp -- mcp
+npx @modelcontextprotocol/inspector cargo run -- mcp
 ```
 
 This opens a browser where you can:
@@ -208,11 +214,11 @@ You can test the server directly using stdin:
 
 ```bash
 # Start the server
-cargo run --features mcp -- mcp
+cargo run -- mcp
 
 # In another terminal, send a JSON-RPC request:
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | \
-  cargo run --features mcp -- mcp
+  cargo run -- mcp
 ```
 
 ### Unit Tests
@@ -221,11 +227,11 @@ Run the MCP module tests:
 
 ```bash
 # Run all MCP tests
-cargo test --features mcp mcp::
+cargo test mcp::
 
 # Run specific tool tests
-cargo test --features mcp mcp::tools::schema
-cargo test --features mcp mcp::tools::validate
+cargo test mcp::tools::schema
+cargo test mcp::tools::validate
 ```
 
 ### Integration Testing
@@ -234,7 +240,7 @@ Test with a sample degree file:
 
 ```bash
 # Validate using the CLI (for comparison)
-cargo run --features mcp -- degree --validate samples/degrees/neu-khoury-bscs-boston.yaml
+cargo run -- degree --validate samples/degrees/neu-khoury-bscs-boston.yaml
 
 # The MCP validate_degree tool uses the same validation logic
 ```
@@ -361,7 +367,7 @@ let response = validate::execute(yaml_content);
 ```
 Error: Failed to create tokio runtime
 ```
-**Solution**: Ensure you built with the `mcp` feature: `cargo build --features mcp`
+**Solution**: MCP is enabled by default. If you built with `--no-default-features`, add `mcp` back: `cargo build --features mcp`
 
 ### Claude Desktop Doesn't See the Server
 

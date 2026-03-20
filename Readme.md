@@ -57,14 +57,6 @@ cargo build --release
 
 The executable will be at `target/release/nuanalytics`.
 
-### Building with MCP Support
-
-To enable the MCP (Model Context Protocol) server for AI integration:
-
-```bash
-cargo build --release --features mcp
-```
-
 ### Running (installed)
 
 Analyze a curriculum CSV file and generate both metrics CSV and HTML report:

@@ -101,15 +101,9 @@ cargo build
 cargo build --release
 ```
 
-**Build with MCP support:**
-```bash
-cargo build --features mcp
-cargo build --release --features mcp
-```
-
 ### MCP Server Development
 
-The MCP server is feature-gated and organized as a separate module:
+MCP support is enabled by default. The server is organized as a separate module:
 
 ```
 src/mcp/
@@ -124,17 +118,17 @@ src/mcp/
 
 **Run the MCP server:**
 ```bash
-cargo run --features mcp -- mcp
+cargo run -- mcp
 ```
 
 **Test MCP tools:**
 ```bash
 # Run all MCP tests
-cargo test --features mcp mcp::
+cargo test mcp::
 
 # Run specific tool tests
-cargo test --features mcp mcp::tools::schema
-cargo test --features mcp mcp::tools::validate
+cargo test mcp::tools::schema
+cargo test mcp::tools::validate
 ```
 
 **Integration test script:**
@@ -151,7 +145,7 @@ python3 tests/scripts/test_mcp_server.py -v
 
 **Test with MCP Inspector:**
 ```bash
-npx @modelcontextprotocol/inspector cargo run --features mcp -- mcp
+npx @modelcontextprotocol/inspector cargo run -- mcp
 ```
 
 This opens a web UI where you can interactively test the tools.
