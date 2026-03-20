@@ -2,7 +2,9 @@
 //!
 //! This module provides the MCP server that exposes `NuAnalytics` tools.
 
-use crate::mcp::tools::{schema, validate, GetSchemaRequest, ValidateDegreeRequest};
+use crate::mcp::tools::{
+    audit, schema, validate, AuditDegreeRequest, GetSchemaRequest, ValidateDegreeRequest,
+};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{ServerCapabilities, ServerInfo},
@@ -50,6 +52,15 @@ impl NuAnalyticsMcpServer {
     fn validate_degree(&self, Parameters(req): Parameters<ValidateDegreeRequest>) -> String {
         validate::execute_json(&req.yaml_content)
     }
+
+    /// Audit a degree program YAML
+    #[tool(
+        description = "Run a comprehensive audit on a degree program YAML. Includes validation, detection of upper-level courses missing prerequisites, and identification of deep prerequisite chains. Returns structured results with actionable findings."
+    )]
+    #[allow(clippy::unused_self)]
+    fn audit_degree(&self, Parameters(req): Parameters<AuditDegreeRequest>) -> String {
+        audit::execute_json(&req.yaml_content, req.chain_threshold)
+    }
 }
 
 impl Default for NuAnalyticsMcpServer {
@@ -65,13 +76,15 @@ impl ServerHandler for NuAnalyticsMcpServer {
             "NuAnalytics MCP Server - Tools for building and validating degree program YAML files.\n\n\
             Available tools:\n\
             - get_degree_schema: Get documentation about the degree YAML format\n\
-            - validate_degree: Validate a degree YAML and get detailed feedback\n\n\
+            - validate_degree: Validate a degree YAML and get detailed feedback\n\
+            - audit_degree: Comprehensive audit (validation + missing prereqs + deep chains)\n\n\
             Typical workflow:\n\
             1. Call get_degree_schema to understand the format\n\
             2. Build a degree YAML\n\
             3. Call validate_degree to check for errors\n\
             4. Fix issues based on feedback\n\
-            5. Repeat steps 3-4 until valid"
+            5. Repeat steps 3-4 until valid\n\
+            6. Call audit_degree for a comprehensive quality check"
                 .to_string(),
         )
     }

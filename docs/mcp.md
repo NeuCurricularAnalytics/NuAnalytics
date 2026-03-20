@@ -123,8 +123,9 @@ For development, point to a local checkout:
 }
 ```
 
-After saving the config, restart Claude Code. The `get_degree_schema` and `validate_degree`
-tools will be available in your session. You can verify with `/mcp` to list connected servers.
+After saving the config, restart Claude Code. The `get_degree_schema`, `validate_degree`,
+and `audit_degree` tools will be available in your session. You can verify with `/mcp` to
+list connected servers.
 
 ### Other MCP Clients
 
@@ -190,6 +191,47 @@ Validates a degree program YAML string and returns detailed feedback.
   ]
 }
 ```
+
+### `audit_degree`
+
+Runs a comprehensive audit on a degree program YAML. Combines validation with
+structural analysis: missing prerequisites on upper-level courses and deep prerequisite chains.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `yaml_content` | string | Yes | Complete degree program YAML content |
+| `chain_threshold` | integer | No | Minimum chain depth to flag (default: 3) |
+
+**Response Format:**
+```json
+{
+  "passed": false,
+  "validation_errors": 2,
+  "validation_warnings": 1,
+  "validation_report": "...",
+  "missing_prerequisites": [
+    { "course": "CS3500", "level": 3000 }
+  ],
+  "deep_chains": [
+    {
+      "course": "CS4500",
+      "max_depth": 5,
+      "branch_lengths": "5, 3",
+      "chain": "CS1000 → CS2500 → CS2510 → CS3500 → CS4500"
+    }
+  ],
+  "chain_threshold": 3,
+  "degree_name": "BS Computer Science",
+  "institution": "Example University",
+  "total_courses": 25
+}
+```
+
+**Example Prompts:**
+- "Audit this degree for issues" → calls `audit_degree`
+- "Find courses with long prerequisite chains" → calls with `chain_threshold: 2`
+- "Are there any upper-level courses missing prerequisites?" → calls `audit_degree`
 
 ## Testing
 

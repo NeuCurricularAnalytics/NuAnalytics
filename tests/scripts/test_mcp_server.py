@@ -234,7 +234,8 @@ def main():
             tool_names = [t["name"] for t in tools]
             has_schema_tool = "get_degree_schema" in tool_names
             has_validate_tool = "validate_degree" in tool_names
-            success = has_schema_tool and has_validate_tool
+            has_audit_tool = "audit_degree" in tool_names
+            success = has_schema_tool and has_validate_tool and has_audit_tool
             print_result(
                 "List tools",
                 success,
@@ -315,6 +316,44 @@ def main():
             all_passed = False
         except Exception as e:
             print_result("validate_degree", False, str(e))
+            all_passed = False
+
+        # Test 5: Audit Degree
+        print_section("Test 5: Call audit_degree")
+        try:
+            response = client.call_tool(
+                "audit_degree", {"yaml_content": test_yaml}
+            )
+            content = response.get("result", {}).get("content", [])
+            has_content = len(content) > 0 and content[0].get("type") == "text"
+
+            if has_content:
+                audit_result = json.loads(content[0]["text"])
+                passed = audit_result.get("passed", False)
+                val_errors = audit_result.get("validation_errors", 0)
+                missing = audit_result.get("missing_prerequisites", [])
+                chains = audit_result.get("deep_chains", [])
+
+                print_result(
+                    "audit_degree",
+                    True,
+                    f"Passed: {passed}, Errors: {val_errors}, Missing prereqs: {len(missing)}, Deep chains: {len(chains)}",
+                )
+                print(f"       Degree: {audit_result.get('degree_name', 'unknown')}")
+                print(f"       Courses: {audit_result.get('total_courses', 0)}")
+
+                if args.verbose:
+                    print("\n       Full response:")
+                    print(json.dumps(audit_result, indent=2))
+            else:
+                print_result("audit_degree", False, "No content in response")
+                all_passed = False
+
+        except json.JSONDecodeError as e:
+            print_result("audit_degree", False, f"Invalid JSON response: {e}")
+            all_passed = False
+        except Exception as e:
+            print_result("audit_degree", False, str(e))
             all_passed = False
 
     finally:
