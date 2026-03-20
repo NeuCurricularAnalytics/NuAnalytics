@@ -3,7 +3,8 @@
 //! This module provides the MCP server that exposes `NuAnalytics` tools.
 
 use crate::mcp::tools::{
-    audit, schema, validate, AuditDegreeRequest, GetSchemaRequest, ValidateDegreeRequest,
+    analyze, audit, schema, validate, AnalyzeDegreeRequest, AuditDegreeRequest, GetSchemaRequest,
+    ValidateDegreeRequest,
 };
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -61,6 +62,15 @@ impl NuAnalyticsMcpServer {
     fn audit_degree(&self, Parameters(req): Parameters<AuditDegreeRequest>) -> String {
         audit::execute_json(&req.yaml_content, req.chain_threshold)
     }
+
+    /// Analyze a degree program YAML
+    #[tool(
+        description = "Run full degree analysis: generate all possible course plans, compute aggregate metrics (complexity, delay, credits), and identify shortest/longest paths. Returns statistics across plans and term-by-term schedules for selected plans. Use after validate_degree confirms the YAML is valid."
+    )]
+    #[allow(clippy::unused_self)]
+    fn analyze_degree(&self, Parameters(req): Parameters<AnalyzeDegreeRequest>) -> String {
+        analyze::execute_json(&req.yaml_content, req.max_plans)
+    }
 }
 
 impl Default for NuAnalyticsMcpServer {
@@ -77,14 +87,16 @@ impl ServerHandler for NuAnalyticsMcpServer {
             Available tools:\n\
             - get_degree_schema: Get documentation about the degree YAML format\n\
             - validate_degree: Validate a degree YAML and get detailed feedback\n\
-            - audit_degree: Comprehensive audit (validation + missing prereqs + deep chains)\n\n\
+            - audit_degree: Comprehensive audit (validation + missing prereqs + deep chains)\n\
+            - analyze_degree: Full plan analysis with aggregate metrics and schedules\n\n\
             Typical workflow:\n\
             1. Call get_degree_schema to understand the format\n\
             2. Build a degree YAML\n\
             3. Call validate_degree to check for errors\n\
             4. Fix issues based on feedback\n\
             5. Repeat steps 3-4 until valid\n\
-            6. Call audit_degree for a comprehensive quality check"
+            6. Call audit_degree for a comprehensive quality check\n\
+            7. Call analyze_degree for plan generation and metrics"
                 .to_string(),
         )
     }

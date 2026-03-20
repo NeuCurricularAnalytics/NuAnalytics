@@ -233,6 +233,52 @@ structural analysis: missing prerequisites on upper-level courses and deep prere
 - "Find courses with long prerequisite chains" → calls with `chain_threshold: 2`
 - "Are there any upper-level courses missing prerequisites?" → calls `audit_degree`
 
+### `analyze_degree`
+
+Runs full degree analysis: generates all possible course plans, computes aggregate
+metrics, and identifies shortest/longest paths with term-by-term schedules.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `yaml_content` | string | Yes | Complete degree program YAML content |
+| `max_plans` | integer | No | Maximum plans to generate (default: 500) |
+
+**Response Format:**
+```json
+{
+  "success": true,
+  "degree_name": "BS Computer Science",
+  "institution": "Example University",
+  "total_courses": 45,
+  "total_requirements": 12,
+  "plans_analyzed": 500,
+  "was_truncated": true,
+  "complexity": { "min": 120.0, "max": 240.0, "mean": 170.0, "median": 168.0, "std_dev": 25.0 },
+  "longest_delay": { "min": 4.0, "max": 6.0, "mean": 5.2, "median": 5.0, "std_dev": 0.5 },
+  "total_credits": { "min": 134.0, "max": 156.0, "mean": 141.0, "median": 140.0, "std_dev": 4.0 },
+  "selected_plans": [
+    {
+      "category": "Shortest Path",
+      "terms": 8,
+      "complexity": 145,
+      "longest_delay": 5,
+      "critical_path": ["CS2000", "CS2100", "CS3500", "CS4500"],
+      "credits": 138.0,
+      "course_count": 38,
+      "schedule": [
+        { "term": 1, "courses": ["CS2000", "CS2001", "CS1800", "CS1802"], "credits": 14.0 }
+      ]
+    }
+  ]
+}
+```
+
+**Example Prompts:**
+- "Analyze this degree program" → calls `analyze_degree`
+- "What is the shortest path through this degree?" → calls `analyze_degree`
+- "How complex is this curriculum?" → calls `analyze_degree`
+
 ## Testing
 
 ### Using MCP Inspector (Recommended)
