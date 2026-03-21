@@ -254,9 +254,9 @@ metrics, and identifies shortest/longest paths with term-by-term schedules.
   "total_requirements": 12,
   "plans_analyzed": 500,
   "was_truncated": true,
-  "complexity": { "min": 120.0, "max": 240.0, "mean": 170.0, "median": 168.0, "std_dev": 25.0 },
-  "longest_delay": { "min": 4.0, "max": 6.0, "mean": 5.2, "median": 5.0, "std_dev": 0.5 },
-  "total_credits": { "min": 134.0, "max": 156.0, "mean": 141.0, "median": 140.0, "std_dev": 4.0 },
+  "complexity": { "min": 120.0, "q1": 150.0, "median": 168.0, "q3": 190.0, "max": 240.0, "mean": 170.0, "std_dev": 25.0 },
+  "longest_delay": { "min": 4.0, "q1": 5.0, "median": 5.0, "q3": 6.0, "max": 6.0, "mean": 5.2, "std_dev": 0.5 },
+  "total_credits": { "min": 134.0, "q1": 138.0, "median": 140.0, "q3": 144.0, "max": 156.0, "mean": 141.0, "std_dev": 4.0 },
   "selected_plans": [
     {
       "category": "Shortest Path",
@@ -420,11 +420,11 @@ AI: [calls analyze_degree with the YAML]
 - **Total courses**: 45 across 12 requirements
 
 ## Aggregate Metrics
-| Metric | Min | Median | Mean | Max | Std Dev |
-|--------|-----|--------|------|-----|---------|
-| Complexity | 120 | 168 | 170 | 240 | 25 |
-| Longest Delay | 4 | 5 | 5.2 | 6 | 0.5 |
-| Total Credits | 134 | 140 | 141 | 156 | 4.0 |
+| Metric | Min | Q1 | Median | Q3 | Max | Mean | Std Dev |
+|--------|-----|-----|--------|-----|-----|------|---------|
+| Complexity | 120 | 150 | 168 | 190 | 240 | 170 | 25 |
+| Longest Delay | 4 | 5 | 5 | 6 | 6 | 5.2 | 0.5 |
+| Total Credits | 134 | 138 | 140 | 144 | 156 | 141 | 4.0 |
 
 ## Shortest Path (8 terms, complexity 145)
 Critical path: CS2000 → CS2100 → CS3500 → CS4500

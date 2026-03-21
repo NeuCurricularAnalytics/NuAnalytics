@@ -33,17 +33,21 @@ pub struct AnalyzeDegreeRequest {
     pub max_plans: Option<usize>,
 }
 
-/// Serializable metric statistics
+/// Serializable metric statistics (includes quartiles for box plots)
 #[derive(Debug, Serialize)]
 pub struct MetricStatsJson {
     /// Minimum value
     pub min: f64,
+    /// First quartile (25th percentile)
+    pub q1: f64,
+    /// Median value (50th percentile)
+    pub median: f64,
+    /// Third quartile (75th percentile)
+    pub q3: f64,
     /// Maximum value
     pub max: f64,
     /// Mean value
     pub mean: f64,
-    /// Median value
-    pub median: f64,
     /// Standard deviation
     pub std_dev: f64,
 }
@@ -343,9 +347,11 @@ fn format_parse_error(e: &DegreeParseError) -> String {
 const fn metric_stats_json(s: &MetricStats) -> MetricStatsJson {
     MetricStatsJson {
         min: s.min,
+        q1: s.q1,
+        median: s.median,
+        q3: s.q3,
         max: s.max,
         mean: s.mean,
-        median: s.median,
         std_dev: s.std_dev,
     }
 }
