@@ -320,18 +320,23 @@ pub enum Command {
     },
     /// Run the MCP (Model Context Protocol) server.
     ///
-    /// Starts a server that exposes `NuAnalytics` tools for AI model integration.
-    /// By default, uses stdio transport (for Claude Desktop and MCP clients).
-    ///
-    /// # Examples
-    /// ```sh
-    /// # Start MCP server (stdio mode for Claude)
-    /// nuanalytics mcp
-    ///
-    /// # Start MCP server with debug logging
-    /// nuanalytics --log-level debug mcp
-    /// ```
+    /// Starts a server that exposes `NuAnalytics` tools for AI model integration
+    /// via stdio transport. Compatible with Claude Desktop, Claude Code, and
+    /// any MCP-compatible client.
     #[cfg(feature = "mcp")]
+    #[command(long_about = "Run the MCP (Model Context Protocol) server.\n\n\
+            Starts a server that exposes NuAnalytics tools for AI model integration\n\
+            via stdio transport. Compatible with Claude Desktop, Claude Code, and\n\
+            any MCP-compatible client.\n\n\
+            Available tools:\n\
+            \x20 get_degree_schema  Get degree YAML schema documentation\n\
+            \x20 validate_degree    Validate a degree YAML and return errors/warnings\n\
+            \x20 audit_degree       Comprehensive audit (validation + prereq analysis)\n\
+            \x20 analyze_degree     Full plan analysis with aggregate metrics and schedules\n\n\
+            Examples:\n\
+            \x20 nuanalytics mcp\n\
+            \x20 nuanalytics --log-level debug mcp\n\
+            \x20 npx @modelcontextprotocol/inspector nuanalytics mcp")]
     Mcp,
 }
 
