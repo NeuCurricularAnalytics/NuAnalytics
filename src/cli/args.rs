@@ -317,6 +317,16 @@ pub enum Command {
         /// Skip HTML report generation
         #[arg(long)]
         no_report: bool,
+
+        /// Courses to always include in all plans (comma-separated course codes)
+        ///
+        /// These courses will be included in every generated plan, including the shortest path.
+        /// If an included course satisfies a requirement (e.g., a picklist), other options
+        /// for that requirement will not be considered.
+        ///
+        /// Example: --include "CS3500,MATH2331,PHIL1145"
+        #[arg(long, value_name = "COURSES", value_delimiter = ',')]
+        include: Option<Vec<String>>,
     },
     /// Run the MCP (Model Context Protocol) server.
     ///

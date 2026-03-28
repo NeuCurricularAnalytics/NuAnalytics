@@ -384,3 +384,121 @@ fn test_selected_plans_collection() {
     // Test iteration
     assert_eq!(selected.iter().count(), 4);
 }
+
+/// Test plan generation with `include_courses`
+#[test]
+fn test_plan_generation_with_includes() {
+    let degree_path = samples_dir().join("csu-cs-bscs-general.yaml");
+    if !degree_path.exists() {
+        eprintln!("Skipping test: sample degree file not found");
+        return;
+    }
+
+    let program = load_degree_from_yaml(&degree_path).expect("Failed to load degree");
+
+    // Generate plans with include courses
+    let config = PlanGeneratorConfig {
+        max_plans: 100,
+        ignore_duplicates: false,
+        sample_count: 5,
+        include_courses: vec!["CS150B".to_string(), "MATH156".to_string()],
+        ..Default::default()
+    };
+
+    let generator = PlanGenerator::new(&program.requirements, &program.courses, config);
+    let plans: Vec<PlanVariant> = generator.generate().take(50).collect();
+
+    // All plans should contain the included courses
+    for plan in &plans {
+        assert!(
+            plan.courses.contains(&"CS150B".to_string()),
+            "All plans should include CS150B"
+        );
+        assert!(
+            plan.courses.contains(&"MATH156".to_string()),
+            "All plans should include MATH156"
+        );
+    }
+}
+
+/// Test plan generation with `exclude_courses`
+#[test]
+fn test_plan_generation_with_excludes() {
+    let degree_path = samples_dir().join("csu-cs-bscs-general.yaml");
+    if !degree_path.exists() {
+        eprintln!("Skipping test: sample degree file not found");
+        return;
+    }
+
+    let program = load_degree_from_yaml(&degree_path).expect("Failed to load degree");
+
+    // Generate plans with excluded courses
+    let config = PlanGeneratorConfig {
+        max_plans: 100,
+        ignore_duplicates: false,
+        sample_count: 5,
+        exclude_courses: vec!["MATH160".to_string(), "MATH161".to_string()],
+        ..Default::default()
+    };
+
+    let generator = PlanGenerator::new(&program.requirements, &program.courses, config);
+    let plans: Vec<PlanVariant> = generator.generate().take(50).collect();
+
+    // No plan should contain the excluded courses
+    for plan in &plans {
+        assert!(
+            !plan.courses.contains(&"MATH160".to_string()),
+            "No plan should contain excluded course MATH160"
+        );
+        assert!(
+            !plan.courses.contains(&"MATH161".to_string()),
+            "No plan should contain excluded course MATH161"
+        );
+    }
+}
+
+/// Test that includes reduce plan count
+#[test]
+fn test_includes_reduce_plan_count() {
+    let degree_path = samples_dir().join("csu-cs-bscs-general.yaml");
+    if !degree_path.exists() {
+        eprintln!("Skipping test: sample degree file not found");
+        return;
+    }
+
+    let program = load_degree_from_yaml(&degree_path).expect("Failed to load degree");
+
+    // Without includes
+    let config_no_includes = PlanGeneratorConfig {
+        max_plans: 10000,
+        ignore_duplicates: false,
+        sample_count: 5,
+        ..Default::default()
+    };
+    let generator_no_includes =
+        PlanGenerator::new(&program.requirements, &program.courses, config_no_includes);
+    let estimate_no_includes = generator_no_includes.estimate_plan_count();
+
+    // With includes (locking a select-1 requirement)
+    let config_with_includes = PlanGeneratorConfig {
+        max_plans: 10000,
+        ignore_duplicates: false,
+        sample_count: 5,
+        include_courses: vec!["MATH156".to_string()], // Locks math_calculus requirement
+        ..Default::default()
+    };
+    let generator_with_includes = PlanGenerator::new(
+        &program.requirements,
+        &program.courses,
+        config_with_includes,
+    );
+    let estimate_with_includes = generator_with_includes.estimate_plan_count();
+
+    // Estimate with includes should be less than or equal (usually less)
+    assert!(
+        estimate_with_includes <= estimate_no_includes,
+        "Including courses should reduce or maintain plan count: {estimate_with_includes} vs {estimate_no_includes}"
+    );
+
+    println!("Plan estimates: without includes = {estimate_no_includes}, with includes = {estimate_with_includes}");
+}

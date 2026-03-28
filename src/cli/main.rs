@@ -72,6 +72,7 @@ fn main() {
             metrics_dir,
             no_csv,
             no_report,
+            include,
         } => {
             let options = commands::degree::DegreeOptions {
                 validate,
@@ -100,6 +101,7 @@ fn main() {
                 no_csv,
                 no_report,
                 verbose,
+                include_courses: include,
             };
             commands::degree::run(file.as_deref(), &options, &config);
         }

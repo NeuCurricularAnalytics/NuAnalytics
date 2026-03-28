@@ -54,6 +54,7 @@ This generates:
 | `--no-report` | Skip HTML report generation | false |
 | `--report-dir <DIR>` | Override reports output directory | from config |
 | `--metrics-dir <DIR>` | Override metrics output directory | from config |
+| `--include <COURSES>` | Courses to always include in all plans (comma-separated) | none |
 
 **Examples:**
 
@@ -72,6 +73,30 @@ nuanalytics degree --no-report degree.yaml
 
 # Use stratified sampling for better coverage
 nuanalytics degree --sampling-strategy stratified degree.yaml
+
+# Always include specific courses in all plans
+nuanalytics degree --include "CS3500,MATH2331" degree.yaml
+```
+
+### Include Courses
+
+The `--include` option allows you to specify courses that must be included in every generated plan. This is useful when:
+
+- A student has already taken certain courses and you want to analyze plans including those courses
+- You want to see how including a specific elective affects the shortest path
+- You want to reduce the number of plan combinations by locking in certain choices
+
+When an included course satisfies a requirement (e.g., it's one option in a picklist), that requirement is locked to include that course, and other options are not considered. This reduces the total number of possible plans.
+
+```bash
+# Example: Include two specific courses
+nuanalytics degree --include "CS3500,STAT301" samples/degrees/csu-cs-bscs-general.yaml
+
+# The output will show:
+# Plan Generation:
+#   Included courses: CS3500, STAT301
+#   Estimated total plans: 174579816600  (reduced from ~350 billion)
+#   Variable requirements: 6  (reduced from 7)
 ```
 
 ### Validation

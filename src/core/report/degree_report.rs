@@ -29,6 +29,8 @@ pub struct DegreeReportContext<'a> {
     pub selected_plans: &'a SelectedPlans,
     /// DAG for prerequisite/corequisite edges
     pub dag: &'a DAG,
+    /// Map from course key to equivalent courses
+    pub equivalences: &'a std::collections::HashMap<String, std::collections::HashSet<String>>,
 }
 
 impl<'a> DegreeReportContext<'a> {
@@ -40,6 +42,7 @@ impl<'a> DegreeReportContext<'a> {
         aggregator: &'a MetricsAggregator,
         selected_plans: &'a SelectedPlans,
         dag: &'a DAG,
+        equivalences: &'a std::collections::HashMap<String, std::collections::HashSet<String>>,
     ) -> Self {
         Self {
             school,
@@ -47,6 +50,7 @@ impl<'a> DegreeReportContext<'a> {
             aggregator,
             selected_plans,
             dag,
+            equivalences,
         }
     }
 
@@ -593,6 +597,9 @@ impl DegreeReportGenerator {
     }
 
     /// Build prerequisite and corequisite edges for a plan's courses.
+    ///
+    /// When a prerequisite isn't directly in the plan but an equivalent course is,
+    /// adds an edge from the equivalent course to maintain proper visualization.
     fn build_plan_edges(
         ctx: &DegreeReportContext,
         plan: &ScoredPlan,
@@ -616,11 +623,29 @@ impl DegreeReportGenerator {
                 if !prereq_raw.is_empty() {
                     let dnf_paths = parse_to_dnf(&prereq_raw);
 
-                    // Find the first path where all prereqs are in the plan
+                    // Find the first path where all prereqs are in the plan (directly or via equivalence)
                     let mut selected_prereqs: Vec<String> = Vec::new();
                     for path in &dnf_paths {
-                        if path.iter().all(|p| plan_courses.contains(p.as_str())) {
-                            selected_prereqs.clone_from(path);
+                        let resolved: Vec<String> = path
+                            .iter()
+                            .filter_map(|p| {
+                                if plan_courses.contains(p.as_str()) {
+                                    Some(p.clone())
+                                } else {
+                                    // Check for equivalent course in plan
+                                    ctx.equivalences.get(p).and_then(|equivs| {
+                                        equivs
+                                            .iter()
+                                            .find(|eq| plan_courses.contains(eq.as_str()))
+                                            .cloned()
+                                    })
+                                }
+                            })
+                            .collect();
+
+                        // If all prereqs in path are satisfied (directly or via equivalence)
+                        if resolved.len() == path.len() {
+                            selected_prereqs = resolved;
                             break;
                         }
                     }
@@ -631,8 +656,18 @@ impl DegreeReportGenerator {
                         for path in &dnf_paths {
                             let in_plan: Vec<String> = path
                                 .iter()
-                                .filter(|p| plan_courses.contains(p.as_str()))
-                                .cloned()
+                                .filter_map(|p| {
+                                    if plan_courses.contains(p.as_str()) {
+                                        Some(p.clone())
+                                    } else {
+                                        ctx.equivalences.get(p).and_then(|equivs| {
+                                            equivs
+                                                .iter()
+                                                .find(|eq| plan_courses.contains(eq.as_str()))
+                                                .cloned()
+                                        })
+                                    }
+                                })
                                 .collect();
                             if in_plan.len() > best.len() {
                                 best = in_plan;
@@ -947,8 +982,16 @@ mod tests {
         let aggregator = create_test_aggregator();
         let selected = create_test_selected_plans();
         let dag = create_test_dag();
+        let equivalences = std::collections::HashMap::new();
 
-        let ctx = DegreeReportContext::new(&school, &degree, &aggregator, &selected, &dag);
+        let ctx = DegreeReportContext::new(
+            &school,
+            &degree,
+            &aggregator,
+            &selected,
+            &dag,
+            &equivalences,
+        );
         let gen = DegreeReportGenerator::new();
 
         let result = gen.render(&ctx);
@@ -975,8 +1018,16 @@ mod tests {
         let aggregator = create_test_aggregator();
         let selected = create_test_selected_plans();
         let dag = create_test_dag();
+        let equivalences = std::collections::HashMap::new();
 
-        let ctx = DegreeReportContext::new(&school, &degree, &aggregator, &selected, &dag);
+        let ctx = DegreeReportContext::new(
+            &school,
+            &degree,
+            &aggregator,
+            &selected,
+            &dag,
+            &equivalences,
+        );
         assert_eq!(ctx.degree.name, "Computer Science");
         assert_eq!(ctx.school.name, "Test University");
     }

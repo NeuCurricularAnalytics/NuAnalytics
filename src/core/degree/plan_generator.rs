@@ -211,6 +211,14 @@ pub struct PlanGeneratorConfig {
 
     /// Random seed for reproducible shuffling (None = random)
     pub random_seed: Option<u64>,
+
+    /// Courses to always include in all generated plans
+    /// These courses will satisfy requirements if applicable, reducing plan options
+    pub include_courses: Vec<String>,
+
+    /// Courses to exclude from plan generation
+    /// These courses will be filtered out from all variable requirement choices
+    pub exclude_courses: Vec<String>,
 }
 
 impl Default for PlanGeneratorConfig {
@@ -223,6 +231,8 @@ impl Default for PlanGeneratorConfig {
             default_elective_credits: 3.0,
             sampling_strategy: SamplingStrategy::Shuffled,
             random_seed: None,
+            include_courses: Vec::new(),
+            exclude_courses: Vec::new(),
         }
     }
 }
@@ -270,6 +280,8 @@ impl PlanGenerationStats {
 /// - Non-major requirements (`gen_ed`, supporting, elective) use simplest option
 /// - Gen-ed requirements are reduced/skipped if already satisfied by major courses
 /// - Placeholder electives are added to reach target credits if specified
+/// - If `include_courses` is specified, those courses are always included and
+///   requirements they satisfy are locked to those specific courses
 pub struct PlanGenerator<'a> {
     /// Major requirements to enumerate (category = "major")
     major_requirements: Vec<ResolvedRequirement>,
@@ -293,6 +305,9 @@ pub struct PlanGenerator<'a> {
     /// Currently used during construction; will be used for dynamic plan building
     #[allow(dead_code)]
     gen_ed_tracker: GenEdTracker,
+
+    /// Courses that must be included in all plans
+    include_courses: HashSet<String>,
 }
 
 impl<'a> PlanGenerator<'a> {
@@ -300,6 +315,7 @@ impl<'a> PlanGenerator<'a> {
     ///
     /// Separates requirements into major (enumerated) and non-major (simplified).
     /// Tracks gen-ed attributes from major/supporting courses to reduce duplicate credits.
+    /// If `include_courses` are specified, requirements they satisfy are locked to those courses.
     ///
     /// # Arguments
     /// * `requirements` - Degree requirements to generate plans from
@@ -311,9 +327,23 @@ impl<'a> PlanGenerator<'a> {
         courses: &'a HashMap<String, Course>,
         config: PlanGeneratorConfig,
     ) -> Self {
+        // Build the set of included courses
+        let include_set: HashSet<String> = config.include_courses.iter().cloned().collect();
+
         // Resolve requirements into enumerable choices
         let mut req_resolver = RequirementResolver::new(courses);
-        let resolved = req_resolver.resolve_all(requirements);
+        let mut resolved = req_resolver.resolve_all(requirements);
+
+        // If we have include_courses, filter choices to lock in those courses
+        if !include_set.is_empty() {
+            resolved = Self::apply_include_filter(resolved, &include_set);
+        }
+
+        // If we have exclude_courses, filter them out from choices
+        let exclude_set: HashSet<String> = config.exclude_courses.iter().cloned().collect();
+        if !exclude_set.is_empty() {
+            resolved = Self::apply_exclude_filter(resolved, &exclude_set);
+        }
 
         // Build credit lookup
         let course_credits: HashMap<String, f32> = courses
@@ -351,6 +381,11 @@ impl<'a> PlanGenerator<'a> {
         let supporting_courses =
             Self::collect_courses_from_requirements(&supporting_requirements, &course_credits);
         for course_key in &supporting_courses {
+            gen_ed_satisfied.record_course_by_key(course_key, courses);
+        }
+
+        // Also track gen-ed satisfaction from include_courses
+        for course_key in &include_set {
             gen_ed_satisfied.record_course_by_key(course_key, courses);
         }
 
@@ -395,7 +430,150 @@ impl<'a> PlanGenerator<'a> {
             config,
             _courses: courses,
             gen_ed_tracker: gen_ed_satisfied,
+            include_courses: include_set,
         }
+    }
+
+    /// Apply include filter to resolved requirements
+    ///
+    /// For each requirement, if any of the `include_courses` satisfy it,
+    /// lock the requirement to only that choice. This reduces combinatorial
+    /// explosion and ensures included courses are always selected.
+    ///
+    /// Special handling for multi-course choices (e.g., from `one_of` requirements):
+    /// - For choices where ALL courses are included, always lock to those choices
+    /// - For choices where only SOME courses are included, skip locking entirely
+    ///   to allow the plan generator to find the optimal combination
+    fn apply_include_filter(
+        resolved: Vec<ResolvedRequirement>,
+        include_set: &HashSet<String>,
+    ) -> Vec<ResolvedRequirement> {
+        resolved
+            .into_iter()
+            .map(|mut req| {
+                // Check if any choice has multiple courses (one_of style requirement)
+                let has_multi_course_choices = req.choices.iter().any(|c| c.len() > 1);
+
+                if has_multi_course_choices {
+                    // For one_of requirements, only lock if we find choices where
+                    // ALL courses are included (fully satisfied by includes)
+                    let fully_matched: Vec<Vec<String>> = req
+                        .choices
+                        .iter()
+                        .filter(|choice| {
+                            choice.iter().all(|course| {
+                                include_set.contains(course)
+                                    || Self::course_matches_include(course, include_set)
+                            })
+                        })
+                        .cloned()
+                        .collect();
+
+                    if !fully_matched.is_empty() {
+                        req.choices = fully_matched;
+                        req.choice_count = req.choices.len();
+                        req.is_variable = req.choice_count > 1;
+                    }
+                    // If no fully matched choices, don't lock - let plan generator decide
+                } else {
+                    // For single-course choices, lock to those containing includes
+                    let matching_choices: Vec<Vec<String>> = req
+                        .choices
+                        .iter()
+                        .filter(|choice| {
+                            choice.iter().any(|course| {
+                                include_set.contains(course)
+                                    || Self::course_matches_include(course, include_set)
+                            })
+                        })
+                        .cloned()
+                        .collect();
+
+                    if !matching_choices.is_empty() {
+                        req.choices = matching_choices;
+                        req.choice_count = req.choices.len();
+                        req.is_variable = req.choice_count > 1;
+                    }
+                }
+
+                req
+            })
+            .collect()
+    }
+
+    /// Apply exclude filter to resolved requirements
+    ///
+    /// Removes any choices that contain excluded courses from variable requirements.
+    /// This prevents courses with conflicting prerequisites from being selected.
+    fn apply_exclude_filter(
+        resolved: Vec<ResolvedRequirement>,
+        exclude_set: &HashSet<String>,
+    ) -> Vec<ResolvedRequirement> {
+        if exclude_set.is_empty() {
+            return resolved;
+        }
+
+        resolved
+            .into_iter()
+            .map(|mut req| {
+                // Filter out choices that contain any excluded course
+                let filtered_choices: Vec<Vec<String>> = req
+                    .choices
+                    .iter()
+                    .filter(|choice| {
+                        !choice.iter().any(|course| {
+                            exclude_set.contains(course)
+                                || Self::course_matches_exclude(course, exclude_set)
+                        })
+                    })
+                    .cloned()
+                    .collect();
+
+                // Only update if we still have choices (don't empty out requirements)
+                if !filtered_choices.is_empty() {
+                    req.choices = filtered_choices;
+                    req.choice_count = req.choices.len();
+                    req.is_variable = req.choice_count > 1;
+                }
+
+                req
+            })
+            .collect()
+    }
+
+    /// Check if a course reference matches any excluded course
+    ///
+    /// Handles bundle syntax `[A, B]` and equivalent syntax `{A, B}`
+    fn course_matches_exclude(course_ref: &str, exclude_set: &HashSet<String>) -> bool {
+        // For exclusion, if ANY course in the group is excluded, exclude the whole group
+        Self::course_ref_matches_set(course_ref, exclude_set)
+    }
+
+    /// Check if a course reference matches any included course
+    ///
+    /// Handles bundle syntax `[A, B]` and equivalent syntax `{A, B}`
+    fn course_matches_include(course_ref: &str, include_set: &HashSet<String>) -> bool {
+        Self::course_ref_matches_set(course_ref, include_set)
+    }
+
+    /// Check if any course in a grouped reference matches a set
+    ///
+    /// Handles bundle syntax `[A, B]` and equivalent syntax `{A, B}`.
+    /// Returns true if ANY course in the group is in the set.
+    fn course_ref_matches_set(course_ref: &str, course_set: &HashSet<String>) -> bool {
+        // Check for bundle "[...]" or equivalent "{...}" syntax
+        let is_grouped = (course_ref.starts_with('[') && course_ref.ends_with(']'))
+            || (course_ref.starts_with('{') && course_ref.ends_with('}'));
+
+        if !is_grouped {
+            return false;
+        }
+
+        let inner = &course_ref[1..course_ref.len() - 1];
+        inner
+            .split(',')
+            .map(str::trim)
+            .any(|c| course_set.contains(c))
     }
 
     /// Build a gen-ed tracker from gen-ed requirements
@@ -858,9 +1036,22 @@ impl<'a> PlanIterator<'a> {
     /// Respects `exclude_used` constraints by dynamically selecting courses
     /// from the available pool when some are already used.
     /// Expands bundles and equivalents to their component courses.
+    /// Adds `include_courses` to ensure they're always in every plan.
     fn build_plan_from_indices(&self, indices: &[usize]) -> PlanVariant {
         let mut requirement_choices: HashMap<String, Vec<String>> = HashMap::new();
         let mut used_courses: HashSet<String> = HashSet::new();
+
+        // First, mark include_courses as used so they won't be duplicated
+        for course in &self.generator.include_courses {
+            used_courses.insert(course.clone());
+        }
+
+        // Add include_courses as a special requirement if not empty
+        if !self.generator.include_courses.is_empty() {
+            let include_list: Vec<String> =
+                self.generator.include_courses.iter().cloned().collect();
+            requirement_choices.insert("_include".to_string(), include_list);
+        }
 
         // Add major requirement choices based on provided indices
         // Track used courses for exclude_used filtering
@@ -877,12 +1068,18 @@ impl<'a> PlanIterator<'a> {
                 // Expand bundles and equivalents to individual courses
                 let chosen_courses = expand_course_list(&raw_chosen);
 
+                // Filter out include_courses that are already added
+                let filtered_courses: Vec<String> = chosen_courses
+                    .into_iter()
+                    .filter(|c| !self.generator.include_courses.contains(c))
+                    .collect();
+
                 // Add chosen courses to used set
-                for course in &chosen_courses {
+                for course in &filtered_courses {
                     used_courses.insert(course.clone());
                 }
 
-                requirement_choices.insert(req.id.clone(), chosen_courses);
+                requirement_choices.insert(req.id.clone(), filtered_courses);
             }
         }
 
@@ -1464,5 +1661,173 @@ mod tests {
         // Just verify we get a valid plan
         assert!(first_plan.contains_course("CS1000"));
         assert!(first_plan.contains_course("CS2000"));
+    }
+
+    #[test]
+    fn test_include_courses_always_present() {
+        let courses = sample_courses();
+        let reqs = sample_requirements();
+        let config = PlanGeneratorConfig {
+            include_courses: vec!["CS3500".to_string()],
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+
+        let generator = PlanGenerator::new(&reqs, &courses, config);
+        let (plans, _) = generator.generate_all();
+
+        // All plans should have the included course
+        for plan in &plans {
+            assert!(
+                plan.contains_course("CS3500"),
+                "Plan missing included course CS3500"
+            );
+        }
+    }
+
+    #[test]
+    fn test_include_courses_locks_requirement_choices() {
+        let courses = sample_courses();
+        let reqs = sample_requirements();
+
+        // Without include, we'd have 3 elective choices (CS3000, CS3500, CS4000)
+        let config_without = PlanGeneratorConfig {
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+        let generator_without = PlanGenerator::new(&reqs, &courses, config_without);
+        let (plans_without, _) = generator_without.generate_all();
+        assert_eq!(plans_without.len(), 3);
+
+        // With include CS3500, only choices containing CS3500 should remain (just 1)
+        let config_with = PlanGeneratorConfig {
+            include_courses: vec!["CS3500".to_string()],
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+        let generator_with = PlanGenerator::new(&reqs, &courses, config_with);
+        let (plans_with, _) = generator_with.generate_all();
+
+        // Should only have 1 plan now (the one with CS3500)
+        assert_eq!(plans_with.len(), 1);
+        assert!(plans_with[0].contains_course("CS3500"));
+    }
+
+    #[test]
+    fn test_include_courses_reduces_plan_count() {
+        let courses = sample_courses();
+        let reqs = sample_requirements();
+
+        // Without include
+        let config_without = PlanGeneratorConfig {
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+        let generator_without = PlanGenerator::new(&reqs, &courses, config_without);
+        let count_without = generator_without.estimate_plan_count();
+
+        // With include that matches one of the elective options
+        let config_with = PlanGeneratorConfig {
+            include_courses: vec!["CS3000".to_string()],
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+        let generator_with = PlanGenerator::new(&reqs, &courses, config_with);
+        let count_with = generator_with.estimate_plan_count();
+
+        // Should have fewer plans with include
+        assert!(
+            count_with <= count_without,
+            "Expected include_courses to reduce plan count: {count_with} > {count_without}"
+        );
+    }
+
+    #[test]
+    fn test_include_courses_multiple() {
+        let courses = sample_courses();
+        let reqs = sample_requirements();
+        let config = PlanGeneratorConfig {
+            include_courses: vec!["CS3500".to_string(), "MATH1000".to_string()],
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+
+        let generator = PlanGenerator::new(&reqs, &courses, config);
+        let (plans, _) = generator.generate_all();
+
+        // All plans should have both included courses
+        for plan in &plans {
+            assert!(
+                plan.contains_course("CS3500"),
+                "Plan missing included course CS3500"
+            );
+            assert!(
+                plan.contains_course("MATH1000"),
+                "Plan missing included course MATH1000"
+            );
+        }
+    }
+
+    #[test]
+    fn test_course_matches_include_bundle_syntax() {
+        let include_set: HashSet<String> = std::iter::once("CS1000".to_string()).collect();
+
+        // Bundle containing included course should match
+        assert!(PlanGenerator::course_matches_include(
+            "[CS1000, CS1001]",
+            &include_set
+        ));
+
+        // Bundle not containing included course should not match
+        assert!(!PlanGenerator::course_matches_include(
+            "[CS2000, CS2001]",
+            &include_set
+        ));
+
+        // Regular course should not match (handled separately)
+        assert!(!PlanGenerator::course_matches_include(
+            "CS1000",
+            &include_set
+        ));
+    }
+
+    #[test]
+    fn test_course_matches_include_equivalent_syntax() {
+        let include_set: HashSet<String> = std::iter::once("MATH160".to_string()).collect();
+
+        // Equivalent containing included course should match
+        assert!(PlanGenerator::course_matches_include(
+            "{MATH156, MATH160}",
+            &include_set
+        ));
+
+        // Equivalent not containing included course should not match
+        assert!(!PlanGenerator::course_matches_include(
+            "{MATH156, MATH157}",
+            &include_set
+        ));
+    }
+
+    #[test]
+    fn test_include_nonexistent_course_still_added() {
+        let courses = sample_courses();
+        let reqs = sample_requirements();
+        // Include a course that doesn't match any requirement option
+        let config = PlanGeneratorConfig {
+            include_courses: vec!["FAKE999".to_string()],
+            ignore_duplicates: false,
+            ..Default::default()
+        };
+
+        let generator = PlanGenerator::new(&reqs, &courses, config);
+        let (plans, _) = generator.generate_all();
+
+        // All plans should still have the included course
+        for plan in &plans {
+            assert!(
+                plan.contains_course("FAKE999"),
+                "Plan missing included course FAKE999"
+            );
+        }
     }
 }

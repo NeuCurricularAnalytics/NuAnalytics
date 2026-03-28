@@ -661,23 +661,45 @@ impl CourseGraph {
         course_key: &str,
         plan_courses: &HashSet<String>,
     ) -> Option<Vec<String>> {
+        self.min_prerequisite_chain_with_exclusions(course_key, plan_courses, &HashSet::new())
+    }
+
+    /// Get minimum prerequisite chain with both context and exclusions
+    ///
+    /// Similar to `min_prerequisite_chain_with_context` but also avoids courses
+    /// in the exclusion set when choosing between OR alternatives.
+    ///
+    /// # Arguments
+    /// * `course_key` - The course to find prerequisites for
+    /// * `plan_courses` - Courses already in the plan (preferred)
+    /// * `exclude_courses` - Courses to avoid selecting as prerequisites
+    #[must_use]
+    pub fn min_prerequisite_chain_with_exclusions(
+        &self,
+        course_key: &str,
+        plan_courses: &HashSet<String>,
+        exclude_courses: &HashSet<String>,
+    ) -> Option<Vec<String>> {
         let subject = extract_subject(course_key);
-        self.min_chain_recursive_with_context(
+        self.min_chain_recursive_with_exclusions(
             course_key,
             subject.as_deref(),
             plan_courses,
+            exclude_courses,
             &mut HashSet::new(),
         )
     }
 
-    /// Recursive helper for building minimum chain with plan context
+    /// Recursive helper for building minimum chain with exclusions
     ///
-    /// Uses cycle detection and prefers courses already in the plan.
-    fn min_chain_recursive_with_context(
+    /// Uses cycle detection, prefers courses already in the plan,
+    /// and avoids excluded courses when choosing OR alternatives.
+    fn min_chain_recursive_with_exclusions(
         &self,
         course_key: &str,
         preferred_subject: Option<&str>,
         plan_courses: &HashSet<String>,
+        exclude_courses: &HashSet<String>,
         visiting: &mut HashSet<String>,
     ) -> Option<Vec<String>> {
         // Cycle detection
@@ -693,10 +715,11 @@ impl CourseGraph {
         }
 
         visiting.insert(course_key.to_string());
-        let result = self.collect_min_chain_from_edges_with_context(
+        let result = self.collect_min_chain_from_edges_with_exclusions(
             &prereq_edges,
             preferred_subject,
             plan_courses,
+            exclude_courses,
             visiting,
         );
         visiting.remove(course_key);
@@ -704,15 +727,17 @@ impl CourseGraph {
         result
     }
 
-    /// Collect minimum chain from prerequisite edges with plan context
+    /// Collect minimum chain from prerequisite edges with exclusions
     ///
     /// Separates required and optional prerequisites, processes each group,
-    /// and combines results. For OR groups, prefers courses already in plan.
-    fn collect_min_chain_from_edges_with_context(
+    /// and combines results. For OR groups, prefers courses already in plan
+    /// and avoids excluded courses.
+    fn collect_min_chain_from_edges_with_exclusions(
         &self,
         prereq_edges: &[&PrerequisiteEdge],
         preferred_subject: Option<&str>,
         plan_courses: &HashSet<String>,
+        exclude_courses: &HashSet<String>,
         visiting: &mut HashSet<String>,
     ) -> Option<Vec<String>> {
         let mut result_chain = Vec::new();
@@ -720,10 +745,11 @@ impl CourseGraph {
 
         // Process each edge by type
         for edge in prereq_edges {
-            let prereq_chain = self.min_chain_recursive_with_context(
+            let prereq_chain = self.min_chain_recursive_with_exclusions(
                 &edge.prerequisite,
                 preferred_subject,
                 plan_courses,
+                exclude_courses,
                 visiting,
             );
 
@@ -750,14 +776,16 @@ impl CourseGraph {
         }
 
         // Select best option from each OR-group, preferring courses in plan
+        // and avoiding excluded courses
         for (_group, options) in or_groups {
             if options.is_empty() {
                 return None; // All options in this OR-group led to cycles
             }
-            if let Some((best_prereq, best_chain)) = select_best_prerequisite_option_with_context(
+            if let Some((best_prereq, best_chain)) = select_best_prerequisite_option_with_exclusions(
                 options,
                 preferred_subject,
                 plan_courses,
+                exclude_courses,
             ) {
                 result_chain.push(best_prereq);
                 result_chain.extend(best_chain);
@@ -1389,13 +1417,18 @@ fn select_best_prerequisite_option(
 /// Select the best prerequisite option from an OR group with plan context
 ///
 /// Prioritizes:
-/// 1. Courses already in the plan (to avoid adding redundant prerequisites)
-/// 2. Same-subject courses (if `preferred_subject` is provided)
-/// 3. Shortest chain length
-fn select_best_prerequisite_option_with_context(
+/// Select best prerequisite option with exclusions
+///
+/// Priority:
+/// 1. Courses already in the plan (no new courses needed)
+/// 2. Non-excluded courses (avoid alternatives to included courses)
+/// 3. Same-subject courses
+/// 4. Shortest chain length
+fn select_best_prerequisite_option_with_exclusions(
     options: Vec<(String, Vec<String>)>,
     preferred_subject: Option<&str>,
     plan_courses: &HashSet<String>,
+    exclude_courses: &HashSet<String>,
 ) -> Option<(String, Vec<String>)> {
     if options.is_empty() {
         return None;
@@ -1411,9 +1444,26 @@ fn select_best_prerequisite_option_with_context(
         return select_best_prerequisite_option(in_plan, preferred_subject);
     }
 
+    // Second priority: filter out excluded courses if there are non-excluded alternatives
+    let (not_excluded, excluded): (Vec<_>, Vec<_>) =
+        not_in_plan.into_iter().partition(|(prereq, chain)| {
+            !exclude_courses.contains(prereq) && !chain.iter().any(|c| exclude_courses.contains(c))
+        });
+
+    // Use non-excluded options if available, otherwise fall back to excluded ones
+    let candidates = if not_excluded.is_empty() {
+        excluded
+    } else {
+        not_excluded
+    };
+
+    if candidates.is_empty() {
+        return None;
+    }
+
     // Count how many NEW courses each option would add (prereq + chain courses not in plan)
     // Prefer options that add the fewest new courses
-    let mut scored_options: Vec<(String, Vec<String>, usize)> = not_in_plan
+    let mut scored_options: Vec<(String, Vec<String>, usize)> = candidates
         .into_iter()
         .map(|(prereq, chain)| {
             let new_count = 1 + chain.iter().filter(|c| !plan_courses.contains(*c)).count();

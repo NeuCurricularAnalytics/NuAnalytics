@@ -255,7 +255,7 @@ fn run_plan_analysis(
         }
 
         let expanded = expand_with_prereqs(&variant.courses, ctx.graph, ctx.equivalences);
-        let plan_dag = build_plan_dag(&expanded, ctx.graph);
+        let plan_dag = build_plan_dag(&expanded, ctx.graph, ctx.equivalences);
 
         let Ok(course_metrics) = compute_all_metrics(&plan_dag) else {
             continue;
@@ -465,7 +465,15 @@ fn expand_with_prereqs(
     result
 }
 
-fn build_plan_dag(courses: &[String], graph: &CourseGraph) -> DAG {
+/// Build a DAG for the plan, considering course equivalences.
+///
+/// When a prerequisite isn't in the plan but an equivalent course is,
+/// adds an edge from the equivalent to maintain proper sequencing.
+fn build_plan_dag(
+    courses: &[String],
+    graph: &CourseGraph,
+    equivalences: &HashMap<String, HashSet<String>>,
+) -> DAG {
     let plan_set: HashSet<&str> = courses.iter().map(String::as_str).collect();
     let mut dag = DAG::new();
 
@@ -482,8 +490,16 @@ fn build_plan_dag(courses: &[String], graph: &CourseGraph) -> DAG {
                 }
                 if edge.prereq_type == crate::core::models::course_graph::PrerequisiteType::Required
                 {
+                    // Try direct match first
                     if plan_set.contains(edge.prerequisite.as_str()) {
                         dag.add_prerequisite(key.clone(), &edge.prerequisite);
+                    } else {
+                        // Check for equivalent course in plan
+                        if let Some(equiv_in_plan) =
+                            find_equivalent_in_plan(&edge.prerequisite, equivalences, &plan_set)
+                        {
+                            dag.add_prerequisite(key.clone(), equiv_in_plan);
+                        }
                     }
                 } else if let Some(group) = edge.or_group {
                     or_groups.entry(group).or_default().push(&edge.prerequisite);
@@ -498,6 +514,21 @@ fn build_plan_dag(courses: &[String], graph: &CourseGraph) -> DAG {
         }
     }
     dag
+}
+
+/// Find an equivalent course that is in the plan.
+///
+/// Returns the first equivalent course found in the plan set, or None.
+fn find_equivalent_in_plan<'a>(
+    course: &str,
+    equivalences: &HashMap<String, HashSet<String>>,
+    plan_set: &HashSet<&'a str>,
+) -> Option<&'a str> {
+    equivalences.get(course).and_then(|equivs| {
+        equivs
+            .iter()
+            .find_map(|eq| plan_set.get(eq.as_str()).copied())
+    })
 }
 
 fn build_expanded_variant(

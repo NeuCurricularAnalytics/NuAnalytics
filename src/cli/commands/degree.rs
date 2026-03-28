@@ -1,5 +1,7 @@
 //! Degree command handler for validating degree program YAML files
 
+use std::collections::HashMap as StdHashMap;
+
 use nu_analytics::config::Config;
 use nu_analytics::core::degree::audit::{
     detect_lowest_course_level, find_deep_chains, find_upper_level_without_prereqs,
@@ -9,6 +11,7 @@ use nu_analytics::core::degree::{
     PlanValidator, PlanValidatorConfig, PlanVariant, SamplingStrategy,
 };
 use nu_analytics::core::metrics::compute_all_metrics;
+use nu_analytics::core::models::course_graph::{CourseNode, PrerequisiteEdge, PrerequisiteType};
 use nu_analytics::core::models::degree::Requirement;
 use nu_analytics::core::models::{CourseGraph, School, DAG};
 use nu_analytics::core::report::degree_report::{DegreeReportContext, DegreeReportGenerator};
@@ -480,6 +483,8 @@ pub struct DegreeOptions {
     pub no_report: bool,
     /// Whether to print verbose output
     pub verbose: bool,
+    /// Courses to always include in all plans
+    pub include_courses: Option<Vec<String>>,
 }
 
 /// Run the degree command
@@ -588,6 +593,9 @@ struct AnalysisContext<'a> {
     /// Map from course key to all equivalent courses (including itself)
     /// Built from requirement definitions using `{A, B, C}` syntax
     equivalences: HashMap<String, HashSet<String>>,
+    /// Courses to avoid adding as prerequisites
+    /// Built from alternatives to included courses in `select count:1` requirements
+    exclude_from_prereqs: HashSet<String>,
 }
 
 /// Build an equivalence map from requirement definitions
@@ -653,6 +661,263 @@ fn build_equivalence_map(
     }
 
     equivalences
+}
+
+/// Build a set of courses to exclude from prerequisite expansion
+///
+/// Identifies courses that should be excluded when expanding prerequisites for included courses.
+/// This prevents adding conflicting prerequisite paths.
+///
+/// Excludes:
+/// 1. Alternative prerequisite paths: If MATH156 is included with prereqs `(MATH124 & MATH126) | MATH127`,
+///    we exclude the longer path (MATH124, MATH125, MATH126, etc.) and prefer the shorter (MATH127).
+/// 2. Pathway courses: Courses whose prerequisites REQUIRE excluded courses (all alternatives excluded).
+fn build_exclude_set(include_courses: &[String], graph: &CourseGraph) -> HashSet<String> {
+    let mut exclude_set = HashSet::new();
+
+    if include_courses.is_empty() {
+        return exclude_set;
+    }
+
+    let include_set: HashSet<&str> = include_courses.iter().map(String::as_str).collect();
+
+    // Phase 1: For included courses with OR-group prerequisites, exclude the non-preferred paths
+    // For example, if MATH156 is included with prereqs `(MATH124 & MATH126) | MATH127`,
+    // we exclude MATH124, MATH125, MATH126, MATH117, MATH118 (the longer path).
+    for include_course in include_courses {
+        if let Some(node) = graph.get(include_course) {
+            exclude_set.extend(find_excluded_prereq_paths(node, graph));
+        }
+    }
+
+    // Phase 2: Expand exclusions to include "pathway" courses
+    // These are courses that REQUIRE excluded courses as prerequisites
+    // We iterate until no new exclusions are found
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let current_excludes: Vec<String> = exclude_set.iter().cloned().collect();
+
+        for (course_key, node) in graph.iter() {
+            // Skip if already excluded or included
+            if exclude_set.contains(course_key) || include_set.contains(course_key.as_str()) {
+                continue;
+            }
+
+            // Check if this course REQUIRES any excluded course
+            // (i.e., all OR-alternatives for a prereq group are excluded)
+            if course_requires_excluded(node, &current_excludes, &include_set, graph) {
+                exclude_set.insert(course_key.clone());
+                changed = true;
+            }
+        }
+    }
+
+    exclude_set
+}
+
+/// Find courses that should be excluded based on included course's prereq OR-groups
+///
+/// For an included course like MATH156 with prereqs `(MATH124 & MATH126) | MATH127`,
+/// we identify the shorter path (MATH127) and exclude courses that are ONLY needed
+/// for the longer path (MATH124, MATH125, MATH126, MATH117, MATH118).
+fn find_excluded_prereq_paths(node: &CourseNode, graph: &CourseGraph) -> HashSet<String> {
+    let mut excluded = HashSet::new();
+
+    // Group prerequisites by their or_group (only care about actual OR-groups, not None)
+    let or_groups = group_prereqs_by_or_group(&node.prerequisites);
+
+    // For each OR-group, identify the shorter path and exclude courses from longer paths
+    for (group_id, edges) in or_groups {
+        // Skip non-OR-groups (required prereqs)
+        if group_id.is_none() || edges.len() <= 1 {
+            continue;
+        }
+
+        // Calculate the total prerequisite chain length for each option
+        let mut option_chains: Vec<(String, HashSet<String>)> = Vec::new();
+
+        for edge in &edges {
+            let chain = collect_all_prereqs(&edge.prerequisite, graph, &mut HashSet::new());
+            option_chains.push((edge.prerequisite.clone(), chain));
+        }
+
+        // Find the option with the shortest total chain
+        if let Some((shortest_prereq, shortest_chain)) =
+            option_chains.iter().min_by_key(|(_, chain)| chain.len())
+        {
+            // Exclude courses from other chains that aren't in the shortest chain
+            for (prereq, chain) in &option_chains {
+                if prereq != shortest_prereq {
+                    for course in chain {
+                        if !shortest_chain.contains(course) {
+                            excluded.insert(course.clone());
+                        }
+                    }
+                    // Also exclude the top-level alternative prereq itself
+                    if !shortest_chain.contains(prereq) {
+                        excluded.insert(prereq.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    excluded
+}
+
+/// Collect all prerequisites transitively for a course
+fn collect_all_prereqs(
+    course: &str,
+    graph: &CourseGraph,
+    visited: &mut HashSet<String>,
+) -> HashSet<String> {
+    let mut prereqs = HashSet::new();
+
+    if visited.contains(course) {
+        return prereqs;
+    }
+    visited.insert(course.to_string());
+
+    let Some(node) = graph.get(course) else {
+        return prereqs;
+    };
+
+    for edge in &node.prerequisites {
+        prereqs.insert(edge.prerequisite.clone());
+        prereqs.extend(collect_all_prereqs(&edge.prerequisite, graph, visited));
+    }
+
+    prereqs
+}
+
+/// Check if a course requires an excluded course (no valid alternative)
+///
+/// Returns true if the course has a prerequisite OR-group where ALL options
+/// are either excluded or their prerequisites require excluded courses.
+fn course_requires_excluded(
+    node: &CourseNode,
+    exclude_set: &[String],
+    include_set: &HashSet<&str>,
+    graph: &CourseGraph,
+) -> bool {
+    let or_groups = group_prereqs_by_or_group(&node.prerequisites);
+
+    // Check each OR-group
+    for (group_id, edges) in or_groups {
+        // Handle required prerequisites (not part of any OR-group)
+        if group_id.is_none() {
+            for edge in &edges {
+                if edge.prereq_type == PrerequisiteType::Required
+                    && exclude_set.contains(&edge.prerequisite)
+                    && !include_set.contains(edge.prerequisite.as_str())
+                {
+                    return true;
+                }
+            }
+            continue;
+        }
+
+        // For OR-groups, check if ALL options are problematic
+        // (excluded directly, or their prereqs are exclusively excluded)
+        let all_problematic = edges.iter().all(|edge| {
+            let prereq = &edge.prerequisite;
+
+            // Directly excluded
+            if exclude_set.contains(prereq) && !include_set.contains(prereq.as_str()) {
+                return true;
+            }
+
+            // Check if this prereq's prerequisites eventually require excluded courses
+            prereq_chain_requires_excluded(
+                prereq,
+                exclude_set,
+                include_set,
+                graph,
+                &mut HashSet::new(),
+            )
+        });
+
+        if all_problematic && !edges.is_empty() {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Recursively check if a course's prerequisite chain requires excluded courses
+///
+/// Returns true if ALL prerequisite options for ANY OR-group lead to excluded courses.
+/// This handles transitive exclusions where a course's prerequisites eventually
+/// require an excluded course with no valid alternatives.
+fn prereq_chain_requires_excluded(
+    course: &str,
+    exclude_set: &[String],
+    include_set: &HashSet<&str>,
+    graph: &CourseGraph,
+    visited: &mut HashSet<String>,
+) -> bool {
+    // Avoid infinite loops
+    if visited.contains(course) {
+        return false;
+    }
+    visited.insert(course.to_string());
+
+    // If included, it's fine
+    if include_set.contains(course) {
+        return false;
+    }
+
+    // If excluded, this path requires excluded courses
+    if exclude_set.contains(&course.to_string()) {
+        return true;
+    }
+
+    // Check the course's prerequisites
+    let Some(node) = graph.get(course) else {
+        return false;
+    };
+
+    let or_groups = group_prereqs_by_or_group(&node.prerequisites);
+
+    // Check if any OR-group has all options leading to excluded courses
+    for (_group_id, edges) in or_groups {
+        if edges.is_empty() {
+            continue;
+        }
+
+        let all_require_excluded = edges.iter().all(|edge| {
+            prereq_chain_requires_excluded(
+                &edge.prerequisite,
+                exclude_set,
+                include_set,
+                graph,
+                visited,
+            )
+        });
+
+        if all_require_excluded {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Group prerequisite edges by their OR-group
+///
+/// Returns a map where:
+/// - `None` key contains required prerequisites (not part of any OR-group)
+/// - Numeric keys contain optional prerequisites grouped by their `or_group` ID
+fn group_prereqs_by_or_group(
+    prerequisites: &[PrerequisiteEdge],
+) -> StdHashMap<Option<usize>, Vec<&PrerequisiteEdge>> {
+    let mut or_groups: StdHashMap<Option<usize>, Vec<&PrerequisiteEdge>> = StdHashMap::new();
+    for edge in prerequisites {
+        or_groups.entry(edge.or_group).or_default().push(edge);
+    }
+    or_groups
 }
 
 /// Parse equivalent courses from `{A, B, C}` syntax
@@ -727,6 +992,10 @@ fn analyze_degree(
     // Build equivalence map from requirements
     let equivalences = build_equivalence_map(&program.requirements);
 
+    // Build exclude set from alternatives to included courses
+    let include_courses = options.include_courses.clone().unwrap_or_default();
+    let exclude_from_prereqs = build_exclude_set(&include_courses, &graph_result.graph);
+
     // Build analysis context
     let ctx = AnalysisContext {
         program: &program,
@@ -744,10 +1013,13 @@ fn analyze_degree(
                 .unwrap_or(config.degree_analysis.sample_plan_count),
             target_credits: program.degree.total_credits,
             sampling_strategy,
+            include_courses,
+            exclude_courses: exclude_from_prereqs.iter().cloned().collect(),
             ..Default::default()
         },
         verbose,
         equivalences,
+        exclude_from_prereqs,
     };
 
     // Run plan enumeration and metrics aggregation
@@ -812,6 +1084,12 @@ fn enumerate_and_analyze_plans(
     if ctx.verbose {
         eprintln!();
         eprintln!("Plan Generation:");
+        if !ctx.gen_config.include_courses.is_empty() {
+            eprintln!(
+                "  Included courses: {}",
+                ctx.gen_config.include_courses.join(", ")
+            );
+        }
         eprintln!("  Estimated total plans: {}", stats.total_possible);
         eprintln!("  Variable requirements: {}", stats.variable_requirements);
         if stats.total_possible > ctx.gen_config.max_plans {
@@ -883,11 +1161,22 @@ fn process_plan_variants(
         }
 
         // Expand courses to include all prerequisites
-        let expanded_courses =
-            expand_courses_with_prerequisites(&variant.courses, ctx.graph, &ctx.equivalences);
+        let include_set: HashSet<String> = ctx.gen_config.include_courses.iter().cloned().collect();
+        let expanded_courses = expand_courses_with_prerequisites(
+            &variant.courses,
+            ctx.graph,
+            &ctx.equivalences,
+            &ctx.exclude_from_prereqs,
+            &include_set,
+        );
 
         // Build plan-specific DAG and compute metrics
-        let plan_dag = build_dag_for_plan(&expanded_courses, ctx.graph);
+        let plan_dag = build_dag_for_plan(
+            &expanded_courses,
+            ctx.graph,
+            &include_set,
+            &ctx.equivalences,
+        );
         let course_metrics = match compute_all_metrics(&plan_dag) {
             Ok(metrics) => metrics,
             Err(e) => {
@@ -1063,6 +1352,7 @@ fn generate_html_report(
         aggregator,
         selected,
         &ctx.dag,
+        &ctx.equivalences,
     );
     let generator = DegreeReportGenerator::new();
     generator
@@ -1296,10 +1586,15 @@ fn build_dag_from_graph(graph: &CourseGraph) -> DAG {
 ///
 /// Uses the equivalence map to check if a prerequisite is satisfied by an
 /// equivalent course already in the plan.
+///
+/// Uses the exclude set to avoid adding courses that are alternatives to included
+/// courses (e.g., don't add MATH160 if user included MATH156 and they're alternatives).
 fn expand_courses_with_prerequisites(
     courses: &[String],
     graph: &CourseGraph,
     equivalences: &HashMap<String, HashSet<String>>,
+    exclude_from_prereqs: &HashSet<String>,
+    protected_courses: &HashSet<String>,
 ) -> Vec<String> {
     // Phase 1: Sort courses by prerequisite depth (deepest chains first)
     // This ensures courses like MATH156 (which needs MATH127) are processed
@@ -1318,10 +1613,18 @@ fn expand_courses_with_prerequisites(
 
     while let Some(course_key) = to_process.pop() {
         // Get the minimum prerequisite chain, preferring courses already in the plan
-        if let Some(prereq_chain) =
-            graph.min_prerequisite_chain_with_context(&course_key, &expanded)
-        {
+        // and avoiding excluded courses
+        if let Some(prereq_chain) = graph.min_prerequisite_chain_with_exclusions(
+            &course_key,
+            &expanded,
+            exclude_from_prereqs,
+        ) {
             for prereq in prereq_chain {
+                // Skip excluded courses (alternatives to included courses)
+                if exclude_from_prereqs.contains(&prereq) {
+                    continue;
+                }
+
                 // Check if this prerequisite is satisfied by an equivalent course
                 let has_equivalent = equivalences
                     .get(&prereq)
@@ -1340,10 +1643,13 @@ fn expand_courses_with_prerequisites(
     // - It was added as an OR-alternative for some course
     // - Another course in the plan would also satisfy that OR requirement
     // - OR an equivalent course is already in the plan
+    // BUT never remove protected courses (explicitly included by user)
     let expanded_clone = expanded.clone();
     let redundant = find_redundant_prerequisites(&expanded_clone, graph, equivalences);
     for course in redundant {
-        expanded.remove(&course);
+        if !protected_courses.contains(&course) {
+            expanded.remove(&course);
+        }
     }
 
     let mut result: Vec<String> = expanded.into_iter().collect();
@@ -1365,18 +1671,53 @@ fn find_redundant_prerequisites(
     equivalences: &HashMap<String, HashSet<String>>,
 ) -> Vec<String> {
     let mut redundant = Vec::new();
+
+    // Build a map of which courses ACTUALLY depend on which prerequisites
+    // Only count a prerequisite as "used" if no other option in its OR-group is in the plan
     let mut prereq_usage: HashMap<String, Vec<String>> = HashMap::new();
 
-    // Build a map of which courses use which prerequisites
     for course_key in courses {
         if let Some(node) = graph.get(course_key) {
+            // Group prerequisites by OR-group
+            let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
+            let mut required_prereqs: Vec<&str> = Vec::new();
+
             for edge in &node.prerequisites {
-                if courses.contains(&edge.prerequisite) {
+                if edge.prereq_type
+                    == nu_analytics::core::models::course_graph::PrerequisiteType::Required
+                {
+                    if courses.contains(&edge.prerequisite) {
+                        required_prereqs.push(&edge.prerequisite);
+                    }
+                } else if let Some(group) = edge.or_group {
+                    or_groups.entry(group).or_default().push(&edge.prerequisite);
+                }
+            }
+
+            // Required prereqs are always used
+            for prereq in required_prereqs {
+                prereq_usage
+                    .entry(prereq.to_string())
+                    .or_default()
+                    .push(course_key.clone());
+            }
+
+            // For OR-groups, only mark as "used" if this is the ONLY option in the plan
+            for (_group, options) in or_groups {
+                let in_plan: Vec<&str> = options
+                    .iter()
+                    .filter(|&&opt| courses.contains(opt))
+                    .copied()
+                    .collect();
+
+                if in_plan.len() == 1 {
+                    // Only one option satisfies this - it's truly needed
                     prereq_usage
-                        .entry(edge.prerequisite.clone())
+                        .entry(in_plan[0].to_string())
                         .or_default()
                         .push(course_key.clone());
                 }
+                // If multiple options are in plan, we'll handle redundancy below
             }
         }
     }
@@ -1384,24 +1725,15 @@ fn find_redundant_prerequisites(
     // Check for courses that are redundant because an equivalent is in the plan
     for course in courses {
         if let Some(equivs) = equivalences.get(course) {
-            // If another equivalent course is also in the plan, one might be redundant
             for equiv in equivs {
                 if equiv != course && courses.contains(equiv) {
-                    // Check if this course is only used as a prerequisite
-                    // If so, and the equivalent satisfies those same prereqs, it's redundant
                     let usages = prereq_usage.get(course);
                     if usages.is_none() || usages.is_some_and(std::vec::Vec::is_empty) {
-                        // This course has no dependents - check if it was added as a prereq
-                        // for something that the equivalent would satisfy
-                        let equiv_satisfies_same =
-                            prereq_usage.get(equiv).is_some_and(|equiv_usages| {
-                                // Check if equivalent is used by any course
-                                !equiv_usages.is_empty()
-                            });
+                        let equiv_satisfies_same = prereq_usage
+                            .get(equiv)
+                            .is_some_and(|equiv_usages| !equiv_usages.is_empty());
 
                         if equiv_satisfies_same {
-                            // The equivalent course is being used - this one might be redundant
-                            // Only mark redundant if this course was added as a prereq, not from requirements
                             redundant.push(course.clone());
                         }
                     }
@@ -1434,39 +1766,24 @@ fn find_redundant_prerequisites(
                     .collect();
 
                 if in_plan.len() > 1 {
-                    // We have multiple options - find which ones are only used here
+                    // Multiple options satisfy this OR-group - find redundant ones
+                    // A course is redundant if another course in this OR-group
+                    // is actually NEEDED by other courses (has real dependents)
                     for &option in &in_plan {
-                        if let Some(usages) = prereq_usage.get(option) {
-                            // If this prereq is only used by this one course's OR-group,
-                            // and another option exists, it's redundant
-                            if usages.len() == 1 && usages[0] == *course_key {
-                                // Check if this course has other prereqs depending on it
-                                let has_dependents = courses.iter().any(|other| {
-                                    if other == option {
-                                        return false;
-                                    }
-                                    graph.get(other).is_some_and(|other_node| {
-                                        other_node.prerequisites.iter().any(|e| {
-                                            e.prerequisite == option
-                                                && e.prereq_type
-                                                    == nu_analytics::core::models::course_graph::PrerequisiteType::Required
-                                        })
-                                    })
-                                });
+                        let option_usage = prereq_usage.get(option).map_or(0, Vec::len);
 
-                                if !has_dependents {
-                                    // This option is redundant - but only mark it if
-                                    // it's not the "best" option (prefer keeping the
-                                    // one that's used by other courses)
-                                    let better_exists = in_plan.iter().any(|&other| {
-                                        other != option
-                                            && prereq_usage.get(other).is_some_and(|u| u.len() > 1)
-                                    });
-                                    if better_exists {
-                                        redundant.push(option.to_string());
-                                    }
-                                }
+                        // Check if another option has MORE dependents (is more useful)
+                        let better_exists = in_plan.iter().any(|&other| {
+                            if other == option {
+                                return false;
                             }
+                            let other_usage = prereq_usage.get(other).map_or(0, Vec::len);
+                            other_usage > option_usage
+                        });
+
+                        // If this option has no unique dependents and a better option exists
+                        if option_usage == 0 && better_exists {
+                            redundant.push(option.to_string());
                         }
                     }
                 }
@@ -1613,7 +1930,19 @@ fn placeholder_credits(course_key: &str) -> f32 {
 /// Filters the full course graph to include only courses in the plan and
 /// their prerequisite relationships within the plan. For OR-prerequisites,
 /// only adds edges to prerequisites that are actually in the plan.
-fn build_dag_for_plan(courses: &[String], graph: &CourseGraph) -> DAG {
+///
+/// When multiple OR-group options are in the plan, prefers:
+/// 1. Included courses (explicitly specified by user)
+/// 2. Courses needed by more other courses in the plan
+///
+/// For required prerequisites, if the exact prereq isn't in the plan but an
+/// equivalent course is (per the equivalences map), uses the equivalent.
+fn build_dag_for_plan(
+    courses: &[String],
+    graph: &CourseGraph,
+    include_courses: &HashSet<String>,
+    equivalences: &HashMap<String, HashSet<String>>,
+) -> DAG {
     let plan_courses: HashSet<&str> = courses.iter().map(String::as_str).collect();
     let mut dag = DAG::new();
 
@@ -1645,14 +1974,19 @@ fn build_dag_for_plan(courses: &[String], graph: &CourseGraph) -> DAG {
                 }
             }
 
-            // Add required prerequisites that are in the plan
+            // Add required prerequisites that are in the plan (directly or via equivalence)
             for prereq in required_prereqs {
                 if plan_courses.contains(prereq) {
                     dag.add_prerequisite(course_key.clone(), prereq);
+                } else if let Some(equiv) =
+                    find_equivalent_in_plan_set(prereq, equivalences, &plan_courses)
+                {
+                    dag.add_prerequisite(course_key.clone(), equiv);
                 }
             }
 
-            // For each OR-group, add the prerequisite that's in the plan (if any)
+            // For each OR-group, add only ONE prerequisite to avoid spurious edges
+            // Prefer included courses, then courses needed by more other courses
             for (_group, options) in or_groups {
                 // Find options that are in the plan
                 let in_plan: Vec<&str> = options
@@ -1661,9 +1995,46 @@ fn build_dag_for_plan(courses: &[String], graph: &CourseGraph) -> DAG {
                     .copied()
                     .collect();
 
-                // Add edges for all options that are in the plan
-                // (Usually just one, but if multiple, all should be connected)
-                for prereq in in_plan {
+                if in_plan.is_empty() {
+                    continue;
+                }
+
+                // If only one option, use it
+                if in_plan.len() == 1 {
+                    dag.add_prerequisite(course_key.clone(), in_plan[0]);
+                    continue;
+                }
+
+                // Multiple options - first check if any is an included course
+                let included_option = in_plan
+                    .iter()
+                    .find(|&&opt| include_courses.contains(opt))
+                    .copied();
+
+                if let Some(prereq) = included_option {
+                    dag.add_prerequisite(course_key.clone(), prereq);
+                    continue;
+                }
+
+                // No included course - prefer the one needed by other courses
+                // Count how many OTHER courses in the plan need each option
+                let best_prereq = in_plan
+                    .iter()
+                    .max_by_key(|&&opt| {
+                        // Count courses that have this as a prerequisite
+                        courses
+                            .iter()
+                            .filter(|&other| {
+                                other.as_str() != course_key
+                                    && graph.get(other).is_some_and(|n| {
+                                        n.prerequisites.iter().any(|e| e.prerequisite == opt)
+                                    })
+                            })
+                            .count()
+                    })
+                    .copied();
+
+                if let Some(prereq) = best_prereq {
                     dag.add_prerequisite(course_key.clone(), prereq);
                 }
             }
@@ -1671,6 +2042,21 @@ fn build_dag_for_plan(courses: &[String], graph: &CourseGraph) -> DAG {
     }
 
     dag
+}
+
+/// Find an equivalent course that is in the plan set.
+///
+/// Returns the first equivalent course found, or None if no equivalent is in the plan.
+fn find_equivalent_in_plan_set<'a>(
+    course: &str,
+    equivalences: &HashMap<String, HashSet<String>>,
+    plan_courses: &HashSet<&'a str>,
+) -> Option<&'a str> {
+    equivalences.get(course).and_then(|equivs| {
+        equivs
+            .iter()
+            .find_map(|eq| plan_courses.get(eq.as_str()).copied())
+    })
 }
 
 /// Print a separator between sections
