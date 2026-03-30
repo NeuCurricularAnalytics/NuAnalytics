@@ -258,7 +258,6 @@ impl MetricsExporter for CsvExporter {
 ///
 /// # Errors
 /// Returns an error if file writing fails
-#[allow(clippy::too_many_lines)]
 pub fn export_metrics_csv_with_summary(
     school: &School,
     plan: &Plan,
@@ -267,7 +266,6 @@ pub fn export_metrics_csv_with_summary(
     output_path: &Path,
 ) -> Result<(), Box<dyn Error>> {
     use std::fs::File;
-    use std::io::Write;
 
     let mut file = File::create(output_path)?;
 
@@ -277,12 +275,13 @@ pub fn export_metrics_csv_with_summary(
         .iter()
         .find(|d| d.degree_id() == plan.degree_id);
 
-    let degree_type = degree.map_or_else(|| "BS".to_string(), |d| d.degree_type.clone());
-    let cip_code = degree.and_then(|d| d.cip_code.clone()).unwrap_or_default();
-    let system_type = degree.map_or_else(|| "semester".to_string(), |d| d.system_type.clone());
-    let scale_factor = degree.map_or(1.0, Degree::complexity_scale_factor);
-
-    let institution = plan.institution.as_deref().unwrap_or(&school.name);
+    let meta = CsvDegreeMetadata {
+        institution: plan.institution.as_deref().unwrap_or(&school.name),
+        degree_type: degree.map_or_else(|| "BS".to_string(), |d| d.degree_type.clone()),
+        cip_code: degree.and_then(|d| d.cip_code.clone()).unwrap_or_default(),
+        system_type: degree.map_or_else(|| "semester".to_string(), |d| d.system_type.clone()),
+        scale_factor: degree.map_or(1.0, Degree::complexity_scale_factor),
+    };
 
     // Pre-compute scaled complexity for each course to get accurate total
     // (scaling each course individually and rounding matches reference tool behavior)
@@ -315,57 +314,86 @@ pub fn export_metrics_csv_with_summary(
         .map(|(_, storage_key, _)| {
             let complexity = metrics.get(storage_key).map_or(0, |m| m.complexity);
             // Round to 1 decimal place per course (matches reference tool)
-            ((complexity as f64 * scale_factor) * 10.0).round() / 10.0
+            ((complexity as f64 * meta.scale_factor) * 10.0).round() / 10.0
         })
         .sum();
 
-    // Write header section with summary statistics - one item per row
-    // Row 1: Curriculum name
+    write_csv_header(&mut file, plan, summary, &meta, scaled_total_complexity)?;
+
+    write_csv_courses(
+        &mut file,
+        &courses_by_csv_id,
+        metrics,
+        school,
+        meta.institution,
+        meta.scale_factor,
+        plan.courses.len(),
+    )?;
+
+    Ok(())
+}
+
+/// Resolved metadata from a degree for CSV export
+struct CsvDegreeMetadata<'a> {
+    institution: &'a str,
+    degree_type: String,
+    system_type: String,
+    cip_code: String,
+    scale_factor: f64,
+}
+
+/// Write the CSV header rows (curriculum name, institution, degree type, etc.).
+fn write_csv_header(
+    file: &mut impl std::io::Write,
+    plan: &Plan,
+    summary: &CurriculumSummary,
+    meta: &CsvDegreeMetadata<'_>,
+    scaled_total_complexity: f64,
+) -> Result<(), Box<dyn Error>> {
     writeln!(file, "Curriculum,{}", plan.name)?;
-
-    // Row 2: Institution
-    writeln!(file, "Institution,{institution}")?;
-
-    // Row 3: Degree Type
-    writeln!(file, "Degree Type,\"{degree_type}\"")?;
-
-    // Row 4: System Type
-    writeln!(file, "System Type,{system_type}")?;
-
-    // Row 5: CIP code
-    writeln!(file, "CIP,\"{cip_code}\"")?;
-
-    // Row 6: Total Structural Complexity (sum of scaled per-course values)
+    writeln!(file, "Institution,{}", meta.institution)?;
+    writeln!(file, "Degree Type,\"{}\"", meta.degree_type)?;
+    writeln!(file, "System Type,{}", meta.system_type)?;
+    writeln!(file, "CIP,\"{}\"", meta.cip_code)?;
     writeln!(
         file,
         "Total Structural Complexity,{scaled_total_complexity:.1}"
     )?;
 
-    // Row 7: Longest Delay with path
     write!(file, "Longest Delay,{}", summary.longest_delay)?;
     if !summary.longest_delay_path.is_empty() {
         write!(file, ",{}", summary.longest_delay_path.join("->"))?;
     }
     writeln!(file)?;
 
-    // Row 8: Highest Centrality Course
     writeln!(
         file,
         "Highest Centrality Course,\"{}\",{}",
         summary.highest_centrality_course, summary.highest_centrality
     )?;
 
-    // Write courses section
     writeln!(file, "Courses")?;
     writeln!(
         file,
         "Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality"
     )?;
 
-    // Write course data
-    crate::debug!("Exporting {} courses from plan", plan.courses.len());
+    Ok(())
+}
 
-    for (csv_id, storage_key, course) in &courses_by_csv_id {
+/// Write the per-course data rows to the CSV.
+fn write_csv_courses(
+    file: &mut impl std::io::Write,
+    courses_by_csv_id: &[(String, String, &Course)],
+    metrics: &CurriculumMetrics,
+    school: &School,
+    institution: &str,
+    scale_factor: f64,
+    total_courses: usize,
+) -> Result<(), Box<dyn Error>> {
+    crate::debug!("Exporting {} courses from plan", total_courses);
+
+    for (csv_id, storage_key, course) in courses_by_csv_id {
         crate::debug!(
             "Exporting course {} ({}) - storage key: {}",
             csv_id,

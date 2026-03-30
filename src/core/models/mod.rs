@@ -17,3 +17,6 @@ pub use degree::Degree;
 pub use degree_program::DegreeProgram;
 pub use plan::Plan;
 pub use school::School;
+
+// Re-export validation types from degree module to maintain backward compatibility
+pub use crate::core::degree::validation::{ValidationError, ValidationResult, ValidationWarning};

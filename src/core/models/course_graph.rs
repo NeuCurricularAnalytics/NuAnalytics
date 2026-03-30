@@ -16,6 +16,48 @@ use super::Course;
 use crate::core::models::DegreeProgram;
 use crate::core::prerequisite_parser;
 
+// ============================================================================
+// Helper Functions - Common operations used throughout the module
+// ============================================================================
+
+/// Check if an edge is a true prerequisite (not a corequisite)
+///
+/// Corequisites are taken concurrently and don't count for prerequisite chains.
+#[inline]
+fn is_true_prerequisite(edge: &PrerequisiteEdge) -> bool {
+    edge.prereq_type != PrerequisiteType::Corequisite
+        && edge.prereq_type != PrerequisiteType::StrictCorequisite
+}
+
+/// Filter prerequisite edges to only include true prerequisites (exclude corequisites)
+fn filter_true_prerequisites(edges: &[PrerequisiteEdge]) -> Vec<&PrerequisiteEdge> {
+    edges.iter().filter(|e| is_true_prerequisite(e)).collect()
+}
+
+/// Deduplicate a vector while preserving insertion order
+///
+/// Returns the same vector with duplicates removed, keeping the first occurrence.
+fn deduplicate_preserving_order(items: &mut Vec<String>) {
+    let mut seen = HashSet::new();
+    items.retain(|c| seen.insert(c.clone()));
+}
+
+/// Collect direct required prerequisites from edges, merged with sibling context
+///
+/// Used for passing sibling context to recursive chain building.
+fn collect_direct_required_prereqs(
+    prereq_edges: &[&PrerequisiteEdge],
+    sibling_required: &HashSet<String>,
+) -> HashSet<String> {
+    let mut direct_required: HashSet<String> = sibling_required.clone();
+    for edge in prereq_edges {
+        if edge.prereq_type == PrerequisiteType::Required {
+            direct_required.insert(edge.prerequisite.clone());
+        }
+    }
+    direct_required
+}
+
 /// Represents a prerequisite relationship type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrerequisiteType {
@@ -40,6 +82,12 @@ pub struct PrerequisiteEdge {
     pub or_group: Option<usize>,
 }
 
+/// Type alias for OR-groups mapping: group ID → list of (course key, chain)
+type OrGroupsMap = HashMap<usize, Vec<(String, PrerequisiteChain)>>;
+
+/// Result type for structured chain edge processing: (required branches, OR-groups)
+type StructuredChainEdgeResult = (Vec<Vec<String>>, OrGroupsMap);
+
 /// Represents a structured prerequisite chain with parallel branches
 #[derive(Debug, Clone)]
 pub struct PrerequisiteChain {
@@ -51,6 +99,15 @@ pub struct PrerequisiteChain {
 }
 
 impl PrerequisiteChain {
+    /// Create an empty prerequisite chain (no prerequisites)
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            branches: Vec::new(),
+            total_courses: 0,
+        }
+    }
+
     /// Format the chain for display in a readable format
     ///
     /// Shows parallel branches (AND requirements) wrapped in parentheses and
@@ -301,6 +358,89 @@ impl CourseGraph {
         }
     }
 
+    /// Break cycles in the graph by removing edges
+    ///
+    /// When cycles exist (often due to OR-prerequisites creating circular paths),
+    /// this method removes one edge from each cycle to create a valid DAG.
+    /// Prefers removing optional (OR-group) edges over required edges.
+    ///
+    /// # Arguments
+    /// * `cycles` - The cycles detected in the graph
+    ///
+    /// # Returns
+    /// A vector of edges that were removed: (course, prerequisite)
+    pub fn break_cycles(&mut self, cycles: &[Vec<String>]) -> Vec<(String, String)> {
+        let mut removed_edges = Vec::new();
+
+        for cycle in cycles {
+            if cycle.len() < 2 {
+                continue;
+            }
+
+            // Find the best edge to remove (prefer optional/OR edges)
+            let edge_to_remove = self.find_best_edge_to_break(cycle);
+
+            if let Some((course, prereq)) = edge_to_remove {
+                // Remove the edge
+                if let Some(node) = self.nodes.get_mut(&course) {
+                    node.prerequisites.retain(|e| e.prerequisite != prereq);
+                }
+                // Also remove from reverse edges
+                if let Some(prereq_node) = self.nodes.get_mut(&prereq) {
+                    prereq_node.dependents.retain(|d| d != &course);
+                }
+                removed_edges.push((course, prereq));
+            }
+        }
+
+        // Recompute topological order after breaking cycles
+        let remaining_cycles = self.detect_cycles();
+        if remaining_cycles.is_empty() {
+            self.topo_order = Some(self.compute_topological_order());
+        }
+
+        removed_edges
+    }
+
+    /// Find the best edge to remove from a cycle
+    ///
+    /// Prefers optional (OR-group) edges over required edges.
+    /// Within a cycle A → B → C → A, we look at edges (A,B), (B,C), (C,A).
+    fn find_best_edge_to_break(&self, cycle: &[String]) -> Option<(String, String)> {
+        // Build list of edges in the cycle with their "removability" score
+        // Higher score = more preferable to remove
+        let mut edges: Vec<(String, String, i32)> = Vec::new();
+
+        for i in 0..cycle.len() - 1 {
+            let course = &cycle[i];
+            let prereq = &cycle[i + 1];
+
+            if let Some(node) = self.nodes.get(course) {
+                for edge in &node.prerequisites {
+                    if &edge.prerequisite == prereq {
+                        // Score: optional edges are preferred (higher score)
+                        let score = match edge.prereq_type {
+                            PrerequisiteType::Optional => 10,
+                            PrerequisiteType::Required => 1,
+                            PrerequisiteType::Corequisite | PrerequisiteType::StrictCorequisite => {
+                                0
+                            } // Don't break coreqs
+                        };
+                        if score > 0 {
+                            edges.push((course.clone(), prereq.clone(), score));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Return edge with highest score
+        edges
+            .into_iter()
+            .max_by_key(|(_, _, score)| *score)
+            .map(|(course, prereq, _)| (course, prereq))
+    }
+
     /// Get a course node by key
     #[must_use]
     pub fn get(&self, key: &str) -> Option<&CourseNode> {
@@ -427,6 +567,8 @@ impl CourseGraph {
     }
 
     /// Recursive helper for minimum depth calculation
+    ///
+    /// Uses cycle detection to compute minimum depth through prerequisites.
     fn min_depth_recursive(
         &self,
         course_key: &str,
@@ -438,16 +580,7 @@ impl CourseGraph {
         }
 
         let node = self.nodes.get(course_key)?;
-
-        // Get prerequisite edges (excluding corequisites)
-        let prereq_edges: Vec<_> = node
-            .prerequisites
-            .iter()
-            .filter(|e| {
-                e.prereq_type != PrerequisiteType::Corequisite
-                    && e.prereq_type != PrerequisiteType::StrictCorequisite
-            })
-            .collect();
+        let prereq_edges = filter_true_prerequisites(&node.prerequisites);
 
         // Base case: no prerequisites
         if prereq_edges.is_empty() {
@@ -455,10 +588,22 @@ impl CourseGraph {
         }
 
         visiting.insert(course_key.to_string());
+        let result = self.calculate_min_depth_from_edges(&prereq_edges, visiting);
+        visiting.remove(course_key);
 
-        // Group prerequisites by OR-group
-        // Required prerequisites (no group) must all be taken
-        // OR-group prerequisites - only one from the group is needed
+        result
+    }
+
+    /// Calculate minimum depth from prerequisite edges
+    ///
+    /// Groups edges by type and computes:
+    /// - Required: max depth (all must be satisfied)
+    /// - OR-groups: min depth per group (only one needed), summed
+    fn calculate_min_depth_from_edges(
+        &self,
+        prereq_edges: &[&PrerequisiteEdge],
+        visiting: &mut HashSet<String>,
+    ) -> Option<usize> {
         let mut required_depths = Vec::new();
         let mut or_group_depths: HashMap<usize, Vec<usize>> = HashMap::new();
 
@@ -474,11 +619,9 @@ impl CourseGraph {
                         or_group_depths.entry(group).or_default().push(prereq_depth);
                     }
                 }
-                _ => {} // Skip corequisites
+                _ => {} // Skip corequisites (already filtered, but be safe)
             }
         }
-
-        visiting.remove(course_key);
 
         // Calculate total depth:
         // - For required: take max (all must be satisfied)
@@ -501,56 +644,121 @@ impl CourseGraph {
     /// Returns a list of courses in the minimum chain, or None if course doesn't exist
     #[must_use]
     pub fn min_prerequisite_chain(&self, course_key: &str) -> Option<Vec<String>> {
-        let subject = extract_subject(course_key);
-        self.min_chain_recursive(course_key, subject.as_deref(), &mut HashSet::new())
+        self.min_prerequisite_chain_with_context(course_key, &HashSet::new())
     }
 
-    /// Recursive helper for building minimum chain
-    fn min_chain_recursive(
+    /// Get minimum prerequisite chain for a course, preferring courses already in a plan
+    ///
+    /// This is context-aware: when choosing between OR alternatives, it prefers:
+    /// 1. Courses already in the provided `plan_courses` set
+    /// 2. Courses with the same subject code
+    /// 3. Shortest chain length
+    ///
+    /// This prevents adding redundant prerequisites when a suitable one already exists.
+    #[must_use]
+    pub fn min_prerequisite_chain_with_context(
+        &self,
+        course_key: &str,
+        plan_courses: &HashSet<String>,
+    ) -> Option<Vec<String>> {
+        self.min_prerequisite_chain_with_exclusions(course_key, plan_courses, &HashSet::new())
+    }
+
+    /// Get minimum prerequisite chain with both context and exclusions
+    ///
+    /// Similar to `min_prerequisite_chain_with_context` but also avoids courses
+    /// in the exclusion set when choosing between OR alternatives.
+    ///
+    /// # Arguments
+    /// * `course_key` - The course to find prerequisites for
+    /// * `plan_courses` - Courses already in the plan (preferred)
+    /// * `exclude_courses` - Courses to avoid selecting as prerequisites
+    #[must_use]
+    pub fn min_prerequisite_chain_with_exclusions(
+        &self,
+        course_key: &str,
+        plan_courses: &HashSet<String>,
+        exclude_courses: &HashSet<String>,
+    ) -> Option<Vec<String>> {
+        let subject = extract_subject(course_key);
+        self.min_chain_recursive_with_exclusions(
+            course_key,
+            subject.as_deref(),
+            plan_courses,
+            exclude_courses,
+            &mut HashSet::new(),
+        )
+    }
+
+    /// Recursive helper for building minimum chain with exclusions
+    ///
+    /// Uses cycle detection, prefers courses already in the plan,
+    /// and avoids excluded courses when choosing OR alternatives.
+    fn min_chain_recursive_with_exclusions(
         &self,
         course_key: &str,
         preferred_subject: Option<&str>,
+        plan_courses: &HashSet<String>,
+        exclude_courses: &HashSet<String>,
         visiting: &mut HashSet<String>,
     ) -> Option<Vec<String>> {
+        // Cycle detection
         if visiting.contains(course_key) {
-            return None; // Cycle
+            return None;
         }
 
         let node = self.nodes.get(course_key)?;
-
-        let prereq_edges: Vec<_> = node
-            .prerequisites
-            .iter()
-            .filter(|e| {
-                e.prereq_type != PrerequisiteType::Corequisite
-                    && e.prereq_type != PrerequisiteType::StrictCorequisite
-            })
-            .collect();
+        let prereq_edges = filter_true_prerequisites(&node.prerequisites);
 
         if prereq_edges.is_empty() {
             return Some(Vec::new());
         }
 
         visiting.insert(course_key.to_string());
+        let result = self.collect_min_chain_from_edges_with_exclusions(
+            &prereq_edges,
+            preferred_subject,
+            plan_courses,
+            exclude_courses,
+            visiting,
+        );
+        visiting.remove(course_key);
 
-        // Collect required prerequisites and their chains
+        result
+    }
+
+    /// Collect minimum chain from prerequisite edges with exclusions
+    ///
+    /// Separates required and optional prerequisites, processes each group,
+    /// and combines results. For OR groups, prefers courses already in plan
+    /// and avoids excluded courses.
+    fn collect_min_chain_from_edges_with_exclusions(
+        &self,
+        prereq_edges: &[&PrerequisiteEdge],
+        preferred_subject: Option<&str>,
+        plan_courses: &HashSet<String>,
+        exclude_courses: &HashSet<String>,
+        visiting: &mut HashSet<String>,
+    ) -> Option<Vec<String>> {
         let mut result_chain = Vec::new();
         let mut or_groups: HashMap<usize, Vec<(String, Vec<String>)>> = HashMap::new();
-        let mut has_required_cycle = false;
 
+        // Process each edge by type
         for edge in prereq_edges {
-            let prereq_chain =
-                self.min_chain_recursive(&edge.prerequisite, preferred_subject, visiting);
+            let prereq_chain = self.min_chain_recursive_with_exclusions(
+                &edge.prerequisite,
+                preferred_subject,
+                plan_courses,
+                exclude_courses,
+                visiting,
+            );
 
             match edge.prereq_type {
                 PrerequisiteType::Required => {
                     // Required prereqs must succeed - if cycle, we fail
-                    if let Some(chain) = prereq_chain {
-                        result_chain.push(edge.prerequisite.clone());
-                        result_chain.extend(chain);
-                    } else {
-                        has_required_cycle = true;
-                    }
+                    let chain = prereq_chain?;
+                    result_chain.push(edge.prerequisite.clone());
+                    result_chain.extend(chain);
                 }
                 PrerequisiteType::Optional => {
                     // Optional prereqs - skip if cycle, try alternatives
@@ -561,39 +769,30 @@ impl CourseGraph {
                                 .or_default()
                                 .push((edge.prerequisite.clone(), chain));
                         }
-                        // If cycle (None), just don't add this option - try others
                     }
                 }
                 _ => {}
             }
         }
 
-        visiting.remove(course_key);
-
-        // If a required prereq had a cycle, we can't complete
-        if has_required_cycle {
-            return None;
-        }
-
-        // For each OR-group, pick the best option:
-        // 1. Prefer same-subject courses (if any exist and don't cycle)
-        // 2. Among those, pick shortest chain
+        // Select best option from each OR-group, preferring courses in plan
+        // and avoiding excluded courses
         for (_group, options) in or_groups {
             if options.is_empty() {
-                // All options in this OR-group led to cycles - can't satisfy
-                return None;
+                return None; // All options in this OR-group led to cycles
             }
-            let best = select_best_prerequisite_option(options, preferred_subject);
-            if let Some((best_prereq, best_chain)) = best {
+            if let Some((best_prereq, best_chain)) = select_best_prerequisite_option_with_exclusions(
+                options,
+                preferred_subject,
+                plan_courses,
+                exclude_courses,
+            ) {
                 result_chain.push(best_prereq);
                 result_chain.extend(best_chain);
             }
         }
 
-        // Deduplicate while preserving order
-        let mut seen = HashSet::new();
-        result_chain.retain(|c| seen.insert(c.clone()));
-
+        deduplicate_preserving_order(&mut result_chain);
         Some(result_chain)
     }
 
@@ -633,115 +832,144 @@ impl CourseGraph {
         visiting: &mut HashSet<String>,
         sibling_required: &HashSet<String>,
     ) -> Option<PrerequisiteChain> {
+        // Cycle detection
         if visiting.contains(course_key) {
-            return None; // Cycle
-        }
-
-        let node = self.nodes.get(course_key)?;
-
-        let prereq_edges: Vec<_> = node
-            .prerequisites
-            .iter()
-            .filter(|e| {
-                e.prereq_type != PrerequisiteType::Corequisite
-                    && e.prereq_type != PrerequisiteType::StrictCorequisite
-            })
-            .collect();
-
-        if prereq_edges.is_empty() {
-            return Some(PrerequisiteChain {
-                branches: Vec::new(),
-                total_courses: 0,
-            });
-        }
-
-        visiting.insert(course_key.to_string());
-
-        // First, collect all direct required prereqs at this level
-        // These become siblings for recursive calls
-        let mut direct_required: HashSet<String> = sibling_required.clone();
-        for edge in &prereq_edges {
-            if edge.prereq_type == PrerequisiteType::Required {
-                direct_required.insert(edge.prerequisite.clone());
-            }
-        }
-
-        // Collect all required prereqs and their chains
-        let mut required_branches: Vec<Vec<String>> = Vec::new();
-        let mut or_groups: HashMap<usize, Vec<(String, PrerequisiteChain)>> = HashMap::new();
-        let mut has_required_cycle = false;
-
-        for edge in prereq_edges {
-            let sub_chain = self.build_structured_chain(
-                &edge.prerequisite,
-                preferred_subject,
-                visiting,
-                &direct_required, // Pass sibling context
-            );
-
-            match edge.prereq_type {
-                PrerequisiteType::Required => {
-                    if let Some(chain) = sub_chain {
-                        // Create a branch: sub-branches + this prereq at the end
-                        let mut branch = flatten_chain_to_ordered_branch(&chain, self);
-                        branch.push(edge.prerequisite.clone());
-                        required_branches.push(branch);
-                    } else {
-                        has_required_cycle = true;
-                    }
-                }
-                PrerequisiteType::Optional => {
-                    if let Some(group) = edge.or_group {
-                        if let Some(chain) = sub_chain {
-                            or_groups
-                                .entry(group)
-                                .or_default()
-                                .push((edge.prerequisite.clone(), chain));
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        visiting.remove(course_key);
-
-        if has_required_cycle {
             return None;
         }
 
-        // Collect all required courses for overlap detection
-        // Include direct_required (sibling courses) for better overlap detection
-        let mut all_required: HashSet<String> = direct_required;
-        for branch in &required_branches {
-            all_required.extend(branch.iter().cloned());
+        let node = self.nodes.get(course_key)?;
+        let prereq_edges = filter_true_prerequisites(&node.prerequisites);
+
+        if prereq_edges.is_empty() {
+            return Some(PrerequisiteChain::empty());
         }
 
-        // For each OR-group, select best option considering overlap
-        for (_group, options) in or_groups {
-            if options.is_empty() {
-                return None;
-            }
-            let best = select_best_or_option(options, preferred_subject, &all_required, self);
-            if let Some((best_prereq, best_chain)) = best {
-                let mut branch = flatten_chain_to_ordered_branch(&best_chain, self);
-                branch.push(best_prereq.clone());
-                // Add new courses to all_required for subsequent OR groups
-                all_required.extend(branch.iter().cloned());
-                required_branches.push(branch);
-            }
-        }
+        visiting.insert(course_key.to_string());
+        let result = self.collect_structured_chain_from_edges(
+            &prereq_edges,
+            preferred_subject,
+            visiting,
+            sibling_required,
+        );
+        visiting.remove(course_key);
 
-        // Merge overlapping branches
-        let merged = merge_overlapping_branches(required_branches);
+        result
+    }
 
-        // Count unique courses
+    /// Collect structured chain from prerequisite edges
+    ///
+    /// Processes required and optional prerequisites, building branches for each.
+    fn collect_structured_chain_from_edges(
+        &self,
+        prereq_edges: &[&PrerequisiteEdge],
+        preferred_subject: Option<&str>,
+        visiting: &mut HashSet<String>,
+        sibling_required: &HashSet<String>,
+    ) -> Option<PrerequisiteChain> {
+        // Collect direct required prereqs as siblings for recursive calls
+        let direct_required = collect_direct_required_prereqs(prereq_edges, sibling_required);
+
+        // Process edges into branches and OR-groups
+        let (required_branches, or_groups) = self.process_edges_for_structured_chain(
+            prereq_edges,
+            preferred_subject,
+            visiting,
+            &direct_required,
+        )?;
+
+        // Select from OR-groups and build final chain
+        let all_branches = self.finalize_structured_branches(
+            required_branches,
+            or_groups,
+            preferred_subject,
+            &direct_required,
+        )?;
+
+        // Merge overlapping branches and create result
+        let merged = merge_overlapping_branches(all_branches);
         let total_courses = merged.iter().flatten().collect::<HashSet<_>>().len();
 
         Some(PrerequisiteChain {
             branches: merged,
             total_courses,
         })
+    }
+
+    /// Process prerequisite edges into required branches and OR-groups
+    ///
+    /// Returns `None` if a required prerequisite has a cycle.
+    fn process_edges_for_structured_chain(
+        &self,
+        prereq_edges: &[&PrerequisiteEdge],
+        preferred_subject: Option<&str>,
+        visiting: &mut HashSet<String>,
+        direct_required: &HashSet<String>,
+    ) -> Option<StructuredChainEdgeResult> {
+        let mut required_branches: Vec<Vec<String>> = Vec::new();
+        let mut or_groups: OrGroupsMap = HashMap::new();
+
+        for edge in prereq_edges {
+            let sub_chain = self.build_structured_chain(
+                &edge.prerequisite,
+                preferred_subject,
+                visiting,
+                direct_required,
+            );
+
+            match edge.prereq_type {
+                PrerequisiteType::Required => {
+                    let chain = sub_chain?; // Required must succeed
+                    let mut branch = flatten_chain_to_ordered_branch(&chain, self);
+                    branch.push(edge.prerequisite.clone());
+                    required_branches.push(branch);
+                }
+                PrerequisiteType::Optional => {
+                    if let (Some(group), Some(chain)) = (edge.or_group, sub_chain) {
+                        or_groups
+                            .entry(group)
+                            .or_default()
+                            .push((edge.prerequisite.clone(), chain));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Some((required_branches, or_groups))
+    }
+
+    /// Finalize structured branches by selecting from OR-groups
+    ///
+    /// Selects the best option from each OR-group considering overlap with required courses.
+    fn finalize_structured_branches(
+        &self,
+        mut required_branches: Vec<Vec<String>>,
+        or_groups: OrGroupsMap,
+        preferred_subject: Option<&str>,
+        direct_required: &HashSet<String>,
+    ) -> Option<Vec<Vec<String>>> {
+        // Build set of all required courses for overlap detection
+        let mut all_required: HashSet<String> = direct_required.clone();
+        for branch in &required_branches {
+            all_required.extend(branch.iter().cloned());
+        }
+
+        // Select best option from each OR-group
+        for (_group, options) in or_groups {
+            if options.is_empty() {
+                return None;
+            }
+            if let Some((best_prereq, best_chain)) =
+                select_best_or_option(options, preferred_subject, &all_required, self)
+            {
+                let mut branch = flatten_chain_to_ordered_branch(&best_chain, self);
+                branch.push(best_prereq);
+                all_required.extend(branch.iter().cloned());
+                required_branches.push(branch);
+            }
+        }
+
+        Some(required_branches)
     }
 
     /// Get the full dependent chain for a course (all courses that transitively depend on it)
@@ -792,29 +1020,18 @@ impl CourseGraph {
         }
 
         let node = self.nodes.get(course_key)?;
-
-        // Count only non-corequisite prerequisites
-        let prereq_edges: Vec<_> = node
-            .prerequisites
-            .iter()
-            .filter(|e| {
-                e.prereq_type != PrerequisiteType::Corequisite
-                    && e.prereq_type != PrerequisiteType::StrictCorequisite
-            })
-            .collect();
+        let prereq_edges = filter_true_prerequisites(&node.prerequisites);
 
         if prereq_edges.is_empty() {
             return Some(0);
         }
 
-        let mut max_depth = 0;
-        for edge in prereq_edges {
-            if let Some(prereq_depth) = self.course_depth(&edge.prerequisite) {
-                max_depth = max_depth.max(prereq_depth + 1);
-            }
-        }
-
-        Some(max_depth)
+        // Find max depth among all prerequisites
+        prereq_edges
+            .iter()
+            .filter_map(|edge| self.course_depth(&edge.prerequisite))
+            .max()
+            .map(|max| max + 1)
     }
 
     /// Detect all cycles in the graph (only prerequisite edges, not corequisites)
@@ -857,10 +1074,7 @@ impl CourseGraph {
 
         if let Some(node) = self.nodes.get(key) {
             for edge in &node.prerequisites {
-                // Skip corequisites - they are expected to be bidirectional
-                if edge.prereq_type == PrerequisiteType::Corequisite
-                    || edge.prereq_type == PrerequisiteType::StrictCorequisite
-                {
+                if !is_true_prerequisite(edge) {
                     continue;
                 }
 
@@ -869,7 +1083,7 @@ impl CourseGraph {
                 if !visited.contains(prereq) {
                     self.dfs_cycles(prereq, visited, rec_stack, on_stack, cycles);
                 } else if on_stack.contains(prereq) {
-                    // Found a cycle
+                    // Found a cycle - extract it from the recursion stack
                     if let Some(start) = rec_stack.iter().position(|k| k == prereq) {
                         let mut cycle: Vec<String> = rec_stack[start..].to_vec();
                         cycle.push(prereq.clone());
@@ -884,50 +1098,45 @@ impl CourseGraph {
     }
 
     /// Compute topological order using Kahn's algorithm
-    /// Only considers prerequisite edges (not corequisites)
+    ///
+    /// Only considers prerequisite edges (not corequisites).
     fn compute_topological_order(&self) -> Vec<String> {
-        let mut in_degree: HashMap<&str, usize> = HashMap::new();
+        // Initialize in-degrees (only counting true prerequisites)
+        let in_degree: HashMap<&str, usize> = self
+            .nodes
+            .iter()
+            .map(|(key, node)| {
+                let prereq_count = filter_true_prerequisites(&node.prerequisites).len();
+                (key.as_str(), prereq_count)
+            })
+            .collect();
+
+        self.kahn_topological_sort(in_degree)
+    }
+
+    /// Perform Kahn's algorithm for topological sorting
+    ///
+    /// Starting from nodes with zero in-degree, iteratively process nodes
+    /// and decrement the in-degrees of their dependents.
+    fn kahn_topological_sort(&self, mut in_degree: HashMap<&str, usize>) -> Vec<String> {
         let mut order = Vec::new();
-        let mut queue = VecDeque::new();
-
-        // Initialize in-degrees (only counting non-corequisite edges)
-        for (key, node) in &self.nodes {
-            let prereq_count = node
-                .prerequisites
-                .iter()
-                .filter(|e| {
-                    e.prereq_type != PrerequisiteType::Corequisite
-                        && e.prereq_type != PrerequisiteType::StrictCorequisite
-                })
-                .count();
-            in_degree.insert(key.as_str(), prereq_count);
-        }
-
-        // Add nodes with zero in-degree to queue
-        for (key, &degree) in &in_degree {
-            if degree == 0 {
-                queue.push_back(*key);
-            }
-        }
+        let mut queue: VecDeque<&str> = in_degree
+            .iter()
+            .filter(|(_, &deg)| deg == 0)
+            .map(|(&key, _)| key)
+            .collect();
 
         while let Some(key) = queue.pop_front() {
             order.push(key.to_string());
 
             if let Some(node) = self.nodes.get(key) {
                 for dep in &node.dependents {
-                    // Only decrement if this dependent has us as a non-corequisite prereq
-                    if let Some(dep_node) = self.nodes.get(dep) {
-                        let is_prereq = dep_node.prerequisites.iter().any(|e| {
-                            e.prerequisite == key
-                                && e.prereq_type != PrerequisiteType::Corequisite
-                                && e.prereq_type != PrerequisiteType::StrictCorequisite
-                        });
-                        if is_prereq {
-                            if let Some(degree) = in_degree.get_mut(dep.as_str()) {
-                                *degree -= 1;
-                                if *degree == 0 {
-                                    queue.push_back(dep.as_str());
-                                }
+                    // Only decrement if this dependent has us as a true prereq
+                    if self.is_true_prerequisite_of(key, dep) {
+                        if let Some(degree) = in_degree.get_mut(dep.as_str()) {
+                            *degree -= 1;
+                            if *degree == 0 {
+                                queue.push_back(dep.as_str());
                             }
                         }
                     }
@@ -936,6 +1145,15 @@ impl CourseGraph {
         }
 
         order
+    }
+
+    /// Check if `prereq` is a true prerequisite (not corequisite) of `course`
+    fn is_true_prerequisite_of(&self, prereq: &str, course: &str) -> bool {
+        self.nodes.get(course).is_some_and(|node| {
+            node.prerequisites
+                .iter()
+                .any(|e| e.prerequisite == prereq && is_true_prerequisite(e))
+        })
     }
 
     /// Iterate over all nodes in the graph
@@ -1194,6 +1412,91 @@ fn select_best_prerequisite_option(
     };
 
     candidates.into_iter().min_by_key(|(_, chain)| chain.len())
+}
+
+/// Select the best prerequisite option from an OR group with plan context
+///
+/// Prioritizes:
+/// Select best prerequisite option with exclusions
+///
+/// Priority:
+/// 1. Courses already in the plan (no new courses needed)
+/// 2. Non-excluded courses (avoid alternatives to included courses)
+/// 3. Same-subject courses
+/// 4. Shortest chain length
+fn select_best_prerequisite_option_with_exclusions(
+    options: Vec<(String, Vec<String>)>,
+    preferred_subject: Option<&str>,
+    plan_courses: &HashSet<String>,
+    exclude_courses: &HashSet<String>,
+) -> Option<(String, Vec<String>)> {
+    if options.is_empty() {
+        return None;
+    }
+
+    // First priority: courses already in the plan (no new courses needed)
+    let (in_plan, not_in_plan): (Vec<_>, Vec<_>) = options
+        .into_iter()
+        .partition(|(prereq, _)| plan_courses.contains(prereq));
+
+    if !in_plan.is_empty() {
+        // If multiple are in plan, prefer same-subject, then shortest
+        return select_best_prerequisite_option(in_plan, preferred_subject);
+    }
+
+    // Second priority: filter out excluded courses if there are non-excluded alternatives
+    let (not_excluded, excluded): (Vec<_>, Vec<_>) =
+        not_in_plan.into_iter().partition(|(prereq, chain)| {
+            !exclude_courses.contains(prereq) && !chain.iter().any(|c| exclude_courses.contains(c))
+        });
+
+    // Use non-excluded options if available, otherwise fall back to excluded ones
+    let candidates = if not_excluded.is_empty() {
+        excluded
+    } else {
+        not_excluded
+    };
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    // Count how many NEW courses each option would add (prereq + chain courses not in plan)
+    // Prefer options that add the fewest new courses
+    let mut scored_options: Vec<(String, Vec<String>, usize)> = candidates
+        .into_iter()
+        .map(|(prereq, chain)| {
+            let new_count = 1 + chain.iter().filter(|c| !plan_courses.contains(*c)).count();
+            (prereq, chain, new_count)
+        })
+        .collect();
+
+    // Sort by: 1) fewest new courses, 2) same subject preference, 3) alphabetical
+    scored_options.sort_by(|(prereq_a, _, count_a), (prereq_b, _, count_b)| {
+        // First by new course count
+        match count_a.cmp(count_b) {
+            std::cmp::Ordering::Equal => {
+                // Then by subject preference
+                let a_same_subject = preferred_subject.is_some_and(|subj| {
+                    extract_subject(prereq_a).is_some_and(|s| s.eq_ignore_ascii_case(subj))
+                });
+                let b_same_subject = preferred_subject.is_some_and(|subj| {
+                    extract_subject(prereq_b).is_some_and(|s| s.eq_ignore_ascii_case(subj))
+                });
+                match (a_same_subject, b_same_subject) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => prereq_a.cmp(prereq_b), // Alphabetical as tiebreaker
+                }
+            }
+            other => other,
+        }
+    });
+
+    scored_options
+        .into_iter()
+        .next()
+        .map(|(prereq, chain, _)| (prereq, chain))
 }
 
 /// Flatten a structured chain into a single ordered branch (leaf to root)
@@ -1732,5 +2035,103 @@ mod tests {
         let chain = graph.min_prerequisite_chain("CS200").unwrap();
         // Should select MATH100 because CS100 path has cycle issues
         assert!(chain.contains(&"MATH100".to_string()) || chain.contains(&"CS100".to_string()));
+    }
+
+    #[test]
+    fn test_break_cycles_removes_optional_edge_first() {
+        let mut graph = CourseGraph::default();
+
+        // Create a cycle: CS100 → CS200 → CS100
+        // CS200 → CS100 is optional, CS100 → CS200 is required
+        // Should remove the optional edge
+        let mut cs100 = CourseNode::new("CS100".to_string(), None);
+        cs100.prerequisites.push(PrerequisiteEdge {
+            prerequisite: "CS200".to_string(),
+            prereq_type: PrerequisiteType::Required,
+            or_group: None,
+        });
+        graph.nodes.insert("CS100".to_string(), cs100);
+
+        let mut cs200 = CourseNode::new("CS200".to_string(), None);
+        cs200.prerequisites.push(PrerequisiteEdge {
+            prerequisite: "CS100".to_string(),
+            prereq_type: PrerequisiteType::Optional,
+            or_group: Some(0),
+        });
+        graph.nodes.insert("CS200".to_string(), cs200);
+
+        // Build reverse edges
+        if let Some(cs100_node) = graph.nodes.get_mut("CS100") {
+            cs100_node.dependents.push("CS200".to_string());
+        }
+        if let Some(cs200_node) = graph.nodes.get_mut("CS200") {
+            cs200_node.dependents.push("CS100".to_string());
+        }
+
+        let cycles = vec![vec![
+            "CS100".to_string(),
+            "CS200".to_string(),
+            "CS100".to_string(),
+        ]];
+
+        let removed = graph.break_cycles(&cycles);
+
+        // Should remove the optional edge (CS200 → CS100)
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0], ("CS200".to_string(), "CS100".to_string()));
+
+        // Graph should now have topological order
+        assert!(!graph.has_cycles());
+    }
+
+    #[test]
+    fn test_break_cycles_handles_multiple_cycles() {
+        let mut graph = CourseGraph::default();
+
+        // Create two separate cycles
+        // Cycle 1: A → B → A
+        // Cycle 2: C → D → C
+
+        let mut a = CourseNode::new("A".to_string(), None);
+        a.prerequisites.push(PrerequisiteEdge {
+            prerequisite: "B".to_string(),
+            prereq_type: PrerequisiteType::Optional,
+            or_group: Some(0),
+        });
+        graph.nodes.insert("A".to_string(), a);
+
+        let mut b = CourseNode::new("B".to_string(), None);
+        b.prerequisites.push(PrerequisiteEdge {
+            prerequisite: "A".to_string(),
+            prereq_type: PrerequisiteType::Optional,
+            or_group: Some(0),
+        });
+        graph.nodes.insert("B".to_string(), b);
+
+        let mut c = CourseNode::new("C".to_string(), None);
+        c.prerequisites.push(PrerequisiteEdge {
+            prerequisite: "D".to_string(),
+            prereq_type: PrerequisiteType::Optional,
+            or_group: Some(1),
+        });
+        graph.nodes.insert("C".to_string(), c);
+
+        let mut d = CourseNode::new("D".to_string(), None);
+        d.prerequisites.push(PrerequisiteEdge {
+            prerequisite: "C".to_string(),
+            prereq_type: PrerequisiteType::Optional,
+            or_group: Some(1),
+        });
+        graph.nodes.insert("D".to_string(), d);
+
+        let cycles = vec![
+            vec!["A".to_string(), "B".to_string(), "A".to_string()],
+            vec!["C".to_string(), "D".to_string(), "C".to_string()],
+        ];
+
+        let removed = graph.break_cycles(&cycles);
+
+        // Should remove one edge from each cycle
+        assert_eq!(removed.len(), 2);
     }
 }

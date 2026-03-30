@@ -87,8 +87,9 @@ nuanalytics --help
 The CLI is built with Rust using a modular architecture:
 - `src/cli/main.rs` - Entry point and startup logic
 - `src/cli/args.rs` - CLI argument definitions using clap
-- `src/cli/commands/` - Command handlers (config, plan, degree, etc.)
-- `src/shared/config/` - Configuration management
+- `src/cli/commands/` - Command handlers (config, plan, degree, mcp)
+- `src/core/` - Core library functionality
+- `src/mcp/` - MCP server module (feature-gated)
 
 **Build the CLI in debug mode:**
 ```bash
@@ -99,6 +100,65 @@ cargo build
 ```bash
 cargo build --release
 ```
+
+### MCP Server Development
+
+MCP support is enabled by default. The server is organized as a separate module:
+
+```
+src/mcp/
+├── mod.rs              # Module exports
+├── server.rs           # MCP server handler
+├── schema_content.rs   # Schema documentation
+└── tools/
+    ├── mod.rs          # Tool exports
+    ├── schema.rs       # get_degree_schema tool
+    └── validate.rs     # validate_degree tool
+```
+
+**Run the MCP server:**
+```bash
+cargo run -- mcp
+```
+
+**Test MCP tools:**
+```bash
+# Run all MCP tests
+cargo test mcp::
+
+# Run specific tool tests
+cargo test mcp::tools::schema
+cargo test mcp::tools::validate
+```
+
+**Integration test script:**
+```bash
+# Run MCP server integration tests
+python3 tests/scripts/test_mcp_server.py
+
+# Test with a specific YAML file
+python3 tests/scripts/test_mcp_server.py --yaml-file samples/degrees/my-degree.yaml
+
+# Verbose output
+python3 tests/scripts/test_mcp_server.py -v
+```
+
+**Test with MCP Inspector:**
+```bash
+npx @modelcontextprotocol/inspector cargo run -- mcp
+```
+
+This opens a web UI where you can interactively test the tools.
+Note: The inspector may have issues with large YAML content - use the Python test script for those cases.
+
+**Adding new MCP tools:**
+
+1. Create a new file in `src/mcp/tools/` (e.g., `audit.rs`)
+2. Define request types with `schemars::JsonSchema` derive
+3. Implement an `execute()` function
+4. Add to `src/mcp/tools/mod.rs` exports
+5. Register in `src/mcp/server.rs` using the `#[tool]` macro
+6. Add unit tests
 
 
 #### Configuration Management

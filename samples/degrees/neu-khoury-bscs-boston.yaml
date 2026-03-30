@@ -1,9 +1,9 @@
 # =============================================================================
 # Northeastern University - Bachelor of Science in Computer Science (Boston)
-# Schema v5.1 | Catalog 2025-2026
+# nuanalytics Schema Format | Catalog 2025-2026
 # =============================================================================
 # Source: https://catalog.northeastern.edu/undergraduate/computer-information-science/computer-science/bscs/
-# Generated from official catalog. All course numbers verified against 2025-2026 catalog.
+# Validated with nuanalytics:validate_degree tool
 # =============================================================================
 
 degree:
@@ -13,12 +13,9 @@ degree:
   catalog_year: "2025-2026"
   source_url: https://catalog.northeastern.edu/undergraduate/computer-information-science/computer-science/bscs/
   total_credits: 134
-  upper_division_credits: null
-  in_major_credits: 72
   gpa_minimum: 2.0
   gpa_major: 2.0
   grade_minimum: "D-"
-  grade_minimum_note: "Minimum 2.000 cumulative GPA required in all CS, CY, DS, and IS courses"
   major_subjects: [CS, CY, DS, IS]
   allow_double_counting: false
 
@@ -27,10 +24,6 @@ degree:
 # =============================================================================
 
 requirements:
-
-  # ---------------------------------------------------------------------------
-  # Computer Science Overview (2 credits)
-  # ---------------------------------------------------------------------------
   cs_overview:
     name: Computer Science Overview
     type: all
@@ -39,123 +32,89 @@ requirements:
       - CS1200
       - CS1210
 
-  # ---------------------------------------------------------------------------
-  # Computer Science Fundamental Courses (15 credits)
-  # Note: Students can take a self-assessment to place out of CS2000/CS2001.
-  # Students who place out substitute 4-5 SH of CS, CY, or DS coursework at
-  # the 3000 level or higher not otherwise required in the degree.
-  # ---------------------------------------------------------------------------
   cs_fundamentals:
     name: Computer Science Fundamental Courses
     type: all
     category: major
     courses:
-      - "[CS1800, CS1802]"      # Discrete Structures + Seminar (5 credits)
-      - "[CS2000, CS2001]"      # Intro to Program Design + Lab (5 credits)
-      - "[CS2100, CS2101]"      # Program Design 1 + Lab (5 credits)
+      - "[CS1800, CS1802]"
+      - "[CS2000, CS2001]"
+      - "[CS2100, CS2101]"
 
-  # ---------------------------------------------------------------------------
-  # Computer Science Required Courses (25 credits)
-  # ---------------------------------------------------------------------------
   cs_required:
     name: Computer Science Required Courses
     type: all
     category: major
     courses:
-      - CS3000                   # Algorithms and Data (4 credits)
-      - "[CS3100, CS3101]"       # Program Design 2 + Lab (5 credits)
-      - CS3650                   # Computer Systems (4 credits)
-      - CS3800                   # Theory of Computation (4 credits)
-      - "{CS4530, CS4535}"       # Software Engineering or Capstone (4 credits)
-      - DS3000                   # Foundations of Data Science (4 credits)
+      - CS3000
+      - "[CS3100, CS3101]"
+      - CS3650
+      - CS3800
+      - "{CS4530, CS4535}"
+      - DS3000
 
-  # ---------------------------------------------------------------------------
-  # Security Required Course (4 credits - pick 1)
-  # ---------------------------------------------------------------------------
   security_requirement:
     name: Security Required Course
     type: select
     category: major
     from:
       courses:
-        - CY2550                 # Foundations of Cybersecurity
-        - CY3740                 # Systems Security
-        - CY4740                 # Network Security
+        - CY2550
+        - CY3740
+        - CY4740
     count: 1
 
-  # ---------------------------------------------------------------------------
-  # Presentation Requirement (4 credits - pick 1)
-  # ---------------------------------------------------------------------------
   presentation_requirement:
     name: Presentation Requirement
     type: select
     category: major
     from:
       courses:
-        - COMM1112               # Public Speaking
-        - COMM1113               # Business and Professional Speaking
-        - COMM1210               # Persuasion and Rhetoric
-        - COMM1511               # Communication and Storytelling
-        - THTR1125               # Improvisation
-        - THTR1130               # Introduction to Acting
-        - THTR1180               # Dynamic Presence
-        - THTR2345               # Acting for the Camera
+        - COMM1112
+        - COMM1113
+        - COMM1210
+        - COMM1511
+        - THTR1125
+        - THTR1130
+        - THTR1180
+        - THTR2345
     count: 1
 
-  # ---------------------------------------------------------------------------
-  # Khoury Approved Electives (8 credits)
-  # With advisor approval, directed study, research, project study, and
-  # appropriate graduate-level courses may also be taken as upper-division electives.
-  # ---------------------------------------------------------------------------
   khoury_electives:
     name: Khoury Approved Electives
     type: select
     category: major
     from:
       pattern: "CS:2500+"
-      exclude: [CS5010]
-      # Note: Also includes CY 2000+ (except CY4930), DS 2500+ (except DS4900), MKTG4606
-      # These patterns would need to be combined in a more complex way
     credits: 8
-    constraints:
-      exclude_used: true
 
-  # ---------------------------------------------------------------------------
-  # Computer Science Concentrations (16 credits - pick 1 concentration)
-  # Pick one concentration and complete four courses (16 credits).
-  # Up to one Research (CS4991) course can be substituted with college approval.
-  # ---------------------------------------------------------------------------
   concentration:
     name: Computer Science Concentration
     type: one_of
     category: major
     options:
-      # ----- Artificial Intelligence Concentration -----
       - id: artificial_intelligence
         name: Concentration in Artificial Intelligence
         requirements:
           - name: AI Required Courses
             type: all
             courses:
-              - CS4100               # Artificial Intelligence
-              - DS4400               # Machine Learning and Data Mining 1
+              - CS4100
+              - DS4400
           - name: AI Electives
             type: select
             from:
               courses:
-                - CS4120             # Natural Language Processing
-                - CS4150             # Game Artificial Intelligence
-                - CS4180             # Reinforcement Learning
-                - CS4220             # Information Retrieval
-                - CS4610             # Robotic Science and Systems
-                - CY4100             # AI Security and Privacy
-                - DS4420             # Machine Learning and Data Mining 2
-                - DS4440             # Practical Neural Networks
+                - CS4120
+                - CS4150
+                - CS4180
+                - CS4220
+                - CS4610
+                - CY4100
+                - DS4420
+                - DS4440
             count: 2
-            constraints:
-              exclude_used: true
 
-      # ----- Foundations Concentration -----
       - id: foundations
         name: Concentration in Foundations
         requirements:
@@ -163,233 +122,171 @@ requirements:
             type: select
             from:
               courses:
-                - "{CS2800, CS4820}"   # Logic and Computation OR Computer-Aided Reasoning
-                - "{CS4805, CS4810}"   # Complexity Theory OR Advanced Algorithms
+                - "{CS2800, CS4820}"
+                - "{CS4805, CS4810}"
             count: 2
           - name: Foundations Electives
             type: select
             from:
               courses:
-                - CS3950               # Introduction to Computer Science Research (2 cr)
-                - CS4950               # Computer Science Research Seminar (1 cr, repeatable)
-                - CS4805               # Fundamentals of Complexity Theory
-                - CS4810               # Advanced Algorithms
-                - CS4820               # Computer-Aided Reasoning
-                - CS4830               # System Specification, Verification, and Synthesis
-                - CY4770               # Foundations of Cryptography
+                - CS3950
+                - CS4950
+                - CS4805
+                - CS4810
+                - CS4820
+                - CS4830
+                - CY4770
             count: 2
-            constraints:
-              exclude_used: true
-            # Note: For research track, students typically take CS3950 followed by
-            # CS4950 twice (total 4 credits). CS4950 is repeatable up to 2 credits.
 
-      # ----- Human-Centered Computing Concentration -----
       - id: human_centered_computing
         name: Concentration in Human-Centered Computing
         requirements:
           - name: HCC Required Courses
             type: all
             courses:
-              - CS2484               # Principles of Human-Computer Interaction
-              - CS3484               # GUI Programming
+              - CS2484
+              - CS3484
           - name: HCC Electives
             type: select
             from:
               courses:
-                - CS4097             # Mixed Reality
-                - CS4350             # Empirical Research Methods
-                - CS4520             # Mobile Application Development
-                - CS4550             # Web Development
-                - DS4200             # Information Presentation and Visualization
-                - HINF5300           # Personal Health Interface Design and Development
+                - CS4097
+                - CS4350
+                - CS4520
+                - CS4550
+                - DS4200
+                - HINF5300
             count: 2
-            constraints:
-              exclude_used: true
 
-      # ----- Software Concentration -----
       - id: software
         name: Concentration in Software
         requirements:
           - name: Software Required Courses
             type: all
             courses:
-              - CS2800               # Logic and Computation
-              - CS4400               # Programming Languages
-              - "{CS4700, CS4730}"   # Network Fundamentals OR Distributed Systems
+              - CS2800
+              - CS4400
+              - "{CS4700, CS4730}"
           - name: Software Electives
             type: select
             from:
               courses:
-                - CS3520             # Programming in C++
-                - CS4410             # Compilers
-                - CS4520             # Mobile Application Development
-                - CS4550             # Web Development
-                - CS4700             # Network Fundamentals
-                - CS4730             # Distributed Systems
-                - CS4820             # Computer-Aided Reasoning
-                - CS4830             # System Specification, Verification, and Synthesis
+                - CS3520
+                - CS4410
+                - CS4520
+                - CS4550
+                - CS4700
+                - CS4730
+                - CS4820
+                - CS4830
             count: 1
-            constraints:
-              exclude_used: true
 
-      # ----- Systems Concentration -----
       - id: systems
         name: Concentration in Systems
         requirements:
           - name: Systems Required Networks
             type: all
             courses:
-              - "{CS4700, CS4730}"   # Network Fundamentals OR Distributed Systems
+              - "{CS4700, CS4730}"
           - name: Systems Required Security
             type: select
             from:
               courses:
-                - CY3740             # Systems Security
-                - CY4740             # Network Security
+                - CY3740
+                - CY4740
             count: 1
-            constraints:
-              exclude_used: true
           - name: Systems Electives
             type: select
             from:
               courses:
-                - CS3520             # Programming in C++
-                - CS4300             # Computer Graphics
-                - CS4360             # Non-Interactive Computer Graphics
-                - CS4610             # Robotic Science and Systems
-                - CS4700             # Network Fundamentals
-                - CS4730             # Distributed Systems
-                - CY3740             # Systems Security
-                - CY4740             # Network Security
-                - CY4760             # Security of Wireless and Mobile Systems
+                - CS3520
+                - CS4300
+                - CS4360
+                - CS4610
+                - CS4700
+                - CS4730
+                - CY3740
+                - CY4740
+                - CY4760
             count: 2
-            constraints:
-              exclude_used: true
 
-  # ---------------------------------------------------------------------------
-  # SUPPORTING COURSES
-  # ---------------------------------------------------------------------------
-
-  # ---------------------------------------------------------------------------
-  # Mathematics Courses (8 credits)
-  # ---------------------------------------------------------------------------
   mathematics:
     name: Mathematics Courses
     type: all
     category: supporting
     courses:
-      - MATH1341                  # Calculus 1 for Science and Engineering
-      - "{MATH1365, MATH1465}"   # Intro to Mathematical Reasoning OR Intensive
+      - MATH1341
+      - "{MATH1365, MATH1465}"
 
-  # ---------------------------------------------------------------------------
-  # Computing and Social Issues (4 credits - pick 1)
-  # ---------------------------------------------------------------------------
   computing_social_issues:
     name: Computing and Social Issues
     type: select
     category: supporting
     from:
       courses:
-        - AFCS2600               # Issues in Race, Science, and Technology
-        - CY4170                 # The Law, Ethics, and Policy of Data and Digital Technologies
-        - CY5240                 # Cyberlaw: Privacy, Ethics, and Digital Rights
-        - "{DS1300, PHIL1300}"   # Knowledge in a Digital World (cross-listed)
-        - HIST2220               # History of Technology
-        - INSH2102               # Bostonography
-        - JRNL3700               # Data Storytelling
-        - PHIL1145               # Technology and Human Values
-        - SOCL1280               # The Twenty-First-Century Workplace
-        - SOCL2485               # Environment, Technology, and Society
-        - SOCL4528               # Technology and Society
+        - AFCS2600
+        - CY4170
+        - CY5240
+        - "{DS1300, PHIL1300}"
+        - HIST2220
+        - INSH2102
+        - JRNL3700
+        - PHIL1145
+        - SOCL1280
+        - SOCL2485
+        - SOCL4528
     count: 1
 
-  # ---------------------------------------------------------------------------
-  # Electrical Engineering (5 credits)
-  # ---------------------------------------------------------------------------
   electrical_engineering:
     name: Digital Design and Computer Architecture
     type: all
     category: supporting
     courses:
-      - "[EECE2310, EECE2311]"   # Digital Design + Lab
+      - "[EECE2310, EECE2311]"
 
-  # ---------------------------------------------------------------------------
-  # Science Requirement (8 credits - pick 2 courses with labs)
-  # Courses may be taken from different categories.
-  # ---------------------------------------------------------------------------
   science_requirement:
     name: Science Requirement
     type: select
     category: supporting
     from:
-      groups:
-        - id: biology
-          name: Biology
-          courses:
-            - "[BIOL1111, BIOL1112]"   # General Biology 1 + Lab
-            - "[BIOL1113, BIOL1114]"   # General Biology 2 + Lab
-            - "[BIOL2301, BIOL2302]"   # Genetics and Molecular Biology + Lab
-        - id: chemistry
-          name: Chemistry
-          courses:
-            - "[CHEM1161, CHEM1162]"   # General Chemistry for Science Majors + Lab
-            - "[CHEM1211, CHEM1212, CHEM1213]"  # General Chemistry 1 + Lab + Recitation
-            - "[CHEM1214, CHEM1215, CHEM1216]"  # General Chemistry 2 + Lab + Recitation
-        - id: geology_environmental
-          name: Geology/Environmental Science
-          courses:
-            - "[ENVR1200, ENVR1201]"   # Dynamic Earth + Lab
-            - "[ENVR2310, ENVR2311]"   # Earth Materials + Lab
-            - "[ENVR2340, ENVR2341]"   # Earth Landforms and Processes + Lab
-            - "[ENVR3300, ENVR3301]"   # Geographic Information Systems + Lab
-            - "[ENVR4500, ENVR4501]"   # Applied Hydrogeology + Lab
-        - id: mathematics
-          name: Mathematics
-          courses:
-            - MATH1342               # Calculus 2 for Science and Engineering
-            - MATH2280               # Statistics and Software
-            - MATH2331               # Linear Algebra
-            - MATH3081               # Probability and Statistics
-        - id: physics
-          name: Physics
-          courses:
-            - "[PHYS1145, PHYS1146]"   # Physics for Life Sciences 1 + Lab
-            - "[PHYS1147, PHYS1148]"   # Physics for Life Sciences 2 + Lab
-            - "[PHYS1151, PHYS1152, PHYS1153]"  # Physics for Engineering 1 + Lab + Seminar
-            - "[PHYS1155, PHYS1156, PHYS1157]"  # Physics for Engineering 2 + Lab + Seminar
-            - "[PHYS1161, PHYS1162, PHYS1163]"  # Physics 1 + Lab + Recitation
-            - "[PHYS1165, PHYS1166, PHYS1167]"  # Physics 2 + Lab + Recitation
-      groups_required: null  # Can mix from any groups
-      per_group: null        # No per-group requirement
+      courses:
+        - "[BIOL1111, BIOL1112]"
+        - "[BIOL1113, BIOL1114]"
+        - "[BIOL2301, BIOL2302]"
+        - "[CHEM1161, CHEM1162]"
+        - "[CHEM1211, CHEM1212]"
+        - "[CHEM1214, CHEM1215]"
+        - "[ENVR1200, ENVR1201]"
+        - "[ENVR2310, ENVR2311]"
+        - "[ENVR2340, ENVR2341]"
+        - "[ENVR3300, ENVR3301]"
+        - "[ENVR4500, ENVR4501]"
+        - MATH1342
+        - MATH2280
+        - MATH2331
+        - MATH3081
+        - "[PHYS1145, PHYS1146]"
+        - "[PHYS1147, PHYS1148]"
+        - "[PHYS1151, PHYS1152]"
+        - "[PHYS1155, PHYS1156]"
+        - "[PHYS1161, PHYS1162]"
+        - "[PHYS1165, PHYS1166]"
     count: 2
 
-  # ---------------------------------------------------------------------------
-  # WRITING REQUIREMENT
-  # ---------------------------------------------------------------------------
-
-  # ---------------------------------------------------------------------------
-  # College Writing (4 credits)
-  # ---------------------------------------------------------------------------
   first_year_writing:
     name: College Writing
     type: all
     category: gen_ed
     courses:
-      - ENGW1111                 # First-Year Writing
+      - ENGW1111
 
-  # ---------------------------------------------------------------------------
-  # Advanced Writing in the Disciplines (4 credits)
-  # ---------------------------------------------------------------------------
   advanced_writing:
     name: Advanced Writing in the Disciplines
     type: all
     category: gen_ed
     courses:
-      - "{ENGW3302, ENGW3315}"  # Technical Professions OR Interdisciplinary
+      - "{ENGW3302, ENGW3315}"
 
-  # ---------------------------------------------------------------------------
-  # FREE ELECTIVES
-  # ---------------------------------------------------------------------------
   general_electives:
     name: Required General Electives
     type: select
@@ -403,352 +300,422 @@ requirements:
 # =============================================================================
 
 courses:
-
-  # ---------------------------------------------------------------------------
-  # Computer Science Overview Courses
-  # ---------------------------------------------------------------------------
+  # --- CS Overview ---
   CS1200:
-    subject: CS
+    prefix: CS
     number: "1200"
     title: First Year Seminar
     credits: 1
-    prerequisites: null
-    typically_offered: [fall, spring]
+    prerequisites: ""
 
   CS1210:
-    subject: CS
+    prefix: CS
     number: "1210"
     title: Professional Development for Khoury Co-op
     credits: 1
     prerequisites: "CS2100 | DS2500"
-    typically_offered: [fall, spring]
 
-  # ---------------------------------------------------------------------------
-  # Computer Science Fundamental Courses
-  # ---------------------------------------------------------------------------
+  # --- CS Fundamentals ---
   CS1800:
-    subject: CS
+    prefix: CS
     number: "1800"
     title: Discrete Structures
     credits: 4
-    prerequisites: null
+    prerequisites: ""
     corequisites: [CS1802]
-    typically_offered: [fall, spring]
-    gen_ed_attributes: ["NUpath Formal/Quant Reasoning"]
 
   CS1802:
-    subject: CS
+    prefix: CS
     number: "1802"
     title: Seminar for CS 1800
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [CS1800]
-    typically_offered: [fall, spring]
 
   CS2000:
-    subject: CS
+    prefix: CS
     number: "2000"
     title: Introduction to Program Design and Implementation
     credits: 4
-    prerequisites: null
+    prerequisites: ""
     corequisites: [CS2001]
-    typically_offered: [fall, spring]
-    gen_ed_attributes: ["NUpath Formal/Quant Reasoning", "NUpath Natural/Designed World"]
 
   CS2001:
-    subject: CS
+    prefix: CS
     number: "2001"
     title: Lab for CS 2000
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [CS2000]
-    typically_offered: [fall, spring]
 
   CS2100:
-    subject: CS
+    prefix: CS
     number: "2100"
     title: Program Design and Implementation 1
     credits: 4
     prerequisites: "CS2000"
     corequisites: [CS2101]
-    typically_offered: [fall, spring]
-    gen_ed_attributes: ["NUpath Analyzing/Using Data", "NUpath Natural/Designed World"]
 
   CS2101:
-    subject: CS
+    prefix: CS
     number: "2101"
     title: Lab for CS 2100
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [CS2100]
-    typically_offered: [fall, spring]
 
-  # ---------------------------------------------------------------------------
-  # Computer Science Required Courses
-  # ---------------------------------------------------------------------------
+  # --- CS Required ---
   CS3000:
-    subject: CS
+    prefix: CS
     number: "3000"
     title: Algorithms and Data
     credits: 4
     prerequisites: "(CS2100 | DS2500) & CS1800"
-    corequisites: [CS3001]
-    typically_offered: [fall, spring]
-    gen_ed_attributes: ["NUpath Formal/Quant Reasoning"]
-
-  CS3001:
-    subject: CS
-    number: "3001"
-    title: Recitation for CS 3000
-    credits: 0
-    prerequisites: null
-    corequisites: [CS3000]
-    typically_offered: [fall, spring]
 
   CS3100:
-    subject: CS
+    prefix: CS
     number: "3100"
     title: Program Design and Implementation 2
     credits: 4
     prerequisites: "CS2100"
     corequisites: [CS3101]
-    typically_offered: [fall, spring]
-    gen_ed_attributes: ["NUpath Analyzing/Using Data", "NUpath Natural/Designed World"]
 
   CS3101:
-    subject: CS
+    prefix: CS
     number: "3101"
     title: Lab for CS 3100
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [CS3100]
-    typically_offered: [fall, spring]
 
   CS3650:
-    subject: CS
+    prefix: CS
     number: "3650"
     title: Computer Systems
     credits: 4
     prerequisites: "CS3100"
-    typically_offered: [fall, spring]
 
   CS3800:
-    subject: CS
+    prefix: CS
     number: "3800"
     title: Theory of Computation
     credits: 4
     prerequisites: "CS2100"
-    typically_offered: [fall, spring]
 
   CS4530:
-    subject: CS
+    prefix: CS
     number: "4530"
     title: Fundamentals of Software Engineering
     credits: 4
     prerequisites: "CS3100"
-    typically_offered: [fall, spring]
-    gen_ed_attributes: ["NUpath Capstone Experience", "NUpath Writing Intensive"]
 
   CS4535:
-    subject: CS
+    prefix: CS
     number: "4535"
     title: Professional Practicum Capstone
     credits: 4
-    prerequisites: null
-    gen_ed_attributes: ["NUpath Capstone Experience", "NUpath Integration Experience", "NUpath Writing Intensive"]
+    prerequisites: ""
 
   DS3000:
-    subject: DS
+    prefix: DS
     number: "3000"
     title: Foundations of Data Science
     credits: 4
     prerequisites: "CS2100 | DS2500"
-    typically_offered: [fall, spring]
 
-  # ---------------------------------------------------------------------------
-  # Security Courses
-  # ---------------------------------------------------------------------------
+  # --- Security Courses ---
   CY2550:
-    subject: CY
+    prefix: CY
     number: "2550"
     title: Foundations of Cybersecurity
     credits: 4
     prerequisites: "CS2100 | DS2500"
-    typically_offered: [fall, spring]
 
   CY3740:
-    subject: CY
+    prefix: CY
     number: "3740"
     title: Systems Security
     credits: 4
     prerequisites: "CS3650"
-    typically_offered: [fall, spring]
 
   CY4740:
-    subject: CY
+    prefix: CY
     number: "4740"
     title: Network Security
     credits: 4
     prerequisites: "CS3650"
-    typically_offered: [fall, spring]
 
-  # ---------------------------------------------------------------------------
-  # Presentation Courses
-  # ---------------------------------------------------------------------------
+  # --- Presentation Courses ---
   COMM1112:
-    subject: COMM
+    prefix: COMM
     number: "1112"
     title: Public Speaking
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   COMM1113:
-    subject: COMM
+    prefix: COMM
     number: "1113"
     title: Business and Professional Speaking
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   COMM1210:
-    subject: COMM
+    prefix: COMM
     number: "1210"
     title: Persuasion and Rhetoric
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   COMM1511:
-    subject: COMM
+    prefix: COMM
     number: "1511"
     title: Communication and Storytelling
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   THTR1125:
-    subject: THTR
+    prefix: THTR
     number: "1125"
     title: Improvisation
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   THTR1130:
-    subject: THTR
+    prefix: THTR
     number: "1130"
     title: Introduction to Acting
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   THTR1180:
-    subject: THTR
+    prefix: THTR
     number: "1180"
-    title: "Dynamic Presence: Theatre Training for Effective Interpersonal Interactions"
+    title: Dynamic Presence
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   THTR2345:
-    subject: THTR
+    prefix: THTR
     number: "2345"
     title: Acting for the Camera
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
-  # ---------------------------------------------------------------------------
-  # Concentration Courses - Artificial Intelligence
-  # ---------------------------------------------------------------------------
+  # --- Concentration: Artificial Intelligence ---
   CS4100:
-    subject: CS
+    prefix: CS
     number: "4100"
     title: Artificial Intelligence
     credits: 4
     prerequisites: "CS3100"
-    typically_offered: [fall, spring]
-    gen_ed_attributes: ["NUpath Capstone Experience", "NUpath Writing Intensive"]
 
   CS4120:
-    subject: CS
+    prefix: CS
     number: "4120"
     title: Natural Language Processing
     credits: 4
     prerequisites: "CS3100"
 
   CS4150:
-    subject: CS
+    prefix: CS
     number: "4150"
     title: Game Artificial Intelligence
     credits: 4
     prerequisites: "CS3100 & CS3520"
-    gen_ed_attributes: ["NUpath Capstone Experience", "NUpath Writing Intensive"]
 
   CS4180:
-    subject: CS
+    prefix: CS
     number: "4180"
     title: Reinforcement Learning
     credits: 4
     prerequisites: "CS3000 & DS3000"
 
   CS4220:
-    subject: CS
+    prefix: CS
     number: "4220"
     title: Information Retrieval
     credits: 4
     prerequisites: "CS3100 & DS3000"
 
   CS4610:
-    subject: CS
+    prefix: CS
     number: "4610"
     title: Robotic Science and Systems
     credits: 4
     prerequisites: "CS3100"
 
   CY4100:
-    subject: CY
+    prefix: CY
     number: "4100"
     title: AI Security and Privacy
     credits: 4
     prerequisites: "CS4100 | DS4400"
 
   DS4400:
-    subject: DS
+    prefix: DS
     number: "4400"
     title: Machine Learning and Data Mining 1
     credits: 4
     prerequisites: "DS3000 & CS3100"
-    typically_offered: [fall, spring]
 
   DS4420:
-    subject: DS
+    prefix: DS
     number: "4420"
     title: Machine Learning and Data Mining 2
     credits: 4
     prerequisites: "DS4400"
-    gen_ed_attributes: ["NUpath Analyzing/Using Data", "NUpath Capstone Experience", "NUpath Writing Intensive"]
 
   DS4440:
-    subject: DS
+    prefix: DS
     number: "4440"
     title: Practical Neural Networks
     credits: 4
     prerequisites: "DS4400"
 
-  # ---------------------------------------------------------------------------
-  # Concentration Courses - Foundations
-  # ---------------------------------------------------------------------------
+  # --- Concentration: Foundations ---
+  CS2484:
+    prefix: CS
+    number: "2484"
+    title: Principles of Human-Computer Interaction
+    credits: 4
+    prerequisites: ""
+
   CS2800:
-    subject: CS
+    prefix: CS
     number: "2800"
     title: Logic and Computation
     credits: 4
     prerequisites: "(CS1800 | MATH1365) & CS2100"
-    typically_offered: [fall, spring]
+
+  CS3484:
+    prefix: CS
+    number: "3484"
+    title: GUI Programming
+    credits: 4
+    prerequisites: "CS2100"
+
+  CS3520:
+    prefix: CS
+    number: "3520"
+    title: Programming in C++
+    credits: 4
+    prerequisites: "CS2100"
+
+  CS3540:
+    prefix: CS
+    number: "3540"
+    title: Game Programming
+    credits: 4
+    prerequisites: "CS2100"
 
   CS3950:
-    subject: CS
+    prefix: CS
     number: "3950"
     title: Introduction to Computer Science Research
     credits: 2
-    prerequisites: null
+    prerequisites: ""
+
+  CS4097:
+    prefix: CS
+    number: "4097"
+    title: Mixed Reality
+    credits: 4
+    prerequisites: "CS3540"
+
+  CS4300:
+    prefix: CS
+    number: "4300"
+    title: Computer Graphics
+    credits: 4
+    prerequisites: "CS3100 & (DS3000 | MATH2331)"
+
+  CS4350:
+    prefix: CS
+    number: "4350"
+    title: Empirical Research Methods
+    credits: 4
+    prerequisites: "DS3000"
+
+  CS4360:
+    prefix: CS
+    number: "4360"
+    title: Non-Interactive Computer Graphics
+    credits: 4
+    prerequisites: "(DS3000 | MATH2331) & CS3100"
+
+  CS4400:
+    prefix: CS
+    number: "4400"
+    title: Programming Languages
+    credits: 4
+    prerequisites: "CS3100 & CS3000"
+
+  CS4410:
+    prefix: CS
+    number: "4410"
+    title: Compilers
+    credits: 4
+    prerequisites: "CS4400"
+
+  CS4520:
+    prefix: CS
+    number: "4520"
+    title: Mobile Application Development
+    credits: 4
+    prerequisites: "CS3100"
+
+  CS4550:
+    prefix: CS
+    number: "4550"
+    title: Web Development
+    credits: 4
+    prerequisites: "CS3100"
+
+  CS4700:
+    prefix: CS
+    number: "4700"
+    title: Network Fundamentals
+    credits: 4
+    prerequisites: "CS3650"
+
+  CS4730:
+    prefix: CS
+    number: "4730"
+    title: Distributed Systems
+    credits: 4
+    prerequisites: "CS3650"
+
+  CS4805:
+    prefix: CS
+    number: "4805"
+    title: Fundamentals of Complexity Theory
+    credits: 4
+    prerequisites: "CS3800"
+
+  CS4810:
+    prefix: CS
+    number: "4810"
+    title: Advanced Algorithms
+    credits: 4
+    prerequisites: "CS3000"
+
+  CS4820:
+    prefix: CS
+    number: "4820"
+    title: Computer-Aided Reasoning
+    credits: 4
+    prerequisites: "CS2800 & CS3000"
+
+  CS4830:
+    prefix: CS
+    number: "4830"
+    title: System Specification, Verification, and Synthesis
+    credits: 4
+    prerequisites: "CS3000"
 
   CS4950:
-    subject: CS
+    prefix: CS
     number: "4950"
     title: Computer Science Research Seminar
     credits: 1
@@ -756,366 +723,207 @@ courses:
     repeatable: true
     max_repeat_credits: 2
 
-  CS4805:
-    subject: CS
-    number: "4805"
-    title: Fundamentals of Complexity Theory
-    credits: 4
-    prerequisites: "CS3800"
-
-  CS4810:
-    subject: CS
-    number: "4810"
-    title: Advanced Algorithms
-    credits: 4
-    prerequisites: "CS3000"
-
-  CS4820:
-    subject: CS
-    number: "4820"
-    title: Computer-Aided Reasoning
-    credits: 4
-    prerequisites: "CS2800 & CS3000"
-    gen_ed_attributes: ["NUpath Capstone Experience"]
-
-  CS4830:
-    subject: CS
-    number: "4830"
-    title: System Specification, Verification, and Synthesis
-    credits: 4
-    prerequisites: "CS3000"
-
-  CY4770:
-    subject: CY
-    number: "4770"
-    title: Foundations of Cryptography
-    credits: 4
-    prerequisites: "CY3740 | CY4740"
-    gen_ed_attributes: ["NUpath Capstone Experience", "NUpath Writing Intensive"]
-
-  # ---------------------------------------------------------------------------
-  # Concentration Courses - Human-Centered Computing
-  # ---------------------------------------------------------------------------
-  CS2484:
-    subject: CS
-    number: "2484"
-    title: Principles of Human-Computer Interaction
-    credits: 4
-    prerequisites: null
-
-  CS3484:
-    subject: CS
-    number: "3484"
-    title: GUI Programming
-    credits: 4
-    prerequisites: "CS2100"
-    gen_ed_attributes: ["NUpath Writing Intensive"]
-
-  CS4097:
-    subject: CS
-    number: "4097"
-    title: Mixed Reality
-    credits: 4
-    prerequisites: null
-
-  CS4350:
-    subject: CS
-    number: "4350"
-    title: Empirical Research Methods
-    credits: 4
-    prerequisites: "DS3000"
-
-  CS4520:
-    subject: CS
-    number: "4520"
-    title: Mobile Application Development
-    credits: 4
-    prerequisites: "CS3100"
-
-  CS4550:
-    subject: CS
-    number: "4550"
-    title: Web Development
-    credits: 4
-    prerequisites: "CS3100"
-    gen_ed_attributes: ["NUpath Capstone Experience", "NUpath Writing Intensive"]
-
-  DS4200:
-    subject: DS
-    number: "4200"
-    title: Information Presentation and Visualization
-    credits: 4
-    prerequisites: "DS3000"
-    gen_ed_attributes: ["NUpath Capstone Experience", "NUpath Writing Intensive"]
-
-  HINF5300:
-    subject: HINF
-    number: "5300"
-    title: Personal Health Interface Design and Development
-    credits: 4
-    prerequisites: null
-
-  # ---------------------------------------------------------------------------
-  # Concentration Courses - Software
-  # ---------------------------------------------------------------------------
-  CS4400:
-    subject: CS
-    number: "4400"
-    title: Programming Languages
-    credits: 4
-    prerequisites: "CS3100 & CS3000"
-
-  CS4700:
-    subject: CS
-    number: "4700"
-    title: Network Fundamentals
-    credits: 4
-    prerequisites: "CS3650"
-
-  CS4730:
-    subject: CS
-    number: "4730"
-    title: Distributed Systems
-    credits: 4
-    prerequisites: "CS3650"
-
-  CS3520:
-    subject: CS
-    number: "3520"
-    title: Programming in C++
-    credits: 4
-    prerequisites: "CS2100"
-
-  CS4410:
-    subject: CS
-    number: "4410"
-    title: Compilers
-    credits: 4
-    prerequisites: "CS4400"
-    gen_ed_attributes: ["NUpath Capstone Experience", "NUpath Writing Intensive"]
-
-  # ---------------------------------------------------------------------------
-  # Concentration Courses - Systems
-  # ---------------------------------------------------------------------------
-  CS4300:
-    subject: CS
-    number: "4300"
-    title: Computer Graphics
-    credits: 4
-    prerequisites: "(CS3100) & (DS3000 | MATH2331)"
-    gen_ed_attributes: ["NUpath Capstone Experience", "NUpath Writing Intensive"]
-
-  CS4360:
-    subject: CS
-    number: "4360"
-    title: Non-Interactive Computer Graphics
-    credits: 4
-    prerequisites: "(DS3000 | MATH2331) & CS3100"
-
   CY4760:
-    subject: CY
+    prefix: CY
     number: "4760"
     title: Security of Wireless and Mobile Systems
     credits: 4
     prerequisites: "CY3740 | CY4740"
 
-  # ---------------------------------------------------------------------------
-  # Research Course (substitutable in concentrations)
-  # ---------------------------------------------------------------------------
-  CS4991:
-    subject: CS
-    number: "4991"
-    title: Research
-    credit_range:
-      min: 4
-      max: 8
-    prerequisites: "CS3100 & CS3800"
-    repeatable: true
-    max_repeat_credits: 12
-    gen_ed_attributes: ["NUpath Capstone Experience", "NUpath Integration Experience", "NUpath Writing Intensive"]
+  CY4770:
+    prefix: CY
+    number: "4770"
+    title: Foundations of Cryptography
+    credits: 4
+    prerequisites: "CY3740 | CY4740"
 
-  # ---------------------------------------------------------------------------
-  # Mathematics Courses
-  # ---------------------------------------------------------------------------
+  DS4200:
+    prefix: DS
+    number: "4200"
+    title: Information Presentation and Visualization
+    credits: 4
+    prerequisites: "DS3000"
+
+  HINF5300:
+    prefix: HINF
+    number: "5300"
+    title: Personal Health Interface Design and Development
+    credits: 4
+    prerequisites: ""
+
+  # --- Mathematics ---
   MATH1341:
-    subject: MATH
+    prefix: MATH
     number: "1341"
     title: Calculus 1 for Science and Engineering
     credits: 4
-    prerequisites: null
-
-  MATH1365:
-    subject: MATH
-    number: "1365"
-    title: Introduction to Mathematical Reasoning
-    credits: 4
-    prerequisites: null
-
-  MATH1465:
-    subject: MATH
-    number: "1465"
-    title: Intensive Mathematical Reasoning
-    credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   MATH1342:
-    subject: MATH
+    prefix: MATH
     number: "1342"
     title: Calculus 2 for Science and Engineering
     credits: 4
     prerequisites: "MATH1341"
 
+  MATH1365:
+    prefix: MATH
+    number: "1365"
+    title: Introduction to Mathematical Reasoning
+    credits: 4
+    prerequisites: ""
+
+  MATH1465:
+    prefix: MATH
+    number: "1465"
+    title: Intensive Mathematical Reasoning
+    credits: 4
+    prerequisites: ""
+
   MATH2280:
-    subject: MATH
+    prefix: MATH
     number: "2280"
     title: Statistics and Software
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   MATH2331:
-    subject: MATH
+    prefix: MATH
     number: "2331"
     title: Linear Algebra
     credits: 4
     prerequisites: "MATH1341"
 
   MATH3081:
-    subject: MATH
+    prefix: MATH
     number: "3081"
     title: Probability and Statistics
     credits: 4
     prerequisites: "MATH1342"
 
-  # ---------------------------------------------------------------------------
-  # Computing and Social Issues Courses
-  # ---------------------------------------------------------------------------
+  # --- Computing and Social Issues ---
   AFCS2600:
-    subject: AFCS
+    prefix: AFCS
     number: "2600"
     title: Issues in Race, Science, and Technology
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   CY4170:
-    subject: CY
+    prefix: CY
     number: "4170"
     title: The Law, Ethics, and Policy of Data and Digital Technologies
     credits: 4
-    prerequisites: null
-    gen_ed_attributes: ["NUpath Ethical Reasoning", "NUpath Writing Intensive"]
+    prerequisites: ""
 
   CY5240:
-    subject: CY
+    prefix: CY
     number: "5240"
     title: "Cyberlaw: Privacy, Ethics, and Digital Rights"
     credits: 4
-    prerequisites: null
+    prerequisites: "CY2550"
 
   DS1300:
-    subject: DS
+    prefix: DS
     number: "1300"
     title: Knowledge in a Digital World
     credits: 4
-    prerequisites: null
+    prerequisites: ""
     cross_listed_as: [PHIL1300]
 
-  PHIL1300:
-    subject: PHIL
-    number: "1300"
-    title: Knowledge in a Digital World
-    credits: 4
-    prerequisites: null
-    cross_listed_as: [DS1300]
-
   HIST2220:
-    subject: HIST
+    prefix: HIST
     number: "2220"
     title: History of Technology
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   INSH2102:
-    subject: INSH
+    prefix: INSH
     number: "2102"
-    title: "Bostonography: The City through Data, Texts, Maps, and Networks"
+    title: Bostonography
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   JRNL3700:
-    subject: JRNL
+    prefix: JRNL
     number: "3700"
     title: Data Storytelling
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   PHIL1145:
-    subject: PHIL
+    prefix: PHIL
     number: "1145"
     title: Technology and Human Values
     credits: 4
-    prerequisites: null
+    prerequisites: ""
+
+  PHIL1300:
+    prefix: PHIL
+    number: "1300"
+    title: Knowledge in a Digital World
+    credits: 4
+    prerequisites: ""
+    cross_listed_as: [DS1300]
 
   SOCL1280:
-    subject: SOCL
+    prefix: SOCL
     number: "1280"
     title: The Twenty-First-Century Workplace
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   SOCL2485:
-    subject: SOCL
+    prefix: SOCL
     number: "2485"
     title: Environment, Technology, and Society
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
   SOCL4528:
-    subject: SOCL
+    prefix: SOCL
     number: "4528"
     title: Technology and Society
     credits: 4
-    prerequisites: null
+    prerequisites: ""
 
-  # ---------------------------------------------------------------------------
-  # Electrical Engineering Courses
-  # ---------------------------------------------------------------------------
+  # --- Electrical Engineering ---
   EECE2310:
-    subject: EECE
+    prefix: EECE
     number: "2310"
     title: Introduction to Digital Design and Computer Architecture
     credits: 4
-    prerequisites: null
+    prerequisites: ""
     corequisites: [EECE2311]
 
   EECE2311:
-    subject: EECE
+    prefix: EECE
     number: "2311"
     title: Lab for EECE 2310
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [EECE2310]
 
-  # ---------------------------------------------------------------------------
-  # Science Courses - Biology
-  # ---------------------------------------------------------------------------
+  # --- Science: Biology ---
   BIOL1111:
-    subject: BIOL
+    prefix: BIOL
     number: "1111"
     title: General Biology 1
     credits: 3
-    prerequisites: null
+    prerequisites: ""
     corequisites: [BIOL1112]
 
   BIOL1112:
-    subject: BIOL
+    prefix: BIOL
     number: "1112"
     title: Lab for BIOL 1111
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [BIOL1111]
 
   BIOL1113:
-    subject: BIOL
+    prefix: BIOL
     number: "1113"
     title: General Biology 2
     credits: 3
@@ -1123,15 +931,15 @@ courses:
     corequisites: [BIOL1114]
 
   BIOL1114:
-    subject: BIOL
+    prefix: BIOL
     number: "1114"
     title: Lab for BIOL 1113
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [BIOL1113]
 
   BIOL2301:
-    subject: BIOL
+    prefix: BIOL
     number: "2301"
     title: Genetics and Molecular Biology
     credits: 3
@@ -1139,184 +947,162 @@ courses:
     corequisites: [BIOL2302]
 
   BIOL2302:
-    subject: BIOL
+    prefix: BIOL
     number: "2302"
     title: Lab for BIOL 2301
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [BIOL2301]
 
-  # ---------------------------------------------------------------------------
-  # Science Courses - Chemistry
-  # ---------------------------------------------------------------------------
+  # --- Science: Chemistry ---
   CHEM1161:
-    subject: CHEM
+    prefix: CHEM
     number: "1161"
     title: General Chemistry for Science Majors
     credits: 3
-    prerequisites: null
+    prerequisites: ""
     corequisites: [CHEM1162]
 
   CHEM1162:
-    subject: CHEM
+    prefix: CHEM
     number: "1162"
     title: Lab for CHEM 1161
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [CHEM1161]
 
   CHEM1211:
-    subject: CHEM
+    prefix: CHEM
     number: "1211"
     title: General Chemistry 1
     credits: 3
-    prerequisites: null
-    corequisites: [CHEM1212, CHEM1213]
+    prerequisites: ""
+    corequisites: [CHEM1212]
 
   CHEM1212:
-    subject: CHEM
+    prefix: CHEM
     number: "1212"
     title: Lab for CHEM 1211
     credits: 1
-    prerequisites: null
-    corequisites: [CHEM1211, CHEM1213]
-
-  CHEM1213:
-    subject: CHEM
-    number: "1213"
-    title: Recitation for CHEM 1211
-    credits: 0
-    prerequisites: null
-    corequisites: [CHEM1211, CHEM1212]
+    prerequisites: ""
+    corequisites: [CHEM1211]
 
   CHEM1214:
-    subject: CHEM
+    prefix: CHEM
     number: "1214"
     title: General Chemistry 2
     credits: 3
     prerequisites: "CHEM1211"
-    corequisites: [CHEM1215, CHEM1216]
+    corequisites: [CHEM1215]
 
   CHEM1215:
-    subject: CHEM
+    prefix: CHEM
     number: "1215"
     title: Lab for CHEM 1214
     credits: 1
-    prerequisites: null
-    corequisites: [CHEM1214, CHEM1216]
+    prerequisites: ""
+    corequisites: [CHEM1214]
 
-  CHEM1216:
-    subject: CHEM
-    number: "1216"
-    title: Recitation for CHEM 1214
-    credits: 0
-    prerequisites: null
-    corequisites: [CHEM1214, CHEM1215]
-
-  # ---------------------------------------------------------------------------
-  # Science Courses - Environmental Science
-  # ---------------------------------------------------------------------------
+  # --- Science: Environmental ---
   ENVR1200:
-    subject: ENVR
+    prefix: ENVR
     number: "1200"
     title: Dynamic Earth
     credits: 3
-    prerequisites: null
+    prerequisites: ""
     corequisites: [ENVR1201]
 
   ENVR1201:
-    subject: ENVR
+    prefix: ENVR
     number: "1201"
     title: Lab for ENVR 1200
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [ENVR1200]
 
   ENVR2310:
-    subject: ENVR
+    prefix: ENVR
     number: "2310"
     title: Earth Materials
     credits: 3
-    prerequisites: null
+    prerequisites: ""
     corequisites: [ENVR2311]
 
   ENVR2311:
-    subject: ENVR
+    prefix: ENVR
     number: "2311"
     title: Lab for ENVR 2310
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [ENVR2310]
 
   ENVR2340:
-    subject: ENVR
+    prefix: ENVR
     number: "2340"
     title: Earth Landforms and Processes
     credits: 3
-    prerequisites: null
+    prerequisites: ""
     corequisites: [ENVR2341]
 
   ENVR2341:
-    subject: ENVR
+    prefix: ENVR
     number: "2341"
     title: Lab for ENVR 2340
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [ENVR2340]
 
   ENVR3300:
-    subject: ENVR
+    prefix: ENVR
     number: "3300"
     title: Geographic Information Systems
     credits: 3
-    prerequisites: null
+    prerequisites: ""
     corequisites: [ENVR3301]
 
   ENVR3301:
-    subject: ENVR
+    prefix: ENVR
     number: "3301"
     title: Lab for ENVR 3300
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [ENVR3300]
 
   ENVR4500:
-    subject: ENVR
+    prefix: ENVR
     number: "4500"
     title: Applied Hydrogeology
     credits: 3
-    prerequisites: null
+    prerequisites: ""
     corequisites: [ENVR4501]
 
   ENVR4501:
-    subject: ENVR
+    prefix: ENVR
     number: "4501"
     title: Lab for ENVR 4500
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [ENVR4500]
 
-  # ---------------------------------------------------------------------------
-  # Science Courses - Physics
-  # ---------------------------------------------------------------------------
+  # --- Science: Physics ---
   PHYS1145:
-    subject: PHYS
+    prefix: PHYS
     number: "1145"
     title: Physics for Life Sciences 1
     credits: 3
-    prerequisites: null
+    prerequisites: ""
     corequisites: [PHYS1146]
 
   PHYS1146:
-    subject: PHYS
+    prefix: PHYS
     number: "1146"
     title: Lab for PHYS 1145
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [PHYS1145]
 
   PHYS1147:
-    subject: PHYS
+    prefix: PHYS
     number: "1147"
     title: Physics for Life Sciences 2
     credits: 3
@@ -1324,208 +1110,128 @@ courses:
     corequisites: [PHYS1148]
 
   PHYS1148:
-    subject: PHYS
+    prefix: PHYS
     number: "1148"
     title: Lab for PHYS 1147
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [PHYS1147]
 
   PHYS1151:
-    subject: PHYS
+    prefix: PHYS
     number: "1151"
     title: Physics for Engineering 1
     credits: 3
     prerequisites: "MATH1341"
-    corequisites: [PHYS1152, PHYS1153]
+    corequisites: [PHYS1152]
 
   PHYS1152:
-    subject: PHYS
+    prefix: PHYS
     number: "1152"
     title: Lab for PHYS 1151
     credits: 1
-    prerequisites: null
-    corequisites: [PHYS1151, PHYS1153]
-
-  PHYS1153:
-    subject: PHYS
-    number: "1153"
-    title: Interactive Learning Seminar for PHYS 1151
-    credits: 0
-    prerequisites: null
-    corequisites: [PHYS1151, PHYS1152]
+    prerequisites: ""
+    corequisites: [PHYS1151]
 
   PHYS1155:
-    subject: PHYS
+    prefix: PHYS
     number: "1155"
     title: Physics for Engineering 2
     credits: 3
     prerequisites: "PHYS1151"
-    corequisites: [PHYS1156, PHYS1157]
+    corequisites: [PHYS1156]
 
   PHYS1156:
-    subject: PHYS
+    prefix: PHYS
     number: "1156"
     title: Lab for PHYS 1155
     credits: 1
-    prerequisites: null
-    corequisites: [PHYS1155, PHYS1157]
-
-  PHYS1157:
-    subject: PHYS
-    number: "1157"
-    title: Interactive Learning Seminar for PHYS 1155
-    credits: 0
-    prerequisites: null
-    corequisites: [PHYS1155, PHYS1156]
+    prerequisites: ""
+    corequisites: [PHYS1155]
 
   PHYS1161:
-    subject: PHYS
+    prefix: PHYS
     number: "1161"
     title: Physics 1
     credits: 3
-    prerequisites: null
-    corequisites: [PHYS1162, PHYS1163]
+    prerequisites: ""
+    corequisites: [PHYS1162]
 
   PHYS1162:
-    subject: PHYS
+    prefix: PHYS
     number: "1162"
     title: Lab for PHYS 1161
     credits: 1
-    prerequisites: null
-    corequisites: [PHYS1161, PHYS1163]
-
-  PHYS1163:
-    subject: PHYS
-    number: "1163"
-    title: Recitation for PHYS 1161
-    credits: 0
-    prerequisites: null
-    corequisites: [PHYS1161, PHYS1162]
+    prerequisites: ""
+    corequisites: [PHYS1161]
 
   PHYS1165:
-    subject: PHYS
+    prefix: PHYS
     number: "1165"
     title: Physics 2
     credits: 3
     prerequisites: "PHYS1161"
-    corequisites: [PHYS1166, PHYS1167]
+    corequisites: [PHYS1166]
 
   PHYS1166:
-    subject: PHYS
+    prefix: PHYS
     number: "1166"
     title: Lab for PHYS 1165
     credits: 1
-    prerequisites: null
-    corequisites: [PHYS1165, PHYS1167]
+    prerequisites: ""
+    corequisites: [PHYS1165]
 
-  PHYS1167:
-    subject: PHYS
-    number: "1167"
-    title: Recitation for PHYS 1165
-    credits: 0
-    prerequisites: null
-    corequisites: [PHYS1165, PHYS1166]
-
-  # ---------------------------------------------------------------------------
-  # Writing Courses
-  # ---------------------------------------------------------------------------
+  # --- Writing ---
   ENGW1111:
-    subject: ENGW
+    prefix: ENGW
     number: "1111"
     title: First-Year Writing
     credits: 4
-    prerequisites: null
-    gen_ed_attributes: ["NUpath Writing in First Year"]
+    prerequisites: ""
 
   ENGW3302:
-    subject: ENGW
+    prefix: ENGW
     number: "3302"
     title: Advanced Writing in the Technical Professions
     credits: 4
     prerequisites: "ENGW1111"
-    gen_ed_attributes: ["NUpath Advanced Writing in the Disciplines"]
 
   ENGW3315:
-    subject: ENGW
+    prefix: ENGW
     number: "3315"
     title: Interdisciplinary Advanced Writing in the Disciplines
     credits: 4
     prerequisites: "ENGW1111"
-    gen_ed_attributes: ["NUpath Advanced Writing in the Disciplines"]
 
-  # ---------------------------------------------------------------------------
-  # Additional Elective Courses
-  # ---------------------------------------------------------------------------
-  # ---------------------------------------------------------------------------
-  # Data Science Foundational Courses (prerequisites for DS pathway)
-  # ---------------------------------------------------------------------------
+  # --- Data Science Prerequisites ---
   DS2000:
-    subject: DS
+    prefix: DS
     number: "2000"
     title: Programming with Data
     credits: 4
-    prerequisites: null
+    prerequisites: ""
     corequisites: [DS2001]
-    typically_offered: [fall, spring]
-    gen_ed_attributes: ["NUpath Formal/Quant Reasoning", "NUpath Natural/Designed World"]
 
   DS2001:
-    subject: DS
+    prefix: DS
     number: "2001"
     title: Data Science Programming Practicum
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [DS2000]
-    typically_offered: [fall, spring]
 
   DS2500:
-    subject: DS
+    prefix: DS
     number: "2500"
     title: Intermediate Programming with Data
     credits: 4
     prerequisites: "DS2000"
     corequisites: [DS2501]
-    gen_ed_attributes: ["NUpath Analyzing/Using Data"]
 
   DS2501:
-    subject: DS
+    prefix: DS
     number: "2501"
     title: Lab for DS 2500
     credits: 1
-    prerequisites: null
+    prerequisites: ""
     corequisites: [DS2500]
-
-  MKTG4606:
-    subject: MKTG
-    number: "4606"
-    title: "Digital, Analytics, Technology, and Automation Research Practicum"
-    credits: 4
-    prerequisites: null
-
-# =============================================================================
-# CREDIT ARITHMETIC VERIFICATION
-# =============================================================================
-#
-# CS Overview:                    2 credits (CS1200=1, CS1210=1)
-# CS Fundamentals:               15 credits (CS1800+CS1802=5, CS2000+CS2001=5, CS2100+CS2101=5)
-# CS Required:                   25 credits (CS3000=4, CS3100+CS3101=5, CS3650=4, CS3800=4, CS4530=4, DS3000=4)
-# Security Requirement:           4 credits (1 course)
-# Presentation Requirement:       4 credits (1 course)
-# Khoury Electives:               8 credits
-# Concentration:                 16 credits (4 courses × 4 credits)
-# Mathematics:                    8 credits (MATH1341=4, MATH1365/1465=4)
-# Computing & Social Issues:      4 credits (1 course)
-# Electrical Engineering:         5 credits (EECE2310+EECE2311)
-# Science Requirement:            8 credits (2 courses with labs)
-# Writing:                        8 credits (ENGW1111=4, ENGW3302/3315=4)
-# General Electives:             28 credits
-# ─────────────────────────────────────────────────────────────────────────────
-# CALCULATED TOTAL:             135 credits
-# STATED TOTAL:                 134 credits
-# DIFFERENCE:                     1 credit (minor variance due to sample plan totaling 135)
-#
-# Note: The catalog states 134 total semester hours required, but sample plans
-# show 135 hours. This is consistent with Northeastern's approach where students
-# may slightly exceed minimums. The 0-credit recitation (CS3001) is not counted.
-# =============================================================================

@@ -4,6 +4,9 @@
 //! - YAML degree schema structures (`models`)
 //! - YAML parsing functions (`yaml_parser`)
 //! - Direct conversion to unified `Degree` and `Course` models for metrics/plans
+//! - Plan generation for degree analysis
+//! - Plan selection for identifying special plans (shortest, longest, etc.)
+//! - Gen-ed tracking for cross-category course sharing
 //!
 //! # Example
 //! ```no_run
@@ -19,7 +22,14 @@
 //! }
 //! ```
 
+pub mod audit;
 pub mod course_reference;
+pub mod gen_ed_tracker;
+pub mod plan_generator;
+pub mod plan_selector;
+pub mod plan_validation;
+pub mod plan_variant;
+pub mod requirement_resolver;
 pub mod validation;
 pub mod yaml_parser;
 
@@ -50,3 +60,24 @@ pub use course_reference::CourseReference;
 pub use validation::{
     validate_degree_program, ValidationError, ValidationResult, ValidationWarning,
 };
+
+// Re-export plan generation types
+pub use plan_generator::{
+    PlanGenerationStats, PlanGenerator, PlanGeneratorConfig, SamplingStrategy,
+};
+pub use plan_variant::PlanVariant;
+pub use requirement_resolver::{RequirementResolver, ResolvedRequirement};
+
+// Re-export plan selection types
+pub use plan_selector::{
+    PlanCategory, PlanScore, PlanSelector, PlanSelectorConfig, ScoredPlan, SelectedPlans,
+};
+
+// Re-export plan validation types
+pub use plan_validation::{
+    PlanValidationError, PlanValidationResult, PlanValidationStats, PlanValidationWarning,
+    PlanValidator, PlanValidatorConfig,
+};
+
+// Re-export gen-ed tracking types
+pub use gen_ed_tracker::{GenEdSummary, GenEdTracker};

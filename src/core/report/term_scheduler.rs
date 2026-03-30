@@ -181,6 +181,12 @@ pub struct TermScheduler<'a> {
     config: SchedulerConfig,
 }
 
+/// Default credit hours for placeholder courses not in the school catalog
+const DEFAULT_PLACEHOLDER_CREDITS: f32 = 3.0;
+
+/// Default credit hours for "small" placeholder courses (ending in 'S')
+const DEFAULT_SMALL_PLACEHOLDER_CREDITS: f32 = 2.0;
+
 impl<'a> TermScheduler<'a> {
     /// Create a new term scheduler
     #[must_use]
@@ -190,6 +196,25 @@ impl<'a> TermScheduler<'a> {
             dag,
             config,
         }
+    }
+
+    /// Get credit hours for a course, using defaults for placeholders
+    ///
+    /// If the course is not in the school catalog (e.g., placeholder courses
+    /// like ELEC001, FE01), returns a default based on the course key:
+    /// - Courses ending in 'S' get 2 credits (small courses)
+    /// - All others get 3 credits (standard elective)
+    fn get_credits(&self, course_key: &str) -> f32 {
+        self.school.get_course(course_key).map_or_else(
+            || {
+                if course_key.ends_with('S') {
+                    DEFAULT_SMALL_PLACEHOLDER_CREDITS
+                } else {
+                    DEFAULT_PLACEHOLDER_CREDITS
+                }
+            },
+            |course| course.credit_hours,
+        )
     }
 
     /// Schedule courses into terms
@@ -309,7 +334,6 @@ impl<'a> TermScheduler<'a> {
     /// Compute a dependency-respecting order of groups using topological sort.
     /// Ties (multiple groups with no incoming edges) are broken by group priority
     /// derived from `chain_priority` (higher first), then lexicographically.
-    #[allow(clippy::too_many_lines)]
     fn order_groups_by_dependencies(
         &self,
         groups: &[Vec<String>],
@@ -339,11 +363,37 @@ impl<'a> TermScheduler<'a> {
             group_priority.push(pri);
         }
 
-        // Build group dependency graph: edge A -> B if any course in B depends (transitively) on a course in A
+        let (adj, indeg) = self.build_group_dependency_graph(groups, course_set, &course_to_group);
+
+        let order = Self::topological_sort_groups(groups, &group_priority, &adj, indeg);
+
+        // If cycle detected (shouldn't happen in DAG), fall back to priority sort
+        if order.len() != groups.len() {
+            let mut fallback = groups.to_vec();
+            self.sort_groups_by_priority(&mut fallback, chain_priority);
+            return fallback;
+        }
+
+        // Reorder groups by computed order
+        let mut result = Vec::with_capacity(groups.len());
+        for i in order {
+            result.push(groups[i].clone());
+        }
+        result
+    }
+
+    /// Build the group-level dependency graph (adjacency list and in-degree counts).
+    ///
+    /// For each group, collects transitive prerequisites restricted to `course_set`
+    /// and maps them back to group indices to produce edges between groups.
+    fn build_group_dependency_graph(
+        &self,
+        groups: &[Vec<String>],
+        course_set: &HashSet<&String>,
+        course_to_group: &HashMap<&str, usize>,
+    ) -> (Vec<Vec<usize>>, Vec<usize>) {
         let mut adj: Vec<Vec<usize>> = vec![Vec::new(); groups.len()];
         let mut indeg: Vec<usize> = vec![0; groups.len()];
-
-        // Cache for transitive prerequisites restricted to `course_set`
         let mut prereq_cache: HashMap<String, HashSet<String>> = HashMap::new();
 
         for (b_idx, group) in groups.iter().enumerate() {
@@ -369,7 +419,19 @@ impl<'a> TermScheduler<'a> {
             }
         }
 
-        // Kahn's algorithm with priority queue to break ties by group_priority (desc), then by lexicographic min key
+        (adj, indeg)
+    }
+
+    /// Run Kahn's algorithm with a priority queue to produce a topological ordering.
+    ///
+    /// Ties among groups with zero in-degree are broken by `group_priority`
+    /// (descending), then by lexicographic minimum course key.
+    fn topological_sort_groups(
+        groups: &[Vec<String>],
+        group_priority: &[usize],
+        adj: &[Vec<usize>],
+        mut indeg: Vec<usize>,
+    ) -> Vec<usize> {
         let mut heap = BinaryHeap::new();
         for i in 0..groups.len() {
             if indeg[i] == 0 {
@@ -398,19 +460,7 @@ impl<'a> TermScheduler<'a> {
             }
         }
 
-        // If cycle detected (shouldn't happen in DAG), fall back to priority sort
-        if order.len() != groups.len() {
-            let mut fallback = groups.to_vec();
-            self.sort_groups_by_priority(&mut fallback, chain_priority);
-            return fallback;
-        }
-
-        // Reorder groups by computed order
-        let mut result = Vec::with_capacity(groups.len());
-        for i in order {
-            result.push(groups[i].clone());
-        }
-        result
+        order
     }
 
     /// Collect transitive prerequisites of `course` restricted to `course_set`.
@@ -498,19 +548,14 @@ impl<'a> TermScheduler<'a> {
     ) {
         for group in groups {
             let min_term = self.calculate_earliest_term(group, course_term, course_set);
-            let group_credits: f32 = group
-                .iter()
-                .filter_map(|k| self.school.get_course(k))
-                .map(|c| c.credit_hours)
-                .sum();
+            let group_credits: f32 = group.iter().map(|k| self.get_credits(k)).sum();
 
             let term_idx = self.find_best_term(plan, min_term, group_credits);
 
             for key in group {
-                if let Some(course) = self.school.get_course(key) {
-                    plan.terms[term_idx].add_course(key.clone(), course.credit_hours);
-                    course_term.insert(key.clone(), term_idx);
-                }
+                let credits = self.get_credits(key);
+                plan.terms[term_idx].add_course(key.clone(), credits);
+                course_term.insert(key.clone(), term_idx);
             }
         }
     }
@@ -523,19 +568,14 @@ impl<'a> TermScheduler<'a> {
         course_term: &mut HashMap<String, usize>,
     ) {
         for group in groups {
-            let group_credits: f32 = group
-                .iter()
-                .filter_map(|k| self.school.get_course(k))
-                .map(|c| c.credit_hours)
-                .sum();
+            let group_credits: f32 = group.iter().map(|k| self.get_credits(k)).sum();
 
             let term_idx = self.find_underloaded_term(plan, group_credits);
 
             for key in group {
-                if let Some(course) = self.school.get_course(key) {
-                    plan.terms[term_idx].add_course(key.clone(), course.credit_hours);
-                    course_term.insert(key.clone(), term_idx);
-                }
+                let credits = self.get_credits(key);
+                plan.terms[term_idx].add_course(key.clone(), credits);
+                course_term.insert(key.clone(), term_idx);
             }
         }
     }
@@ -567,6 +607,9 @@ impl<'a> TermScheduler<'a> {
     fn rebalance_terms(&self, plan: &mut TermPlan, delay_factors: &HashMap<String, usize>) {
         let target = self.config.target_credits;
 
+        // Build a set of courses that have corequisite partners in the plan
+        let coreq_locked = self.build_corequisite_locked_set(plan);
+
         // Multiple passes to iteratively balance
         for _ in 0..3 {
             // Find overloaded and underloaded terms
@@ -587,15 +630,18 @@ impl<'a> TermScheduler<'a> {
                     break;
                 }
 
-                // Find movable courses (low delay, no prerequisite issues)
+                // Find movable courses (low delay, no prerequisite or corequisite issues)
                 let movable: Vec<(String, f32)> = plan.terms[over_idx]
                     .courses
                     .iter()
                     .filter_map(|k| {
                         let delay = delay_factors.get(k).copied().unwrap_or(0);
-                        let credits = self.school.get_course(k).map_or(0.0, |c| c.credit_hours);
-                        // Only move low-complexity courses with no dependents in later terms
-                        if delay <= 1 && !self.has_dependents_in_later_terms(k, over_idx, plan) {
+                        let credits = self.get_credits(k);
+                        // Don't move courses with corequisite partners in this term
+                        if delay <= 1
+                            && !coreq_locked.contains(k)
+                            && !self.has_dependents_in_later_terms(k, over_idx, plan)
+                        {
                             Some((k.clone(), credits))
                         } else {
                             None
@@ -625,6 +671,34 @@ impl<'a> TermScheduler<'a> {
                 }
             }
         }
+    }
+
+    /// Build a set of courses that should not be moved independently due to corequisites
+    ///
+    /// A course is "locked" if it shares a term with a corequisite partner.
+    fn build_corequisite_locked_set(&self, plan: &TermPlan) -> HashSet<String> {
+        let mut locked = HashSet::new();
+
+        for term in &plan.terms {
+            let term_courses: HashSet<&str> = term.courses.iter().map(String::as_str).collect();
+            for key in &term.courses {
+                if let Some(course) = self.school.get_course(key) {
+                    let has_coreq_in_term = course
+                        .corequisites
+                        .iter()
+                        .any(|coreq| term_courses.contains(coreq.as_str()))
+                        || course
+                            .strict_corequisites
+                            .iter()
+                            .any(|coreq| term_courses.contains(coreq.as_str()));
+                    if has_coreq_in_term {
+                        locked.insert(key.clone());
+                    }
+                }
+            }
+        }
+
+        locked
     }
 
     /// Check if a course has dependents scheduled in later terms

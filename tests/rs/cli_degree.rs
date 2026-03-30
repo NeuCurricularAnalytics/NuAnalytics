@@ -381,3 +381,118 @@ fn test_degree_audit_finds_deep_chains() {
         "Should report on deep prerequisite chains"
     );
 }
+
+/// Test that the degree command with --analyze produces analysis output
+#[test]
+fn test_degree_analyze_command() {
+    use tempfile::TempDir;
+
+    // Create a temp directory for outputs
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let report_dir = temp_dir.path().join("reports");
+    let metrics_dir = temp_dir.path().join("metrics");
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "degree",
+            "--analyze",
+            "--max-plans",
+            "50",
+            "--sample-plans",
+            "2",
+            "--report-dir",
+            report_dir.to_str().unwrap(),
+            "--metrics-dir",
+            metrics_dir.to_str().unwrap(),
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+        ])
+        .output()
+        .expect("Failed to execute command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // Should succeed
+    assert!(
+        output.status.success(),
+        "Command should succeed. stderr: {stderr}"
+    );
+
+    // Should contain analysis summary
+    assert!(
+        stdout.contains("Degree Analysis Complete") || stdout.contains("Plans analyzed"),
+        "Should report analysis completion. stdout: {stdout}"
+    );
+
+    // Check that HTML report was created
+    let report_files: Vec<_> = std::fs::read_dir(&report_dir)
+        .map(|dir| dir.filter_map(Result::ok).collect())
+        .unwrap_or_default();
+    assert!(
+        !report_files.is_empty(),
+        "Should have generated HTML report in {report_dir:?}"
+    );
+
+    // Check that CSV files were created in metrics directory
+    let plans_dir = metrics_dir.join("plans");
+    if plans_dir.exists() {
+        let csv_files: Vec<_> = std::fs::read_dir(&plans_dir)
+            .map(|dir| dir.filter_map(Result::ok).collect())
+            .unwrap_or_default();
+        assert!(
+            !csv_files.is_empty(),
+            "Should have generated CSV files in {plans_dir:?}"
+        );
+    }
+}
+
+/// Test analyze with --no-report and --no-csv flags
+#[test]
+fn test_degree_analyze_no_output_flags() {
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let report_dir = temp_dir.path().join("reports");
+    let metrics_dir = temp_dir.path().join("metrics");
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "degree",
+            "--analyze",
+            "--no-report",
+            "--no-csv",
+            "--max-plans",
+            "10",
+            "--report-dir",
+            report_dir.to_str().unwrap(),
+            "--metrics-dir",
+            metrics_dir.to_str().unwrap(),
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+        ])
+        .output()
+        .expect("Failed to execute command");
+
+    // Should succeed even without generating files
+    assert!(
+        output.status.success(),
+        "Command should succeed with --no-report --no-csv"
+    );
+
+    // Report directory should not exist or be empty
+    let report_exists = report_dir.exists()
+        && std::fs::read_dir(&report_dir)
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false);
+    assert!(!report_exists, "Should not have generated HTML report");
+
+    // Metrics directory should not exist or be empty
+    let metrics_exists = metrics_dir.exists()
+        && std::fs::read_dir(&metrics_dir)
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false);
+    assert!(!metrics_exists, "Should not have generated CSV files");
+}

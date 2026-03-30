@@ -1,64 +1,236 @@
 # Degree Command
 
-The `degree` command validates and analyzes degree program definitions from YAML files. It checks course prerequisites, requirement structures, and provides detailed audit reports about course dependencies.
+The `degree` command validates and analyzes degree program definitions from YAML files. It can validate structure, analyze prerequisite graphs, and generate comprehensive plan analysis reports with curriculum metrics.
 
 ## Overview
 
-The `degree` command:
+The `degree` command provides several modes of operation:
 
-- Loads degree program definitions from YAML files
-- Validates course data and prerequisite structures
-- Detects circular dependencies and invalid references
-- Analyzes prerequisite chains and course complexity
-- Generates comprehensive audit reports
-- Visualizes course prerequisite graphs
+- **Analysis** (default): Generate all possible degree plans, compute curriculum metrics, and produce HTML reports with statistics
+- **Validation**: Check course data, prerequisite structures, and requirement definitions
+- **Audit**: Run validation plus identify hidden requirements and prerequisite chain issues
+- **Graph Display**: Print the course prerequisite graph structure
 
-## Basic Usage
+## Quick Start
 
-### Validate a Degree Program
+```bash
+# Run full degree analysis (default action)
+nuanalytics degree samples/degrees/csu-cs-bscs-general.yaml
+
+# Validate a degree program only
+nuanalytics degree --validate samples/degrees/csu-cs-bscs-general.yaml
+
+# Run audit report
+nuanalytics degree --audit samples/degrees/csu-cs-bscs-general.yaml
+```
+
+## Commands and Options
+
+### Full Analysis (Default)
+
+When no flags are specified, or with `--analyze`, the command runs full degree analysis:
 
 ```bash
 nuanalytics degree path/to/degree.yaml
+nuanalytics degree --analyze path/to/degree.yaml
 ```
 
-This performs basic validation including:
-- YAML syntax and structure validation
-- Course reference validation (courses mentioned in prerequisites exist)
+This generates:
+- All possible degree plans (respecting course choices and requirements)
+- Curriculum metrics (complexity, blocking factor, delay factor, centrality)
+- HTML report with box plots and statistics
+- CSV exports of selected plans (shortest, longest, random samples)
+
+**Analysis Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--max-plans <N>` | Maximum plans to generate (safety cap) | 1000 |
+| `--sample-plans <N>` | Number of random plans to export | 5 |
+| `--calc-strategy <S>` | Aggregation strategy: `median` or `mean` | median |
+| `--sampling-strategy <S>` | Plan enumeration: `sequential`, `shuffled`, or `stratified` | shuffled |
+| `--full-run` | Generate all combinations without deduplication | false |
+| `--no-csv` | Skip CSV plan export | false |
+| `--no-report` | Skip HTML report generation | false |
+| `--report-dir <DIR>` | Override reports output directory | from config |
+| `--metrics-dir <DIR>` | Override metrics output directory | from config |
+| `--include <COURSES>` | Courses to always include in all plans (comma-separated) | none |
+
+**Examples:**
+
+```bash
+# Analyze with more samples
+nuanalytics degree --sample-plans 20 degree.yaml
+
+# Use mean instead of median for aggregation
+nuanalytics degree --calc-strategy mean degree.yaml
+
+# Generate up to 5000 plans
+nuanalytics degree --max-plans 5000 degree.yaml
+
+# Skip report generation, only export CSVs
+nuanalytics degree --no-report degree.yaml
+
+# Use stratified sampling for better coverage
+nuanalytics degree --sampling-strategy stratified degree.yaml
+
+# Always include specific courses in all plans
+nuanalytics degree --include "CS3500,MATH2331" degree.yaml
+```
+
+### Include Courses
+
+The `--include` option allows you to specify courses that must be included in every generated plan. This is useful when:
+
+- A student has already taken certain courses and you want to analyze plans including those courses
+- You want to see how including a specific elective affects the shortest path
+- You want to reduce the number of plan combinations by locking in certain choices
+
+When an included course satisfies a requirement (e.g., it's one option in a picklist), that requirement is locked to include that course, and other options are not considered. This reduces the total number of possible plans.
+
+```bash
+# Example: Include two specific courses
+nuanalytics degree --include "CS3500,STAT301" samples/degrees/csu-cs-bscs-general.yaml
+
+# The output will show:
+# Plan Generation:
+#   Included courses: CS3500, STAT301
+#   Estimated total plans: 174579816600  (reduced from ~350 billion)
+#   Variable requirements: 6  (reduced from 7)
+```
+
+### Validation
+
+```bash
+nuanalytics degree --validate path/to/degree.yaml
+```
+
+Validates:
+- YAML syntax and structure
+- Course reference validity (courses mentioned in prerequisites exist)
 - Circular prerequisite detection
 - Requirement structure validation
+- Cross-listing bidirectionality
 
-### Run a Full Audit
+### Audit
 
 ```bash
 nuanalytics degree --audit path/to/degree.yaml
 ```
 
-A full audit includes validation plus:
+Includes validation plus:
 - Identification of upper-level courses without prerequisites
 - Analysis of prerequisite chain depth
-- Courses with complex prerequisite structures
+- Hidden requirements detection (courses required by prerequisites but not in requirements)
 - Subject-area filtering for degree-relevant courses
 
-### Print Prerequisite Graph
+### Print Graph
 
 ```bash
 nuanalytics degree --print-graph path/to/degree.yaml
 ```
 
-Displays the prerequisite graph structure showing:
+Displays the prerequisite graph showing:
 - All courses in the degree
 - Prerequisite relationships (AND/OR)
 - Expanded prerequisite options
 
-### Combined Operations
+## Analysis Output
+
+### Console Output
+
+```
+Starting degree analysis...
+Loading degree program from: samples/degrees/csu-cs-bscs-general.yaml
+✓ Loaded degree: BS Bachelor of Science in Computer Science
+  Courses: 145
+  Requirements: 15
+
+Plan Generation:
+  Estimated total plans: 72576
+  Variable requirements: 4
+  ⚠ Will cap at 1000 plans (use --max-plans to adjust)
+
+Processing plans...
+✓ Processed 1000 plans
+
+Selected Plans:
+  Shortest: 8 terms
+  Longest: 10 terms
+  Calc-Ready: 6 terms
+  Random Samples: 5
+
+Plan Validation (Shortest Path):
+  Courses: 38
+  Credits: 120.0
+  Placeholders: 12
+  ⚠ Warnings: 8
+
+✓ Plan is valid
+
+✓ Analysis complete. Reports saved to: .debug/reports/
+```
+
+### Generated Files
+
+The analysis generates several output files:
+
+**Reports Directory** (default: `.debug/reports/`):
+- `degree_name.html` - Interactive HTML report with box plots and statistics
+- `index.csv` - Summary of all analyzed plans
+
+**Metrics Directory** (default: `.debug/metrics/`):
+- `plans/degree_name/shortest.csv` - Shortest path plan with metrics
+- `plans/degree_name/longest.csv` - Longest path plan with metrics
+- `plans/degree_name/calc_ready.csv` - Calc-ready plan (if applicable)
+- `plans/degree_name/random_N.csv` - Random sample plans
+- `summary.jsonl` - JSON Lines file with summary statistics
+
+### HTML Report Contents
+
+The HTML report includes:
+- Degree overview (name, credits, course count)
+- Plan statistics (shortest/longest/median term counts)
+- Box plots for curriculum metrics:
+  - Complexity scores
+  - Blocking factors
+  - Delay factors
+  - Centrality measures
+- Course-level breakdowns by category
+- Validation warnings and suggestions
+
+## Configuration
+
+Analysis behavior can be configured via the config file or command-line options:
 
 ```bash
-# Run validation and print graph
-nuanalytics degree --validate --print-graph path/to/degree.yaml
+# View current settings
+nuanalytics config get
 
-# Run audit and print graph
-nuanalytics degree --audit --print-graph path/to/degree.yaml
+# Set default max plans
+nuanalytics config set degree_analysis.max_plans 5000
+
+# Set default sampling strategy
+nuanalytics config set degree_analysis.sampling_strategy stratified
+
+# Set default sample count
+nuanalytics config set degree_analysis.sample_plan_count 10
+
+# Set output directories
+nuanalytics config set reports_dir "./reports"
+nuanalytics config set metrics_dir "./metrics"
 ```
+
+**Configuration Options:**
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `degree_analysis.max_plans` | Maximum plans to generate | 1000 |
+| `degree_analysis.sample_plan_count` | Random plans to export | 5 |
+| `degree_analysis.sampling_strategy` | Enumeration strategy | shuffled |
+| `degree_analysis.ignore_duplicates` | Skip duplicate plan combinations | true |
+| `reports_dir` | HTML reports output directory | .debug/reports |
+| `metrics_dir` | CSV/metrics output directory | .debug/metrics |
 
 ## Input File Format
 
@@ -135,41 +307,90 @@ The expression `(CS220 & CS165) & (MATH155 | MATH156 | MATH160)` means:
 
 ### Requirements Section
 
+Requirements define what courses students must complete. They support categories for proper gen-ed tracking.
+
 ```yaml
 requirements:
+  # Major core courses (enumerable in plan generation)
   core_cs:
     name: "Computer Science Core"
-    required_courses:
+    type: all
+    category: major
+    courses:
       - CS101
       - CS220
       - CS320
-    min_credits: 16
 
+  # Supporting courses (math, science requirements)
   math_foundation:
     name: "Mathematics Foundation"
-    required_courses:
-      - MATH156
-      - MATH160
-    min_credits: 8
+    type: all
+    category: supporting
+    courses:
+      - "{MATH156, MATH160}"  # Choose one calculus
+      - MATH200
 
+  # Gen-ed requirements (may be satisfied by major courses)
+  gen_ed_quantitative:
+    name: "Quantitative Reasoning (FQ)"
+    type: select
+    category: gen_ed
+    from:
+      courses: [MATH156, MATH160, CS101]
+    count: 1
+
+  # Electives with credit-based selection
   cs_electives:
     name: "CS Electives"
-    choose: 3
+    type: select
+    category: elective
     from:
-      - CS425
-      - CS430
-      - CS445
-      - CS460
-    min_credits: 12
+      pattern: "CS4*"
+    credits: 12
 ```
 
-**Requirement Fields:**
+**Requirement Categories:**
 
-- `name` - Descriptive name for the requirement
-- `required_courses` - List of specific courses required
-- `choose` (optional) - Number of courses to choose from list
-- `from` (optional) - List of courses to choose from
-- `min_credits` - Minimum credits for this requirement
+| Category | Description | Gen-Ed Tracking |
+|----------|-------------|-----------------|
+| `major` | Core major courses | Courses may satisfy gen-ed |
+| `supporting` | Math, science, supporting courses | Courses may satisfy gen-ed |
+| `gen_ed` | General education requirements | Reduced by major/supporting |
+| `elective` | Free or restricted electives | Added after gen-ed |
+
+**Requirement Types:**
+
+| Type | Description |
+|------|-------------|
+| `all` | All listed courses required |
+| `select` | Choose courses by `count` or `credits` |
+| `one_of` | Choose one option from `options` list |
+
+**Course Syntax in Requirements:**
+
+- `CS101` - Single course
+- `[CS101, CS102, CS103]` - Bundle (all required together)
+- `{CS101, CS102}` - Equivalents (choose one)
+- `CS4*` - Pattern matching (all 400-level CS courses)
+
+### Gen-Ed Attributes
+
+Courses can have gen-ed attributes that satisfy university requirements:
+
+```yaml
+courses:
+  CS1800:
+    name: "Discrete Structures"
+    credits: 4
+    gen_ed_attributes: ["FQ", "ND"]  # Formal/Quant, Natural/Designed
+
+  MATH241:
+    name: "Calculus I"
+    credits: 4
+    gen_ed_attributes: ["FQ"]
+```
+
+When major courses have gen-ed attributes, they automatically satisfy corresponding gen-ed requirements, reducing duplicate course counting.
 
 ### Example Degree File
 

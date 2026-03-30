@@ -181,6 +181,12 @@ endpoint = ""
 [paths]
 metrics_dir = "./metrics"
 reports_dir = "./reports"
+
+[degree_analysis]
+max_plans = 1000
+sample_plan_count = 5
+sampling_strategy = "shuffled"
+ignore_duplicates = true
 ```
 
 **Debug Mode:**
@@ -197,6 +203,45 @@ endpoint = ""
 [paths]
 metrics_dir = ".debug/metrics"
 reports_dir = ".debug/reports"
+
+[degree_analysis]
+max_plans = 1000
+sample_plan_count = 5
+sampling_strategy = "shuffled"
+ignore_duplicates = true
+```
+
+## Degree Analysis Configuration
+
+The `degree_analysis` section controls behavior of the `degree --analyze` command:
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `max_plans` | Maximum number of plans to generate | 1000 |
+| `sample_plan_count` | Number of random plans to export | 5 |
+| `sampling_strategy` | Plan enumeration strategy | "shuffled" |
+| `ignore_duplicates` | Skip duplicate plan combinations | true |
+
+**Sampling Strategies:**
+
+- `sequential` - Enumerate plans in order (may bias toward early options)
+- `shuffled` - Randomize enumeration order for unbiased sampling
+- `stratified` - Ensure coverage across the option space
+
+**Examples:**
+
+```bash
+# Set maximum plans to generate
+nuanalytics config set degree_analysis.max_plans 5000
+
+# Use stratified sampling for better coverage
+nuanalytics config set degree_analysis.sampling_strategy stratified
+
+# Export more random samples
+nuanalytics config set degree_analysis.sample_plan_count 20
+
+# Disable deduplication for full enumeration
+nuanalytics config set degree_analysis.ignore_duplicates false
 ```
 
 ## Common Workflows

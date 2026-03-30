@@ -409,86 +409,82 @@ fn get_field(line: &str, header_name: &str, headers: &[String]) -> Option<String
         .cloned()
 }
 
+/// Resolves semicolon-separated CSV course IDs to storage keys and invokes a callback
+///
+/// Splits the input by `;`, trims each part, looks up the storage key in the provided
+/// mapping, and calls `on_resolved` with the resolved key. If `fallback` is provided
+/// and the mapping lookup fails, the fallback function is called to attempt normalization.
+///
+/// # Arguments
+/// * `id_list` - Semicolon-separated list of CSV Course IDs (e.g., "1;2;5")
+/// * `course_id_to_key` - Mapping from CSV Course ID to storage key
+/// * `fallback` - Optional function to normalize an unmapped ID into a course key
+/// * `on_resolved` - Callback invoked with each resolved storage key
+fn resolve_csv_ids(
+    id_list: &str,
+    course_id_to_key: &HashMap<String, String>,
+    fallback: Option<fn(&str) -> String>,
+    mut on_resolved: impl FnMut(String),
+) {
+    for id in id_list.split(';') {
+        let trimmed = id.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some(key) = course_id_to_key.get(trimmed) {
+            on_resolved(key.clone());
+        } else if let Some(normalize) = fallback {
+            let normalized = normalize(trimmed);
+            if !normalized.is_empty() {
+                on_resolved(normalized);
+            }
+        }
+    }
+}
+
 /// Adds prerequisites from a semicolon-separated string to a course
 ///
 /// Converts CSV Course IDs to storage keys using the provided mapping.
 /// Falls back to normalizing the string as a course key if not found in mapping.
-///
-/// # Arguments
-/// * `course` - The course to add prerequisites to
-/// * `prereq_str` - Semicolon-separated list of prerequisite IDs (e.g., "1;2;5")
-/// * `course_id_to_key` - Mapping from CSV Course ID to storage key
 fn add_prerequisites_with_mapping(
     course: &mut Course,
     prereq_str: &str,
     course_id_to_key: &HashMap<String, String>,
 ) {
-    for prereq in prereq_str.split(';') {
-        let trimmed = prereq.trim();
-        if !trimmed.is_empty() {
-            // Try to map course ID to key, otherwise use as-is
-            if let Some(key) = course_id_to_key.get(trimmed) {
-                course.add_prerequisite(key.clone());
-            } else {
-                // Fall back to normalizing as course key
-                let normalized = normalize_course_key(trimmed);
-                if !normalized.is_empty() {
-                    course.add_prerequisite(normalized);
-                }
-            }
-        }
-    }
+    resolve_csv_ids(
+        prereq_str,
+        course_id_to_key,
+        Some(normalize_course_key),
+        |key| course.add_prerequisite(key),
+    );
 }
 
 /// Adds corequisites from a semicolon-separated string to a course
 ///
-/// Converts CSV Course IDs to storage keys. Unlike prerequisites,
-/// missing mappings are silently skipped since corequisites may reference
+/// Missing mappings are silently skipped since corequisites may reference
 /// optional or elective courses not included in this curriculum.
-///
-/// # Arguments
-/// * `course` - The course to add corequisites to
-/// * `coreq_str` - Semicolon-separated list of corequisite IDs
-/// * `course_id_to_key` - Mapping from CSV Course ID to storage key
 fn add_corequisites_with_mapping(
     course: &mut Course,
     coreq_str: &str,
     course_id_to_key: &HashMap<String, String>,
 ) {
-    for coreq in coreq_str.split(';') {
-        let trimmed = coreq.trim();
-        if !trimmed.is_empty() {
-            // Try to map course ID to key; skip if mapping not found
-            // (corequisites may be optional or electives that don't have explicit mappings)
-            if let Some(key) = course_id_to_key.get(trimmed) {
-                course.add_corequisite(key.clone());
-            }
-        }
-    }
+    resolve_csv_ids(coreq_str, course_id_to_key, None, |key| {
+        course.add_corequisite(key);
+    });
 }
 
 /// Adds strict corequisites from a semicolon-separated string to a course
 ///
-/// Strict corequisites must be taken in the same term as the course.
-/// Like regular corequisites, missing mappings are silently skipped.
-///
-/// # Arguments
-/// * `course` - The course to add strict corequisites to
-/// * `coreq_str` - Semicolon-separated list of strict corequisite IDs
-/// * `course_id_to_key` - Mapping from CSV Course ID to storage key
+/// Missing mappings are silently skipped.
 fn add_strict_corequisites_with_mapping(
     course: &mut Course,
     coreq_str: &str,
     course_id_to_key: &HashMap<String, String>,
 ) {
-    for coreq in coreq_str.split(';') {
-        let trimmed = coreq.trim();
-        if !trimmed.is_empty() {
-            if let Some(key) = course_id_to_key.get(trimmed) {
-                course.add_strict_corequisite(key.clone());
-            }
-        }
-    }
+    resolve_csv_ids(coreq_str, course_id_to_key, None, |key| {
+        course.add_strict_corequisite(key);
+    });
 }
 
 /// Normalizes a course key to `PREFIXNUMBER` format
@@ -727,5 +723,46 @@ mod tests {
         // Should use natural keys when unique
         assert_eq!(storage_keys.get("1"), Some(&"CS101".to_string()));
         assert_eq!(storage_keys.get("2"), Some(&"CS201".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_csv_ids_with_mapping() {
+        let mut mapping = HashMap::new();
+        mapping.insert("1".to_string(), "CS101".to_string());
+        mapping.insert("2".to_string(), "CS201".to_string());
+
+        let mut resolved = Vec::new();
+        resolve_csv_ids("1;2;3", &mapping, None, |key| resolved.push(key));
+
+        // "1" and "2" map, "3" has no mapping and no fallback
+        assert_eq!(resolved, vec!["CS101", "CS201"]);
+    }
+
+    #[test]
+    fn test_resolve_csv_ids_with_fallback() {
+        let mapping = HashMap::new(); // empty mapping
+
+        let mut resolved = Vec::new();
+        resolve_csv_ids(
+            "CS 1800;MATH 1342",
+            &mapping,
+            Some(normalize_course_key),
+            |key| {
+                resolved.push(key);
+            },
+        );
+
+        assert_eq!(resolved, vec!["CS1800", "MATH1342"]);
+    }
+
+    #[test]
+    fn test_resolve_csv_ids_skips_empty() {
+        let mut mapping = HashMap::new();
+        mapping.insert("1".to_string(), "CS101".to_string());
+
+        let mut resolved = Vec::new();
+        resolve_csv_ids("1; ; ;", &mapping, None, |key| resolved.push(key));
+
+        assert_eq!(resolved, vec!["CS101"]);
     }
 }

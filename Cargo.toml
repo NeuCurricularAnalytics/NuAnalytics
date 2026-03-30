@@ -1,6 +1,6 @@
 [package]
 name = "nu-analytics"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Albert Lionelle <a.lionelle@northeastern.edu>"]
 description = "A CLI tool for computing Curricular Analytics metrics. Based off metrics from CurricularAnalytics.org. Currently, only basic metrics and additional reporting features."
@@ -24,22 +24,28 @@ path = "src/cli/main.rs"
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
-toml = "0.8"
-dirs = "5.0"
-askama = "0.12"
+serde_json = "1.0"
+toml = "1.1"
+dirs = "6.0"
+fastrand = "2.0"
+chrono = "0.4"
+
+# MCP server dependencies (optional feature)
+rmcp = { version = "1.0.0-alpha", features = ["server", "transport-io"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"], optional = true }
 
 [dev-dependencies]
 tempfile = "3.10"
-serde_json = "1.0"
 
 # No WASM target dependencies; CLI-only
 
 [features]
-default = ["log-info", "log-debug", "verbose", "file-logging"]
+default = ["log-info", "log-debug", "verbose", "file-logging", "mcp"]
 log-info = []
 log-debug = []
 verbose = []
 file-logging = []
+mcp = ["dep:rmcp", "dep:tokio"]
 
 [profile.release]
 opt-level = "z"  # Optimize for size

@@ -58,6 +58,47 @@ pub enum ReportFormatArg {
     Pdf,
 }
 
+/// Calculation strategy for aggregate metrics
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq, Default)]
+pub enum CalcStrategyArg {
+    /// Median (default) - robust to outliers
+    #[default]
+    Median,
+    /// Mean - arithmetic average
+    Mean,
+}
+
+impl std::fmt::Display for CalcStrategyArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Median => write!(f, "median"),
+            Self::Mean => write!(f, "mean"),
+        }
+    }
+}
+
+/// Sampling strategy for plan enumeration
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq, Default)]
+pub enum SamplingStrategyArg {
+    /// Sequential - enumerate in order (may bias statistics)
+    Sequential,
+    /// Shuffled (default) - randomize order for unbiased sampling
+    #[default]
+    Shuffled,
+    /// Stratified - ensure coverage across option space
+    Stratified,
+}
+
+impl std::fmt::Display for SamplingStrategyArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sequential => write!(f, "sequential"),
+            Self::Shuffled => write!(f, "shuffled"),
+            Self::Stratified => write!(f, "stratified"),
+        }
+    }
+}
+
 impl ReportFormatArg {
     /// Get the file extension for this format
     #[must_use]
@@ -197,18 +238,26 @@ pub enum Command {
     /// Validate and analyze degree program YAML files.
     ///
     /// Load a degree program YAML file and validate its structure, requirements,
-    /// prerequisites, and cross-listing relationships.
+    /// prerequisites, and cross-listing relationships. By default (no flags),
+    /// runs full degree analysis (--analyze). Use specific flags to run only
+    /// validation, graph printing, or audit.
+    ///
+    /// Circular prerequisites are automatically broken by removing optional edges
+    /// to create a valid DAG for analysis.
     ///
     /// # Examples
     /// ```sh
-    /// # Validate a degree program
+    /// # Run full degree analysis (default action)
+    /// nuanalytics degree samples/degrees/csu-cs-bscs-general.yaml
+    ///
+    /// # Validate a degree program only
     /// nuanalytics degree --validate samples/degrees/csu-cs-bscs-general.yaml
     ///
     /// # Print prerequisite graph
     /// nuanalytics degree --print-graph samples/degrees/csu-cs-bscs-general.yaml
     ///
-    /// # Both validate and print graph
-    /// nuanalytics degree --validate --print-graph samples/degrees/uhm-ics-bscs-general.yaml
+    /// # Analyze with custom settings
+    /// nuanalytics degree --analyze --calc-strategy mean --sample-plans 10 degree.yaml
     /// ```
     Degree {
         /// Path to the degree program YAML file
@@ -227,7 +276,78 @@ pub enum Command {
         /// Includes validation, missing prerequisites analysis, and deep chain detection
         #[arg(long)]
         audit: bool,
+
+        /// Run full degree analysis: generate all plans and produce HTML report with statistics.
+        /// This is the default action when no other flags are specified.
+        #[arg(long)]
+        analyze: bool,
+
+        /// Calculation strategy for aggregate metrics (median or mean)
+        #[arg(long, value_enum, value_name = "STRATEGY")]
+        calc_strategy: Option<CalcStrategyArg>,
+
+        /// Sampling strategy for plan enumeration (sequential, shuffled, stratified)
+        #[arg(long, value_enum, value_name = "STRATEGY")]
+        sampling_strategy: Option<SamplingStrategyArg>,
+
+        /// Number of random plans to sample and export (default: 5)
+        #[arg(long, value_name = "COUNT")]
+        sample_plans: Option<usize>,
+
+        /// Maximum number of plans to generate (safety cap)
+        #[arg(long, value_name = "COUNT")]
+        max_plans: Option<usize>,
+
+        /// Generate all plan combinations without deduplication (overrides default)
+        #[arg(long)]
+        full_run: bool,
+
+        /// Override reports output directory (from config)
+        #[arg(long, value_name = "DIR")]
+        report_dir: Option<PathBuf>,
+
+        /// Override metrics output directory (from config)
+        #[arg(long, value_name = "DIR")]
+        metrics_dir: Option<PathBuf>,
+
+        /// Skip CSV plan export
+        #[arg(long)]
+        no_csv: bool,
+
+        /// Skip HTML report generation
+        #[arg(long)]
+        no_report: bool,
+
+        /// Courses to always include in all plans (comma-separated course codes)
+        ///
+        /// These courses will be included in every generated plan, including the shortest path.
+        /// If an included course satisfies a requirement (e.g., a picklist), other options
+        /// for that requirement will not be considered.
+        ///
+        /// Example: --include "CS3500,MATH2331,PHIL1145"
+        #[arg(long, value_name = "COURSES", value_delimiter = ',')]
+        include: Option<Vec<String>>,
     },
+    /// Run the MCP (Model Context Protocol) server.
+    ///
+    /// Starts a server that exposes `NuAnalytics` tools for AI model integration
+    /// via stdio transport. Compatible with Claude Desktop, Claude Code, and
+    /// any MCP-compatible client.
+    #[cfg(feature = "mcp")]
+    #[command(long_about = "Run the MCP (Model Context Protocol) server.\n\n\
+            Starts a server that exposes NuAnalytics tools for AI model integration\n\
+            via stdio transport. Compatible with Claude Desktop, Claude Code, and\n\
+            any MCP-compatible client.\n\n\
+            Available tools:\n\
+            \x20 get_degree_schema  Get degree YAML schema documentation\n\
+            \x20 validate_degree    Validate a degree YAML and return errors/warnings\n\
+            \x20 audit_degree       Comprehensive audit (validation + prereq analysis)\n\
+            \x20 analyze_degree     Full plan analysis with aggregate metrics and schedules\n\n\
+            Examples:\n\
+            \x20 nuanalytics mcp\n\
+            \x20 nuanalytics --log-level debug mcp\n\
+            \x20 npx @modelcontextprotocol/inspector nuanalytics mcp")]
+    Mcp,
 }
 
 #[derive(Parser, Debug)]
