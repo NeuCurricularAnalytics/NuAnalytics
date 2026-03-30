@@ -243,6 +243,7 @@ metrics, and identifies shortest/longest paths with term-by-term schedules.
 |-----------|------|----------|-------------|
 | `yaml_content` | string | Yes | Complete degree program YAML content |
 | `max_plans` | integer | No | Maximum plans to generate (default: 500) |
+| `include_courses` | string | No | Comma-separated course codes to include in all plans (e.g., "CS150B,MATH156") |
 
 **Response Format:**
 ```json
