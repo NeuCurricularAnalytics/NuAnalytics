@@ -31,6 +31,12 @@ pub struct AnalyzeDegreeRequest {
         description = "Maximum plans to generate (default: 500, higher = more accurate but slower)"
     )]
     pub max_plans: Option<usize>,
+
+    /// Courses to always include in all generated plans
+    #[schemars(
+        description = "Comma-separated list of course codes to include in all plans (e.g., 'CS150B,MATH156,CS414'). These courses will be present in every generated plan."
+    )]
+    pub include_courses: Option<String>,
 }
 
 /// Serializable metric statistics (includes quartiles for box plots)
@@ -128,9 +134,19 @@ const DEFAULT_MAX_PLANS: usize = 500;
 // ============================================================================
 
 /// Execute the `analyze_degree` tool
+///
+/// # Arguments
+/// * `yaml_content` - The degree program YAML content
+/// * `max_plans` - Maximum number of plans to generate (default: 500)
+/// * `include_courses` - Optional courses to always include in all plans
 #[must_use]
-pub fn execute(yaml_content: &str, max_plans: Option<usize>) -> AnalysisResponse {
+pub fn execute(
+    yaml_content: &str,
+    max_plans: Option<usize>,
+    include_courses: Option<Vec<String>>,
+) -> AnalysisResponse {
     let max = max_plans.unwrap_or(DEFAULT_MAX_PLANS);
+    let include = include_courses.unwrap_or_default();
 
     // Parse YAML
     let program = match parse_degree_yaml(yaml_content) {
@@ -174,6 +190,7 @@ pub fn execute(yaml_content: &str, max_plans: Option<usize>) -> AnalysisResponse
         sample_count: 3,
         target_credits: program.degree.total_credits,
         sampling_strategy: SamplingStrategy::Shuffled,
+        include_courses: include,
         ..Default::default()
     };
 
@@ -326,9 +343,18 @@ fn build_response(
 }
 
 /// Execute and serialize as JSON
+///
+/// # Arguments
+/// * `yaml_content` - The degree program YAML content
+/// * `max_plans` - Maximum number of plans to generate
+/// * `include_courses` - Optional courses to always include in all plans
 #[must_use]
-pub fn execute_json(yaml_content: &str, max_plans: Option<usize>) -> String {
-    let response = execute(yaml_content, max_plans);
+pub fn execute_json(
+    yaml_content: &str,
+    max_plans: Option<usize>,
+    include_courses: Option<Vec<String>>,
+) -> String {
+    let response = execute(yaml_content, max_plans, include_courses);
     serde_json::to_string_pretty(&response)
         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
 }
@@ -670,7 +696,7 @@ courses:
 
     #[test]
     fn test_analyze_valid_degree() {
-        let response = execute(TEST_YAML, Some(10));
+        let response = execute(TEST_YAML, Some(10), None);
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
         assert!(response.complexity.is_some());
@@ -680,14 +706,14 @@ courses:
 
     #[test]
     fn test_analyze_malformed_yaml() {
-        let response = execute("not: valid: yaml: {{", Some(10));
+        let response = execute("not: valid: yaml: {{", Some(10), None);
         assert!(!response.success);
         assert!(response.error.is_some());
     }
 
     #[test]
     fn test_analyze_json_output() {
-        let json = execute_json(TEST_YAML, Some(10));
+        let json = execute_json(TEST_YAML, Some(10), None);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["success"].as_bool().unwrap());
         assert!(parsed["plans_analyzed"].as_u64().unwrap() > 0);
@@ -695,7 +721,7 @@ courses:
 
     #[test]
     fn test_selected_plans_have_schedules() {
-        let response = execute(TEST_YAML, Some(10));
+        let response = execute(TEST_YAML, Some(10), None);
         for plan in &response.selected_plans {
             assert!(
                 !plan.schedule.is_empty(),
@@ -704,6 +730,22 @@ courses:
             );
             assert!(plan.terms > 0);
             assert!(plan.credits > 0.0);
+        }
+    }
+
+    #[test]
+    fn test_include_courses() {
+        let response = execute(TEST_YAML, Some(10), Some(vec!["CS101".to_string()]));
+        assert!(response.success, "error: {:?}", response.error);
+        assert!(response.plans_analyzed > 0);
+        // All plans should include CS101
+        for plan in &response.selected_plans {
+            let has_cs101 = plan
+                .schedule
+                .iter()
+                .flat_map(|t| t.courses.iter().map(String::as_str))
+                .any(|c| c == "CS101");
+            assert!(has_cs101, "Plan {} should contain CS101", plan.category);
         }
     }
 

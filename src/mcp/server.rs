@@ -65,11 +65,17 @@ impl NuAnalyticsMcpServer {
 
     /// Analyze a degree program YAML
     #[tool(
-        description = "Run full degree analysis: generate all possible course plans, compute aggregate metrics (complexity, delay, credits), and identify shortest/longest paths. Returns statistics across plans and term-by-term schedules for selected plans. Use after validate_degree confirms the YAML is valid."
+        description = "Run full degree analysis: generate all possible course plans, compute aggregate metrics (complexity, delay, credits), and identify shortest/longest paths. Returns statistics across plans and term-by-term schedules for selected plans. Use after validate_degree confirms the YAML is valid. Optionally specify include_courses to constrain all plans to include specific courses."
     )]
     #[allow(clippy::unused_self)]
     fn analyze_degree(&self, Parameters(req): Parameters<AnalyzeDegreeRequest>) -> String {
-        analyze::execute_json(&req.yaml_content, req.max_plans)
+        let include_courses = req.include_courses.map(|s| {
+            s.split(',')
+                .map(|c| c.trim().to_string())
+                .filter(|c| !c.is_empty())
+                .collect()
+        });
+        analyze::execute_json(&req.yaml_content, req.max_plans, include_courses)
     }
 }
 
