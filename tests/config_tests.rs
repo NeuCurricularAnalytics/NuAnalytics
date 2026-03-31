@@ -300,3 +300,44 @@ fn test_get_config_file_path() {
     let path_str = path.to_string_lossy();
     assert!(path_str.ends_with("config.toml") || path_str.ends_with("dconfig.toml"));
 }
+
+#[test]
+fn test_get_local_config_file_path() {
+    let path = Config::get_local_config_file_path();
+
+    // Should return Some path ending with nuanalytics.toml
+    assert!(path.is_some());
+    let path = path.unwrap();
+    assert!(path.ends_with("nuanalytics.toml"));
+}
+
+#[test]
+fn test_merge_from_all_fields() {
+    let mut base = Config::default();
+    base.logging.level = "info".to_string();
+    base.paths.metrics_dir = "/base/metrics".to_string();
+    base.degree_analysis.max_plans = 1000;
+
+    let mut local = Config::default();
+    local.logging.level = "debug".to_string();
+    local.degree_analysis.max_plans = 500; // non-default
+
+    base.merge_from(&local);
+
+    assert_eq!(base.logging.level, "debug"); // overwritten
+    assert_eq!(base.paths.metrics_dir, "/base/metrics"); // preserved (local empty)
+    assert_eq!(base.degree_analysis.max_plans, 500); // overwritten (non-default)
+}
+
+#[test]
+fn test_merge_from_verbose_only_sets_true() {
+    let mut base = Config::default();
+    base.logging.verbose = true;
+
+    let local = Config::default(); // verbose is false (default)
+
+    base.merge_from(&local);
+
+    // verbose should stay true - we only set to true, never to false
+    assert!(base.logging.verbose);
+}

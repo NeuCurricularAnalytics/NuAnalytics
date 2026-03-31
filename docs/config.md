@@ -1,6 +1,40 @@
 # Config Command
 
-The `config` command manages NuAnalytics configuration settings. Configuration is stored in your user's config directory and can be overridden via CLI flags.
+The `config` command manages NuAnalytics configuration settings. Configuration is loaded from multiple sources with a clear precedence hierarchy.
+
+## Configuration Hierarchy
+
+NuAnalytics uses a three-tier configuration system with the following precedence (highest to lowest):
+
+1. **Command-line arguments** - Override any config value for a single run
+2. **Local config** (`nuanalytics.toml` in current directory) - Project-specific settings
+3. **Home config** (`~/.config/nuanalytics/config.toml`) - User-wide defaults
+4. **Built-in defaults** - Fallback values
+
+This allows you to:
+- Set user-wide defaults in your home config
+- Override those with project-specific settings via local `nuanalytics.toml`
+- Further override for a single run via CLI flags
+
+### Local Configuration File
+
+Create a `nuanalytics.toml` file in your project directory to set project-specific settings:
+
+```toml
+# nuanalytics.toml - Local project configuration
+[paths]
+metrics_dir = "./metrics"
+reports_dir = "./reports"
+
+[logging]
+level = "debug"
+
+[degree_analysis]
+max_plans = 500
+sampling_strategy = "stratified"
+```
+
+The local config only overrides values that are explicitly set - empty or default values are ignored, allowing the home config to provide fallback values.
 
 ## Overview
 
@@ -98,9 +132,9 @@ This command will prompt you to confirm before resetting all settings.
 When NuAnalytics runs, configuration is applied in this order (highest priority first):
 
 1. **CLI Flags** - Runtime flags like `--log-level` (most specific, highest priority)
-2. **Config Overrides** - Flags like `--config-level` that write to config file
-3. **Config File** - Values persisted via `config set`
-4. **Defaults** - Built-in defaults (lowest priority)
+2. **Local Config** - `nuanalytics.toml` in the current directory (project-specific)
+3. **Home Config** - `~/.config/nuanalytics/config.toml` (user defaults)
+4. **Built-in Defaults** - Compiled-in defaults (lowest priority)
 
 ### Example: Priority in Action
 
@@ -149,14 +183,19 @@ nuanalytics --log-level info planner input.csv   # Uses info just this time
 nuanalytics -debug planner input.csv -
 ```
 
-## Configuration File Location
+## Configuration File Locations
 
-Configuration is stored in:
+Configuration is loaded from these locations:
 
-- **Linux/macOS**: `~/.config/nuanalytics/config.toml`
+### Home Configuration (user defaults)
+- **Linux**: `~/.config/nuanalytics/config.toml` (or `dconfig.toml` in debug builds)
+- **macOS**: `~/Library/Application Support/nuanalytics/config.toml`
 - **Windows**: `%APPDATA%\nuanalytics\config.toml`
 
-To view your config file path:
+### Local Configuration (project-specific)
+- **All platforms**: `nuanalytics.toml` in the current working directory
+
+To view your home config file path:
 
 ```bash
 nuanalytics config get

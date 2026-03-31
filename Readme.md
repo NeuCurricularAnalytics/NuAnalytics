@@ -103,6 +103,28 @@ nuanalytics config set level debug
 nuanalytics config set degree_analysis.max_plans 5000
 ```
 
+## Configuration
+
+NuAnalytics uses a three-tier configuration system with the following precedence (highest to lowest):
+
+1. **Command-line arguments** - Override any config value for a single run
+2. **Local config** (`nuanalytics.toml` in current directory) - Project-specific settings
+3. **Home config** (`~/.config/nuanalytics/config.toml`) - User-wide defaults
+4. **Built-in defaults** - Fallback values
+
+This allows you to set project-specific configurations by creating a `nuanalytics.toml` file in your project directory:
+
+```toml
+# nuanalytics.toml - Local project configuration
+[paths]
+metrics_dir = "./metrics"
+reports_dir = "./reports"
+
+[degree_analysis]
+max_plans = 500
+sampling_strategy = "stratified"
+```
+
 ## Documentation
 
 - **[Config Command](docs/config.md)** - Configure NuAnalytics settings (logging, database, output directories, degree analysis)

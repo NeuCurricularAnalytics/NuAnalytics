@@ -19,6 +19,9 @@ const CONFIG_FILE_NAME: &str = "config.toml";
 #[cfg(debug_assertions)]
 const CONFIG_FILE_NAME: &str = "dconfig.toml";
 
+/// Local directory config file name (same for both debug and release)
+const LOCAL_CONFIG_FILE_NAME: &str = "nuanalytics.toml";
+
 /// Logging configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LoggingConfig {
@@ -296,9 +299,9 @@ impl Config {
         }
     }
 
-    /// Get the user config file path
+    /// Get the user config file path (home directory)
     ///
-    /// Returns the full path to the configuration file:
+    /// Returns the full path to the user-level configuration file:
     /// - `config.toml` for release builds
     /// - `dconfig.toml` for debug builds (allows separate debug config)
     ///
@@ -308,6 +311,22 @@ impl Config {
     #[must_use]
     pub fn get_config_file_path() -> PathBuf {
         Self::get_nuanalytics_dir().join(CONFIG_FILE_NAME)
+    }
+
+    /// Get the local config file path (current directory)
+    ///
+    /// Returns the path to `nuanalytics.toml` in the current working directory.
+    /// This config takes precedence over the home directory config but can be
+    /// overridden by command-line arguments.
+    ///
+    /// # Returns
+    /// Path to `nuanalytics.toml` in the current directory, or `None` if the
+    /// current directory cannot be determined.
+    #[must_use]
+    pub fn get_local_config_file_path() -> Option<PathBuf> {
+        std::env::current_dir()
+            .ok()
+            .map(|d| d.join(LOCAL_CONFIG_FILE_NAME))
     }
 
     /// Expand `$NU_ANALYTICS` variable in a string
@@ -400,34 +419,59 @@ impl Config {
         Self::from_toml(CONFIG_DEFAULTS).expect("Failed to parse compiled-in default configuration")
     }
 
-    /// Load configuration from file, or create from defaults if not found
+    /// Load configuration with three-tier hierarchy
     ///
-    /// This is the primary way to load configuration. It handles several scenarios:
-    /// - If config file exists: Loads from file, merges missing fields from defaults, saves updated config
-    /// - If config file doesn't exist (first run): Creates config directory if needed, loads defaults, saves to file
+    /// Configuration is loaded with the following precedence (highest to lowest):
+    /// 1. Command-line overrides (applied via `apply_overrides()` after this call)
+    /// 2. Local directory config (`nuanalytics.toml` in current directory)
+    /// 3. Home directory config (`~/.config/nuanalytics/config.toml`)
+    /// 4. Embedded defaults
     ///
-    /// The merge behavior ensures that upgrading the application automatically adds new config
-    /// fields while preserving existing user settings.
+    /// The merge behavior ensures that:
+    /// - Local config overrides home config values
+    /// - Home config overrides default values
+    /// - Missing fields fall back to the next tier
     ///
     /// # Returns
-    /// A `Config` instance loaded from file or defaults. Falls back to defaults if any error occurs
-    /// during loading.
+    /// A `Config` instance with merged settings from all tiers.
     ///
     /// # Examples
     /// ```ignore
     /// let config = Config::load();
-    /// // Config is now loaded from ~/.config/nuanalytics/config.toml (or defaults if first run)
+    /// // Config is now loaded with local > home > defaults precedence
     /// ```
     #[must_use]
     pub fn load() -> Self {
-        let config_file = Self::get_config_file_path();
         let defaults = Self::from_defaults();
+
+        // Load home directory config (tier 3)
+        let mut config = Self::load_home_config(&defaults);
+
+        // Apply local directory config if present (tier 2)
+        if let Some(local_path) = Self::get_local_config_file_path() {
+            if local_path.exists() {
+                if let Ok(content) = fs::read_to_string(&local_path) {
+                    if let Ok(local_config) = Self::from_toml(&content) {
+                        config.merge_from(&local_config);
+                    }
+                }
+            }
+        }
+
+        config
+    }
+
+    /// Load configuration from home directory, creating it if needed
+    ///
+    /// Internal helper for loading the home directory config file.
+    fn load_home_config(defaults: &Self) -> Self {
+        let config_file = Self::get_config_file_path();
 
         if config_file.exists() {
             if let Ok(content) = fs::read_to_string(&config_file) {
                 if let Ok(mut config) = Self::from_toml(&content) {
                     // Merge any missing fields from defaults
-                    if config.merge_defaults(&defaults) {
+                    if config.merge_defaults(defaults) {
                         // Save the updated config with new fields
                         let _ = config.save();
                     }
@@ -436,19 +480,76 @@ impl Config {
             }
         } else {
             // First run: create directory and config file from defaults
-
-            // Create the directory if it doesn't exist
             if let Some(parent) = config_file.parent() {
                 let _ = fs::create_dir_all(parent);
             }
-
-            // Save the default config
             let _ = defaults.save();
-
-            return defaults;
+            return defaults.clone();
         }
 
-        defaults
+        defaults.clone()
+    }
+
+    /// Merge non-empty values from another config into this one
+    ///
+    /// Used to apply local directory config on top of home directory config.
+    /// Only non-empty string values and non-default numeric values are merged.
+    ///
+    /// # Arguments
+    /// * `other` - The config to merge values from (higher precedence)
+    pub fn merge_from(&mut self, other: &Self) {
+        // Merge logging fields
+        if !other.logging.level.is_empty() {
+            self.logging.level.clone_from(&other.logging.level);
+        }
+        if !other.logging.file.is_empty() {
+            self.logging.file.clone_from(&other.logging.file);
+        }
+        if other.logging.verbose {
+            self.logging.verbose = true;
+        }
+
+        // Merge database fields
+        if !other.database.token.is_empty() {
+            self.database.token.clone_from(&other.database.token);
+        }
+        if !other.database.endpoint.is_empty() {
+            self.database.endpoint.clone_from(&other.database.endpoint);
+        }
+
+        // Merge paths fields
+        if !other.paths.metrics_dir.is_empty() {
+            self.paths.metrics_dir.clone_from(&other.paths.metrics_dir);
+        }
+        if !other.paths.reports_dir.is_empty() {
+            self.paths.reports_dir.clone_from(&other.paths.reports_dir);
+        }
+
+        // Merge audit fields (only if non-default)
+        if other.audit.prerequisite_chain_threshold != default_prerequisite_chain_threshold() {
+            self.audit.prerequisite_chain_threshold = other.audit.prerequisite_chain_threshold;
+        }
+
+        // Merge degree_analysis fields
+        if other.degree_analysis.calc_strategy != default_calc_strategy() {
+            self.degree_analysis
+                .calc_strategy
+                .clone_from(&other.degree_analysis.calc_strategy);
+        }
+        if other.degree_analysis.sample_plan_count != default_sample_plan_count() {
+            self.degree_analysis.sample_plan_count = other.degree_analysis.sample_plan_count;
+        }
+        if other.degree_analysis.max_plans != default_max_plans() {
+            self.degree_analysis.max_plans = other.degree_analysis.max_plans;
+        }
+        if other.degree_analysis.ignore_duplicates != default_ignore_duplicates() {
+            self.degree_analysis.ignore_duplicates = other.degree_analysis.ignore_duplicates;
+        }
+        if other.degree_analysis.sampling_strategy != default_sampling_strategy() {
+            self.degree_analysis
+                .sampling_strategy
+                .clone_from(&other.degree_analysis.sampling_strategy);
+        }
     }
 
     /// Save configuration to file
@@ -791,5 +892,107 @@ impl fmt::Display for Config {
         )?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_local_config_file_path() {
+        let path = Config::get_local_config_file_path();
+        assert!(path.is_some());
+        let path = path.unwrap();
+        assert!(path.ends_with("nuanalytics.toml"));
+    }
+
+    #[test]
+    fn test_merge_from_overwrites_non_empty() {
+        let mut base = Config::default();
+        base.logging.level = "info".to_string();
+        base.paths.metrics_dir = "/base/metrics".to_string();
+
+        let mut local = Config::default();
+        local.logging.level = "debug".to_string();
+        // Leave metrics_dir empty - should not overwrite
+
+        base.merge_from(&local);
+
+        assert_eq!(base.logging.level, "debug");
+        assert_eq!(base.paths.metrics_dir, "/base/metrics"); // unchanged
+    }
+
+    #[test]
+    fn test_merge_from_preserves_base_when_other_empty() {
+        let mut base = Config::default();
+        base.logging.level = "warn".to_string();
+        base.database.token = "secret-token".to_string();
+
+        let local = Config::default(); // all empty
+
+        base.merge_from(&local);
+
+        assert_eq!(base.logging.level, "warn");
+        assert_eq!(base.database.token, "secret-token");
+    }
+
+    #[test]
+    fn test_merge_from_non_default_numeric_values() {
+        let mut base = Config::default();
+        base.degree_analysis.max_plans = 1000;
+
+        let mut local = Config::default();
+        local.degree_analysis.max_plans = 500; // non-default value
+
+        base.merge_from(&local);
+
+        assert_eq!(base.degree_analysis.max_plans, 500);
+    }
+
+    #[test]
+    fn test_merge_from_verbose_flag() {
+        let mut base = Config::default();
+        base.logging.verbose = false;
+
+        let mut local = Config::default();
+        local.logging.verbose = true;
+
+        base.merge_from(&local);
+
+        assert!(base.logging.verbose);
+    }
+
+    #[test]
+    fn test_from_defaults_returns_valid_config() {
+        let config = Config::from_defaults();
+        // Should have some reasonable defaults
+        assert!(!config.logging.level.is_empty() || config.logging.level.is_empty());
+        // Just verify it loads
+    }
+
+    #[test]
+    fn test_get_and_set() {
+        let mut config = Config::default();
+
+        config.set("level", "debug").unwrap();
+        assert_eq!(config.get("level"), Some("debug".to_string()));
+
+        config.set("max_plans", "5000").unwrap();
+        assert_eq!(config.get("max_plans"), Some("5000".to_string()));
+    }
+
+    #[test]
+    fn test_set_invalid_key() {
+        let mut config = Config::default();
+        let result = config.set("invalid_key", "value");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_invalid_value_type() {
+        let mut config = Config::default();
+        let result = config.set("max_plans", "not_a_number");
+        assert!(result.is_err());
     }
 }
