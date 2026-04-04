@@ -1,17 +1,74 @@
-# Default Config File - Ideally to use during release code
+# NuAnalytics — Default configuration (debug builds)
+# Used when running from source with `cargo run` or a debug binary.
+# Output files go under .debug/ in the working directory to keep them
+# separate from release output and avoid cluttering the project root.
+# Override any value in ~/.config/nuanalytics/dconfig.toml or ./nuanalytics.toml
 
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 [logging]
+# Debug builds log everything by default
 level = "debug"
+
+# Local log file — stays inside the project directory
 file = ".debug/nuanalytics.debug.log"
+
+# Verbose output on by default for development
 verbose = true
 
+# ---------------------------------------------------------------------------
+# Database (Supabase)
+# ---------------------------------------------------------------------------
 [database]
-token = ""
-endpoint = ""
+# Supabase project URL
+endpoint = "https://oaaqxtzkfcjcosilpbwi.supabase.co"
 
+# Supabase anonymous (public) key — safe to share, used for public reads
+# and to initiate the OAuth login flow
+anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9hYXF4dHprZmNqY29zaWxwYndpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjQxNTQsImV4cCI6MjA5MDc0MDE1NH0.rJSEZV3-Wvq0uVnCVwduF3xPtnuc6J9ftbftLijiQZU"
+
+# Enable database features (MCP database tools, IPEDS import, db login)
+enabled = true
+
+# Debug session is stored locally — separate from any active release session
+auth_file = ".debug/dauth.json"
+
+# Supabase Personal Access Token for exec-sql (DDL operations).
+# Generate at: https://app.supabase.com/account/tokens
+management_key = ""
+
+# ---------------------------------------------------------------------------
+# Output paths
+# ---------------------------------------------------------------------------
 [paths]
+# Keep debug output inside .debug/ so it doesn't mix with real data
 metrics_dir = ".debug/metrics"
 reports_dir = ".debug/reports"
 
+# ---------------------------------------------------------------------------
+# Audit settings
+# ---------------------------------------------------------------------------
 [audit]
+# Flag prerequisite chains at or longer than this depth
 prerequisite_chain_threshold = 4
+
+# ---------------------------------------------------------------------------
+# Degree analysis
+# ---------------------------------------------------------------------------
+[degree_analysis]
+# Aggregate metric strategy across generated plans: median | mean
+calc_strategy = "median"
+
+# Plans to export in full. Smaller value speeds up debug iteration.
+sample_plan_count = 3
+
+# Lower cap for debug — catches runaway generation faster during development
+max_plans = 1000
+
+# Skip duplicate plan permutations
+ignore_duplicates = true
+
+# Plan enumeration order before sampling:
+#   sequential | shuffled | stratified
+sampling_strategy = "shuffled"

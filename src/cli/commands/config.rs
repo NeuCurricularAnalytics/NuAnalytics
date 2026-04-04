@@ -135,7 +135,7 @@ mod tests {
         config.logging.level = "test_level".to_string();
         config.logging.file = "test_file.log".to_string();
         config.logging.verbose = true;
-        config.database.token = "test_token".to_string();
+        config.database.anon_key = "test_token".to_string();
         config.database.endpoint = "https://test.com".to_string();
         config.paths.metrics_dir = "/test/metrics".to_string();
         config.paths.reports_dir = "/test/reports".to_string();
@@ -172,7 +172,7 @@ mod tests {
 
         // Set another string value
         assert!(config.set("token", "new_token").is_ok());
-        assert_eq!(config.database.token, "new_token");
+        assert_eq!(config.database.anon_key, "new_token");
     }
 
     #[test]
@@ -246,7 +246,7 @@ mod tests {
         assert_eq!(config.logging.verbose, defaults.logging.verbose);
 
         assert!(config.unset("token", &defaults).is_ok());
-        assert_eq!(config.database.token, defaults.database.token);
+        assert_eq!(config.database.anon_key, defaults.database.anon_key);
 
         assert!(config.unset("endpoint", &defaults).is_ok());
         assert_eq!(config.database.endpoint, defaults.database.endpoint);

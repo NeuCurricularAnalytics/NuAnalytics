@@ -20,10 +20,9 @@ pub use degree::{
 // Re-export statistics types for convenience
 pub use statistics::{CalculationStrategy, DescriptiveStats, MeanStrategy, MedianStrategy};
 
-// Add core domain modules here as they're developed:
-// pub mod school;
-// pub mod database;
-// pub mod utils;
+// Database integration (feature-gated)
+#[cfg(feature = "database")]
+pub mod database;
 
 /// Returns the current version of the `NuAnalytics` crate
 #[must_use]

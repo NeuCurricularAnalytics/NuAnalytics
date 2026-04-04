@@ -18,3 +18,6 @@ pub mod report;
 
 #[cfg(feature = "mcp")]
 pub mod mcp;
+
+#[cfg(feature = "database")]
+pub mod db;

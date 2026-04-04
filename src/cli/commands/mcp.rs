@@ -9,13 +9,15 @@
 //! nuanalytics mcp
 //! ```
 
+use nu_analytics::config::DatabaseConfig;
+
 /// Run the MCP server
 ///
-/// This is a thin wrapper that delegates to the mcp module.
+/// Passes database configuration through to the server for optional database-backed tools.
 ///
 /// # Errors
 ///
 /// Returns an error string if the server fails to start or run.
-pub fn run() -> Result<(), String> {
-    nu_analytics::mcp::run()
+pub fn run(db_config: &DatabaseConfig) -> Result<(), String> {
+    nu_analytics::mcp::run(db_config)
 }

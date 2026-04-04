@@ -7,4 +7,7 @@ pub mod logger;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 
+#[cfg(feature = "database")]
+pub use core::database;
+
 pub use core::*;

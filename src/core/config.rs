@@ -37,14 +37,60 @@ pub struct LoggingConfig {
 }
 
 /// Database configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseConfig {
-    /// Database token/connection string
-    #[serde(default)]
-    pub token: String,
-    /// Database endpoint
+    /// Supabase project URL (e.g. `https://abcdefgh.supabase.co`)
     #[serde(default)]
     pub endpoint: String,
+    /// Supabase anonymous (public) key — used for unauthenticated reads and to
+    /// initiate the OAuth login flow. Not the user's personal session token, which
+    /// is stored separately in the `auth_file` after `nuanalytics db login`.
+    ///
+    /// Accepts the legacy TOML key `token` for backward compatibility.
+    #[serde(default, alias = "token")]
+    pub anon_key: String,
+    /// Enable database integration (requires `endpoint` and `anon_key` to be set)
+    #[serde(default)]
+    pub enabled: bool,
+    /// Path to the auth session file saved by `nuanalytics db login`.
+    ///
+    /// Supports `$NU_ANALYTICS` variable expansion.
+    /// Default differs by build profile:
+    /// - Release: `$NU_ANALYTICS/auth.json`
+    /// - Debug:   `.debug/dauth.json` (local to the working directory)
+    #[serde(default = "default_auth_file")]
+    pub auth_file: String,
+    /// Supabase Personal Access Token (PAT) for the Management API.
+    ///
+    /// Required for `nuanalytics db exec-sql` which executes DDL and arbitrary SQL
+    /// via `api.supabase.com`. Different from `anon_key` (project data API) and
+    /// the OAuth session token. Generate one at:
+    /// <https://app.supabase.com/account/tokens>
+    #[serde(default)]
+    pub management_key: String,
+}
+
+fn default_auth_file() -> String {
+    #[cfg(debug_assertions)]
+    return ".debug/dauth.json".to_string();
+    #[cfg(not(debug_assertions))]
+    "$NU_ANALYTICS/auth.json".to_string()
+}
+
+const fn default_management_key() -> String {
+    String::new()
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: String::new(),
+            anon_key: String::new(),
+            enabled: false,
+            auth_file: default_auth_file(),
+            management_key: default_management_key(),
+        }
+    }
 }
 
 /// Paths configuration
@@ -165,8 +211,8 @@ pub struct ConfigOverrides {
     pub file: Option<String>,
     /// Override verbose flag
     pub verbose: Option<bool>,
-    /// Override database token
-    pub db_token: Option<String>,
+    /// Override database anon key
+    pub db_anon_key: Option<String>,
     /// Override database endpoint
     pub db_endpoint: Option<String>,
     /// Override metrics output directory
@@ -224,14 +270,28 @@ impl Config {
         }
 
         // Merge database fields - only add if default is non-empty
-        if self.database.token.is_empty() && !defaults.database.token.is_empty() {
-            self.database.token.clone_from(&defaults.database.token);
+        if self.database.anon_key.is_empty() && !defaults.database.anon_key.is_empty() {
+            self.database
+                .anon_key
+                .clone_from(&defaults.database.anon_key);
             changed = true;
         }
         if self.database.endpoint.is_empty() && !defaults.database.endpoint.is_empty() {
             self.database
                 .endpoint
                 .clone_from(&defaults.database.endpoint);
+            changed = true;
+        }
+        if self.database.auth_file.is_empty() && !defaults.database.auth_file.is_empty() {
+            self.database
+                .auth_file
+                .clone_from(&defaults.database.auth_file);
+            changed = true;
+        }
+        if self.database.management_key.is_empty() && !defaults.database.management_key.is_empty() {
+            self.database
+                .management_key
+                .clone_from(&defaults.database.management_key);
             changed = true;
         }
 
@@ -284,8 +344,8 @@ impl Config {
             self.logging.verbose = verbose;
         }
 
-        if let Some(token) = &overrides.db_token {
-            self.database.token.clone_from(token);
+        if let Some(key) = &overrides.db_anon_key {
+            self.database.anon_key.clone_from(key);
         }
         if let Some(endpoint) = &overrides.db_endpoint {
             self.database.endpoint.clone_from(endpoint);
@@ -387,8 +447,10 @@ impl Config {
 
         // Expand variables in config values
         config.logging.file = Self::expand_variables(&config.logging.file);
-        config.database.token = Self::expand_variables(&config.database.token);
+        config.database.anon_key = Self::expand_variables(&config.database.anon_key);
         config.database.endpoint = Self::expand_variables(&config.database.endpoint);
+        config.database.auth_file = Self::expand_variables(&config.database.auth_file);
+        config.database.management_key = Self::expand_variables(&config.database.management_key);
         config.paths.metrics_dir = Self::expand_variables(&config.paths.metrics_dir);
         config.paths.reports_dir = Self::expand_variables(&config.paths.reports_dir);
 
@@ -510,11 +572,21 @@ impl Config {
         }
 
         // Merge database fields
-        if !other.database.token.is_empty() {
-            self.database.token.clone_from(&other.database.token);
+        if !other.database.anon_key.is_empty() {
+            self.database.anon_key.clone_from(&other.database.anon_key);
         }
         if !other.database.endpoint.is_empty() {
             self.database.endpoint.clone_from(&other.database.endpoint);
+        }
+        if !other.database.auth_file.is_empty() {
+            self.database
+                .auth_file
+                .clone_from(&other.database.auth_file);
+        }
+        if !other.database.management_key.is_empty() {
+            self.database
+                .management_key
+                .clone_from(&other.database.management_key);
         }
 
         // Merge paths fields
@@ -566,8 +638,8 @@ impl Config {
     /// verbose = false
     ///
     /// [Database]
-    /// token = "your-token"
-    /// endpoint = "https://api.example.com"
+    /// anon_key = "your-anon-key"
+    /// endpoint = "https://your-project.supabase.co"
     ///
     /// [Paths]
     /// metrics_dir = "$NU_ANALYTICS/metrics"
@@ -605,7 +677,7 @@ impl Config {
     /// - `level`: Logging level ("debug", "info", "warn", "error")
     /// - `file`: Log file path
     /// - `verbose`: Verbose logging boolean
-    /// - `token`: Database authentication token
+    /// - `anon_key` (or legacy `token`): Supabase anonymous key
     /// - `endpoint`: Database API endpoint
     /// - `metrics_dir`: Metrics output directory path
     /// - `reports_dir`: Reports output directory path
@@ -623,15 +695,39 @@ impl Config {
     /// if let Some(level) = config.get("level") {
     ///     println!("Current log level: {}", level);
     /// }
-    /// ```
+    /// Strip an optional section prefix from a config key so both bare
+    /// keys (`"endpoint"`) and dotted keys (`"database.endpoint"`) are
+    /// accepted by `get`, `set`, and `unset`.
+    fn normalize_key(key: &str) -> &str {
+        for prefix in &[
+            "database.",
+            "logging.",
+            "paths.",
+            "audit.",
+            "degree_analysis.",
+        ] {
+            if let Some(rest) = key.strip_prefix(prefix) {
+                return rest;
+            }
+        }
+        key
+    }
+
+    /// Retrieve a configuration value by key.
+    ///
+    /// Accepts both bare keys (`"endpoint"`) and dotted section keys
+    /// (`"database.endpoint"`). Returns `None` for unrecognised keys.
     #[must_use]
     pub fn get(&self, key: &str) -> Option<String> {
+        let key = Self::normalize_key(key);
         match key {
             "level" => Some(self.logging.level.clone()),
             "file" => Some(self.logging.file.clone()),
             "verbose" => Some(self.logging.verbose.to_string()),
-            "token" => Some(self.database.token.clone()),
+            "anon_key" | "anon-key" | "token" => Some(self.database.anon_key.clone()),
             "endpoint" => Some(self.database.endpoint.clone()),
+            "auth_file" | "auth-file" => Some(self.database.auth_file.clone()),
+            "management_key" | "management-key" => Some(self.database.management_key.clone()),
             "metrics_dir" | "metrics-dir" => Some(self.paths.metrics_dir.clone()),
             "reports_dir" | "reports-dir" => Some(self.paths.reports_dir.clone()),
             "prerequisite_chain_threshold" => {
@@ -661,7 +757,7 @@ impl Config {
     /// - `level`: String ("debug", "info", "warn", "error", "trace", "off")
     /// - `file`: String (file path, can include `$NU_ANALYTICS`)
     /// - `verbose`: Boolean ("true" or "false")
-    /// - `token`: String (any value)
+    /// - `anon_key` (or legacy `token`): String — Supabase anonymous key
     /// - `endpoint`: String (typically a URL)
     /// - `metrics_dir`: String (directory path for metrics CSV files)
     /// - `reports_dir`: String (directory path for report files)
@@ -685,6 +781,7 @@ impl Config {
     /// config.save()?;
     /// ```
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
+        let key = Self::normalize_key(key);
         match key {
             "level" => self.logging.level = value.to_string(),
             "file" => self.logging.file = value.to_string(),
@@ -693,8 +790,12 @@ impl Config {
                     .parse::<bool>()
                     .map_err(|_| format!("Invalid boolean value for 'verbose': '{value}'"))?;
             }
-            "token" => self.database.token = value.to_string(),
+            "anon_key" | "anon-key" | "token" => self.database.anon_key = value.to_string(),
             "endpoint" => self.database.endpoint = value.to_string(),
+            "auth_file" | "auth-file" => self.database.auth_file = value.to_string(),
+            "management_key" | "management-key" => {
+                self.database.management_key = value.to_string();
+            }
             "metrics_dir" | "metrics-dir" => self.paths.metrics_dir = value.to_string(),
             "reports_dir" | "reports-dir" => self.paths.reports_dir = value.to_string(),
             "prerequisite_chain_threshold" => {
@@ -767,15 +868,28 @@ impl Config {
     /// config.save()?;
     /// ```
     pub fn unset(&mut self, key: &str, defaults: &Self) -> Result<(), String> {
+        let key = Self::normalize_key(key);
         match key {
             "level" => self.logging.level.clone_from(&defaults.logging.level),
             "file" => self.logging.file.clone_from(&defaults.logging.file),
             "verbose" => self.logging.verbose = defaults.logging.verbose,
-            "token" => self.database.token.clone_from(&defaults.database.token),
+            "anon_key" | "anon-key" | "token" => {
+                self.database
+                    .anon_key
+                    .clone_from(&defaults.database.anon_key);
+            }
             "endpoint" => self
                 .database
                 .endpoint
                 .clone_from(&defaults.database.endpoint),
+            "auth_file" | "auth-file" => self
+                .database
+                .auth_file
+                .clone_from(&defaults.database.auth_file),
+            "management_key" | "management-key" => self
+                .database
+                .management_key
+                .clone_from(&defaults.database.management_key),
             "metrics_dir" | "metrics-dir" => self
                 .paths
                 .metrics_dir
@@ -854,8 +968,10 @@ impl fmt::Display for Config {
         writeln!(f, "  verbose = {}", self.logging.verbose)?;
 
         writeln!(f, "\n[database]")?;
-        writeln!(f, "  token = \"{}\"", self.database.token)?;
         writeln!(f, "  endpoint = \"{}\"", self.database.endpoint)?;
+        writeln!(f, "  anon_key = \"{}\"", self.database.anon_key)?;
+        writeln!(f, "  auth_file = \"{}\"", self.database.auth_file)?;
+        writeln!(f, "  management_key = \"{}\"", self.database.management_key)?;
 
         writeln!(f, "\n[paths]")?;
         writeln!(f, "  metrics_dir = \"{}\"", self.paths.metrics_dir)?;
@@ -927,14 +1043,14 @@ mod tests {
     fn test_merge_from_preserves_base_when_other_empty() {
         let mut base = Config::default();
         base.logging.level = "warn".to_string();
-        base.database.token = "secret-token".to_string();
+        base.database.anon_key = "secret-token".to_string();
 
         let local = Config::default(); // all empty
 
         base.merge_from(&local);
 
         assert_eq!(base.logging.level, "warn");
-        assert_eq!(base.database.token, "secret-token");
+        assert_eq!(base.database.anon_key, "secret-token");
     }
 
     #[test]
