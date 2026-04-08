@@ -165,7 +165,7 @@ impl NuAnalyticsMcpServer {
     /// Get CS completion demographics for a single institution
     #[cfg(feature = "database")]
     #[tool(
-        description = "Get completion demographics per CIP program for a single institution. Returns each CIP row with demographic counts and representation ratios. Representation ratio = (% of CIP completions in group) / (% of all institution completions in group). Ratio <1 means underrepresented vs. the school's overall graduate profile. Use cip_prefix=\"11.\" for CS, omit for all programs. Provide year for accurate ratios."
+        description = "Get completion demographics per CIP program for a single institution. Returns per-CIP rows with demographic counts + representation ratios, plus a cross_tab section showing the race×gender breakdown aggregated across all selected programs. cross_tab fields: women_pct_within_group (gender parity: % of race group that are women), women/men_pct_of_total (share of all CS completions), women/men_representation_ratio (vs institution baseline). Use cip_prefix=\"11.\" for CS. Provide year for accurate ratios."
     )]
     fn get_institution_completions(
         &self,
@@ -179,7 +179,7 @@ impl NuAnalyticsMcpServer {
     /// Get per-school CS completion demographics across many institutions in one call
     #[cfg(feature = "database")]
     #[tool(
-        description = "Bulk query: get per-school completion demographics for all institutions matching institution filters (carnegie_class, control, state, inst_size_min, hbcu, tribal). Returns one entry per school with aggregated demographics and representation ratios. Uses 3 DB calls regardless of how many schools match — much more efficient than calling get_institution_completions per school. Example: all R1 public schools with CS demographics for 2024. Provide year for accurate representation ratios."
+        description = "Bulk query: per-school CS demographics for all institutions matching filters. Each school entry includes: demographics (Women%, race%, representation ratios) AND cross_tab (race×gender breakdown: women_pct_within_group shows gender parity within each race; women/men_representation_ratio shows each gender-race cell vs institution baseline). Uses 3 DB calls regardless of school count. Provide year for accurate ratios."
     )]
     fn get_schools_completion_demographics(
         &self,
@@ -193,7 +193,7 @@ impl NuAnalyticsMcpServer {
     /// Query completion demographics aggregated across institutions
     #[cfg(feature = "database")]
     #[tool(
-        description = "Query CS degree completion demographics aggregated across matching institutions. Filter by unitid (single school), Carnegie classification, control type, state, CIP code family (\"11.\" for CS), award level (5=bachelors, 7=masters, 9=doctoral), and year. Returns total completions and representation ratios by demographic group. For per-school breakdown use get_schools_completion_demographics instead."
+        description = "Query CS degree completion demographics aggregated across matching institutions. Returns demographics (Women%, race groups, representation ratios) AND cross_tab (race×gender cross-tabulation: gender parity within each race, and representation ratio for each gender-race combination). Filter by unitid, Carnegie classification, control type, state, CIP family (\"11.\" for CS), award level, and year. For per-school breakdown use get_schools_completion_demographics."
     )]
     fn get_completion_demographics(
         &self,

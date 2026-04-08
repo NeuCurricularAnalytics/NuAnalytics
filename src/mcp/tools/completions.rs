@@ -246,12 +246,44 @@ fn accumulate(agg: &mut DemographicCounts, item: &serde_json::Value) {
 // Shared response types
 // ============================================================================
 
+/// Gender breakdown within a single racial/ethnic group.
+///
+/// This is the cross-tabulation layer: for each race group you can see both
+/// gender parity within the group (`women_pct_within_group`) and how each
+/// gender-race combination compares to the institution's overall profile
+/// (`women_representation_ratio`, `men_representation_ratio`).
+#[derive(Debug, Serialize)]
+pub struct CrossTabRow {
+    /// Racial/ethnic group (e.g. "Hispanic/Latino", "Black or African American")
+    pub group: &'static str,
+    /// Number of women completers in this race group
+    pub women_count: i64,
+    /// Number of men completers in this race group
+    pub men_count: i64,
+    /// % of this race group that are women — gender parity within race
+    /// (e.g. 38.0 means 38 % of Hispanic CS graduates are women)
+    pub women_pct_within_group: f64,
+    /// Women of this race as % of **all** CS completions
+    pub women_pct_of_total: f64,
+    /// Men of this race as % of **all** CS completions
+    pub men_pct_of_total: f64,
+    /// Representation ratio for women: `(women_of_race / total_cs) / (women_of_race_inst / total_inst)`.
+    /// 1.0 = proportional. <1 = underrepresented relative to institution baseline. `None` if no
+    /// institution totals are available.
+    pub women_representation_ratio: Option<f64>,
+    /// Representation ratio for men (same formula as women).
+    pub men_representation_ratio: Option<f64>,
+}
+
 #[derive(Debug, Serialize)]
 struct DemographicsResponse {
     filters: FilterSummary,
     institutions_matched: usize,
     total_completions: i64,
     demographics: Vec<DemographicRepresentation>,
+    /// Race × gender cross-tabulation — gender parity within each racial group
+    /// and representation ratios for each gender-race combination.
+    cross_tab: Vec<CrossTabRow>,
 }
 
 #[derive(Debug, Serialize)]
@@ -342,6 +374,7 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
         institutions_matched: institution_unitids.len(),
         total_completions: completions.total,
         demographics: build_demographics(&completions, enrollment.as_ref()),
+        cross_tab: build_cross_tab(&completions, enrollment.as_ref()),
     })
 }
 
@@ -459,6 +492,8 @@ struct InstitutionCompletionsResponse {
     total_rows: usize,
     note: &'static str,
     rows: Vec<CompletionRow>,
+    /// Race × gender cross-tabulation aggregated across all selected CIP codes.
+    cross_tab: Vec<CrossTabRow>,
 }
 
 /// Execute `get_institution_completions` and return JSON.
@@ -528,6 +563,13 @@ pub async fn execute_institution_json(
 
     let total_rows = rows.len();
 
+    // Aggregate all selected CIP rows into one DemographicCounts for the cross-tab
+    let mut agg = DemographicCounts::default();
+    for item in &rows_raw {
+        accumulate(&mut agg, item);
+    }
+    let cross_tab = build_cross_tab(&agg, school_totals.as_ref());
+
     to_json_pretty(&InstitutionCompletionsResponse {
         unitid: req.unitid,
         name: inst_name,
@@ -537,6 +579,7 @@ pub async fn execute_institution_json(
         total_rows,
         note: "school_pct and representation_ratio compare this CIP row to institution-wide completion totals",
         rows,
+        cross_tab,
     })
 }
 
@@ -706,6 +749,8 @@ struct SchoolDemographicsResult {
     year: Option<i32>,
     total_completions: i64,
     demographics: Vec<DemographicRepresentation>,
+    /// Race × gender cross-tabulation for this school's CS completions.
+    cross_tab: Vec<CrossTabRow>,
 }
 
 /// Execute `get_schools_completion_demographics` and return JSON.
@@ -920,6 +965,7 @@ fn build_school_results(
             if comp.total == 0 || min_completions.is_some_and(|min| comp.total < min) {
                 return None;
             }
+            let inst_totals = totals_by_uid.get(&inst.unitid);
             Some(SchoolDemographicsResult {
                 unitid: inst.unitid,
                 name: inst.name.clone(),
@@ -928,7 +974,8 @@ fn build_school_results(
                 carnegie_class: inst.carnegie_class,
                 year,
                 total_completions: comp.total,
-                demographics: build_demographics(&comp, totals_by_uid.get(&inst.unitid)),
+                demographics: build_demographics(&comp, inst_totals),
+                cross_tab: build_cross_tab(&comp, inst_totals),
             })
         })
         .collect()
@@ -1027,6 +1074,71 @@ async fn fetch_cip_titles(client: &Arc<DbClient>, cip_codes: &[String]) -> HashM
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Build the race × gender cross-tabulation from aggregated demographic counts.
+///
+/// For each racial/ethnic group this produces:
+/// - `women_pct_within_group` — gender balance within the race (e.g. "38 % of Hispanic CS grads are women")
+/// - `women/men_pct_of_total` — each gender-race cell as share of all CS completions
+/// - `women/men_representation_ratio` — cell vs institution baseline (requires `inst_totals`)
+fn build_cross_tab(c: &DemographicCounts, inst: Option<&DemographicCounts>) -> Vec<CrossTabRow> {
+    macro_rules! cross_row {
+        ($label:expr, $men:ident, $women:ident) => {{
+            let women = c.$women;
+            let men = c.$men;
+            let group_total = women + men;
+            let women_pct_within_group = if group_total == 0 {
+                0.0
+            } else {
+                pct(women, group_total)
+            };
+            let women_pct_of_total = pct(women, c.total);
+            let men_pct_of_total = pct(men, c.total);
+            let women_representation_ratio =
+                inst.and_then(|i| representation_ratio(women_pct_of_total, pct(i.$women, i.total)));
+            let men_representation_ratio =
+                inst.and_then(|i| representation_ratio(men_pct_of_total, pct(i.$men, i.total)));
+            CrossTabRow {
+                group: $label,
+                women_count: women,
+                men_count: men,
+                women_pct_within_group,
+                women_pct_of_total,
+                men_pct_of_total,
+                women_representation_ratio,
+                men_representation_ratio,
+            }
+        }};
+    }
+
+    vec![
+        cross_row!("Hispanic/Latino", hispanic_men, hispanic_women),
+        cross_row!("Black or African American", black_men, black_women),
+        cross_row!("Asian", asian_men, asian_women),
+        cross_row!("White", white_men, white_women),
+        cross_row!(
+            "American Indian/Alaska Native",
+            american_indian_men,
+            american_indian_women
+        ),
+        cross_row!(
+            "Native Hawaiian/Pacific Islander",
+            native_hawaiian_men,
+            native_hawaiian_women
+        ),
+        cross_row!("Two or More Races", two_or_more_men, two_or_more_women),
+        cross_row!(
+            "Nonresident Alien",
+            nonresident_alien_men,
+            nonresident_alien_women
+        ),
+        cross_row!(
+            "Unknown Race/Ethnicity",
+            unknown_race_men,
+            unknown_race_women
+        ),
+    ]
 }
 
 fn pct(part: i64, total: i64) -> f64 {
@@ -1597,6 +1709,83 @@ mod tests {
         // women cip_pct=60%, school_pct=60% → ratio=1.0
         assert_float_opt_eq(women.school_pct, Some(60.0));
         assert_float_opt_eq(women.representation_ratio, Some(1.0));
+    }
+
+    // ── build_cross_tab() ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_build_cross_tab_returns_9_groups() {
+        let result = build_cross_tab(&DemographicCounts::default(), None);
+        assert_eq!(result.len(), 9); // one per racial/ethnic group (no gender-only rows)
+    }
+
+    #[test]
+    fn test_build_cross_tab_group_names() {
+        let result = build_cross_tab(&DemographicCounts::default(), None);
+        let names: Vec<&str> = result.iter().map(|r| r.group).collect();
+        assert!(names.contains(&"Hispanic/Latino"));
+        assert!(names.contains(&"Black or African American"));
+        assert!(names.contains(&"Asian"));
+        assert!(names.contains(&"White"));
+    }
+
+    #[test]
+    fn test_build_cross_tab_gender_parity_within_group() {
+        let c = DemographicCounts {
+            total: 100,
+            black_men: 30,
+            black_women: 70,
+            ..Default::default()
+        };
+        let result = build_cross_tab(&c, None);
+        let black = result
+            .iter()
+            .find(|r| r.group == "Black or African American")
+            .unwrap();
+        assert_eq!(black.women_count, 70);
+        assert_eq!(black.men_count, 30);
+        // 70 / 100 = 70% women within the group
+        assert_float_eq(black.women_pct_within_group, 70.0);
+        // 70 / 100 total CS completions = 70% of all
+        assert_float_eq(black.women_pct_of_total, 70.0);
+        assert!(black.women_representation_ratio.is_none()); // no inst totals
+    }
+
+    #[test]
+    fn test_build_cross_tab_with_institution_totals() {
+        // 40 CS completions: hispanic_women=10, hispanic_men=10
+        // institution total: 200, hispanic_women=40, hispanic_men=40
+        let c = DemographicCounts {
+            total: 100,
+            hispanic_men: 10,
+            hispanic_women: 10,
+            ..Default::default()
+        };
+        let inst = DemographicCounts {
+            total: 200,
+            hispanic_men: 40,
+            hispanic_women: 40,
+            ..Default::default()
+        };
+        let result = build_cross_tab(&c, Some(&inst));
+        let hispanic = result
+            .iter()
+            .find(|r| r.group == "Hispanic/Latino")
+            .unwrap();
+        // women_pct_of_total = 10/100 = 10%
+        // inst women_pct = 40/200 = 20%
+        // ratio = 10/20 = 0.5 (underrepresented)
+        assert_float_eq(hispanic.women_pct_of_total, 10.0);
+        assert_float_opt_eq(hispanic.women_representation_ratio, Some(0.5));
+    }
+
+    #[test]
+    fn test_build_cross_tab_zero_group_total_no_divide_by_zero() {
+        let c = DemographicCounts::default(); // all zeros
+        let result = build_cross_tab(&c, None);
+        for row in &result {
+            assert_float_eq(row.women_pct_within_group, 0.0); // no division by zero
+        }
     }
 
     // ── build_demographics() — representative subset ─────────────────────────
