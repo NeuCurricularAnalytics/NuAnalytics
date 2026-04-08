@@ -21,18 +21,20 @@ use rmcp::{
 use crate::core::database::DbClient;
 #[cfg(feature = "database")]
 use crate::mcp::tools::{
-    completions, degrees, institutions, CompareDegreesRequest, CompletionDemographicsRequest,
-    GetDegreeRequest, SearchDegreesRequest, SearchInstitutionsRequest,
+    cip_codes, completions, degrees, institutions, lookup, CompareDegreesRequest,
+    CompletionDemographicsRequest, GetDegreeRequest, GetInstitutionCompletionsRequest,
+    GetInstitutionRequest, GetLookupCodesRequest, GetSchoolsCompletionDemographicsRequest,
+    SearchCipCodesRequest, SearchDegreesRequest, SearchInstitutionsRequest, StoreDegreeRequest,
 };
 
 // ============================================================================
 // MCP Server Implementation
 // ============================================================================
 
-/// `NuAnalytics` MCP Server
+/// MCP server that exposes `NuAnalytics` tools via stdio transport.
 ///
-/// Provides tools for validating degree program YAML files and retrieving schema documentation.
-/// When database integration is enabled, also provides tools for querying IPEDS data.
+/// Non-database tools (degree YAML validation and analysis) are always available.
+/// Database tools (IPEDS queries) are enabled when `db` is `Some`.
 #[derive(Debug, Clone)]
 pub struct NuAnalyticsMcpServer {
     tool_router: ToolRouter<Self>,
@@ -63,7 +65,7 @@ impl NuAnalyticsMcpServer {
         }
     }
 
-    // ---- Degree tools (no DB required) ----
+    // ── Degree tools (no DB required) ──────────────────────────────────────
 
     /// Get the degree YAML schema documentation
     #[tool(
@@ -107,81 +109,149 @@ impl NuAnalyticsMcpServer {
         analyze::execute_json(&req.yaml_content, req.max_plans, include_courses)
     }
 
-    // ---- Database tools (require DB) ----
+    // ── Institution tools ───────────────────────────────────────────────────
 
     /// Search institutions from the IPEDS database
     #[cfg(feature = "database")]
     #[tool(
-        description = "Search institutions from the IPEDS database. Filter by name, state, Carnegie classification (e.g. 15=R1, 16=R2), control type (1=public, 2=private nonprofit), HBCU status, or institution size. Returns matching institutions with their UNITID and metadata."
+        description = "Search institutions from the IPEDS database. Filter by name, state, Carnegie classification (15=R1, 16=R2, 21=R1-2021), control (1=public, 2=private nonprofit), HBCU/tribal status, or minimum size (inst_size_min: 2=1000+ students). Returns UNITID and metadata. Use get_lookup_codes(\"carnegie_class\") for the full classification list."
     )]
     fn search_institutions(
         &self,
         Parameters(req): Parameters<SearchInstitutionsRequest>,
     ) -> String {
-        let db = match self.get_db("search_institutions") {
-            Ok(db) => db,
-            Err(e) => return e,
-        };
-        run_db_async(|| async move { institutions::execute_json(&db, req).await })
+        self.call_db("search_institutions", |db| async move {
+            institutions::execute_search_json(&db, req).await
+        })
     }
 
-    /// Search stored degree programs in the database
+    /// Get full details for a specific institution by UNITID
     #[cfg(feature = "database")]
     #[tool(
-        description = "Search stored degree programs in the database. Filter by institution UNITID, CIP code, catalog year, or degree ID prefix. Returns matching degrees with metadata. Use get_degree to retrieve the full YAML content."
+        description = "Get full institution details by IPEDS Unit ID (UNITID). Returns all fields including sector, locale, Carnegie class, HBCU/tribal status, and institution size. Use search_institutions to find the UNITID first."
     )]
-    fn search_degrees(&self, Parameters(req): Parameters<SearchDegreesRequest>) -> String {
-        let db = match self.get_db("search_degrees") {
-            Ok(db) => db,
-            Err(e) => return e,
-        };
-        run_db_async(|| async move { degrees::execute_search_json(&db, req).await })
+    fn get_institution(&self, Parameters(req): Parameters<GetInstitutionRequest>) -> String {
+        self.call_db("get_institution", |db| async move {
+            institutions::execute_get_json(&db, req).await
+        })
     }
 
-    /// Retrieve a stored degree program by ID
+    // ── CIP code tools ──────────────────────────────────────────────────────
+
+    /// Search CIP program codes by title keyword or code prefix
     #[cfg(feature = "database")]
     #[tool(
-        description = "Retrieve a full degree program YAML by its degree ID from the database. Returns the complete YAML content that can be passed to validate_degree or analyze_degree."
+        description = "Search CIP (Classification of Instructional Programs) codes. Use query for title keyword search (e.g. \"cybersecurity\"), prefix for code prefix (e.g. \"11.\" for all CS, \"30.70\" for Data Science). Use trailing dot for families: \"11.\" not \"11\". Results include cip_code (dot notation) and title."
     )]
-    fn get_degree(&self, Parameters(req): Parameters<GetDegreeRequest>) -> String {
-        let db = match self.get_db("get_degree") {
-            Ok(db) => db,
-            Err(e) => return e,
-        };
-        run_db_async(|| async move { degrees::execute_get_json(&db, req).await })
+    fn search_cip_codes(&self, Parameters(req): Parameters<SearchCipCodesRequest>) -> String {
+        self.call_db("search_cip_codes", |db| async move {
+            cip_codes::execute_json(&db, req).await
+        })
     }
 
-    /// Compare multiple stored degree programs
+    /// Get the full contents of an IPEDS lookup table
     #[cfg(feature = "database")]
     #[tool(
-        description = "Compare multiple stored degree programs by their IDs. Returns side-by-side metadata and metrics for each degree. Provide a comma-separated list of degree IDs."
+        description = "Get all rows from an IPEDS lookup table to discover numeric code meanings. Tables: \"carnegie_class\" (R1/R2 codes), \"award_levels\" (bachelor's/master's codes), \"institution_control\", \"institution_level\", \"institution_sector\", \"institution_locale\", \"institution_size\". Call this before filtering to confirm the right code."
     )]
-    fn compare_degrees(&self, Parameters(req): Parameters<CompareDegreesRequest>) -> String {
-        let db = match self.get_db("compare_degrees") {
-            Ok(db) => db,
-            Err(e) => return e,
-        };
-        run_db_async(|| async move { degrees::execute_compare_json(&db, req).await })
+    fn get_lookup_codes(&self, Parameters(req): Parameters<GetLookupCodesRequest>) -> String {
+        self.call_db("get_lookup_codes", |db| async move {
+            lookup::execute_json(&db, req).await
+        })
     }
 
-    /// Query completion demographics from IPEDS data
+    // ── Completion demographic tools ────────────────────────────────────────
+
+    /// Get CS completion demographics for a single institution
     #[cfg(feature = "database")]
     #[tool(
-        description = "Query CS degree completion demographics from IPEDS data. Filter by Carnegie classification, control type (public/private), state, CIP code family, award level (5=bachelors, 7=masters, 9=doctoral), and year. Returns completion counts and representation ratios by demographic group (gender, race/ethnicity). Example: completions of women from R1 public institutions."
+        description = "Get completion demographics per CIP program for a single institution. Returns each CIP row with demographic counts and representation ratios. Representation ratio = (% of CIP completions in group) / (% of all institution completions in group). Ratio <1 means underrepresented vs. the school's overall graduate profile. Use cip_prefix=\"11.\" for CS, omit for all programs. Provide year for accurate ratios."
+    )]
+    fn get_institution_completions(
+        &self,
+        Parameters(req): Parameters<GetInstitutionCompletionsRequest>,
+    ) -> String {
+        self.call_db("get_institution_completions", |db| async move {
+            completions::execute_institution_json(&db, req).await
+        })
+    }
+
+    /// Get per-school CS completion demographics across many institutions in one call
+    #[cfg(feature = "database")]
+    #[tool(
+        description = "Bulk query: get per-school completion demographics for all institutions matching institution filters (carnegie_class, control, state, inst_size_min, hbcu, tribal). Returns one entry per school with aggregated demographics and representation ratios. Uses 3 DB calls regardless of how many schools match — much more efficient than calling get_institution_completions per school. Example: all R1 public schools with CS demographics for 2024. Provide year for accurate representation ratios."
+    )]
+    fn get_schools_completion_demographics(
+        &self,
+        Parameters(req): Parameters<GetSchoolsCompletionDemographicsRequest>,
+    ) -> String {
+        self.call_db("get_schools_completion_demographics", |db| async move {
+            completions::execute_schools_json(&db, req).await
+        })
+    }
+
+    /// Query completion demographics aggregated across institutions
+    #[cfg(feature = "database")]
+    #[tool(
+        description = "Query CS degree completion demographics aggregated across matching institutions. Filter by unitid (single school), Carnegie classification, control type, state, CIP code family (\"11.\" for CS), award level (5=bachelors, 7=masters, 9=doctoral), and year. Returns total completions and representation ratios by demographic group. For per-school breakdown use get_schools_completion_demographics instead."
     )]
     fn get_completion_demographics(
         &self,
         Parameters(req): Parameters<CompletionDemographicsRequest>,
     ) -> String {
-        let db = match self.get_db("get_completion_demographics") {
-            Ok(db) => db,
-            Err(e) => return e,
-        };
-        run_db_async(|| async move { completions::execute_json(&db, req).await })
+        self.call_db("get_completion_demographics", |db| async move {
+            completions::execute_json(&db, req).await
+        })
+    }
+
+    // ── Degree storage tools ────────────────────────────────────────────────
+
+    /// Search stored degree programs in the database
+    #[cfg(feature = "database")]
+    #[tool(
+        description = "Search stored degree programs in the database. Filter by institution UNITID, CIP code prefix (\"11.\" for CS), or catalog year. Returns matching degrees with metadata. Use get_degree to retrieve the full YAML content."
+    )]
+    fn search_degrees(&self, Parameters(req): Parameters<SearchDegreesRequest>) -> String {
+        self.call_db("search_degrees", |db| async move {
+            degrees::execute_search_json(&db, req).await
+        })
+    }
+
+    /// Retrieve a stored degree program by ID or natural key
+    #[cfg(feature = "database")]
+    #[tool(
+        description = "Retrieve a full degree program YAML. Lookup by degree_id (fastest) or by natural key: unitid + cip_code + catalog_year. If multiple degrees match the natural key, returns a list of summaries — narrow with more filters or use degree_id. Returns full YAML content usable with validate_degree / analyze_degree."
+    )]
+    fn get_degree(&self, Parameters(req): Parameters<GetDegreeRequest>) -> String {
+        self.call_db("get_degree", |db| async move {
+            degrees::execute_get_json(&db, req).await
+        })
+    }
+
+    /// Compare multiple stored degree programs
+    #[cfg(feature = "database")]
+    #[tool(
+        description = "Compare multiple stored degree programs by their IDs. Returns side-by-side metadata and YAML content for each degree. Provide a comma-separated list of degree IDs."
+    )]
+    fn compare_degrees(&self, Parameters(req): Parameters<CompareDegreesRequest>) -> String {
+        self.call_db("compare_degrees", |db| async move {
+            degrees::execute_compare_json(&db, req).await
+        })
+    }
+
+    /// Save a validated degree program to the database
+    #[cfg(feature = "database")]
+    #[tool(
+        description = "Save a validated degree program YAML to the database. Requires authentication (run `nuanalytics db login` first). Uses upsert on degree_id — safe to re-run after updates. Provide unitid (from search_institutions) and cip_code for the program. The degree YAML should be validated with validate_degree before storing."
+    )]
+    fn store_degree(&self, Parameters(req): Parameters<StoreDegreeRequest>) -> String {
+        self.call_db("store_degree", |db| async move {
+            degrees::execute_store_json(&db, req).await
+        })
     }
 }
 
-/// Extract the database client from an MCP server, returning an error JSON string if absent.
+/// Database access helpers.
 #[cfg(feature = "database")]
 impl NuAnalyticsMcpServer {
     fn get_db(&self, tool_name: &'static str) -> Result<Arc<DbClient>, String> {
@@ -190,13 +260,23 @@ impl NuAnalyticsMcpServer {
             .map(Arc::clone)
             .ok_or_else(|| db_not_configured_response(tool_name))
     }
+
+    /// Fetch the DB client, run an async tool function, and return JSON.
+    ///
+    /// Returns an error JSON string if the database is not configured.
+    fn call_db<F, Fut>(&self, tool: &'static str, f: F) -> String
+    where
+        F: FnOnce(Arc<DbClient>) -> Fut,
+        Fut: std::future::Future<Output = String>,
+    {
+        match self.get_db(tool) {
+            Ok(db) => run_db_async(move || f(db)),
+            Err(e) => e,
+        }
+    }
 }
 
 /// Run an async database operation from a synchronous MCP tool handler.
-///
-/// MCP tool methods are sync, but the MCP server runs inside a multi-thread
-/// tokio runtime. `block_in_place` parks the current thread as "blocking" so
-/// the executor can schedule other tasks while we wait.
 #[cfg(feature = "database")]
 fn run_db_async<F, Fut>(f: F) -> String
 where
@@ -212,7 +292,7 @@ fn db_not_configured_response(tool: &str) -> String {
     serde_json::json!({
         "error": "Database not configured",
         "tool": tool,
-        "suggestion": "Set `endpoint`, `token`, and `enabled = true` in the [database] section of your nuanalytics.toml config file."
+        "suggestion": "Set `endpoint`, `anon_key`, and `enabled = true` in the [database] section of your nuanalytics config file."
     })
     .to_string()
 }
@@ -227,37 +307,47 @@ impl Default for NuAnalyticsMcpServer {
 impl ServerHandler for NuAnalyticsMcpServer {
     fn get_info(&self) -> ServerInfo {
         #[cfg(feature = "database")]
-        let db_tools = if self.db.is_some() {
-            "\n\nDatabase tools (IPEDS data available):\n\
-            - search_institutions: Search institutions by name, state, Carnegie class, control type\n\
-            - search_degrees: Search stored degree programs in the database\n\
-            - get_degree: Retrieve a full degree YAML by degree ID\n\
-            - compare_degrees: Compare multiple degree programs side-by-side\n\
-            - get_completion_demographics: Query CS completion demographics and representation metrics"
+        let db_section = if self.db.is_some() {
+            "\n\n## Database Query Workflow (IPEDS data available)\n\
+            \n\
+            Discover codes first (optional):\n\
+            - get_lookup_codes(\"carnegie_class\") → R1=15, R2=16, R1-2021=21\n\
+            - get_lookup_codes(\"award_levels\")   → associate=3, bachelors=5, masters=7, doctoral=9\n\
+            - search_cip_codes(\"computer science\") or prefix=\"11.\" → find CIP codes\n\
+            \n\
+            Find institutions:\n\
+            - search_institutions(carnegie_class=15, state=\"MA\") → list with UNITIDs\n\
+            - get_institution(unitid=167358) → full institution details\n\
+            \n\
+            Query completion demographics:\n\
+            - get_institution_completions(unitid=167358, year=2024, cip_prefix=\"11.\") → per-CIP rows + representation ratios\n\
+            - get_schools_completion_demographics(carnegie_class=15, inst_size_min=2, cip_prefix=\"11.\", year=2024)\n\
+            \t→ per-school CS demographics for all R1 schools >1000 students (3 DB calls, not 130)\n\
+            - get_completion_demographics(carnegie_class=15, award_level=5, year=2024) → aggregate across all matched schools\n\
+            \n\
+            Degree programs:\n\
+            - search_degrees(unitid=167358) / get_degree(unitid=167358, cip_code=\"11.0101\") → retrieve stored degrees\n\
+            - store_degree(degree_id=\"...\", yaml_content=\"...\") → save validated degree (requires db login)"
         } else {
-            "\n\nDatabase tools: Not available (database not configured)"
+            "\n\nDatabase tools: Not available (database not configured or disabled)"
         };
 
         #[cfg(not(feature = "database"))]
-        let db_tools = "";
+        let db_section = "";
 
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
             format!(
-                "NuAnalytics MCP Server - Tools for building and validating degree program YAML files.\n\n\
-                Available tools:\n\
-                - get_degree_schema: Get documentation about the degree YAML format\n\
-                - validate_degree: Validate a degree YAML and get detailed feedback\n\
-                - audit_degree: Comprehensive audit (validation + missing prereqs + deep chains)\n\
-                - analyze_degree: Full plan analysis with aggregate metrics and schedules\
-                {db_tools}\n\n\
-                Typical workflow:\n\
-                1. Call get_degree_schema to understand the format\n\
+                "NuAnalytics MCP Server\n\
+                \n\
+                ## Degree YAML Workflow\n\
+                1. get_degree_schema — understand the YAML format\n\
                 2. Build a degree YAML\n\
-                3. Call validate_degree to check for errors\n\
-                4. Fix issues based on feedback\n\
-                5. Repeat steps 3-4 until valid\n\
-                6. Call audit_degree for a comprehensive quality check\n\
-                7. Call analyze_degree for plan generation and metrics"
+                3. validate_degree — check for structural errors\n\
+                4. Fix issues; repeat until valid\n\
+                5. audit_degree — comprehensive quality check (missing prereqs, deep chains)\n\
+                6. analyze_degree — plan generation and metrics\n\
+                7. store_degree — save validated degree to database (requires db login)\
+                {db_section}"
             ),
         )
     }
@@ -269,12 +359,9 @@ impl ServerHandler for NuAnalyticsMcpServer {
 
 /// Run the MCP server (async)
 ///
-/// This function starts the MCP server using stdio transport.
-/// It blocks until the server is shut down.
-///
 /// # Errors
 ///
-/// Returns an error if the server fails to start or encounters a fatal error.
+/// Returns an error if the server fails to start or encounters a fatal transport error.
 pub async fn run_server(db_config: &DatabaseConfig) -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("Starting NuAnalytics MCP server...");
 
@@ -314,12 +401,9 @@ pub async fn run_server(db_config: &DatabaseConfig) -> Result<(), Box<dyn std::e
 
 /// Synchronous wrapper to run the MCP server
 ///
-/// Creates a tokio runtime and runs the async server.
-/// Use this from the CLI command handler.
-///
 /// # Errors
 ///
-/// Returns an error string if the server fails.
+/// Returns an error string if the tokio runtime cannot be created or the server fails.
 pub fn run(db_config: &DatabaseConfig) -> Result<(), String> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create tokio runtime: {e}"))?;

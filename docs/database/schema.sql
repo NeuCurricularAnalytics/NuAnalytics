@@ -188,3 +188,33 @@ CREATE INDEX idx_inst_totals_year           ON institution_completion_totals (ye
 
 CREATE INDEX idx_degrees_unitid             ON degrees (unitid);
 CREATE INDEX idx_degrees_cip_code          ON degrees (cip_code);
+
+-- =============================================================================
+-- Row-Level Security
+-- Allows the anon key to read all IPEDS data and stored degrees without
+-- requiring a login, while restricting writes to authenticated users.
+--
+-- Lookup tables (carnegie_class, award_levels, etc.) are left without RLS —
+-- they're read-only reference data and Supabase grants SELECT to anon by default.
+-- =============================================================================
+
+ALTER TABLE institutions                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cip_codes                      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE completions                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE institution_completion_totals  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE degrees                        ENABLE ROW LEVEL SECURITY;
+
+-- Anyone can read IPEDS data (public dataset)
+CREATE POLICY "public read institutions"                  ON institutions                  FOR SELECT USING (true);
+CREATE POLICY "public read cip_codes"                     ON cip_codes                     FOR SELECT USING (true);
+CREATE POLICY "public read completions"                   ON completions                   FOR SELECT USING (true);
+CREATE POLICY "public read institution_completion_totals" ON institution_completion_totals  FOR SELECT USING (true);
+CREATE POLICY "public read degrees"                       ON degrees                       FOR SELECT USING (true);
+
+-- Authenticated users can insert, update, and delete.
+-- FOR ALL is required because ipeds-import uses ON CONFLICT DO UPDATE,
+-- which needs UPDATE permission in addition to INSERT.
+CREATE POLICY "auth write institutions"                  ON institutions                  FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "auth write completions"                   ON completions                   FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "auth write institution_completion_totals" ON institution_completion_totals  FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "auth write degrees"                       ON degrees                       FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');

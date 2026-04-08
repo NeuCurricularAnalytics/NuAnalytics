@@ -10,11 +10,15 @@ pub mod validate;
 
 // Database-backed tools (require feature = "database")
 #[cfg(feature = "database")]
+pub mod cip_codes;
+#[cfg(feature = "database")]
 pub mod completions;
 #[cfg(feature = "database")]
 pub mod degrees;
 #[cfg(feature = "database")]
 pub mod institutions;
+#[cfg(feature = "database")]
+pub mod lookup;
 
 // Re-export tool types for convenience
 pub use analyze::AnalyzeDegreeRequest;
@@ -27,8 +31,17 @@ pub use validate::{
 
 // Re-export database tool types
 #[cfg(feature = "database")]
-pub use completions::CompletionDemographicsRequest;
+pub use cip_codes::SearchCipCodesRequest;
 #[cfg(feature = "database")]
-pub use degrees::{CompareDegreesRequest, GetDegreeRequest, SearchDegreesRequest};
+pub use completions::{
+    CompletionDemographicsRequest, GetInstitutionCompletionsRequest,
+    GetSchoolsCompletionDemographicsRequest,
+};
 #[cfg(feature = "database")]
-pub use institutions::SearchInstitutionsRequest;
+pub use degrees::{
+    CompareDegreesRequest, GetDegreeRequest, SearchDegreesRequest, StoreDegreeRequest,
+};
+#[cfg(feature = "database")]
+pub use institutions::{GetInstitutionRequest, SearchInstitutionsRequest};
+#[cfg(feature = "database")]
+pub use lookup::GetLookupCodesRequest;

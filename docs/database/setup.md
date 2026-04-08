@@ -94,6 +94,7 @@ The schema is stored in `docs/database/schema.sql`. Open the Supabase **SQL Edit
 The schema creates:
 - **7 lookup tables** — `award_levels`, `institution_control`, `institution_level`, `institution_sector`, `carnegie_class`, `institution_locale`, `institution_size`
 - **5 data/cache tables** — `cip_codes`, `institutions`, `completions`, `institution_completion_totals`, `degrees`
+- **Row-Level Security** — all data tables have RLS enabled with public read + authenticated write policies included
 
 > **Key design decision — no cross-table foreign keys on IPEDS data:** IPEDS surveys
 > don't guarantee that every UNITID in completions exists in the HD directory, and CIP
@@ -105,7 +106,7 @@ The schema creates:
 After the schema, run these two files in the SQL Editor. Order matters.
 
 ```
-docs/database/schema.sql      ← run first (creates all tables + indexes)
+docs/database/schema.sql      ← run first (creates tables + indexes + RLS policies)
 docs/database/cip-seed.sql    ← run second (populates cip_codes — 2,173 CIP 2020 codes)
 docs/database/lookup-seed.sql ← run third (populates award_levels, carnegie_class, locale, etc.)
 ```
@@ -114,34 +115,24 @@ All three must be done **before** importing IPEDS data.
 
 ---
 
-## Step 5 — Row-Level Security (optional but recommended)
+## Step 5 — Row-Level Security
 
-By default Supabase tables are accessible only via the service role key. To allow
-public reads (needed for the anon key), enable RLS and add a permissive policy:
+RLS policies are included in `schema.sql` — no separate step needed for fresh installs.
+
+**Existing database (set up before this was added):** Run `docs/database/rls-patch.sql`
+in the SQL Editor to add the missing policies without touching any data.
+
+To verify policies are in place:
 
 ```sql
--- Enable RLS on data tables (lookup tables are read-only via anon key by default)
-ALTER TABLE institutions                    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE cip_codes                       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE completions                     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE institution_completion_totals   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE degrees                         ENABLE ROW LEVEL SECURITY;
-
--- Allow anyone to read IPEDS data (public dataset)
-CREATE POLICY "public read institutions"                  ON institutions                  FOR SELECT USING (true);
-CREATE POLICY "public read cip_codes"                     ON cip_codes                     FOR SELECT USING (true);
-CREATE POLICY "public read completions"                   ON completions                   FOR SELECT USING (true);
-CREATE POLICY "public read institution_completion_totals" ON institution_completion_totals  FOR SELECT USING (true);
-CREATE POLICY "public read degrees"                       ON degrees                       FOR SELECT USING (true);
-
--- Authenticated users can insert, update, and delete.
--- FOR ALL covers INSERT + UPDATE + DELETE — required because ipeds-import uses
--- ON CONFLICT DO UPDATE, which needs UPDATE permission in addition to INSERT.
-CREATE POLICY "auth write institutions"                  ON institutions                  FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "auth write completions"                   ON completions                   FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "auth write institution_completion_totals" ON institution_completion_totals  FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "auth write degrees"                       ON degrees                       FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+SELECT tablename, policyname, cmd
+FROM pg_policies
+WHERE tablename IN ('institutions', 'completions', 'institution_completion_totals', 'cip_codes', 'degrees')
+ORDER BY tablename, cmd;
 ```
+
+Each data table should have a `SELECT` (public read) and most should also have an `ALL`
+(auth write) entry. `cip_codes` is seeded via SQL so it has no write policy.
 
 ---
 

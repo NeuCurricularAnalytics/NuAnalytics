@@ -149,6 +149,13 @@ impl DbClient {
                 FilterKind::Eq => builder.eq(col, val.as_str()),
                 FilterKind::Ilike => builder.ilike(col, val.as_str()),
                 FilterKind::StartsWith => builder.like(col, val.as_str()),
+                FilterKind::Gte => builder.gte(col, val.as_str()),
+                FilterKind::Lte => builder.lte(col, val.as_str()),
+                FilterKind::In => {
+                    // val is comma-separated (e.g. "167358,166629"); split for SDK's in_() call
+                    let values: Vec<&str> = val.split(',').collect();
+                    builder.in_(col, values)
+                }
             };
         }
 
