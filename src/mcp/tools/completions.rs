@@ -2,15 +2,16 @@
 //!
 //! Three tools:
 //!
-//! - `get_completion_demographics` — aggregate CS demographics across a filtered set of institutions
-//! - `get_institution_completions` — all completions for a single institution with per-CIP representation ratios
-//! - `get_schools_completion_demographics` — bulk per-institution demographics for many schools (batched DB calls)
+//! - `get_completion_demographics` — aggregate demographics across a filtered set of institutions
+//!   (no CIP filter by default — pass `cip_prefix="11."` to restrict to CS)
+//! - `get_institution_completions` — completions for a single institution with per-CIP representation ratios
+//! - `get_schools_completion_demographics` — bulk per-institution demographics (batched DB calls)
 //!
 //! ## Representation ratio
 //!
 //! All tools compute: `(group_cs_completions / total_cs_completions) / (group_all_completions / total_all_completions)`
 //!
-//! A ratio of 1.0 means the group is proportionally represented in CS relative to the institution's
+//! A ratio of 1.0 means the group is proportionally represented relative to the institution's
 //! overall completion profile. Values <1 indicate underrepresentation, >1 overrepresentation.
 
 use std::collections::HashMap;
@@ -412,10 +413,7 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
     )
     .await;
 
-    let mut completions = DemographicCounts::default();
-    for counts in completions_by_uid.values() {
-        merge_counts(&mut completions, counts);
-    }
+    let completions = aggregate_demo_map(&completions_by_uid);
 
     if completions.total == 0 {
         return serde_json::json!({
@@ -429,10 +427,7 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
     let enrollment = if include_representation {
         let totals_by_uid =
             fetch_totals_by_unitid(client, &institution_unitids, req.award_level, req.year).await;
-        let mut agg = DemographicCounts::default();
-        for counts in totals_by_uid.values() {
-            merge_counts(&mut agg, counts);
-        }
+        let agg = aggregate_demo_map(&totals_by_uid);
         (agg.total > 0).then_some(agg)
     } else {
         None
@@ -821,7 +816,7 @@ pub async fn execute_schools_json(
     let cip_label = match &cip_filter {
         Some(CipFilter::Codes(c)) => c.join(","),
         Some(CipFilter::Prefix(p)) => (*p).to_string(),
-        None => String::new(),
+        None => "(all CIPs)".to_string(),
     };
 
     // Step 1: resolve institution filters — unitid shortcut bypasses group filters
@@ -1059,6 +1054,15 @@ fn aggregate_by_unitid(arr: Option<&Vec<serde_json::Value>>) -> HashMap<i32, Dem
         }
     }
     map
+}
+
+/// Aggregate all per-institution counts in a `HashMap` into a single `DemographicCounts`.
+fn aggregate_demo_map(map: &HashMap<i32, DemographicCounts>) -> DemographicCounts {
+    let mut agg = DemographicCounts::default();
+    for counts in map.values() {
+        merge_counts(&mut agg, counts);
+    }
+    agg
 }
 
 // ============================================================================
@@ -1338,6 +1342,54 @@ mod tests {
             (None, None) => {}
             _ => panic!("float option mismatch: {actual:?} != {expected:?}"),
         }
+    }
+
+    // ── parse_cip_codes() ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_cip_codes_delegates_correctly() {
+        assert_eq!(
+            parse_cip_codes("11.0101,11.0701"),
+            vec!["11.0101", "11.0701"]
+        );
+    }
+
+    #[test]
+    fn test_parse_cip_codes_empty_returns_empty() {
+        assert!(parse_cip_codes("").is_empty());
+    }
+
+    // ── aggregate_demo_map() ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_aggregate_demo_map_empty() {
+        let map: HashMap<i32, DemographicCounts> = HashMap::new();
+        let result = aggregate_demo_map(&map);
+        assert_eq!(result.total, 0);
+    }
+
+    #[test]
+    fn test_aggregate_demo_map_sums_all_entries() {
+        let mut map = HashMap::new();
+        map.insert(
+            1,
+            DemographicCounts {
+                total: 100,
+                total_women: 60,
+                ..Default::default()
+            },
+        );
+        map.insert(
+            2,
+            DemographicCounts {
+                total: 50,
+                total_women: 20,
+                ..Default::default()
+            },
+        );
+        let result = aggregate_demo_map(&map);
+        assert_eq!(result.total, 150);
+        assert_eq!(result.total_women, 80);
     }
 
     // ── apply_cip_filter() ───────────────────────────────────────────────────
