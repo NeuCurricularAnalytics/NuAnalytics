@@ -400,22 +400,22 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
         .to_string();
     }
 
-    let unitid_set: std::collections::HashSet<i32> = institution_unitids.iter().copied().collect();
-
-    let completions = match get_counts(
+    // Use DB-side in_list batching (same as execute_schools_json) so the unitid
+    // filter is pushed to the DB instead of applied in Rust after a 50K-row fetch.
+    // The Rust-side approach silently dropped data beyond the row limit.
+    let completions_by_uid = fetch_demo_by_unitid_batched(
         client,
-        &unitid_set,
+        &institution_unitids,
         cip_filter.as_ref(),
         req.award_level,
         req.year,
-        tables::COMPLETIONS,
-        "cip_code",
     )
-    .await
-    {
-        Ok(c) => c,
-        Err(e) => return error_json(e),
-    };
+    .await;
+
+    let mut completions = DemographicCounts::default();
+    for counts in completions_by_uid.values() {
+        merge_counts(&mut completions, counts);
+    }
 
     if completions.total == 0 {
         return serde_json::json!({
@@ -427,18 +427,13 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
     }
 
     let enrollment = if include_representation {
-        // Totals table has no CIP column — pass None CIP filter
-        get_counts(
-            client,
-            &unitid_set,
-            None,
-            req.award_level,
-            req.year,
-            tables::INSTITUTION_COMPLETION_TOTALS,
-            "",
-        )
-        .await
-        .ok()
+        let totals_by_uid =
+            fetch_totals_by_unitid(client, &institution_unitids, req.award_level, req.year).await;
+        let mut agg = DemographicCounts::default();
+        for counts in totals_by_uid.values() {
+            merge_counts(&mut agg, counts);
+        }
+        (agg.total > 0).then_some(agg)
     } else {
         None
     };
@@ -491,54 +486,6 @@ async fn get_matching_unitids(
                 .collect()
         })
         .unwrap_or_default())
-}
-
-/// Fetch and aggregate demographic counts using an in-memory `unitid_set` filter.
-///
-/// `cip_col` is the column to filter by CIP; pass `""` to skip CIP filtering.
-async fn get_counts(
-    client: &Arc<DbClient>,
-    unitid_set: &std::collections::HashSet<i32>,
-    cip_filter: Option<&CipFilter<'_>>,
-    award_level: Option<i32>,
-    year: Option<i32>,
-    table: &'static str,
-    cip_col: &'static str,
-) -> Result<DemographicCounts, String> {
-    let filters = apply_cip_filter(
-        QueryFilters::new()
-            .eq("award_level", award_level)
-            .eq("year", year),
-        cip_filter,
-        cip_col,
-    );
-
-    let result = client
-        .select(
-            table,
-            &format!("unitid,{DEMO_COLS_NO_KEY}"),
-            &filters,
-            Some(50_000),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let mut agg = DemographicCounts::default();
-
-    if let Some(arr) = result.as_array() {
-        for item in arr {
-            let uid = item
-                .get("unitid")
-                .and_then(serde_json::Value::as_i64)
-                .and_then(|v| i32::try_from(v).ok());
-            if !uid.is_some_and(|u| unitid_set.contains(&u)) {
-                continue;
-            }
-            accumulate(&mut agg, item);
-        }
-    }
-
-    Ok(agg)
 }
 
 // ============================================================================
