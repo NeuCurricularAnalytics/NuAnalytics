@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use crate::core::config::DatabaseConfig;
 use crate::mcp::tools::{
-    analyze, audit, schema, validate, AnalyzeDegreeRequest, AuditDegreeRequest, GetSchemaRequest,
-    ValidateDegreeRequest,
+    analyze, audit, schema, shared, validate, AnalyzeDegreeRequest, AuditDegreeRequest,
+    GetSchemaRequest, ValidateDegreeRequest,
 };
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -100,12 +100,7 @@ impl NuAnalyticsMcpServer {
     )]
     #[allow(clippy::unused_self)]
     fn analyze_degree(&self, Parameters(req): Parameters<AnalyzeDegreeRequest>) -> String {
-        let include_courses = req.include_courses.map(|s| {
-            s.split(',')
-                .map(|c| c.trim().to_string())
-                .filter(|c| !c.is_empty())
-                .collect()
-        });
+        let include_courses = req.include_courses.map(|s| shared::parse_comma_list(&s));
         analyze::execute_json(&req.yaml_content, req.max_plans, include_courses)
     }
 

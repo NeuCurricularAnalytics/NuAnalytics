@@ -20,6 +20,18 @@ pub fn parse_json_array<T: serde::de::DeserializeOwned>(value: &serde_json::Valu
         .unwrap_or_default()
 }
 
+/// Parse a comma-separated list of trimmed, non-empty strings.
+///
+/// `"11.0101, 11.0701, "` → `["11.0101", "11.0701"]`
+#[must_use]
+pub fn parse_comma_list(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .map(String::from)
+        .collect()
+}
+
 /// Serialize a value to a pretty-printed JSON string, falling back to an error JSON on failure.
 pub fn to_json_pretty(value: &impl serde::Serialize) -> String {
     serde_json::to_string_pretty(value)
@@ -66,6 +78,46 @@ mod tests {
         let json = serde_json::json!({"not": "an array"});
         let items: Vec<serde_json::Value> = parse_json_array(&json);
         assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_parse_comma_list_basic() {
+        assert_eq!(
+            parse_comma_list("11.0101,11.0701"),
+            vec!["11.0101", "11.0701"]
+        );
+    }
+
+    #[test]
+    fn test_parse_comma_list_empty_string() {
+        assert!(parse_comma_list("").is_empty());
+    }
+
+    #[test]
+    fn test_parse_comma_list_trims_whitespace() {
+        assert_eq!(
+            parse_comma_list("  11.0101  ,  11.0701  "),
+            vec!["11.0101", "11.0701"]
+        );
+    }
+
+    #[test]
+    fn test_parse_comma_list_filters_empty_entries() {
+        // Leading/trailing/consecutive commas produce no empty strings
+        assert_eq!(
+            parse_comma_list(",11.0101,,11.0701,"),
+            vec!["11.0101", "11.0701"]
+        );
+    }
+
+    #[test]
+    fn test_parse_comma_list_only_commas_returns_empty() {
+        assert!(parse_comma_list(",,,").is_empty());
+    }
+
+    #[test]
+    fn test_parse_comma_list_single_entry() {
+        assert_eq!(parse_comma_list("11.0101"), vec!["11.0101"]);
     }
 
     #[test]

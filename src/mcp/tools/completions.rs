@@ -18,9 +18,13 @@ use std::sync::Arc;
 
 use crate::core::database::models::DemographicRepresentation;
 use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::mcp::tools::shared::{error_json, parse_json_array, to_json_pretty};
+use crate::mcp::tools::shared::{error_json, parse_comma_list, parse_json_array, to_json_pretty};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
+
+/// Default CIP prefix used when the caller provides neither `cip_prefix` nor `cip_codes`.
+/// Covers all Computer and Information Sciences programs (IPEDS family 11).
+const DEFAULT_CS_CIP_PREFIX: &str = "11.";
 
 /// Max institutions per `IN(...)` query batch.
 ///
@@ -210,17 +214,15 @@ pub struct GetSchoolsCompletionDemographicsRequest {
 ///
 /// The two are mutually exclusive; `Codes` takes priority if both are present.
 enum CipFilter<'a> {
+    /// LIKE prefix match — e.g. `"11."` matches all CS family codes.
     Prefix(&'a str),
+    /// Exact IN list — e.g. `["11.0101", "11.0701"]` for specific programs.
     Codes(&'a [String]),
 }
 
-/// Parse a comma-separated CIP codes string into a `Vec<String>`.
+/// Parse a comma-separated CIP codes string. Thin wrapper over [`parse_comma_list`].
 fn parse_cip_codes(s: &str) -> Vec<String> {
-    s.split(',')
-        .map(str::trim)
-        .filter(|c| !c.is_empty())
-        .map(String::from)
-        .collect()
+    parse_comma_list(s)
 }
 
 /// Apply `cip_filter` to `filters` for the given column. No-op when `cip_col` is empty.
@@ -363,7 +365,8 @@ struct FilterSummary {
 
 /// Execute `get_completion_demographics` and return JSON.
 pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsRequest) -> String {
-    // Build CIP filter: exact codes take priority over prefix; prefix defaults to "11."
+    // Exact codes take priority; prefix falls back to the CS family default so
+    // callers don't have to specify it explicitly for the common case.
     let cip_codes_vec: Vec<String> = req
         .cip_codes
         .as_deref()
@@ -371,7 +374,10 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
         .unwrap_or_default();
     let default_prefix;
     let cip_filter: Option<CipFilter<'_>> = if cip_codes_vec.is_empty() {
-        default_prefix = req.cip_prefix.clone().unwrap_or_else(|| "11.".to_string());
+        default_prefix = req
+            .cip_prefix
+            .clone()
+            .unwrap_or_else(|| DEFAULT_CS_CIP_PREFIX.to_string());
         Some(CipFilter::Prefix(&default_prefix))
     } else {
         Some(CipFilter::Codes(&cip_codes_vec))
@@ -584,7 +590,6 @@ pub async fn execute_institution_json(
 
     let inst_name = fetch_institution_name(client, req.unitid).await;
 
-    // Build CIP filter: exact codes take priority over prefix
     let cip_codes_vec: Vec<String> = req
         .cip_codes
         .as_deref()
@@ -1024,7 +1029,7 @@ async fn fetch_demo_by_unitid_batched(
 }
 
 /// Merge `src` demographic counts into `dst` (cross-batch accumulation).
-// Not const because it uses a macro that expands to field-by-field mutation.
+// Not const: takes a mutable reference, which is incompatible with const context.
 #[allow(clippy::missing_const_for_fn)]
 fn merge_counts(dst: &mut DemographicCounts, src: &DemographicCounts) {
     macro_rules! add {
@@ -1383,6 +1388,48 @@ mod tests {
             (None, None) => {}
             _ => panic!("float option mismatch: {actual:?} != {expected:?}"),
         }
+    }
+
+    // ── apply_cip_filter() ───────────────────────────────────────────────────
+    // These tests verify branch coverage by checking whether filters were added
+    // to QueryFilters using the public is_empty() method.
+
+    #[test]
+    fn test_apply_cip_filter_none_does_not_add_filter() {
+        let result = apply_cip_filter(QueryFilters::new(), None, "cip_code");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_apply_cip_filter_prefix_adds_filter() {
+        let result = apply_cip_filter(
+            QueryFilters::new(),
+            Some(&CipFilter::Prefix("11.")),
+            "cip_code",
+        );
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_apply_cip_filter_codes_adds_filter() {
+        let codes = vec!["11.0101".to_string()];
+        let result = apply_cip_filter(
+            QueryFilters::new(),
+            Some(&CipFilter::Codes(&codes)),
+            "cip_code",
+        );
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_apply_cip_filter_empty_col_is_noop() {
+        // Empty cip_col means the table has no CIP column — filter must be skipped
+        let result = apply_cip_filter(
+            QueryFilters::new(),
+            Some(&CipFilter::Prefix("11.")),
+            "", // empty → no-op
+        );
+        assert!(result.is_empty());
     }
 
     // ── pct() ────────────────────────────────────────────────────────────────
@@ -1894,6 +1941,67 @@ mod tests {
         for row in &result {
             assert_float_eq(row.women_pct_within_group, 0.0); // no division by zero
         }
+    }
+
+    #[test]
+    fn test_build_cross_tab_institution_zero_subgroup_ratio_is_none() {
+        // Program has Asian students but institution baseline has none for that group.
+        // representation_ratio should be None (below threshold) rather than inf.
+        let c = DemographicCounts {
+            total: 100,
+            asian_men: 5,
+            asian_women: 10,
+            ..Default::default()
+        };
+        let inst = DemographicCounts {
+            total: 200,
+            asian_men: 0,
+            asian_women: 0, // 0% baseline → ratio undefined
+            ..Default::default()
+        };
+        let result = build_cross_tab(&c, Some(&inst));
+        let asian = result.iter().find(|r| r.group == "Asian").unwrap();
+        assert_float_eq(asian.women_pct_of_total, 10.0);
+        assert_eq!(asian.women_representation_ratio, None);
+        assert_eq!(asian.men_representation_ratio, None);
+    }
+
+    #[test]
+    fn test_build_cross_tab_men_and_women_ratios_computed_independently() {
+        let c = DemographicCounts {
+            total: 100,
+            hispanic_men: 20,
+            hispanic_women: 5,
+            ..Default::default()
+        };
+        let inst = DemographicCounts {
+            total: 200,
+            hispanic_men: 20,   // inst pct = 10%
+            hispanic_women: 30, // inst pct = 15%
+            ..Default::default()
+        };
+        let result = build_cross_tab(&c, Some(&inst));
+        let hispanic = result
+            .iter()
+            .find(|r| r.group == "Hispanic/Latino")
+            .unwrap();
+        // men: 20/100=20%, inst 20/200=10% → ratio = 20/10 = 2.0
+        assert_float_opt_eq(hispanic.men_representation_ratio, Some(2.0));
+        // women: 5/100=5%, inst 30/200=15% → ratio = 5/15 ≈ 0.33
+        let ratio = hispanic
+            .women_representation_ratio
+            .expect("should have ratio");
+        assert!((ratio - 0.33).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_build_cross_tab_all_9_groups_present_for_zero_counts() {
+        // Even when all counts are zero, all 9 race groups must be returned.
+        let result = build_cross_tab(&DemographicCounts::default(), None);
+        let names: Vec<&str> = result.iter().map(|r| r.group).collect();
+        assert!(names.contains(&"Unknown Race/Ethnicity"));
+        assert!(names.contains(&"Nonresident Alien"));
+        assert_eq!(names.len(), 9);
     }
 
     // ── build_demographics() — representative subset ─────────────────────────
