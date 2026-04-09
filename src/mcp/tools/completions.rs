@@ -68,10 +68,17 @@ pub struct CompletionDemographicsRequest {
     pub state: Option<String>,
     /// CIP code prefix using dot notation with trailing dot for families (default `\"11.\"` for all CS).
     /// Examples: `\"11.\"` all CS, `\"11.01.\"` CS General sub-family, `\"30.70\"` Data Science.
+    /// Use `cip_codes` instead when you need exact codes rather than a prefix range.
     #[schemars(
         description = "CIP prefix (dot notation): \"11.\" all CS, \"30.70\" Data Science. Omit for all CIPs."
     )]
     pub cip_prefix: Option<String>,
+    /// Comma-separated exact CIP codes (dot notation). Takes priority over `cip_prefix`.
+    /// Use when you need specific codes rather than a whole family, e.g. `\"11.0101,11.0701\"`.
+    #[schemars(
+        description = "Comma-separated exact CIP codes (dot notation), e.g. \"11.0101,11.0701\". Takes priority over cip_prefix."
+    )]
+    pub cip_codes: Option<String>,
     /// Award level: 5=bachelors, 7=masters, 9=doctoral, `None`=all. Use `get_lookup_codes("award_levels")` for full list.
     #[schemars(
         description = "Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all"
@@ -103,12 +110,18 @@ pub struct GetInstitutionCompletionsRequest {
         description = "Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all"
     )]
     pub award_level: Option<i32>,
-    /// CIP code prefix in dot notation with trailing dot for families (e.g. `\"11.\"` for all CS, `\"11.01.\"` for CS General, `\"11.0101\"` exact).
-    /// Omit for all CIP codes at this institution.
+    /// CIP code prefix in dot notation with trailing dot for families (e.g. `\"11.\"` for all CS, `\"11.01.\"` for CS General).
+    /// Omit for all CIP codes at this institution. Use `cip_codes` for exact code lists.
     #[schemars(
-        description = "CIP prefix (\"11.\" all CS, \"11.0101\" exact code). Omit for all programs."
+        description = "CIP prefix (\"11.\" all CS, \"11.01.\" sub-family). Omit for all programs."
     )]
     pub cip_prefix: Option<String>,
+    /// Comma-separated exact CIP codes (dot notation). Takes priority over `cip_prefix`.
+    /// E.g. `\"11.0101,11.0701\"` for CS General + Computer Science.
+    #[schemars(
+        description = "Comma-separated exact CIP codes, e.g. \"11.0101,11.0701\". Takes priority over cip_prefix."
+    )]
+    pub cip_codes: Option<String>,
     /// Major number: 1=primary major only (default), 2=second major, None=both
     #[schemars(description = "Major number: 1=primary (default), 2=second major, None=both")]
     pub major_num: Option<i32>,
@@ -148,10 +161,17 @@ pub struct GetSchoolsCompletionDemographicsRequest {
 
     // ── Completion filters ──
     /// CIP code prefix in dot notation (e.g. `\"11.\"` for all CS). Omit for all CIPs.
+    /// Use `cip_codes` for an exact list of codes instead.
     #[schemars(
         description = "CIP prefix (\"11.\" all CS, \"30.70\" Data Science). Omit for all programs."
     )]
     pub cip_prefix: Option<String>,
+    /// Comma-separated exact CIP codes (dot notation). Takes priority over `cip_prefix`.
+    /// E.g. `\"11.0101,11.0701\"` to query specific programs across all matched schools.
+    #[schemars(
+        description = "Comma-separated exact CIP codes, e.g. \"11.0101,11.0701\". Takes priority over cip_prefix."
+    )]
+    pub cip_codes: Option<String>,
     /// Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all
     #[schemars(
         description = "Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all"
@@ -177,6 +197,46 @@ pub struct GetSchoolsCompletionDemographicsRequest {
     /// Maximum schools to return (default 50, max 200)
     #[schemars(description = "Maximum schools to return (default 50, max 200)")]
     pub limit: Option<usize>,
+}
+
+// ============================================================================
+// CIP code filter
+// ============================================================================
+
+/// How to filter completion rows by CIP code.
+///
+/// - `Prefix` — LIKE pattern, e.g. `"11."` → all CS family codes.
+/// - `Codes` — exact IN list, e.g. `["11.0101", "11.0701"]`.
+///
+/// The two are mutually exclusive; `Codes` takes priority if both are present.
+enum CipFilter<'a> {
+    Prefix(&'a str),
+    Codes(&'a [String]),
+}
+
+/// Parse a comma-separated CIP codes string into a `Vec<String>`.
+fn parse_cip_codes(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// Apply `cip_filter` to `filters` for the given column. No-op when `cip_col` is empty.
+fn apply_cip_filter(
+    filters: QueryFilters,
+    cip_filter: Option<&CipFilter<'_>>,
+    cip_col: &'static str,
+) -> QueryFilters {
+    if cip_col.is_empty() {
+        return filters;
+    }
+    match cip_filter {
+        Some(CipFilter::Prefix(p)) => filters.starts_with(cip_col, Some(*p)),
+        Some(CipFilter::Codes(codes)) => filters.in_list(cip_col, codes),
+        None => filters,
+    }
 }
 
 // ============================================================================
@@ -303,7 +363,25 @@ struct FilterSummary {
 
 /// Execute `get_completion_demographics` and return JSON.
 pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsRequest) -> String {
-    let cip_prefix = req.cip_prefix.clone().unwrap_or_else(|| "11.".to_string());
+    // Build CIP filter: exact codes take priority over prefix; prefix defaults to "11."
+    let cip_codes_vec: Vec<String> = req
+        .cip_codes
+        .as_deref()
+        .map(parse_cip_codes)
+        .unwrap_or_default();
+    let default_prefix;
+    let cip_filter: Option<CipFilter<'_>> = if cip_codes_vec.is_empty() {
+        default_prefix = req.cip_prefix.clone().unwrap_or_else(|| "11.".to_string());
+        Some(CipFilter::Prefix(&default_prefix))
+    } else {
+        Some(CipFilter::Codes(&cip_codes_vec))
+    };
+    let cip_label = match &cip_filter {
+        Some(CipFilter::Codes(c)) => c.join(","),
+        Some(CipFilter::Prefix(p)) => (*p).to_string(),
+        None => String::new(),
+    };
+
     let include_representation = req.include_representation.unwrap_or(true);
 
     let institution_unitids = match get_matching_unitids(client, &req).await {
@@ -324,7 +402,7 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
     let completions = match get_counts(
         client,
         &unitid_set,
-        &cip_prefix,
+        cip_filter.as_ref(),
         req.award_level,
         req.year,
         tables::COMPLETIONS,
@@ -340,16 +418,17 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
         return serde_json::json!({
             "message": "No completion records found for the given filters",
             "institutions_checked": institution_unitids.len(),
-            "cip_prefix": cip_prefix
+            "cip_filter": cip_label
         })
         .to_string();
     }
 
     let enrollment = if include_representation {
+        // Totals table has no CIP column — pass None CIP filter
         get_counts(
             client,
             &unitid_set,
-            &cip_prefix,
+            None,
             req.award_level,
             req.year,
             tables::INSTITUTION_COMPLETION_TOTALS,
@@ -367,7 +446,7 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
             carnegie_class: req.carnegie_class,
             control: req.control,
             state: req.state,
-            cip_prefix,
+            cip_prefix: cip_label,
             award_level: req.award_level,
             year: req.year,
         },
@@ -413,23 +492,23 @@ async fn get_matching_unitids(
 
 /// Fetch and aggregate demographic counts using an in-memory `unitid_set` filter.
 ///
-/// `cip_col` is the column to filter by CIP prefix; pass `""` to skip CIP filtering.
+/// `cip_col` is the column to filter by CIP; pass `""` to skip CIP filtering.
 async fn get_counts(
     client: &Arc<DbClient>,
     unitid_set: &std::collections::HashSet<i32>,
-    cip_prefix: &str,
+    cip_filter: Option<&CipFilter<'_>>,
     award_level: Option<i32>,
     year: Option<i32>,
     table: &'static str,
     cip_col: &'static str,
 ) -> Result<DemographicCounts, String> {
-    let mut filters = QueryFilters::new()
-        .eq("award_level", award_level)
-        .eq("year", year);
-
-    if !cip_col.is_empty() {
-        filters = filters.starts_with(cip_col, Some(cip_prefix));
-    }
+    let filters = apply_cip_filter(
+        QueryFilters::new()
+            .eq("award_level", award_level)
+            .eq("year", year),
+        cip_filter,
+        cip_col,
+    );
 
     let result = client
         .select(
@@ -505,15 +584,27 @@ pub async fn execute_institution_json(
 
     let inst_name = fetch_institution_name(client, req.unitid).await;
 
-    let mut comp_filters = QueryFilters::new()
-        .eq("unitid", Some(req.unitid))
-        .eq("award_level", req.award_level)
-        .eq("year", req.year)
-        .eq("major_num", req.major_num); // None = no filter; pass major_num=1 explicitly to restrict to primary majors
+    // Build CIP filter: exact codes take priority over prefix
+    let cip_codes_vec: Vec<String> = req
+        .cip_codes
+        .as_deref()
+        .map(parse_cip_codes)
+        .unwrap_or_default();
+    let cip_filter: Option<CipFilter<'_>> = if cip_codes_vec.is_empty() {
+        req.cip_prefix.as_deref().map(CipFilter::Prefix)
+    } else {
+        Some(CipFilter::Codes(&cip_codes_vec))
+    };
 
-    if let Some(ref prefix) = req.cip_prefix {
-        comp_filters = comp_filters.starts_with("cip_code", Some(prefix.as_str()));
-    }
+    let comp_filters = apply_cip_filter(
+        QueryFilters::new()
+            .eq("unitid", Some(req.unitid))
+            .eq("award_level", req.award_level)
+            .eq("year", req.year)
+            .eq("major_num", req.major_num), // None = no filter
+        cip_filter.as_ref(),
+        "cip_code",
+    );
 
     let comp_result = match client
         .select(
@@ -766,7 +857,23 @@ pub async fn execute_schools_json(
 ) -> String {
     let limit = req.limit.unwrap_or(50).min(200);
     let include_representation = req.include_representation.unwrap_or(true);
-    let cip_prefix = req.cip_prefix.clone();
+
+    // Build CIP filter: exact codes take priority over prefix
+    let cip_codes_vec: Vec<String> = req
+        .cip_codes
+        .as_deref()
+        .map(parse_cip_codes)
+        .unwrap_or_default();
+    let cip_filter: Option<CipFilter<'_>> = if cip_codes_vec.is_empty() {
+        req.cip_prefix.as_deref().map(CipFilter::Prefix)
+    } else {
+        Some(CipFilter::Codes(&cip_codes_vec))
+    };
+    let cip_label = match &cip_filter {
+        Some(CipFilter::Codes(c)) => c.join(","),
+        Some(CipFilter::Prefix(p)) => (*p).to_string(),
+        None => String::new(),
+    };
 
     // Step 1: resolve institution filters
     let inst_filters = QueryFilters::new()
@@ -808,7 +915,7 @@ pub async fn execute_schools_json(
     let completions_by_uid = fetch_demo_by_unitid_batched(
         client,
         &unitids,
-        cip_prefix.as_deref(),
+        cip_filter.as_ref(),
         req.award_level,
         req.year,
     )
@@ -840,7 +947,7 @@ pub async fn execute_schools_json(
             "control": req.control,
             "state": req.state,
             "inst_size_min": req.inst_size_min,
-            "cip_prefix": cip_prefix,
+            "cip_filter": cip_label,
             "award_level": req.award_level,
             "year": req.year,
         },
@@ -885,19 +992,20 @@ async fn fetch_totals_by_unitid(
 async fn fetch_demo_by_unitid_batched(
     client: &Arc<DbClient>,
     unitids: &[i32],
-    cip_prefix: Option<&str>,
+    cip_filter: Option<&CipFilter<'_>>,
     award_level: Option<i32>,
     year: Option<i32>,
 ) -> HashMap<i32, DemographicCounts> {
     let mut result: HashMap<i32, DemographicCounts> = HashMap::new();
     for chunk in unitids.chunks(COMPLETIONS_BATCH_SIZE) {
-        let mut filters = QueryFilters::new()
-            .in_list("unitid", chunk)
-            .eq("award_level", award_level)
-            .eq("year", year);
-        if let Some(prefix) = cip_prefix {
-            filters = filters.starts_with("cip_code", Some(prefix));
-        }
+        let filters = apply_cip_filter(
+            QueryFilters::new()
+                .in_list("unitid", chunk)
+                .eq("award_level", award_level)
+                .eq("year", year),
+            cip_filter,
+            "cip_code",
+        );
         if let Ok(v) = client
             .select(
                 tables::COMPLETIONS,
