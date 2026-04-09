@@ -22,10 +22,6 @@ use crate::mcp::tools::shared::{error_json, parse_comma_list, parse_json_array, 
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
-/// Default CIP prefix used when the caller provides neither `cip_prefix` nor `cip_codes`.
-/// Covers all Computer and Information Sciences programs (IPEDS family 11).
-const DEFAULT_CS_CIP_PREFIX: &str = "11.";
-
 /// Max institutions per `IN(...)` query batch.
 ///
 /// Supabase's Cloudflare Worker proxy crashes when a single `PostgREST` response exceeds
@@ -140,6 +136,11 @@ pub struct GetInstitutionCompletionsRequest {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetSchoolsCompletionDemographicsRequest {
     // ── Institution filters ──
+    /// IPEDS Unit ID — filter to a single institution. Takes priority over all other institution filters.
+    #[schemars(
+        description = "IPEDS Unit ID — target a single school. Takes priority over carnegie_class, control, state, etc."
+    )]
+    pub unitid: Option<i32>,
     /// Carnegie classification (15=R1, 16=R2, 21=R1-2021). Use `get_lookup_codes("carnegie_class")` for full list.
     #[schemars(
         description = "Carnegie classification (15=R1, 16=R2, 21=R1-2021). Use get_lookup_codes(\"carnegie_class\")."
@@ -365,27 +366,23 @@ struct FilterSummary {
 
 /// Execute `get_completion_demographics` and return JSON.
 pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsRequest) -> String {
-    // Exact codes take priority; prefix falls back to the CS family default so
-    // callers don't have to specify it explicitly for the common case.
+    // Build CIP filter. Exact codes take priority over prefix.
+    // When neither is supplied the filter is None → all CIPs are returned.
+    // Callers who want only CS must pass cip_prefix="11." explicitly.
     let cip_codes_vec: Vec<String> = req
         .cip_codes
         .as_deref()
         .map(parse_cip_codes)
         .unwrap_or_default();
-    let default_prefix;
     let cip_filter: Option<CipFilter<'_>> = if cip_codes_vec.is_empty() {
-        default_prefix = req
-            .cip_prefix
-            .clone()
-            .unwrap_or_else(|| DEFAULT_CS_CIP_PREFIX.to_string());
-        Some(CipFilter::Prefix(&default_prefix))
+        req.cip_prefix.as_deref().map(CipFilter::Prefix)
     } else {
         Some(CipFilter::Codes(&cip_codes_vec))
     };
     let cip_label = match &cip_filter {
         Some(CipFilter::Codes(c)) => c.join(","),
         Some(CipFilter::Prefix(p)) => (*p).to_string(),
-        None => String::new(),
+        None => "(all CIPs)".to_string(),
     };
 
     let include_representation = req.include_representation.unwrap_or(true);
@@ -880,8 +877,9 @@ pub async fn execute_schools_json(
         None => String::new(),
     };
 
-    // Step 1: resolve institution filters
+    // Step 1: resolve institution filters — unitid shortcut bypasses group filters
     let inst_filters = QueryFilters::new()
+        .eq("unitid", req.unitid)
         .eq("carnegie_class", req.carnegie_class)
         .eq("control", req.control)
         .eq("state", req.state.as_deref())
@@ -905,9 +903,14 @@ pub async fn execute_schools_json(
     let institutions: Vec<InstitutionMeta> = parse_json_array(&inst_result);
 
     if institutions.is_empty() {
+        let suggestion = if req.unitid.is_some() {
+            "Check that the unitid is correct (use search_institutions to find it)"
+        } else {
+            "Try broadening carnegie_class, control, state, or inst_size_min filters"
+        };
         return serde_json::json!({
             "error": "No institutions matched the given filters",
-            "suggestion": "Try broadening carnegie_class, control, state, or inst_size_min filters"
+            "suggestion": suggestion
         })
         .to_string();
     }

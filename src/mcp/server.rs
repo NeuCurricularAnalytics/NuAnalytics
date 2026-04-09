@@ -174,7 +174,7 @@ impl NuAnalyticsMcpServer {
     /// Get per-school CS completion demographics across many institutions in one call
     #[cfg(feature = "database")]
     #[tool(
-        description = "Bulk query: per-school CS demographics for all institutions matching filters. Each school entry includes: demographics (Women%, race%, representation ratios) AND cross_tab (race×gender breakdown: women_pct_within_group shows gender parity within each race; women/men_representation_ratio shows each gender-race cell vs institution baseline). Uses 3 DB calls regardless of school count. Provide year for accurate ratios."
+        description = "Per-school CS completion demographics. Use unitid for a single school, or combine carnegie_class/control/state/hbcu/tribal/inst_size_min for a group. Returns demographics (Women%, race%, representation ratios) AND cross_tab (race×gender: women_pct_within_group, representation_ratio per cell). Omitting cip_prefix/cip_codes returns all CIPs; set cip_prefix=\"11.\" for CS. Provide year for accurate ratios."
     )]
     fn get_schools_completion_demographics(
         &self,
@@ -188,7 +188,7 @@ impl NuAnalyticsMcpServer {
     /// Query completion demographics aggregated across institutions
     #[cfg(feature = "database")]
     #[tool(
-        description = "Query CS degree completion demographics aggregated across matching institutions. Returns demographics (Women%, race groups, representation ratios) AND cross_tab (race×gender cross-tabulation: gender parity within each race, and representation ratio for each gender-race combination). Filter by unitid, Carnegie classification, control type, state, CIP family (\"11.\" for CS), award level, and year. For per-school breakdown use get_schools_completion_demographics."
+        description = "Aggregate completion demographics across matching institutions. Returns demographics AND cross_tab (race×gender). Filter by unitid (single school), carnegie_class, control, state, cip_prefix (\"11.\" for CS — no default, omit for all CIPs), cip_codes (comma-separated exact codes), award level, year. For per-school breakdown use get_schools_completion_demographics."
     )]
     fn get_completion_demographics(
         &self,
