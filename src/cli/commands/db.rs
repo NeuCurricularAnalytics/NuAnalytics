@@ -14,6 +14,9 @@ use nu_analytics::database::{
 
 use crate::args::DbSubcommand;
 
+const OAUTH_TIMEOUT_SECS: u64 = 120;
+const SUPABASE_MGMT_API_BASE: &str = "https://api.supabase.com/v1/projects";
+
 /// Run the `db` subcommand, dispatching to the appropriate handler.
 pub fn run(subcommand: DbSubcommand, config: &Config) {
     match subcommand {
@@ -32,9 +35,25 @@ pub fn run(subcommand: DbSubcommand, config: &Config) {
 }
 
 // ============================================================================
+// Shared helpers
+// ============================================================================
+
+/// Build a single-threaded Tokio runtime, printing an error and returning `None` on failure.
+fn make_runtime() -> Option<tokio::runtime::Runtime> {
+    match tokio::runtime::Runtime::new() {
+        Ok(rt) => Some(rt),
+        Err(e) => {
+            eprintln!("✗ Failed to create async runtime: {e}");
+            None
+        }
+    }
+}
+
+// ============================================================================
 // Login — OAuth PKCE flow
 // ============================================================================
 
+/// Validate database config, build an async runtime, and run the OAuth login flow.
 fn run_login(config: &Config, provider: &str) {
     if config.database.endpoint.is_empty() || config.database.anon_key.is_empty() {
         eprintln!("✗ Database not configured.");
@@ -44,13 +63,7 @@ fn run_login(config: &Config, provider: &str) {
         return;
     }
 
-    let rt = match tokio::runtime::Runtime::new() {
-        Ok(rt) => rt,
-        Err(e) => {
-            eprintln!("✗ Runtime error: {e}");
-            return;
-        }
-    };
+    let Some(rt) = make_runtime() else { return };
 
     if let Err(e) = rt.block_on(do_oauth_login(config, provider)) {
         eprintln!("✗ Login failed: {e}");
@@ -68,11 +81,10 @@ fn run_login(config: &Config, provider: &str) {
 async fn do_oauth_login(config: &Config, provider: &str) -> Result<(), String> {
     use supabase_client_sdk::supabase_client_auth::AuthClient;
 
-    // 1. Bind the callback listener.
-    //    In WSL2, ports bound to 127.0.0.1 are NOT forwarded to the Windows host —
-    //    only ports on 0.0.0.0 are. We therefore bind to 0.0.0.0 under WSL so the
-    //    Windows browser can reach the listener via localhost port forwarding.
-    //    The redirect URL still uses 127.0.0.1 (what the browser connects to).
+    // In WSL2, ports bound to 127.0.0.1 are NOT forwarded to the Windows host —
+    // only ports on 0.0.0.0 are. We therefore bind to 0.0.0.0 under WSL so the
+    // Windows browser can reach the listener via localhost port forwarding.
+    // The redirect URL still uses 127.0.0.1 (what the browser connects to).
     let bind_addr = if detect_wsl() {
         "0.0.0.0:0"
     } else {
@@ -87,11 +99,9 @@ async fn do_oauth_login(config: &Config, provider: &str) -> Result<(), String> {
         .port();
     let callback_url = format!("http://127.0.0.1:{port}/callback");
 
-    // 2. Generate PKCE pair
     let pkce = AuthClient::generate_pkce_pair();
     let verifier = pkce.verifier.as_str().to_string();
 
-    // 3. Build the OAuth URL (Supabase /auth/v1/authorize)
     let oauth_provider = parse_provider(provider);
     let auth_client = AuthClient::new(&config.database.endpoint, &config.database.anon_key)
         .map_err(|e| format!("Cannot create auth client: {e}"))?;
@@ -107,24 +117,21 @@ async fn do_oauth_login(config: &Config, provider: &str) -> Result<(), String> {
         pkce.challenge.as_str()
     );
 
-    // 4. Open browser
     println!("Opening browser to authenticate with {provider}...");
     if let Err(e) = open_browser(&auth_url) {
         eprintln!("  Could not open browser automatically: {e}");
     }
     println!("If the browser did not open, visit:");
     println!("  {auth_url}");
-    println!("Waiting for OAuth callback (2 minute timeout)...");
+    println!("Waiting for OAuth callback ({OAUTH_TIMEOUT_SECS}s timeout)...");
 
-    // 5. Wait for callback
     let code = tokio::time::timeout(
-        tokio::time::Duration::from_secs(120),
+        tokio::time::Duration::from_secs(OAUTH_TIMEOUT_SECS),
         accept_oauth_callback(listener),
     )
     .await
-    .map_err(|_| "Timed out waiting for browser callback (2 minutes)".to_string())??;
+    .map_err(|_| format!("Timed out waiting for browser callback ({OAUTH_TIMEOUT_SECS}s)"))??;
 
-    // 6. Exchange code for session
     let session = auth_client
         .exchange_code_for_session(&code, Some(&verifier))
         .await
@@ -141,7 +148,6 @@ async fn do_oauth_login(config: &Config, provider: &str) -> Result<(), String> {
         user_email: session.user.email,
     };
 
-    // 7. Persist
     let auth_path = auth_file_path(&config.database);
     save_auth_state(&auth_path, &state)?;
 
@@ -178,28 +184,38 @@ fn detect_wsl() -> bool {
     std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some()
 }
 
+/// Escape a URL for embedding inside a `PowerShell` single-quoted string literal.
+///
+/// In `PowerShell`, single-quoted strings are verbatim except that a literal `'`
+/// must be written as `''`. This prevents `&` in OAuth URLs from being
+/// interpreted as the `PowerShell` call operator.
+fn ps_single_quote_escape(url: &str) -> String {
+    url.replace('\'', "''")
+}
+
 /// Open a URL in the system default browser.
 ///
-/// On WSL, uses `cmd.exe` to open the Windows browser rather than a Linux browser,
-/// which avoids D-Bus errors and ensures the OAuth redirect reaches the local server.
-/// On plain Linux, stderr from `xdg-open` is suppressed to avoid D-Bus noise.
+/// On WSL and native Windows, uses `powershell.exe Start-Process` rather than
+/// `cmd.exe /C start`: `PowerShell` single-quoted strings keep `&` in OAuth URLs
+/// from being treated as a command separator. On plain Linux, stderr from
+/// `xdg-open` is suppressed to avoid D-Bus noise on headless systems.
 fn open_browser(url: &str) -> Result<(), String> {
-    let is_wsl = detect_wsl();
-
-    let result = if is_wsl {
-        // Use Windows cmd.exe so the OAuth flow opens in the Windows default browser.
-        // The empty first argument to `start` is the window title (required when the
-        // second argument contains characters like & or =).
-        std::process::Command::new("/mnt/c/Windows/System32/cmd.exe")
-            .args(["/C", "start", "", url])
+    // `PowerShell`'s single-quoted strings are verbatim, so '&' in OAuth URLs is
+    // never interpreted as the call operator or a cmd.exe command separator.
+    let ps_open = || {
+        let ps_cmd = format!("Start-Process -FilePath '{}'", ps_single_quote_escape(url));
+        std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_cmd])
             .stderr(std::process::Stdio::null())
             .spawn()
+    };
+
+    let result = if detect_wsl() {
+        ps_open()
     } else if cfg!(target_os = "macos") {
         std::process::Command::new("open").arg(url).spawn()
     } else if cfg!(target_os = "windows") {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", url])
-            .spawn()
+        ps_open()
     } else {
         // Plain Linux — suppress D-Bus noise that xdg-open prints on headless systems
         std::process::Command::new("xdg-open")
@@ -376,6 +392,7 @@ fn extract_project_ref(endpoint: &str) -> Option<String> {
     }
 }
 
+/// Read a SQL file from disk and execute it against the Supabase Management API.
 fn run_exec_sql(config: &Config, file: &std::path::Path) {
     if config.database.management_key.is_empty() {
         eprintln!("✗ `database.management_key` is not set.");
@@ -408,13 +425,7 @@ fn run_exec_sql(config: &Config, file: &std::path::Path) {
         project_ref
     );
 
-    let rt = match tokio::runtime::Runtime::new() {
-        Ok(rt) => rt,
-        Err(e) => {
-            eprintln!("✗ Runtime error: {e}");
-            return;
-        }
-    };
+    let Some(rt) = make_runtime() else { return };
 
     match rt.block_on(do_exec_sql(
         &config.database.management_key,
@@ -428,7 +439,7 @@ fn run_exec_sql(config: &Config, file: &std::path::Path) {
 
 /// Execute arbitrary SQL via the Supabase Management API.
 ///
-/// Posts to `https://api.supabase.com/v1/projects/{project_ref}/database/query`
+/// Posts to `{SUPABASE_MGMT_API_BASE}/{project_ref}/database/query`
 /// using the provided Personal Access Token for authorization. Returns a
 /// human-readable success message or the API's error string on failure.
 ///
@@ -436,7 +447,7 @@ fn run_exec_sql(config: &Config, file: &std::path::Path) {
 ///
 /// Returns an error if the HTTP request fails or the API returns a non-success status.
 async fn do_exec_sql(management_key: &str, project_ref: &str, sql: &str) -> Result<String, String> {
-    let url = format!("https://api.supabase.com/v1/projects/{project_ref}/database/query");
+    let url = format!("{SUPABASE_MGMT_API_BASE}/{project_ref}/database/query");
 
     let body = serde_json::json!({ "query": sql });
 
@@ -495,13 +506,7 @@ fn run_status(config: &Config) {
         println!("Auth: read-only   (not signed in — run `nuanalytics db login` for write access)");
     }
 
-    let rt = match tokio::runtime::Runtime::new() {
-        Ok(rt) => rt,
-        Err(e) => {
-            eprintln!("✗ Failed to create async runtime: {e}");
-            return;
-        }
-    };
+    let Some(rt) = make_runtime() else { return };
 
     match rt.block_on(client.ping()) {
         Ok(()) => println!("✓ Database connection successful"),
@@ -513,31 +518,17 @@ fn run_status(config: &Config) {
 // IPEDS Import
 // ============================================================================
 
-fn run_ipeds_import(
-    config: &Config,
+/// Resolve IPEDS file paths, preferring auto-detection from `dir` over explicit paths.
+///
+/// When `dir` is provided, searches for standard IPEDS filenames for the given year.
+/// Falls back to the explicitly supplied paths when `dir` is `None`.
+fn resolve_ipeds_paths(
     dir: Option<&std::path::Path>,
     institutions_path: Option<std::path::PathBuf>,
     completions_path: Option<std::path::PathBuf>,
     year: u16,
-) {
-    let client = match DbClient::from_config(&config.database) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("✗ Database not available: {e}");
-            eprintln!("  Configure the database and run `nuanalytics db login` for write access.");
-            return;
-        }
-    };
-
-    let rt = match tokio::runtime::Runtime::new() {
-        Ok(rt) => rt,
-        Err(e) => {
-            eprintln!("✗ Failed to create async runtime: {e}");
-            return;
-        }
-    };
-
-    let (inst_path, comp_path) = dir.map_or((institutions_path, completions_path), |d| {
+) -> (Option<std::path::PathBuf>, Option<std::path::PathBuf>) {
+    dir.map_or((institutions_path, completions_path), |d| {
         (
             auto_detect_file(
                 d,
@@ -556,7 +547,29 @@ fn run_ipeds_import(
                 ],
             ),
         )
-    });
+    })
+}
+
+fn run_ipeds_import(
+    config: &Config,
+    dir: Option<&std::path::Path>,
+    institutions_path: Option<std::path::PathBuf>,
+    completions_path: Option<std::path::PathBuf>,
+    year: u16,
+) {
+    let client = match DbClient::from_config(&config.database) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("✗ Database not available: {e}");
+            eprintln!("  Configure the database and run `nuanalytics db login` for write access.");
+            return;
+        }
+    };
+
+    let Some(rt) = make_runtime() else { return };
+
+    let (inst_path, comp_path) =
+        resolve_ipeds_paths(dir, institutions_path, completions_path, year);
 
     if let Some(path) = inst_path {
         println!("Importing institutions from {} ...", path.display());
@@ -626,6 +639,8 @@ fn auto_detect_file(dir: &std::path::Path, candidates: &[&str]) -> Option<std::p
 mod tests {
     use super::*;
 
+    // --- extract_query_param -----------------------------------------------
+
     #[test]
     fn test_extract_query_param_basic() {
         let line = "GET /callback?code=abc123&state=xyz HTTP/1.1";
@@ -649,6 +664,18 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_query_param_percent_encoded() {
+        let line = "GET /callback?code=abc%2B123&state=x%20y HTTP/1.1";
+        assert_eq!(
+            extract_query_param(line, "code"),
+            Some("abc+123".to_string())
+        );
+        assert_eq!(extract_query_param(line, "state"), Some("x y".to_string()));
+    }
+
+    // --- percent_decode ----------------------------------------------------
+
+    #[test]
     fn test_percent_decode_plain() {
         assert_eq!(percent_decode("abc123"), "abc123");
     }
@@ -665,6 +692,14 @@ mod tests {
     }
 
     #[test]
+    fn test_percent_decode_invalid_hex_passthrough() {
+        // Invalid %XX sequences should pass through without panicking
+        assert_eq!(percent_decode("a%GGb"), "a%GGb");
+    }
+
+    // --- parse_provider ----------------------------------------------------
+
+    #[test]
     fn test_parse_provider_known() {
         use supabase_client_sdk::supabase_client_auth::OAuthProvider;
         assert!(matches!(parse_provider("github"), OAuthProvider::GitHub));
@@ -674,26 +709,98 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_provider_remaining_known() {
+        use supabase_client_sdk::supabase_client_auth::OAuthProvider;
+        assert!(matches!(parse_provider("discord"), OAuthProvider::Discord));
+        assert!(matches!(parse_provider("azure"), OAuthProvider::Azure));
+        assert!(matches!(
+            parse_provider("bitbucket"),
+            OAuthProvider::Bitbucket
+        ));
+        assert!(matches!(
+            parse_provider("linkedin"),
+            OAuthProvider::LinkedIn
+        ));
+        assert!(matches!(parse_provider("twitter"), OAuthProvider::Twitter));
+    }
+
+    #[test]
     fn test_parse_provider_custom() {
         use supabase_client_sdk::supabase_client_auth::OAuthProvider;
         assert!(matches!(parse_provider("myidp"), OAuthProvider::Custom(_)));
     }
 
+    // --- ps_single_quote_escape --------------------------------------------
+
     #[test]
-    fn test_extract_query_param_percent_encoded() {
-        let line = "GET /callback?code=abc%2B123&state=x%20y HTTP/1.1";
-        assert_eq!(
-            extract_query_param(line, "code"),
-            Some("abc+123".to_string())
-        );
-        assert_eq!(extract_query_param(line, "state"), Some("x y".to_string()));
+    fn test_ps_single_quote_escape_no_quotes() {
+        // Typical OAuth URL — nothing to escape
+        let url =
+            "https://example.supabase.co/auth/v1/authorize?provider=github&code_challenge=abc";
+        assert_eq!(ps_single_quote_escape(url), url);
     }
 
     #[test]
-    fn test_percent_decode_invalid_hex_passthrough() {
-        // Invalid %XX sequences should pass through without panicking
-        assert_eq!(percent_decode("a%GGb"), "a%GGb");
+    fn test_ps_single_quote_escape_single_quote() {
+        assert_eq!(ps_single_quote_escape("it's"), "it''s");
     }
+
+    #[test]
+    fn test_ps_single_quote_escape_multiple_quotes() {
+        assert_eq!(ps_single_quote_escape("a'b'c"), "a''b''c");
+    }
+
+    #[test]
+    fn test_ps_single_quote_escape_leading_trailing() {
+        assert_eq!(ps_single_quote_escape("'hello'"), "''hello''");
+    }
+
+    #[test]
+    fn test_ps_single_quote_escape_empty() {
+        assert_eq!(ps_single_quote_escape(""), "");
+    }
+
+    // --- detect_wsl --------------------------------------------------------
+
+    // std::env::set_var/remove_var are unsafe in Rust 1.81+ because they are not
+    // thread-safe. This test manipulates env vars to exercise detect_wsl(); run the
+    // test suite with --test-threads=1 if parallel test runners become a problem.
+    #[allow(unsafe_code)]
+    #[test]
+    fn test_detect_wsl_via_env() {
+        // Save current values so we can restore them after the test.
+        let had_distro = std::env::var_os("WSL_DISTRO_NAME");
+        let had_interop = std::env::var_os("WSL_INTEROP");
+
+        // SAFETY: single-threaded test context; see module-level comment above.
+        unsafe {
+            std::env::remove_var("WSL_DISTRO_NAME");
+            std::env::remove_var("WSL_INTEROP");
+        }
+        assert!(!detect_wsl(), "should be false when neither var is set");
+
+        unsafe { std::env::set_var("WSL_DISTRO_NAME", "Ubuntu-22.04") };
+        assert!(detect_wsl(), "WSL_DISTRO_NAME should trigger WSL detection");
+
+        unsafe {
+            std::env::remove_var("WSL_DISTRO_NAME");
+            std::env::set_var("WSL_INTEROP", "/run/WSL/1_interop");
+        }
+        assert!(detect_wsl(), "WSL_INTEROP should trigger WSL detection");
+
+        // Restore originals
+        unsafe {
+            std::env::remove_var("WSL_INTEROP");
+            if let Some(v) = had_distro {
+                std::env::set_var("WSL_DISTRO_NAME", v);
+            }
+            if let Some(v) = had_interop {
+                std::env::set_var("WSL_INTEROP", v);
+            }
+        }
+    }
+
+    // --- auto_detect_file --------------------------------------------------
 
     #[test]
     fn test_auto_detect_file_exact_match() {
@@ -714,6 +821,36 @@ mod tests {
         let result = auto_detect_file(dir.path(), &["HD2023.csv", "HD*.csv"]);
         assert_eq!(result, None);
     }
+
+    #[test]
+    fn test_auto_detect_file_glob_match() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("HD2023.csv");
+        std::fs::File::create(&file_path)
+            .unwrap()
+            .write_all(b"")
+            .unwrap();
+        // Pattern "HD*.csv" — no exact match; must fall through to glob branch
+        let result = auto_detect_file(dir.path(), &["HD*.csv"]);
+        assert_eq!(result, Some(file_path));
+    }
+
+    #[test]
+    fn test_auto_detect_file_glob_suffix_mismatch() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("HD2023.csv");
+        std::fs::File::create(&file_path)
+            .unwrap()
+            .write_all(b"")
+            .unwrap();
+        // Pattern "C*.csv" should NOT match "HD2023.csv"
+        let result = auto_detect_file(dir.path(), &["C*.csv"]);
+        assert_eq!(result, None);
+    }
+
+    // --- extract_project_ref -----------------------------------------------
 
     #[test]
     fn test_extract_project_ref_supabase_url() {

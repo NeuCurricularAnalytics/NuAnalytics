@@ -234,7 +234,7 @@ nuanalytics db login                      # opens browser with GitHub (default)
 nuanalytics db login --provider google    # or another enabled provider
 ```
 
-NuAnalytics opens your Windows browser (on WSL: via `cmd.exe`). After you approve
+NuAnalytics opens your Windows browser (on WSL/Windows: via `powershell.exe Start-Process`). After you approve
 access on GitHub/Google, the browser redirects to a temporary local server and the
 terminal shows `✓ Signed in as you@email.com`. The session is saved automatically.
 
