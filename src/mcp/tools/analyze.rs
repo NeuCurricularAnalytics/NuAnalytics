@@ -9,6 +9,7 @@ use crate::core::degree::{
 };
 use crate::core::metrics::compute_all_metrics;
 use crate::core::models::{Course, CourseGraph, School, DAG};
+use crate::core::report::visualization::{spec_from_scored_plan, CurriculumGraphSpec};
 use crate::core::report::SchedulerConfig;
 use crate::core::statistics::{AggregatorConfig, MetricStats, MetricsAggregator};
 use rmcp::schemars;
@@ -77,6 +78,11 @@ pub struct PlanSummaryJson {
     pub course_count: usize,
     /// Term-by-term schedule
     pub schedule: Vec<TermJson>,
+    /// Complete visualization spec for this plan.
+    ///
+    /// Pass the serialized form of this field directly to
+    /// `get_curriculum_visualization` to render an interactive HTML graph.
+    pub graph_spec: Option<CurriculumGraphSpec>,
 }
 
 /// A single term in a plan schedule
@@ -230,6 +236,8 @@ pub fn execute(
 
     build_response(
         &program,
+        &school,
+        &equivalences,
         &aggregator,
         selector,
         plans_processed,
@@ -290,9 +298,16 @@ fn run_plan_analysis(
     plans_processed
 }
 
-/// Build the analysis response from aggregated results
+/// Build the analysis response from aggregated results.
+///
+/// The function has 8 parameters because it synthesises data from every stage
+/// of the analysis pipeline; grouping them into a context struct would just
+/// move the same data without reducing coupling.
+#[allow(clippy::too_many_arguments)]
 fn build_response(
     program: &crate::core::DegreeProgram,
+    school: &School,
+    equivalences: &HashMap<String, HashSet<String>>,
     aggregator: &MetricsAggregator,
     selector: PlanSelector<'_>,
     plans_processed: usize,
@@ -304,25 +319,31 @@ fn build_response(
 
     let selected_plans: Vec<PlanSummaryJson> = selected
         .iter()
-        .map(|(cat, plan)| PlanSummaryJson {
-            category: cat.display_name().to_string(),
-            terms: plan.score.terms_required,
-            complexity: plan.score.total_complexity,
-            longest_delay: plan.score.longest_delay,
-            critical_path: plan.score.longest_delay_chain.clone(),
-            credits: plan.variant.total_credits,
-            course_count: plan.variant.courses.len(),
-            schedule: plan
-                .schedule
-                .terms
-                .iter()
-                .filter(|t| !t.courses.is_empty())
-                .map(|t| TermJson {
-                    term: t.number,
-                    courses: t.courses.clone(),
-                    credits: t.total_credits,
-                })
-                .collect(),
+        .map(|(cat, plan)| {
+            let graph_id = cat.display_name().to_lowercase().replace(' ', "-");
+            let graph_spec = Some(spec_from_scored_plan(school, equivalences, plan, &graph_id));
+
+            PlanSummaryJson {
+                category: cat.display_name().to_string(),
+                terms: plan.score.terms_required,
+                complexity: plan.score.total_complexity,
+                longest_delay: plan.score.longest_delay,
+                critical_path: plan.score.longest_delay_chain.clone(),
+                credits: plan.variant.total_credits,
+                course_count: plan.variant.courses.len(),
+                schedule: plan
+                    .schedule
+                    .terms
+                    .iter()
+                    .filter(|t| !t.courses.is_empty())
+                    .map(|t| TermJson {
+                        term: t.number,
+                        courses: t.courses.clone(),
+                        credits: t.total_credits,
+                    })
+                    .collect(),
+                graph_spec,
+            }
         })
         .collect();
 
@@ -753,5 +774,20 @@ courses:
     fn test_placeholder_credits() {
         assert!((super::placeholder_credits("GE01") - 3.0).abs() < f32::EPSILON);
         assert!((super::placeholder_credits("GE01S") - 2.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_selected_plans_have_graph_spec() {
+        let response = execute(TEST_YAML, Some(10), None);
+        assert!(response.success);
+        assert!(!response.selected_plans.is_empty());
+        for plan in &response.selected_plans {
+            let spec = plan.graph_spec.as_ref().unwrap_or_else(|| {
+                panic!("Plan {} should have graph_spec populated", plan.category)
+            });
+            assert!(!spec.graph_id.is_empty(), "graph_id must not be empty");
+            assert!(!spec.nodes.is_empty(), "nodes must not be empty");
+            assert!(!spec.terms.is_empty(), "terms must not be empty");
+        }
     }
 }

@@ -4,6 +4,9 @@
 //! The generated HTML is self-contained with embedded CSS and JavaScript.
 
 use crate::core::metrics::CourseMetrics;
+use crate::core::report::visualization::{
+    spec_from_report_context, CurriculumGraphRenderer, VanillaJsRenderer,
+};
 use crate::core::report::{ReportContext, ReportGenerator};
 use std::error::Error;
 use std::fmt::Write;
@@ -73,132 +76,12 @@ impl HtmlReporter {
         let metrics_html = Self::generate_metrics_html(ctx);
         output = output.replace("{{course_metrics}}", &metrics_html);
 
-        // Generate term graph HTML (grid-based visualization)
-        let term_graph = Self::generate_term_graph(ctx);
-        output = output.replace("{{term_graph}}", &term_graph);
-
-        // Generate SVG paths with baked coordinates (server-side calculation)
-        let svg_paths = Self::generate_svg_paths(ctx);
-        output = output.replace("{{svg_paths}}", &svg_paths);
-
-        // Generate edge data for legacy JavaScript (kept for compatibility)
-        let edges = Self::generate_edge_data(ctx);
-        output = output.replace("{{graph_edges}}", &edges);
-
-        // Generate critical path IDs as JSON array for JavaScript highlighting
-        let critical_path_ids = Self::generate_critical_path_ids(ctx);
-        output = output.replace("{{critical_path_ids}}", &critical_path_ids);
+        // Generate curriculum graph HTML (term columns + SVG edges + JS)
+        let spec = spec_from_report_context(ctx, "main");
+        let graph_html = VanillaJsRenderer.render(&spec);
+        output = output.replace("{{curriculum_graph}}", &graph_html);
 
         output
-    }
-
-    /// Generate critical path course IDs as a JSON array
-    ///
-    /// Handles corequisite groups in the path (e.g., "(CSE1321+CSE1321L)") by
-    /// extracting all individual course IDs for JavaScript highlighting.
-    fn generate_critical_path_ids(ctx: &ReportContext) -> String {
-        let mut all_ids: Vec<String> = Vec::new();
-
-        for entry in &ctx.summary.longest_delay_path {
-            // Check if this is a grouped corequisite entry like "(A+B+C)"
-            let trimmed = entry.trim();
-            if trimmed.starts_with('(') && trimmed.ends_with(')') {
-                // Extract individual course IDs from the group
-                let inner = &trimmed[1..trimmed.len() - 1]; // Remove parens
-                for id in inner.split('+') {
-                    all_ids.push(format!("\"{}\"", id.trim()));
-                }
-            } else {
-                // Regular single course ID
-                all_ids.push(format!("\"{trimmed}\""));
-            }
-        }
-
-        format!("[{}]", all_ids.join(", "))
-    }
-
-    /// Generate HTML for the grid-based term visualization
-    fn generate_term_graph(ctx: &ReportContext) -> String {
-        let mut html = String::new();
-
-        for term in &ctx.term_plan.terms {
-            let _ = writeln!(html, "<div class=\"term-column\">");
-            let _ = writeln!(
-                html,
-                "  <div class=\"term-header\">Semester {}</div>",
-                term.number
-            );
-            let _ = writeln!(html, "  <div class=\"term-courses\">");
-
-            for course_key in &term.courses {
-                let course = ctx.school.get_course(course_key);
-                let metrics = ctx.metrics.get(course_key);
-
-                let name = course.map_or("", |c| &c.name);
-                let short_name = if name.len() > 25 { &name[..22] } else { name };
-                let complexity = metrics.map_or(0, |m| m.complexity);
-
-                let complexity_class = match complexity {
-                    0..=5 => "complexity-low",
-                    6..=15 => "complexity-medium",
-                    _ => "complexity-high",
-                };
-
-                let _ = writeln!(
-                    html,
-                    "    <div class=\"course-node\" data-course-id=\"{course_key}\">"
-                );
-                let _ = writeln!(
-                    html,
-                    "      <span class=\"complexity-badge {complexity_class}\">{complexity}</span>"
-                );
-                let _ = writeln!(html, "      <div class=\"course-id\">{course_key}</div>");
-                let _ = writeln!(html, "      <div class=\"course-name\">{short_name}</div>");
-                let _ = writeln!(html, "    </div>");
-            }
-
-            let _ = writeln!(html, "  </div>");
-            let _ = writeln!(html, "</div>");
-        }
-
-        html
-    }
-
-    /// Generate edge data as JSON for SVG connections
-    fn generate_edge_data(ctx: &ReportContext) -> String {
-        let mut edges = Vec::new();
-
-        // Prerequisite edges
-        for (course, prereqs) in &ctx.dag.dependencies {
-            if !ctx.plan.courses.contains(course) {
-                continue;
-            }
-            for prereq in prereqs {
-                if !ctx.plan.courses.contains(prereq) {
-                    continue;
-                }
-                edges.push(format!(
-                    "{{ \"from\": \"{prereq}\", \"to\": \"{course}\", \"dashes\": false }}"
-                ));
-            }
-        }
-
-        // Corequisite edges (dashed)
-        for (course, coreqs) in &ctx.dag.corequisites {
-            if !ctx.plan.courses.contains(course) {
-                continue;
-            }
-            for coreq in coreqs {
-                if !ctx.plan.courses.contains(coreq) {
-                    continue;
-                }
-                edges.push(format!(
-                    "{{ \"from\": \"{coreq}\", \"to\": \"{course}\", \"dashes\": true }}"
-                ));
-            }
-        }
-
-        format!("[{}]", edges.join(", "))
     }
 
     /// Generate the term-by-term schedule as HTML table rows
@@ -275,93 +158,6 @@ impl HtmlReporter {
         }
 
         html
-    }
-
-    /// Generate SVG paths with baked coordinates (server-side calculation)
-    /// This avoids JavaScript positioning issues when printing to PDF
-    fn generate_svg_paths(ctx: &ReportContext) -> String {
-        // Grid layout constants
-        const TERM_WIDTH: f32 = 130.0;
-        const TERM_X_OFFSET: f32 = 20.0;
-        const COURSE_HEIGHT: f32 = 115.0;
-        const COURSE_Y_OFFSET: f32 = 50.0;
-        const COURSE_CENTER_X: f32 = 65.0;
-        const COURSE_CENTER_Y: f32 = 30.0;
-
-        // Build position map: course_id -> (x, y)
-        let mut positions = std::collections::HashMap::new();
-        for (term_idx, term) in ctx.term_plan.terms.iter().enumerate() {
-            #[allow(clippy::cast_precision_loss)]
-            let term_x = (term_idx as f32).mul_add(TERM_WIDTH, TERM_X_OFFSET);
-            for (course_idx, course_key) in term.courses.iter().enumerate() {
-                #[allow(clippy::cast_precision_loss)]
-                let course_y = (course_idx as f32).mul_add(COURSE_HEIGHT, COURSE_Y_OFFSET);
-                positions.insert(
-                    course_key.clone(),
-                    (term_x + COURSE_CENTER_X, course_y + COURSE_CENTER_Y),
-                );
-            }
-        }
-
-        let mut paths = Vec::new();
-
-        // Generate prerequisite paths
-        for (course, prereqs) in &ctx.dag.dependencies {
-            if !ctx.plan.courses.contains(course) || !positions.contains_key(course) {
-                continue;
-            }
-            for prereq in prereqs {
-                if !ctx.plan.courses.contains(prereq) || !positions.contains_key(prereq) {
-                    continue;
-                }
-
-                if let (Some(&(x1, y1)), Some(&(x2, y2))) =
-                    (positions.get(prereq), positions.get(course))
-                {
-                    // Curved path: quadratic Bezier from prereq to course
-                    let mid_x = f32::midpoint(x1, x2);
-                    let mid_y = f32::midpoint(y1, y2);
-                    let path = format!(
-                        "<path class=\"prereq-line\" d=\"M {x1:.1} {y1:.1} Q {mid_x:.1} {mid_y:.1} {x2:.1} {y2:.1}\" data-from=\"{prereq}\" data-to=\"{course}\"></path>"
-                    );
-                    paths.push(path);
-                }
-            }
-        }
-
-        // Generate corequisite paths (dashed)
-        for (course, coreqs) in &ctx.dag.corequisites {
-            if !ctx.plan.courses.contains(course) || !positions.contains_key(course) {
-                continue;
-            }
-            for coreq in coreqs {
-                if !ctx.plan.courses.contains(coreq) || !positions.contains_key(coreq) {
-                    continue;
-                }
-
-                if let (Some(&(x1, y1)), Some(&(x2, y2))) =
-                    (positions.get(coreq), positions.get(course))
-                {
-                    // Curved path for corequisites
-                    let mid_x = f32::midpoint(x1, x2);
-                    let mid_y = f32::midpoint(y1, y2);
-                    let path = format!(
-                        "<path class=\"coreq-line\" d=\"M {x1:.1} {y1:.1} Q {mid_x:.1} {mid_y:.1} {x2:.1} {y2:.1}\" data-from=\"{coreq}\" data-to=\"{course}\"></path>"
-                    );
-                    paths.push(path);
-                }
-            }
-        }
-
-        paths.join("\n")
-    }
-
-    /// Generate vis.js node and edge data as JSON arrays
-    /// Nodes are positioned by term (x-axis) with courses stacked vertically within each term
-    #[allow(dead_code)]
-    fn generate_graph_data(_ctx: &ReportContext) -> (String, String) {
-        // Deprecated - kept for potential future use
-        (String::from("[]"), String::from("[]"))
     }
 }
 
@@ -533,9 +329,10 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_critical_path_ids() {
+    fn test_render_contains_graph_components() {
+        // Replaces the former generate_critical_path_ids tests; verifies the
+        // rendered HTML includes course nodes and the nuGraphs registration.
         let (school, plan, degree, metrics, summary, dag, term_plan) = create_test_context();
-
         let ctx = ReportContext::new(
             &school,
             &plan,
@@ -545,43 +342,12 @@ mod tests {
             &dag,
             &term_plan,
         );
-
-        let ids = HtmlReporter::generate_critical_path_ids(&ctx);
-
-        assert!(ids.contains("CS101"));
-        assert!(ids.contains("CS201"));
-        assert!(ids.starts_with('['));
-        assert!(ids.ends_with(']'));
-    }
-
-    #[test]
-    fn test_generate_critical_path_ids_with_corequisite_group() {
-        let summary = CurriculumSummary {
-            total_complexity: 10,
-            highest_centrality: 1,
-            highest_centrality_course: "CS101".to_string(),
-            longest_delay: 2,
-            longest_delay_course: "CS201".to_string(),
-            longest_delay_path: vec!["(CS101+CS101L)".to_string(), "CS201".to_string()],
-        };
-
-        let (school, plan, degree, metrics, _, dag, term_plan) = create_test_context();
-
-        let ctx = ReportContext::new(
-            &school,
-            &plan,
-            Some(&degree),
-            &metrics,
-            &summary,
-            &dag,
-            &term_plan,
-        );
-
-        let ids = HtmlReporter::generate_critical_path_ids(&ctx);
-
-        // Should extract both courses from the group
-        assert!(ids.contains("CS101"));
-        assert!(ids.contains("CS101L"));
-        assert!(ids.contains("CS201"));
+        let reporter = HtmlReporter::new();
+        let html = reporter.render(&ctx).unwrap();
+        assert!(html.contains("data-course-id=\"CS101\""));
+        assert!(html.contains("data-course-id=\"CS201\""));
+        assert!(html.contains("nuGraphs.register"));
+        assert!(html.contains("\"CS101\""));
+        assert!(html.contains("\"CS201\""));
     }
 }

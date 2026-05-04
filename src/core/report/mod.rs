@@ -23,7 +23,10 @@ pub use plan_export::{
     export_selected_plans, export_summary_csv, DegreeSummary, PlanExportConfig, PlanSummary,
 };
 pub use term_scheduler::{SchedulerConfig, TermPlan, TermScheduler};
-pub use visualization::MermaidGenerator;
+pub use visualization::{
+    spec_from_components, spec_from_report_context, spec_from_scored_plan, CurriculumGraphRenderer,
+    CurriculumGraphSpec, MermaidGenerator, VanillaJsRenderer,
+};
 
 /// Data context for report generation
 ///

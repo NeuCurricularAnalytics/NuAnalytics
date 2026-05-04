@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use crate::core::config::DatabaseConfig;
 use crate::mcp::tools::{
-    analyze, audit, schema, shared, validate, AnalyzeDegreeRequest, AuditDegreeRequest,
-    GetSchemaRequest, ValidateDegreeRequest,
+    analyze, audit, schema, shared, validate, visualize, AnalyzeDegreeRequest, AuditDegreeRequest,
+    GetCurriculumVisualizationRequest, GetSchemaRequest, ValidateDegreeRequest,
 };
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -102,6 +102,18 @@ impl NuAnalyticsMcpServer {
     fn analyze_degree(&self, Parameters(req): Parameters<AnalyzeDegreeRequest>) -> String {
         let include_courses = req.include_courses.map(|s| shared::parse_comma_list(&s));
         analyze::execute_json(&req.yaml_content, req.max_plans, include_courses)
+    }
+
+    /// Render a curriculum graph visualization from an `analyze_degree` result
+    #[tool(
+        description = "Render a self-contained interactive HTML curriculum graph from a graph_spec produced by analyze_degree. Returns HTML with embedded JavaScript showing course nodes arranged by term, prerequisite/corequisite edges drawn as Bezier curves, complexity badges, and interactive hover highlighting of prerequisite chains and the critical path. Typical flow: (1) call analyze_degree, (2) serialize selected_plans[N].graph_spec to JSON, (3) pass it as graph_spec_json to this tool."
+    )]
+    #[allow(clippy::unused_self)]
+    fn get_curriculum_visualization(
+        &self,
+        Parameters(req): Parameters<GetCurriculumVisualizationRequest>,
+    ) -> String {
+        visualize::execute_html(&req.graph_spec_json)
     }
 
     // ── Institution tools ───────────────────────────────────────────────────

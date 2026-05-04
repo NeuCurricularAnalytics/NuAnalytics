@@ -7,6 +7,7 @@ pub mod audit;
 pub mod schema;
 pub mod shared;
 pub mod validate;
+pub mod visualize;
 
 // Database-backed tools (require feature = "database")
 #[cfg(feature = "database")]
@@ -28,6 +29,7 @@ pub use validate::{
     DegreeContext, ValidateDegreeRequest, ValidationErrorInfo, ValidationResponse,
     ValidationWarningInfo,
 };
+pub use visualize::GetCurriculumVisualizationRequest;
 
 // Re-export database tool types
 #[cfg(feature = "database")]

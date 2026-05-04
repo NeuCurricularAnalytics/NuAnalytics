@@ -5,7 +5,6 @@
 
 use crate::core::degree::plan_selector::{PlanCategory, ScoredPlan, SelectedPlans};
 use crate::core::models::{Degree, School, DAG};
-use crate::core::prerequisite_parser::parse_to_dnf;
 use crate::core::statistics::aggregator::{AggregatedDegreeStats, MetricsAggregator};
 use crate::core::statistics::box_plot::{BoxPlotData, BoxPlotGenerator};
 use std::error::Error;
@@ -465,8 +464,7 @@ impl DegreeReportGenerator {
             );
         }
 
-        // Curriculum Graph with legend
-        let _ = write!(html, "{}", Self::render_graph_legend());
+        // Curriculum Graph (includes legend, term columns, SVG overlay, JS)
         let graph_html = Self::render_curriculum_graph(ctx, plan, &plan_id);
         let _ = write!(html, "{graph_html}");
 
@@ -474,39 +472,6 @@ impl DegreeReportGenerator {
         let _ = write!(html, "{}", Self::render_term_schedule_table(ctx, plan));
         let _ = writeln!(html, "</div>"); // end special-plan
 
-        html
-    }
-
-    /// Render the graph legend for complexity levels and edge types.
-    fn render_graph_legend() -> String {
-        let mut html = String::new();
-        let _ = writeln!(html, "<h4>Curriculum Graph</h4>");
-        let _ = writeln!(html, "<div class=\"graph-legend\">");
-        let _ = writeln!(
-            html,
-            "<div class=\"legend-item\"><div class=\"legend-color complexity-low\"></div><span>Low (1-5)</span></div>"
-        );
-        let _ = writeln!(
-            html,
-            "<div class=\"legend-item\"><div class=\"legend-color complexity-medium\"></div><span>Med (6-15)</span></div>"
-        );
-        let _ = writeln!(
-            html,
-            "<div class=\"legend-item\"><div class=\"legend-color complexity-high\"></div><span>High (16+)</span></div>"
-        );
-        let _ = writeln!(
-            html,
-            "<div class=\"legend-item\"><div class=\"legend-line solid\"></div><span>Prereq</span></div>"
-        );
-        let _ = writeln!(
-            html,
-            "<div class=\"legend-item\"><div class=\"legend-line dashed\"></div><span>Coreq</span></div>"
-        );
-        let _ = writeln!(
-            html,
-            "<div class=\"legend-item\"><div class=\"legend-line critical\"></div><span>Critical</span></div>"
-        );
-        let _ = writeln!(html, "</div>");
         html
     }
 
@@ -555,235 +520,17 @@ impl DegreeReportGenerator {
 
     /// Render the curriculum graph for a special plan.
     ///
-    /// Uses the DAG to get proper prerequisite/corequisite edges that are
-    /// resolved for the specific plan, rather than raw course prerequisites.
+    /// Delegates to [`VanillaJsRenderer`] via [`spec_from_scored_plan`].
     fn render_curriculum_graph(
         ctx: &DegreeReportContext,
         plan: &ScoredPlan,
         plan_id: &str,
     ) -> String {
-        let mut html = String::new();
-
-        let edges = Self::build_plan_edges(ctx, plan);
-
-        // Graph wrapper + term columns
-        let _ = writeln!(html, "<div class=\"curriculum-graph-wrapper\">");
-        let _ = writeln!(
-            html,
-            "<div class=\"curriculum-graph\" id=\"graph-{plan_id}\">"
-        );
-        let _ = write!(
-            html,
-            "{}",
-            Self::render_graph_term_columns(ctx, plan, plan_id)
-        );
-        let _ = writeln!(html, "</div>"); // curriculum-graph
-
-        // SVG overlay for connections
-        let _ = writeln!(
-            html,
-            "<svg class=\"connections-svg\" id=\"svg-{plan_id}\"></svg>"
-        );
-        let _ = writeln!(html, "</div>"); // curriculum-graph-wrapper
-
-        // JavaScript data block
-        let _ = write!(
-            html,
-            "{}",
-            Self::render_graph_script_data(&edges, &plan.score.longest_delay_chain, plan_id)
-        );
-
-        html
-    }
-
-    /// Build prerequisite and corequisite edges for a plan's courses.
-    ///
-    /// When a prerequisite isn't directly in the plan but an equivalent course is,
-    /// adds an edge from the equivalent course to maintain proper visualization.
-    fn build_plan_edges(
-        ctx: &DegreeReportContext,
-        plan: &ScoredPlan,
-    ) -> Vec<(String, String, bool)> {
-        let plan_courses: std::collections::HashSet<&str> =
-            plan.variant.courses.iter().map(String::as_str).collect();
-
-        let mut edges: Vec<(String, String, bool)> = Vec::new(); // (from, to, is_coreq)
-
-        for course_key in &plan.variant.courses {
-            let course = ctx.school.get_course(course_key);
-            if let Some(c) = course {
-                let prereq_raw = c.prerequisites_raw.clone().unwrap_or_else(|| {
-                    if c.prerequisites.is_empty() {
-                        String::new()
-                    } else {
-                        c.prerequisites.join(" & ")
-                    }
-                });
-
-                if !prereq_raw.is_empty() {
-                    let dnf_paths = parse_to_dnf(&prereq_raw);
-
-                    // Find the first path where all prereqs are in the plan (directly or via equivalence)
-                    let mut selected_prereqs: Vec<String> = Vec::new();
-                    for path in &dnf_paths {
-                        let resolved: Vec<String> = path
-                            .iter()
-                            .filter_map(|p| {
-                                if plan_courses.contains(p.as_str()) {
-                                    Some(p.clone())
-                                } else {
-                                    // Check for equivalent course in plan
-                                    ctx.equivalences.get(p).and_then(|equivs| {
-                                        equivs
-                                            .iter()
-                                            .find(|eq| plan_courses.contains(eq.as_str()))
-                                            .cloned()
-                                    })
-                                }
-                            })
-                            .collect();
-
-                        // If all prereqs in path are satisfied (directly or via equivalence)
-                        if resolved.len() == path.len() {
-                            selected_prereqs = resolved;
-                            break;
-                        }
-                    }
-
-                    // If no complete path, find the best partial match
-                    if selected_prereqs.is_empty() {
-                        let mut best: Vec<String> = Vec::new();
-                        for path in &dnf_paths {
-                            let in_plan: Vec<String> = path
-                                .iter()
-                                .filter_map(|p| {
-                                    if plan_courses.contains(p.as_str()) {
-                                        Some(p.clone())
-                                    } else {
-                                        ctx.equivalences.get(p).and_then(|equivs| {
-                                            equivs
-                                                .iter()
-                                                .find(|eq| plan_courses.contains(eq.as_str()))
-                                                .cloned()
-                                        })
-                                    }
-                                })
-                                .collect();
-                            if in_plan.len() > best.len() {
-                                best = in_plan;
-                            }
-                        }
-                        selected_prereqs = best;
-                    }
-
-                    for prereq in selected_prereqs {
-                        edges.push((prereq, course_key.clone(), false));
-                    }
-                }
-
-                if !c.corequisites.is_empty() {
-                    for coreq in &c.corequisites {
-                        if plan_courses.contains(coreq.as_str()) {
-                            edges.push((coreq.clone(), course_key.clone(), true));
-                        }
-                    }
-                }
-            }
-        }
-
-        edges
-    }
-
-    /// Render the term column divs for the curriculum graph.
-    fn render_graph_term_columns(
-        ctx: &DegreeReportContext,
-        plan: &ScoredPlan,
-        plan_id: &str,
-    ) -> String {
-        let mut html = String::new();
-
-        for term in &plan.schedule.terms {
-            if term.courses.is_empty() {
-                continue;
-            }
-
-            let _ = writeln!(html, "<div class=\"term-column\">");
-            let _ = writeln!(
-                html,
-                "<div class=\"term-header\">Term {}</div>",
-                term.number
-            );
-            let _ = writeln!(html, "<div class=\"term-courses\">");
-
-            for course_key in &term.courses {
-                let course = ctx.school.get_course(course_key);
-                let metrics = plan.course_metrics.get(course_key);
-
-                let name = course.map_or("", |c| &c.name);
-                let short_name = if name.len() > 20 { &name[..17] } else { name };
-                let complexity = metrics.map_or(0, |m| m.complexity);
-
-                let complexity_class = match complexity {
-                    0..=5 => "complexity-low",
-                    6..=15 => "complexity-medium",
-                    _ => "complexity-high",
-                };
-
-                let _ = writeln!(
-                    html,
-                    "<div class=\"course-node\" data-course-id=\"{course_key}\" data-plan=\"{plan_id}\">"
-                );
-                let _ = writeln!(
-                    html,
-                    "<span class=\"complexity-badge {complexity_class}\">{complexity}</span>"
-                );
-                let _ = writeln!(html, "<div class=\"course-id\">{course_key}</div>");
-                let _ = writeln!(
-                    html,
-                    "<div class=\"course-name\">{}</div>",
-                    Self::escape_html(short_name)
-                );
-                let _ = writeln!(html, "</div>");
-            }
-
-            let _ = writeln!(html, "</div>"); // term-courses
-            let _ = writeln!(html, "</div>"); // term-column
-        }
-
-        html
-    }
-
-    /// Render the JavaScript data block for a plan's graph edges and critical path.
-    fn render_graph_script_data(
-        edges: &[(String, String, bool)],
-        critical_path: &[String],
-        plan_id: &str,
-    ) -> String {
-        let mut html = String::new();
-
-        let edges_json: Vec<String> = edges
-            .iter()
-            .map(|(from, to, is_coreq)| {
-                format!("{{ \"from\": \"{from}\", \"to\": \"{to}\", \"dashes\": {is_coreq} }}")
-            })
-            .collect();
-
-        let critical_ids: Vec<String> = critical_path.iter().map(|s| format!("\"{s}\"")).collect();
-
-        let _ = writeln!(
-            html,
-            "<script>\n\
-if (!window.planGraphs) window.planGraphs = {{}};\n\
-window.planGraphs['{plan_id}'] = {{\n\
-    edges: [{}],\n\
-    criticalPath: [{}]\n\
-}};\n\
-</script>",
-            edges_json.join(", "),
-            critical_ids.join(", ")
-        );
-
-        html
+        use crate::core::report::visualization::{
+            spec_from_scored_plan, CurriculumGraphRenderer, VanillaJsRenderer,
+        };
+        let spec = spec_from_scored_plan(ctx.school, ctx.equivalences, plan, plan_id);
+        VanillaJsRenderer.render(&spec)
     }
 
     /// Render random samples section with compact course lists
