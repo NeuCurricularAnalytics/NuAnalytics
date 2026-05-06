@@ -58,7 +58,7 @@ fn main() {
             run_planner(&config, &opts);
         }
         Command::Degree {
-            file,
+            files,
             validate,
             print_graph,
             audit,
@@ -103,7 +103,7 @@ fn main() {
                 verbose,
                 include_courses: include,
             };
-            commands::degree::run(file.as_deref(), &options, &config);
+            commands::degree::run(&files, &options, &config);
         }
         #[cfg(feature = "database")]
         Command::Db { subcommand } => {

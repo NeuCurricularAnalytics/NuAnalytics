@@ -321,7 +321,13 @@ fn build_response(
         .iter()
         .map(|(cat, plan)| {
             let graph_id = cat.display_name().to_lowercase().replace(' ', "-");
-            let graph_spec = Some(spec_from_scored_plan(school, equivalences, plan, &graph_id));
+            let graph_spec = Some(spec_from_scored_plan(
+                school,
+                equivalences,
+                plan,
+                Some(aggregator),
+                &graph_id,
+            ));
 
             PlanSummaryJson {
                 category: cat.display_name().to_string(),

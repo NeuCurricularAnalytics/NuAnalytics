@@ -17,8 +17,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::core::metrics::CurriculumMetrics;
 use crate::core::models::{School, DAG};
-use crate::core::report::term_scheduler::TermPlan;
+use crate::core::report::term_scheduler::{course_credits_with_fallback, TermPlan};
 use crate::core::report::ReportContext;
+use crate::core::statistics::aggregator::MetricsAggregator;
 
 // ============================================================================
 // Public types
@@ -35,6 +36,12 @@ pub enum EdgeType {
 }
 
 /// A course node in the visualization graph.
+///
+/// The per-plan metrics (`complexity`, `delay`, `blocking`) describe this
+/// course's position in *this* plan only.  The optional `median_*` fields
+/// carry the cross-plan median for the same metric, populated when the spec
+/// is built with a [`MetricsAggregator`]; they are `None` for single-plan
+/// reports where no aggregator exists.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CourseNode {
     /// Unique course identifier, e.g. `"CS2500"`.
@@ -46,10 +53,28 @@ pub struct CourseNode {
     /// Structural complexity score (delay + blocking). Computed by the analysis
     /// pipeline; not present in the source YAML.
     pub complexity: usize,
+    /// Delay metric: longest path from this course to any leaf.
+    #[serde(default)]
+    pub delay: usize,
+    /// Blocking metric: number of downstream courses gated by this one.
+    #[serde(default)]
+    pub blocking: usize,
     /// Whether this course lies on the longest-delay (critical) path.
     pub on_critical_path: bool,
     /// 1-indexed term number this course is scheduled into.
     pub term: usize,
+    /// Median complexity across all plans analysed; `None` when no aggregator
+    /// was available.
+    #[serde(default)]
+    pub median_complexity: Option<f32>,
+    /// Median delay across all plans analysed; `None` when no aggregator was
+    /// available.
+    #[serde(default)]
+    pub median_delay: Option<f32>,
+    /// Median blocking across all plans analysed; `None` when no aggregator
+    /// was available.
+    #[serde(default)]
+    pub median_blocking: Option<f32>,
 }
 
 /// A directed edge between two courses.
@@ -107,9 +132,13 @@ pub struct CurriculumGraphSpec {
 /// * `dag` — provides resolved prerequisite / corequisite edges (used when
 ///   edge data is not already available from a `ScoredPlan`).
 /// * `term_plan` — provides term assignments for each course.
-/// * `metrics` — per-course complexity scores (computed by
-///   [`crate::core::metrics::compute_all_metrics`]).
+/// * `metrics` — per-course metrics for *this* plan (delay, blocking,
+///   complexity), computed by [`crate::core::metrics::compute_all_metrics`].
 /// * `critical_path` — ordered list of course IDs on the longest-delay path.
+/// * `aggregator` — optional cross-plan aggregator. When `Some`, populates
+///   each node's `median_*` fields with the corresponding course's median
+///   across all analysed plans; when `None`, those fields stay `None`
+///   (used by the CLI single-plan path).
 /// * `graph_id` — DOM ID prefix; `"main"` for single-plan reports.
 #[must_use]
 pub fn spec_from_components(
@@ -118,6 +147,7 @@ pub fn spec_from_components(
     term_plan: &TermPlan,
     metrics: &CurriculumMetrics,
     critical_path: &[String],
+    aggregator: Option<&MetricsAggregator>,
     graph_id: &str,
 ) -> CurriculumGraphSpec {
     let critical_path_ids = expand_critical_path(critical_path);
@@ -147,18 +177,26 @@ pub fn spec_from_components(
             let name = school
                 .get_course(course_key)
                 .map_or_else(|| course_key.clone(), |c| c.name.clone());
-            let credits = school
-                .get_course(course_key)
-                .map_or(0.0, |c| c.credit_hours);
-            let complexity = metrics.get(course_key).map_or(0, |m| m.complexity);
+            let credits = course_credits_with_fallback(school, course_key);
+            let course_metric = metrics.get(course_key);
+            let complexity = course_metric.map_or(0, |m| m.complexity);
+            let delay = course_metric.map_or(0, |m| m.delay);
+            let blocking = course_metric.map_or(0, |m| m.blocking);
+            let (median_complexity, median_delay, median_blocking) =
+                aggregator_medians(aggregator, course_key);
 
             nodes.push(CourseNode {
                 id: course_key.clone(),
                 name,
                 credits,
                 complexity,
+                delay,
+                blocking,
                 on_critical_path: critical_set.contains(course_key.as_str()),
                 term: term.number,
+                median_complexity,
+                median_delay,
+                median_blocking,
             });
             group.course_ids.push(course_key.clone());
         }
@@ -214,7 +252,8 @@ pub fn spec_from_components(
 /// Build a [`CurriculumGraphSpec`] from a single-plan [`ReportContext`].
 ///
 /// Used by the CLI HTML report generator (`html.rs`), where all computed data
-/// is already bundled in the context.
+/// is already bundled in the context.  No aggregator is available on this
+/// path, so the node `median_*` fields will all be `None`.
 #[must_use]
 pub fn spec_from_report_context(ctx: &ReportContext, graph_id: &str) -> CurriculumGraphSpec {
     spec_from_components(
@@ -223,6 +262,7 @@ pub fn spec_from_report_context(ctx: &ReportContext, graph_id: &str) -> Curricul
         ctx.term_plan,
         ctx.metrics,
         &ctx.summary.longest_delay_path,
+        None,
         graph_id,
     )
 }
@@ -232,6 +272,10 @@ pub fn spec_from_report_context(ctx: &ReportContext, graph_id: &str) -> Curricul
 /// Used by the degree-report HTML generator and the `analyze_degree` MCP tool.
 /// The `ScoredPlan` already carries its own `schedule`, `course_metrics`, and
 /// `score.longest_delay_chain`, so no re-computation is needed.
+///
+/// When `aggregator` is `Some`, each node's `median_*` fields are populated
+/// from the per-course aggregated stats; pass `None` if cross-plan medians
+/// should be omitted from the spec.
 ///
 /// Edge data is re-derived from course prerequisites with equivalence
 /// resolution (the same logic as the former `build_plan_edges` in
@@ -244,6 +288,7 @@ pub fn spec_from_scored_plan(
     school: &School,
     equivalences: &HashMap<String, HashSet<String>>,
     plan: &crate::core::degree::ScoredPlan,
+    aggregator: Option<&MetricsAggregator>,
     graph_id: &str,
 ) -> CurriculumGraphSpec {
     let critical_path_ids = plan.score.longest_delay_chain.clone();
@@ -267,21 +312,26 @@ pub fn spec_from_scored_plan(
             let name = school
                 .get_course(course_key)
                 .map_or_else(|| course_key.clone(), |c| c.name.clone());
-            let credits = school
-                .get_course(course_key)
-                .map_or(0.0, |c| c.credit_hours);
-            let complexity = plan
-                .course_metrics
-                .get(course_key)
-                .map_or(0, |m| m.complexity);
+            let credits = course_credits_with_fallback(school, course_key);
+            let course_metric = plan.course_metrics.get(course_key);
+            let complexity = course_metric.map_or(0, |m| m.complexity);
+            let delay = course_metric.map_or(0, |m| m.delay);
+            let blocking = course_metric.map_or(0, |m| m.blocking);
+            let (median_complexity, median_delay, median_blocking) =
+                aggregator_medians(aggregator, course_key);
 
             nodes.push(CourseNode {
                 id: course_key.clone(),
                 name,
                 credits,
                 complexity,
+                delay,
+                blocking,
                 on_critical_path: critical_set.contains(course_key.as_str()),
                 term: term.number,
+                median_complexity,
+                median_delay,
+                median_blocking,
             });
             group.course_ids.push(course_key.clone());
         }
@@ -298,6 +348,28 @@ pub fn spec_from_scored_plan(
         terms,
         critical_path_ids,
     }
+}
+
+/// Look up cross-plan medians for one course from the aggregator.
+///
+/// Returns `(None, None, None)` when no aggregator is provided or when the
+/// course has no aggregated stats (it never appeared in any analysed plan).
+fn aggregator_medians(
+    aggregator: Option<&MetricsAggregator>,
+    course_id: &str,
+) -> (Option<f32>, Option<f32>, Option<f32>) {
+    let Some(agg) = aggregator else {
+        return (None, None, None);
+    };
+    let Some(stats) = agg.course_stats(course_id) else {
+        return (None, None, None);
+    };
+    #[allow(clippy::cast_possible_truncation)]
+    (
+        Some(stats.complexity.median as f32),
+        Some(stats.delay.median as f32),
+        Some(stats.blocking.median as f32),
+    )
 }
 
 // ============================================================================
@@ -510,6 +582,7 @@ mod tests {
             &term_plan,
             &metrics,
             &["CS101".to_string(), "CS201".to_string()],
+            None,
             "test",
         );
 
@@ -520,14 +593,66 @@ mod tests {
         assert_eq!(spec.edges[0].from, "CS101");
         assert_eq!(spec.edges[0].to, "CS201");
         assert_eq!(spec.edges[0].edge_type, EdgeType::Prerequisite);
-        assert!(
-            spec.nodes
-                .iter()
-                .find(|n| n.id == "CS101")
-                .unwrap()
-                .on_critical_path
-        );
+        let cs101 = spec.nodes.iter().find(|n| n.id == "CS101").unwrap();
+        assert!(cs101.on_critical_path);
+        assert_eq!(cs101.delay, 1);
+        assert_eq!(cs101.blocking, 1);
+        assert!(cs101.median_complexity.is_none());
         assert_eq!(spec.critical_path_ids, vec!["CS101", "CS201"]);
+    }
+
+    #[test]
+    fn test_spec_from_components_populates_medians_when_aggregator_present() {
+        use crate::core::metrics::CourseMetrics;
+        use crate::core::models::{Course, DAG};
+        use crate::core::report::term_scheduler::{Term, TermPlan};
+        use crate::core::statistics::aggregator::{AggregatorConfig, MetricsAggregator};
+
+        let mut school = School::new("Test".to_string());
+        school.add_course(Course::new(
+            "CS101".to_string(),
+            "CS".to_string(),
+            "101".to_string(),
+            4.0,
+        ));
+
+        let mut dag = DAG::new();
+        dag.add_course("CS101".to_string());
+
+        let term_plan = TermPlan {
+            terms: vec![Term {
+                number: 1,
+                courses: vec!["CS101".to_string()],
+                total_credits: 4.0,
+            }],
+            is_quarter_system: false,
+            target_credits: 15.0,
+            unscheduled: vec![],
+        };
+
+        let mut metrics = CurriculumMetrics::new();
+        metrics.insert(
+            "CS101".to_string(),
+            CourseMetrics {
+                delay: 3,
+                blocking: 5,
+                complexity: 8,
+                centrality: 1,
+            },
+        );
+
+        // Feed two plans into the aggregator so median is well-defined.
+        let mut agg = MetricsAggregator::new(AggregatorConfig::default());
+        agg.add_plan(&metrics, 60.0);
+        agg.add_plan(&metrics, 60.0);
+
+        let spec =
+            spec_from_components(&school, &dag, &term_plan, &metrics, &[], Some(&agg), "agg");
+
+        let cs101 = spec.nodes.iter().find(|n| n.id == "CS101").unwrap();
+        assert_eq!(cs101.median_complexity, Some(8.0));
+        assert_eq!(cs101.median_delay, Some(3.0));
+        assert_eq!(cs101.median_blocking, Some(5.0));
     }
 
     #[test]

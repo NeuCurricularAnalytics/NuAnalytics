@@ -3,7 +3,7 @@
 // Each graph is identified by a graphId string used as a DOM prefix.
 //
 // API (called by the Rust renderer's inline <script> blocks):
-//   nuGraphs.register(graphId, { edges, criticalPath })
+//   nuGraphs.register(graphId, { edges, criticalPath, nodes })
 //   nuGraphs.draw(graphId)
 //
 // Idempotent: safe to include multiple times on a page.
@@ -13,14 +13,22 @@ if (!window.nuGraphs) {
         'use strict';
 
         // ── Registry ───────────────────────────────────────────────────────
-        // graphId -> { edges, criticalPath, adjacency }
+        // graphId -> { edges, criticalPath, nodes, nodeIndex, adjacency }
         var _registry = {};
+        // Currently open modal element (null when no modal is open).
+        var _openModal = null;
 
         // ── Public: register graph data ────────────────────────────────────
         function register(graphId, data) {
+            var nodes = data.nodes || [];
+            // Build a courseId -> node index for O(1) lookup in the modal.
+            var nodeIndex = {};
+            nodes.forEach(function (n) { nodeIndex[n.id] = n; });
             _registry[graphId] = {
                 edges: data.edges || [],
                 criticalPath: data.criticalPath || [],
+                nodes: nodes,
+                nodeIndex: nodeIndex,
                 adjacency: null  // built lazily on first draw/hover
             };
         }
@@ -259,12 +267,101 @@ if (!window.nuGraphs) {
             });
         }
 
+        // ── Course detail modal ────────────────────────────────────────────
+        function handleClick(e) {
+            var node     = e.currentTarget;
+            var graphId  = node.dataset.graphId;
+            var courseId = node.dataset.courseId;
+            if (graphId && courseId) openModal(graphId, courseId);
+        }
+
+        function attachClickHandlers() {
+            document.querySelectorAll('.nu-graph .course-node').forEach(function (node) {
+                node.removeEventListener('click', handleClick);
+                node.addEventListener('click', handleClick);
+            });
+        }
+
+        // Render one row of the metrics table.
+        function metricRow(label, value, median) {
+            var fmt = function (v) {
+                if (v === null || v === undefined) return '—';
+                // Integers render plain; floats render with one decimal.
+                return (Math.floor(v) === v) ? String(v) : v.toFixed(1);
+            };
+            return '<tr><td>' + label + '</td>' +
+                   '<td>' + fmt(value)  + '</td>' +
+                   '<td>' + fmt(median) + '</td></tr>';
+        }
+
+        function openModal(graphId, courseId) {
+            var g = _registry[graphId];
+            if (!g) return;
+            var n = g.nodeIndex[courseId];
+            if (!n) return;
+
+            closeModal();  // ensure only one modal is open at a time
+
+            var backdrop = document.createElement('div');
+            backdrop.className = 'nu-graph-modal-backdrop';
+            backdrop.setAttribute('role', 'dialog');
+            backdrop.setAttribute('aria-modal', 'true');
+
+            // Build inner card
+            var card = document.createElement('div');
+            card.className = 'nu-graph-modal';
+
+            var subtitle = (n.credits != null) ? (n.credits + ' credits') : '';
+
+            card.innerHTML =
+                '<button class="nu-graph-modal-close" aria-label="Close">×</button>' +
+                '<h3 class="nu-graph-modal-title">' + escapeHtml(n.id) +
+                ' — ' + escapeHtml(n.name || '') + '</h3>' +
+                '<p class="nu-graph-modal-subtitle">' + escapeHtml(subtitle) + '</p>' +
+                '<table class="nu-graph-modal-table">' +
+                '<thead><tr><th>Metric</th><th>This plan</th><th>Median</th></tr></thead>' +
+                '<tbody>' +
+                metricRow('Complexity', n.complexity, n.medianComplexity) +
+                metricRow('Delay',      n.delay,      n.medianDelay) +
+                metricRow('Blocking',   n.blocking,   n.medianBlocking) +
+                '</tbody></table>';
+
+            backdrop.appendChild(card);
+
+            // Close handlers
+            backdrop.addEventListener('click', function (e) {
+                if (e.target === backdrop) closeModal();
+            });
+            card.querySelector('.nu-graph-modal-close')
+                .addEventListener('click', closeModal);
+
+            document.body.appendChild(backdrop);
+            _openModal = backdrop;
+        }
+
+        function closeModal() {
+            if (!_openModal) return;
+            if (_openModal.parentNode) _openModal.parentNode.removeChild(_openModal);
+            _openModal = null;
+        }
+
+        // Plain HTML escape — modal content is built from registry strings,
+        // not user input, but defensive escaping is cheap.
+        function escapeHtml(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
         // ── Initialise on DOMContentLoaded ─────────────────────────────────
         document.addEventListener('DOMContentLoaded', function () {
             requestAnimationFrame(function () {
                 requestAnimationFrame(function () {
                     drawAll();
                     attachHoverHandlers();
+                    attachClickHandlers();
                     // Extra passes for headless Chrome / PDF generation.
                     setTimeout(drawAll, 200);
                     setTimeout(drawAll, 500);
@@ -272,6 +369,9 @@ if (!window.nuGraphs) {
                 });
             });
             window.addEventListener('resize', drawAll);
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') closeModal();
+            });
         });
 
         // ── Print / PDF support ────────────────────────────────────────────
@@ -290,10 +390,13 @@ if (!window.nuGraphs) {
         }
 
         return {
-            register:           register,
-            draw:               draw,
-            drawAll:            drawAll,
-            attachHoverHandlers: attachHoverHandlers
+            register:            register,
+            draw:                draw,
+            drawAll:             drawAll,
+            attachHoverHandlers: attachHoverHandlers,
+            attachClickHandlers: attachClickHandlers,
+            openModal:           openModal,
+            closeModal:          closeModal
         };
     }());
 }

@@ -69,6 +69,7 @@ impl CurriculumGraphRenderer for VanillaJsRenderer {
         let id = &spec.graph_id;
         let mut out = String::new();
         render_style(&mut out);
+        render_modal_style(&mut out);
         render_legend(&mut out);
         render_graph_html(spec, id, &mut out);
         render_script(spec, id, &mut out);
@@ -187,6 +188,62 @@ fn render_style(out: &mut String) {
     );
 }
 
+/// Emit a separate `<style>` block for the course-detail modal.
+///
+/// The modal is appended to `<body>`, not inside `.nu-graph`, so its selectors
+/// are *not* descendants of `.nu-graph`.  All class names are prefixed with
+/// `.nu-graph-modal-` to keep them safely namespaced from host page styles.
+fn render_modal_style(out: &mut String) {
+    // `{{` and `}}` are literal CSS selector braces, not Rust placeholders.
+    let _ = write!(
+        out,
+        r"<style>
+.nu-graph-modal-backdrop {{
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999; animation: nu-graph-modal-fade .15s ease-out;
+}}
+.nu-graph-modal {{
+  background: white; border-radius: 8px; padding: 1.25rem 1.5rem;
+  min-width: 320px; max-width: 92vw; max-height: 86vh; overflow: auto;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25); position: relative;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #2c3e50;
+}}
+.nu-graph-modal-close {{
+  position: absolute; top: .5rem; right: .6rem;
+  background: transparent; border: none; cursor: pointer;
+  font-size: 1.4rem; line-height: 1; color: #666; padding: .2rem .4rem;
+}}
+.nu-graph-modal-close:hover {{ color: #2c3e50; }}
+.nu-graph-modal-title {{
+  margin: 0 1.5rem .25rem 0; font-size: 1.1rem; font-weight: 600;
+}}
+.nu-graph-modal-subtitle {{
+  margin: 0 0 .9rem 0; font-size: .85rem; color: #666;
+}}
+.nu-graph-modal-table {{
+  width: 100%; border-collapse: collapse; font-size: .9rem;
+}}
+.nu-graph-modal-table th, .nu-graph-modal-table td {{
+  padding: .35rem .6rem; text-align: right; border-bottom: 1px solid #e8e8e8;
+}}
+.nu-graph-modal-table th:first-child, .nu-graph-modal-table td:first-child {{
+  text-align: left; font-weight: 600;
+}}
+.nu-graph-modal-table thead th {{
+  background: #f4f6f8; font-size: .75rem; text-transform: uppercase;
+  letter-spacing: .03em; color: #555;
+}}
+@keyframes nu-graph-modal-fade {{
+  from {{ opacity: 0; }}
+  to   {{ opacity: 1; }}
+}}
+</style>
+"
+    );
+}
+
 /// Emit the legend bar (complexity colour key + edge type key).
 fn render_legend(out: &mut String) {
     let _ = write!(
@@ -262,16 +319,18 @@ fn render_graph_html(spec: &CurriculumGraphSpec, id: &str, out: &mut String) {
 fn render_script(spec: &CurriculumGraphSpec, id: &str, out: &mut String) {
     let edges_json = edges_to_json(&spec.edges);
     let critical_json = ids_to_json(&spec.critical_path_ids);
+    let nodes_json = nodes_to_json(&spec.nodes);
     let id_json = js_string(id);
 
     let _ = write!(
         out,
         "<script>\n\
          {GRAPH_VANILLA_JS}\n\
-         nuGraphs.register({id_json}, {{ edges: {edges_json}, criticalPath: {critical_json} }});\n\
+         nuGraphs.register({id_json}, {{ edges: {edges_json}, criticalPath: {critical_json}, nodes: {nodes_json} }});\n\
          if (document.readyState !== 'loading') {{\n\
            nuGraphs.draw({id_json});\n\
            nuGraphs.attachHoverHandlers();\n\
+           nuGraphs.attachClickHandlers();\n\
          }}\n\
          </script>\n",
     );
@@ -328,6 +387,38 @@ fn ids_to_json(ids: &[String]) -> String {
     format!("[{}]", items.join(","))
 }
 
+/// Serialize per-course node data to a JSON array, used by the JS modal popup.
+///
+/// Each entry includes the course id/name/credits, this plan's metrics
+/// (complexity/delay/blocking), and — when available — the cross-plan medians.
+/// `medianComplexity` / `medianDelay` / `medianBlocking` are emitted as `null`
+/// when the spec was built without an aggregator (single-plan reports).
+fn nodes_to_json(nodes: &[super::curriculum_graph::CourseNode]) -> String {
+    let items: Vec<String> = nodes
+        .iter()
+        .map(|n| {
+            format!(
+                "{{\"id\":{},\"name\":{},\"credits\":{},\"complexity\":{},\"delay\":{},\"blocking\":{},\"medianComplexity\":{},\"medianDelay\":{},\"medianBlocking\":{}}}",
+                js_string(&n.id),
+                js_string(&n.name),
+                n.credits,
+                n.complexity,
+                n.delay,
+                n.blocking,
+                optional_f32(n.median_complexity),
+                optional_f32(n.median_delay),
+                optional_f32(n.median_blocking),
+            )
+        })
+        .collect();
+    format!("[{}]", items.join(","))
+}
+
+/// Render an `Option<f32>` as a JSON literal: a number when `Some`, `null` otherwise.
+fn optional_f32(v: Option<f32>) -> String {
+    v.map_or_else(|| "null".to_string(), |x| format!("{x}"))
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -346,16 +437,26 @@ mod tests {
                     name: "Intro to CS".to_string(),
                     credits: 4.0,
                     complexity: 3,
+                    delay: 1,
+                    blocking: 1,
                     on_critical_path: true,
                     term: 1,
+                    median_complexity: None,
+                    median_delay: None,
+                    median_blocking: None,
                 },
                 CourseNode {
                     id: "CS201".to_string(),
                     name: "Data Structures".to_string(),
                     credits: 4.0,
                     complexity: 8,
+                    delay: 2,
+                    blocking: 0,
                     on_critical_path: true,
                     term: 2,
+                    median_complexity: None,
+                    median_delay: None,
+                    median_blocking: None,
                 },
             ],
             edges: vec![GraphEdge {
@@ -470,5 +571,62 @@ mod tests {
         // The spec has one Prerequisite edge; dashes must be false
         assert!(html.contains("\"dashes\":false"));
         assert!(!html.contains("\"dashes\":true"));
+    }
+
+    #[test]
+    fn test_render_includes_node_data_in_register_call() {
+        let html = VanillaJsRenderer.render(&minimal_spec());
+        // The register call must carry per-node detail used by the modal.
+        assert!(
+            html.contains("nodes:"),
+            "register call should include nodes array"
+        );
+        assert!(html.contains("\"complexity\":3"));
+        assert!(html.contains("\"complexity\":8"));
+        assert!(html.contains("\"delay\":1"));
+        assert!(html.contains("\"delay\":2"));
+        assert!(html.contains("\"blocking\":1"));
+    }
+
+    #[test]
+    fn test_render_emits_null_for_missing_medians() {
+        // minimal_spec() builds nodes with all median_* = None
+        let html = VanillaJsRenderer.render(&minimal_spec());
+        assert!(html.contains("\"medianComplexity\":null"));
+        assert!(html.contains("\"medianDelay\":null"));
+        assert!(html.contains("\"medianBlocking\":null"));
+    }
+
+    #[test]
+    fn test_render_emits_numbers_for_present_medians() {
+        let mut spec = minimal_spec();
+        spec.nodes[0].median_complexity = Some(5.5);
+        spec.nodes[0].median_delay = Some(2.0);
+        spec.nodes[0].median_blocking = Some(0.5);
+        let html = VanillaJsRenderer.render(&spec);
+        assert!(html.contains("\"medianComplexity\":5.5"));
+        assert!(html.contains("\"medianDelay\":2"));
+        assert!(html.contains("\"medianBlocking\":0.5"));
+    }
+
+    #[test]
+    fn test_render_includes_modal_css_classes() {
+        let html = VanillaJsRenderer.render(&minimal_spec());
+        assert!(html.contains(".nu-graph-modal-backdrop"));
+        assert!(html.contains(".nu-graph-modal-close"));
+        assert!(html.contains(".nu-graph-modal-table"));
+    }
+
+    #[test]
+    fn test_render_wires_up_click_handlers() {
+        let html = VanillaJsRenderer.render(&minimal_spec());
+        assert!(html.contains("attachClickHandlers"));
+    }
+
+    #[test]
+    fn test_optional_f32_serialization() {
+        assert_eq!(optional_f32(None), "null");
+        assert_eq!(optional_f32(Some(0.0)), "0");
+        assert_eq!(optional_f32(Some(2.5)), "2.5");
     }
 }

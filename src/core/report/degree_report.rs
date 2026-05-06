@@ -529,7 +529,13 @@ impl DegreeReportGenerator {
         use crate::core::report::visualization::{
             spec_from_scored_plan, CurriculumGraphRenderer, VanillaJsRenderer,
         };
-        let spec = spec_from_scored_plan(ctx.school, ctx.equivalences, plan, plan_id);
+        let spec = spec_from_scored_plan(
+            ctx.school,
+            ctx.equivalences,
+            plan,
+            Some(ctx.aggregator),
+            plan_id,
+        );
         VanillaJsRenderer.render(&spec)
     }
 

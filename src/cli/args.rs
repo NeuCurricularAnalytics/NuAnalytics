@@ -250,6 +250,9 @@ pub enum Command {
     /// # Run full degree analysis (default action)
     /// nuanalytics degree samples/degrees/csu-cs-bscs-general.yaml
     ///
+    /// # Batch mode — process every YAML in a directory
+    /// nuanalytics degree samples/degrees/*.yaml
+    ///
     /// # Validate a degree program only
     /// nuanalytics degree --validate samples/degrees/csu-cs-bscs-general.yaml
     ///
@@ -260,9 +263,11 @@ pub enum Command {
     /// nuanalytics degree --analyze --calc-strategy mean --sample-plans 10 degree.yaml
     /// ```
     Degree {
-        /// Path to the degree program YAML file
-        #[arg(value_name = "FILE")]
-        file: Option<PathBuf>,
+        /// Paths to one or more degree program YAML files. Each file is processed
+        /// independently in order; per-file failures are reported but do not
+        /// abort the batch.
+        #[arg(value_name = "FILES", num_args = 0..)]
+        files: Vec<PathBuf>,
 
         /// Validate the degree program YAML file
         #[arg(long)]

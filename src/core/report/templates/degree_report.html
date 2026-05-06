@@ -407,147 +407,7 @@
             margin-right: 0.25rem;
         }
 
-        /* Curriculum Graph within special plans */
-        .special-plan .curriculum-graph-wrapper {
-            overflow-x: auto;
-            margin: 1rem 0;
-            position: relative;
-        }
-
-        .special-plan .curriculum-graph {
-            display: flex;
-            gap: 0;
-            width: 100%;
-            position: relative;
-        }
-
-        .special-plan .term-column {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            flex: 1;
-            min-width: 90px;
-            background: var(--light-bg);
-            border-radius: 4px;
-            margin: 0 12px;
-            padding: 8px 4px;
-        }
-
-        .special-plan .term-header {
-            font-weight: 600;
-            font-size: 0.7rem;
-            color: var(--primary-color);
-            margin-bottom: 8px;
-            padding: 3px 6px;
-            background: white;
-            border-radius: 4px;
-            width: 100%;
-            text-align: center;
-        }
-
-        .special-plan .term-courses {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            width: 100%;
-        }
-
-        .special-plan .course-node {
-            position: relative;
-            background: white;
-            border-radius: 4px;
-            padding: 8px 4px 6px;
-            text-align: center;
-            border: 2px solid #37474f;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
-            margin-top: 8px;
-        }
-
-        .special-plan .course-node:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 3px 6px rgba(0,0,0,0.15);
-        }
-
-        .special-plan .course-node.faded { opacity: 0.25; }
-        .special-plan .course-node.highlighted {
-            border-color: var(--secondary-color);
-            border-width: 2px;
-            box-shadow: 0 0 6px rgba(52, 152, 219, 0.5);
-        }
-        .special-plan .course-node.critical-highlight {
-            border-color: #9C27B0;
-            border-width: 2px;
-            box-shadow: 0 0 6px rgba(156, 39, 176, 0.5);
-        }
-
-        .special-plan .course-node .complexity-badge {
-            position: absolute;
-            top: -10px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.55rem;
-            font-weight: bold;
-            color: white;
-            border: 2px solid white;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-        }
-
-        .special-plan .course-node .course-id {
-            font-weight: 600;
-            font-size: 0.65rem;
-            color: var(--primary-color);
-            margin-top: 4px;
-        }
-
-        .special-plan .course-node .course-name {
-            font-size: 0.55rem;
-            color: #666;
-            line-height: 1.1;
-            max-height: 2.2em;
-            overflow: hidden;
-        }
-
-        .complexity-low { background-color: #4CAF50; }
-        .complexity-medium { background-color: #FF9800; }
-        .complexity-high { background-color: #F44336; }
-
-        .special-plan .connections-svg {
-            position: absolute;
-            top: 0;
-            left: 0;
-            pointer-events: none;
-            width: 100%;
-            height: 100%;
-            min-height: 400px;
-        }
-
-        .prereq-line { stroke: #666; stroke-width: 1.5; fill: none; transition: stroke 0.2s, opacity 0.2s; }
-        .coreq-line { stroke: var(--secondary-color); stroke-width: 1.5; stroke-dasharray: 4,3; fill: none; }
-        .prereq-line.faded, .coreq-line.faded { opacity: 0.15; }
-        .prereq-line.highlighted, .coreq-line.highlighted { stroke: var(--secondary-color); stroke-width: 2; }
-        .prereq-line.critical, .coreq-line.critical { stroke: #9C27B0; stroke-width: 2.5; }
-
-        .special-plan .graph-legend {
-            display: flex;
-            gap: 1rem;
-            margin: 0.5rem 0;
-            flex-wrap: wrap;
-            font-size: 0.75rem;
-        }
-
-        .special-plan .legend-item { display: flex; align-items: center; gap: 0.3rem; }
-        .special-plan .legend-color { width: 14px; height: 14px; border-radius: 50%; }
-        .special-plan .legend-line { width: 24px; height: 2px; }
-        .special-plan .legend-line.solid { background: #666; }
-        .special-plan .legend-line.dashed { background: repeating-linear-gradient(90deg, var(--secondary-color), var(--secondary-color) 4px, transparent 4px, transparent 7px); }
-        .special-plan .legend-line.critical { background: #9C27B0; height: 2.5px; }
+        /* Curriculum graphs are rendered by VanillaJsRenderer with scoped .nu-graph CSS */
 
         /* Print styles */
         @media print {
@@ -715,7 +575,7 @@
             }
 
         });
-        // Graph JS is now embedded inline by VanillaJsRenderer inside each {{special_plans_section}} plan.
+        // Graph JS is embedded inline within each special plan's HTML block by VanillaJsRenderer.
     </script>
 </body>
 </html>

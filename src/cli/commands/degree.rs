@@ -22,7 +22,7 @@ use nu_analytics::core::report::term_scheduler::SchedulerConfig;
 use nu_analytics::core::statistics::aggregator::{AggregatorConfig, MetricsAggregator};
 use nu_analytics::core::validate_degree_program;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 
 /// Validate a degree program YAML file
@@ -487,24 +487,26 @@ pub struct DegreeOptions {
     pub include_courses: Option<Vec<String>>,
 }
 
-/// Run the degree command
+/// Run the degree command for one or more YAML files.
 ///
-/// Dispatches to the appropriate handler based on the provided options.
+/// Each file is processed independently in order. Per-file failures are
+/// reported but do not abort the batch; the process exits non-zero if any
+/// file failed. Non-YAML paths (e.g., from a `samples/degrees/*` glob that
+/// matches `.md` or other files) are skipped with a warning.
 ///
 /// # Arguments
-/// * `file` - Optional path to degree YAML file
-/// * `options` - Degree command options
-/// * `config` - Application configuration
-pub fn run(file: Option<&Path>, options: &DegreeOptions, config: &Config) {
-    // Check if a file was provided
-    let Some(degree_path) = file else {
+/// * `files`   - Paths to degree YAML files (length 0 prints usage and exits)
+/// * `options` - Degree command options applied uniformly to every file
+/// * `config`  - Application configuration
+pub fn run(files: &[PathBuf], options: &DegreeOptions, config: &Config) {
+    if files.is_empty() {
         eprintln!("Error: No degree file specified.");
-        eprintln!("Usage: nuanalytics degree [OPTIONS] <FILE>");
+        eprintln!("Usage: nuanalytics degree [OPTIONS] <FILES>...");
         eprintln!("Run 'nuanalytics degree --help' for usage information.");
         process::exit(1);
-    };
+    }
 
-    // Default to analyze if no action specified
+    // Default to analyze if no action flag is set — applied once for the batch.
     let options = if !options.validate && !options.print_graph && !options.audit && !options.analyze
     {
         DegreeOptions {
@@ -515,70 +517,105 @@ pub fn run(file: Option<&Path>, options: &DegreeOptions, config: &Config) {
         options.clone()
     };
 
+    let yaml_files: Vec<&Path> = files
+        .iter()
+        .filter_map(|p| {
+            if is_yaml_path(p) {
+                Some(p.as_path())
+            } else {
+                eprintln!("Skipping non-YAML file: {}", p.display());
+                None
+            }
+        })
+        .collect();
+
+    if yaml_files.is_empty() {
+        eprintln!("Error: No YAML files to process after filtering.");
+        process::exit(1);
+    }
+
+    let total = yaml_files.len();
+    let mut had_failure = false;
+
+    for (idx, path) in yaml_files.iter().enumerate() {
+        if total > 1 {
+            if idx > 0 {
+                print_separator();
+            }
+            println!("=== [{}/{}] {} ===", idx + 1, total, path.display());
+        }
+        if run_one(path, &options, config).is_err() {
+            had_failure = true;
+        }
+    }
+
+    if had_failure {
+        process::exit(1);
+    }
+}
+
+/// Returns `true` if the path has a `.yaml` or `.yml` extension (case-insensitive).
+fn is_yaml_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
+}
+
+/// Process a single degree YAML file, running every requested action.
+///
+/// Returns `Err(())` if any action failed for this file. Errors are written
+/// to stderr inline so the batch caller does not need to format them.
+fn run_one(degree_path: &Path, options: &DegreeOptions, config: &Config) -> Result<(), ()> {
     let mut has_error = false;
     let mut actions_run = 0;
 
-    // Run validation if requested
     if options.validate {
         if actions_run > 0 {
             print_separator();
         }
-        match validate_degree(degree_path, options.verbose) {
-            Ok(()) => {}
-            Err(e) => {
-                eprintln!("Error: {e}");
-                has_error = true;
-            }
+        if let Err(e) = validate_degree(degree_path, options.verbose) {
+            eprintln!("Error: {e}");
+            has_error = true;
         }
         actions_run += 1;
     }
 
-    // Print graph if requested
     if options.print_graph {
         if actions_run > 0 {
             print_separator();
         }
-        match print_graph(degree_path, options.verbose) {
-            Ok(()) => {}
-            Err(e) => {
-                eprintln!("Error: {e}");
-                has_error = true;
-            }
+        if let Err(e) = print_graph(degree_path, options.verbose) {
+            eprintln!("Error: {e}");
+            has_error = true;
         }
         actions_run += 1;
     }
 
-    // Run audit if requested
     if options.audit {
         if actions_run > 0 {
             print_separator();
         }
-        match audit_degree(degree_path, config, options.verbose) {
-            Ok(()) => {}
-            Err(e) => {
-                eprintln!("Error: {e}");
-                has_error = true;
-            }
+        if let Err(e) = audit_degree(degree_path, config, options.verbose) {
+            eprintln!("Error: {e}");
+            has_error = true;
         }
         actions_run += 1;
     }
 
-    // Run full analysis if requested
     if options.analyze {
         if actions_run > 0 {
             print_separator();
         }
-        match analyze_degree(degree_path, &options, config) {
-            Ok(()) => {}
-            Err(e) => {
-                eprintln!("Error: {e}");
-                has_error = true;
-            }
+        if let Err(e) = analyze_degree(degree_path, options, config) {
+            eprintln!("Error: {e}");
+            has_error = true;
         }
     }
 
     if has_error {
-        process::exit(1);
+        Err(())
+    } else {
+        Ok(())
     }
 }
 
@@ -2064,4 +2101,41 @@ fn print_separator() {
     println!();
     println!("================================================================================");
     println!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_yaml_path_yaml_extension() {
+        assert!(is_yaml_path(Path::new("foo.yaml")));
+        assert!(is_yaml_path(Path::new("samples/degrees/foo.yaml")));
+    }
+
+    #[test]
+    fn test_is_yaml_path_yml_extension() {
+        assert!(is_yaml_path(Path::new("foo.yml")));
+    }
+
+    #[test]
+    fn test_is_yaml_path_case_insensitive() {
+        assert!(is_yaml_path(Path::new("foo.YAML")));
+        assert!(is_yaml_path(Path::new("foo.YML")));
+        assert!(is_yaml_path(Path::new("foo.Yaml")));
+    }
+
+    #[test]
+    fn test_is_yaml_path_other_extensions_rejected() {
+        assert!(!is_yaml_path(Path::new("foo.md")));
+        assert!(!is_yaml_path(Path::new("foo.json")));
+        assert!(!is_yaml_path(Path::new("foo.txt")));
+        assert!(!is_yaml_path(Path::new("foo")));
+    }
+
+    #[test]
+    fn test_is_yaml_path_no_extension() {
+        assert!(!is_yaml_path(Path::new("README")));
+        assert!(!is_yaml_path(Path::new("/path/to/dir/")));
+    }
 }
