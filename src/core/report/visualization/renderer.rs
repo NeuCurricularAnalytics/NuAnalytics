@@ -7,7 +7,9 @@
 
 use std::fmt::Write as FmtWrite;
 
-use super::curriculum_graph::{CurriculumGraphSpec, EdgeType};
+use serde::Serialize;
+
+use super::curriculum_graph::{CourseNode, CurriculumGraphSpec, EdgeType, GraphEdge};
 
 // ── Embedded JS asset ─────────────────────────────────────────────────────────
 
@@ -312,15 +314,72 @@ fn render_graph_html(spec: &CurriculumGraphSpec, id: &str, out: &mut String) {
     let _ = writeln!(out, "</div>"); // nu-graph
 }
 
+/// JS-payload shape for one edge.  The renderer flattens [`EdgeType`] to a
+/// boolean `dashes` field because the JS draws prerequisite vs corequisite
+/// edges as solid vs dashed lines.
+#[derive(Serialize)]
+struct EdgeJs<'a> {
+    from: &'a str,
+    to: &'a str,
+    dashes: bool,
+}
+
+impl<'a> From<&'a GraphEdge> for EdgeJs<'a> {
+    fn from(e: &'a GraphEdge) -> Self {
+        Self {
+            from: &e.from,
+            to: &e.to,
+            dashes: matches!(e.edge_type, EdgeType::Corequisite),
+        }
+    }
+}
+
+/// JS-payload shape for one course node.  Differs from [`CourseNode`] in two
+/// ways: field names are camelCase (JS convention) and `term` /
+/// `on_critical_path` are dropped because the modal does not display them.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NodeJs<'a> {
+    id: &'a str,
+    name: &'a str,
+    credits: f32,
+    complexity: usize,
+    delay: usize,
+    blocking: usize,
+    median_complexity: Option<f32>,
+    median_delay: Option<f32>,
+    median_blocking: Option<f32>,
+}
+
+impl<'a> From<&'a CourseNode> for NodeJs<'a> {
+    fn from(n: &'a CourseNode) -> Self {
+        Self {
+            id: &n.id,
+            name: &n.name,
+            credits: n.credits,
+            complexity: n.complexity,
+            delay: n.delay,
+            blocking: n.blocking,
+            median_complexity: n.median_complexity,
+            median_delay: n.median_delay,
+            median_blocking: n.median_blocking,
+        }
+    }
+}
+
 /// Emit the `<script>` block that registers graph data and triggers the first draw.
 ///
 /// The shared `GRAPH_VANILLA_JS` asset is included inline but guards itself with
 /// `if (!window.nuGraphs)` so it is safe to emit multiple times on one page.
 fn render_script(spec: &CurriculumGraphSpec, id: &str, out: &mut String) {
-    let edges_json = edges_to_json(&spec.edges);
-    let critical_json = ids_to_json(&spec.critical_path_ids);
-    let nodes_json = nodes_to_json(&spec.nodes);
-    let id_json = js_string(id);
+    // serde_json::to_string never fails for these fully-owned, finite types.
+    let edges_js: Vec<EdgeJs<'_>> = spec.edges.iter().map(EdgeJs::from).collect();
+    let nodes_js: Vec<NodeJs<'_>> = spec.nodes.iter().map(NodeJs::from).collect();
+    let edges_json = serde_json::to_string(&edges_js).unwrap_or_else(|_| "[]".to_string());
+    let nodes_json = serde_json::to_string(&nodes_js).unwrap_or_else(|_| "[]".to_string());
+    let critical_json =
+        serde_json::to_string(&spec.critical_path_ids).unwrap_or_else(|_| "[]".to_string());
+    let id_json = serde_json::to_string(id).unwrap_or_else(|_| "\"\"".to_string());
 
     let _ = write!(
         out,
@@ -353,70 +412,6 @@ pub(crate) fn escape_html(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
-}
-
-/// Serialize a string as a JS string literal (double-quoted, basic escaping).
-fn js_string(s: &str) -> String {
-    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
-    format!("\"{escaped}\"")
-}
-
-/// Serialize graph edges to a JSON array.
-///
-/// Each edge becomes `{"from":"ID","to":"ID","dashes":bool}` where `dashes`
-/// is `true` for corequisite edges and `false` for prerequisites.
-fn edges_to_json(edges: &[super::curriculum_graph::GraphEdge]) -> String {
-    let items: Vec<String> = edges
-        .iter()
-        .map(|e| {
-            let dashes = matches!(e.edge_type, EdgeType::Corequisite);
-            format!(
-                "{{\"from\":{},\"to\":{},\"dashes\":{}}}",
-                js_string(&e.from),
-                js_string(&e.to),
-                dashes
-            )
-        })
-        .collect();
-    format!("[{}]", items.join(","))
-}
-
-/// Serialize a list of course IDs to a JSON array of strings.
-fn ids_to_json(ids: &[String]) -> String {
-    let items: Vec<String> = ids.iter().map(|id| js_string(id)).collect();
-    format!("[{}]", items.join(","))
-}
-
-/// Serialize per-course node data to a JSON array, used by the JS modal popup.
-///
-/// Each entry includes the course id/name/credits, this plan's metrics
-/// (complexity/delay/blocking), and — when available — the cross-plan medians.
-/// `medianComplexity` / `medianDelay` / `medianBlocking` are emitted as `null`
-/// when the spec was built without an aggregator (single-plan reports).
-fn nodes_to_json(nodes: &[super::curriculum_graph::CourseNode]) -> String {
-    let items: Vec<String> = nodes
-        .iter()
-        .map(|n| {
-            format!(
-                "{{\"id\":{},\"name\":{},\"credits\":{},\"complexity\":{},\"delay\":{},\"blocking\":{},\"medianComplexity\":{},\"medianDelay\":{},\"medianBlocking\":{}}}",
-                js_string(&n.id),
-                js_string(&n.name),
-                n.credits,
-                n.complexity,
-                n.delay,
-                n.blocking,
-                optional_f32(n.median_complexity),
-                optional_f32(n.median_delay),
-                optional_f32(n.median_blocking),
-            )
-        })
-        .collect();
-    format!("[{}]", items.join(","))
-}
-
-/// Render an `Option<f32>` as a JSON literal: a number when `Some`, `null` otherwise.
-fn optional_f32(v: Option<f32>) -> String {
-    v.map_or_else(|| "null".to_string(), |x| format!("{x}"))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -533,36 +528,25 @@ mod tests {
     }
 
     #[test]
-    fn test_edges_to_json_prereq_and_coreq() {
+    fn test_render_encodes_both_edge_types() {
         use super::super::curriculum_graph::{EdgeType, GraphEdge};
-        let edges = vec![
-            GraphEdge {
-                from: "CS101".to_string(),
-                to: "CS201".to_string(),
-                edge_type: EdgeType::Prerequisite,
-            },
-            GraphEdge {
-                from: "CS101".to_string(),
-                to: "CS101L".to_string(),
-                edge_type: EdgeType::Corequisite,
-            },
-        ];
-        let json = edges_to_json(&edges);
-        assert!(json.contains("\"from\":\"CS101\""));
-        assert!(json.contains("\"to\":\"CS201\""));
-        assert!(json.contains("\"dashes\":false"));
-        assert!(json.contains("\"dashes\":true"));
-    }
-
-    #[test]
-    fn test_ids_to_json_multiple() {
-        let ids = vec!["CS101".to_string(), "CS201".to_string()];
-        assert_eq!(ids_to_json(&ids), "[\"CS101\",\"CS201\"]");
-    }
-
-    #[test]
-    fn test_ids_to_json_empty() {
-        assert_eq!(ids_to_json(&[]), "[]");
+        let mut spec = minimal_spec();
+        spec.edges.push(GraphEdge {
+            from: "CS101".to_string(),
+            to: "CS101L".to_string(),
+            edge_type: EdgeType::Corequisite,
+        });
+        let html = VanillaJsRenderer.render(&spec);
+        assert!(html.contains("\"from\":\"CS101\""));
+        assert!(html.contains("\"to\":\"CS201\""));
+        assert!(
+            html.contains("\"dashes\":false"),
+            "prerequisite edge should serialize as dashes:false"
+        );
+        assert!(
+            html.contains("\"dashes\":true"),
+            "corequisite edge should serialize as dashes:true"
+        );
     }
 
     #[test]
@@ -571,6 +555,13 @@ mod tests {
         // The spec has one Prerequisite edge; dashes must be false
         assert!(html.contains("\"dashes\":false"));
         assert!(!html.contains("\"dashes\":true"));
+    }
+
+    #[test]
+    fn test_render_critical_path_serializes_as_array() {
+        let html = VanillaJsRenderer.render(&minimal_spec());
+        // critical_path_ids = ["CS101", "CS201"] should serialize verbatim.
+        assert!(html.contains("criticalPath: [\"CS101\",\"CS201\"]"));
     }
 
     #[test]
@@ -604,8 +595,9 @@ mod tests {
         spec.nodes[0].median_delay = Some(2.0);
         spec.nodes[0].median_blocking = Some(0.5);
         let html = VanillaJsRenderer.render(&spec);
+        // serde_json serialises f32 with a fractional part, so 2.0 → "2.0".
         assert!(html.contains("\"medianComplexity\":5.5"));
-        assert!(html.contains("\"medianDelay\":2"));
+        assert!(html.contains("\"medianDelay\":2.0"));
         assert!(html.contains("\"medianBlocking\":0.5"));
     }
 
@@ -621,12 +613,5 @@ mod tests {
     fn test_render_wires_up_click_handlers() {
         let html = VanillaJsRenderer.render(&minimal_spec());
         assert!(html.contains("attachClickHandlers"));
-    }
-
-    #[test]
-    fn test_optional_f32_serialization() {
-        assert_eq!(optional_f32(None), "null");
-        assert_eq!(optional_f32(Some(0.0)), "0");
-        assert_eq!(optional_f32(Some(2.5)), "2.5");
     }
 }

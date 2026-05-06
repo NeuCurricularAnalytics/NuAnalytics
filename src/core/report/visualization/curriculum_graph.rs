@@ -15,7 +15,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-use crate::core::metrics::CurriculumMetrics;
+use crate::core::metrics::{CourseMetrics, CurriculumMetrics};
 use crate::core::models::{School, DAG};
 use crate::core::report::term_scheduler::{course_credits_with_fallback, TermPlan};
 use crate::core::report::ReportContext;
@@ -161,47 +161,8 @@ pub fn spec_from_components(
         .map(String::as_str)
         .collect();
 
-    // Build nodes in term/slot order.
-    let mut nodes = Vec::new();
-    let mut terms = Vec::new();
-
-    for term in &term_plan.terms {
-        if term.courses.is_empty() {
-            continue;
-        }
-        let mut group = TermGroup {
-            number: term.number,
-            course_ids: Vec::new(),
-        };
-        for course_key in &term.courses {
-            let name = school
-                .get_course(course_key)
-                .map_or_else(|| course_key.clone(), |c| c.name.clone());
-            let credits = course_credits_with_fallback(school, course_key);
-            let course_metric = metrics.get(course_key);
-            let complexity = course_metric.map_or(0, |m| m.complexity);
-            let delay = course_metric.map_or(0, |m| m.delay);
-            let blocking = course_metric.map_or(0, |m| m.blocking);
-            let (median_complexity, median_delay, median_blocking) =
-                aggregator_medians(aggregator, course_key);
-
-            nodes.push(CourseNode {
-                id: course_key.clone(),
-                name,
-                credits,
-                complexity,
-                delay,
-                blocking,
-                on_critical_path: critical_set.contains(course_key.as_str()),
-                term: term.number,
-                median_complexity,
-                median_delay,
-                median_blocking,
-            });
-            group.course_ids.push(course_key.clone());
-        }
-        terms.push(group);
-    }
+    let (nodes, terms) =
+        build_nodes_and_terms(school, term_plan, metrics, &critical_set, aggregator);
 
     // Build edges from DAG, filtered to courses in the plan.
     let mut edges = Vec::new();
@@ -296,47 +257,13 @@ pub fn spec_from_scored_plan(
 
     let plan_courses: HashSet<&str> = plan.variant.courses.iter().map(String::as_str).collect();
 
-    // Build nodes in term/slot order.
-    let mut nodes = Vec::new();
-    let mut terms = Vec::new();
-
-    for term in &plan.schedule.terms {
-        if term.courses.is_empty() {
-            continue;
-        }
-        let mut group = TermGroup {
-            number: term.number,
-            course_ids: Vec::new(),
-        };
-        for course_key in &term.courses {
-            let name = school
-                .get_course(course_key)
-                .map_or_else(|| course_key.clone(), |c| c.name.clone());
-            let credits = course_credits_with_fallback(school, course_key);
-            let course_metric = plan.course_metrics.get(course_key);
-            let complexity = course_metric.map_or(0, |m| m.complexity);
-            let delay = course_metric.map_or(0, |m| m.delay);
-            let blocking = course_metric.map_or(0, |m| m.blocking);
-            let (median_complexity, median_delay, median_blocking) =
-                aggregator_medians(aggregator, course_key);
-
-            nodes.push(CourseNode {
-                id: course_key.clone(),
-                name,
-                credits,
-                complexity,
-                delay,
-                blocking,
-                on_critical_path: critical_set.contains(course_key.as_str()),
-                term: term.number,
-                median_complexity,
-                median_delay,
-                median_blocking,
-            });
-            group.course_ids.push(course_key.clone());
-        }
-        terms.push(group);
-    }
+    let (nodes, terms) = build_nodes_and_terms(
+        school,
+        &plan.schedule,
+        &plan.course_metrics,
+        &critical_set,
+        aggregator,
+    );
 
     // Build edges via prerequisite resolution with equivalence awareness.
     let edges = build_edges_from_courses(school, equivalences, &plan_courses);
@@ -347,6 +274,80 @@ pub fn spec_from_scored_plan(
         edges,
         terms,
         critical_path_ids,
+    }
+}
+
+/// Build the per-term [`CourseNode`] and [`TermGroup`] sequences for a spec.
+///
+/// Shared between [`spec_from_components`] and [`spec_from_scored_plan`].
+/// Both pass the same `metrics` shape (`HashMap<String, CourseMetrics>`),
+/// since [`CurriculumMetrics`] is just a type alias for that map.
+fn build_nodes_and_terms(
+    school: &School,
+    term_plan: &TermPlan,
+    metrics: &HashMap<String, CourseMetrics>,
+    critical_set: &HashSet<&str>,
+    aggregator: Option<&MetricsAggregator>,
+) -> (Vec<CourseNode>, Vec<TermGroup>) {
+    let mut nodes = Vec::new();
+    let mut terms = Vec::new();
+
+    for term in &term_plan.terms {
+        if term.courses.is_empty() {
+            continue;
+        }
+        let mut group = TermGroup {
+            number: term.number,
+            course_ids: Vec::new(),
+        };
+        for course_key in &term.courses {
+            nodes.push(build_course_node(
+                school,
+                course_key,
+                term.number,
+                metrics.get(course_key),
+                critical_set.contains(course_key.as_str()),
+                aggregator,
+            ));
+            group.course_ids.push(course_key.clone());
+        }
+        terms.push(group);
+    }
+
+    (nodes, terms)
+}
+
+/// Construct a single [`CourseNode`] from already-looked-up pieces.
+fn build_course_node(
+    school: &School,
+    course_key: &str,
+    term_number: usize,
+    course_metric: Option<&CourseMetrics>,
+    on_critical_path: bool,
+    aggregator: Option<&MetricsAggregator>,
+) -> CourseNode {
+    let name = school
+        .get_course(course_key)
+        .map_or_else(|| course_key.to_string(), |c| c.name.clone());
+    let credits = course_credits_with_fallback(school, course_key);
+    let complexity = course_metric.map_or(0, |m| m.complexity);
+    let delay = course_metric.map_or(0, |m| m.delay);
+    let blocking = course_metric.map_or(0, |m| m.blocking);
+    let (median_complexity, median_delay, median_blocking) =
+        aggregator_medians(aggregator, course_key);
+
+    CourseNode {
+        id: course_key.to_string(),
+        name,
+        credits,
+        complexity,
+        delay,
+        blocking,
+        on_critical_path,
+        term: term_number,
+        median_complexity,
+        median_delay,
+        median_blocking,
     }
 }
 
@@ -801,5 +802,79 @@ mod tests {
         assert_eq!(coreq_edges.len(), 1);
         assert_eq!(coreq_edges[0].from, "CS101");
         assert_eq!(coreq_edges[0].to, "CS101L");
+    }
+
+    #[test]
+    fn test_aggregator_medians_returns_none_for_unseen_course() {
+        use crate::core::statistics::aggregator::{AggregatorConfig, MetricsAggregator};
+        let agg = MetricsAggregator::new(AggregatorConfig::default());
+        // Aggregator present but course never observed → all None.
+        assert_eq!(
+            aggregator_medians(Some(&agg), "GHOST101"),
+            (None, None, None)
+        );
+        // No aggregator at all → also all None.
+        assert_eq!(aggregator_medians(None, "ANY"), (None, None, None));
+    }
+
+    #[test]
+    fn test_spec_from_scored_plan_threads_aggregator() {
+        use crate::core::degree::plan_selector::{PlanScore, ScoredPlan};
+        use crate::core::degree::plan_variant::PlanVariant;
+        use crate::core::metrics::CourseMetrics;
+        use crate::core::models::Course;
+        use crate::core::report::term_scheduler::{Term, TermPlan};
+        use crate::core::statistics::aggregator::{AggregatorConfig, MetricsAggregator};
+
+        let mut school = School::new("T".to_string());
+        school.add_course(Course::new(
+            "CS101".to_string(),
+            "CS".to_string(),
+            "101".to_string(),
+            4.0,
+        ));
+
+        let mut course_metrics = HashMap::new();
+        course_metrics.insert(
+            "CS101".to_string(),
+            CourseMetrics {
+                delay: 2,
+                blocking: 4,
+                complexity: 6,
+                centrality: 0,
+            },
+        );
+
+        let mut schedule = TermPlan::new(1, false, 15.0);
+        schedule.terms = vec![Term {
+            number: 1,
+            courses: vec!["CS101".to_string()],
+            total_credits: 4.0,
+        }];
+
+        let plan = ScoredPlan {
+            variant: PlanVariant::from_parts(vec!["CS101".to_string()], HashMap::new(), 4.0),
+            score: PlanScore {
+                terms_required: 1,
+                total_complexity: 6,
+                longest_delay: 2,
+                longest_delay_chain: vec!["CS101".to_string()],
+                is_calc_ready: false,
+            },
+            schedule,
+            course_metrics: course_metrics.clone(),
+        };
+
+        // Without an aggregator, medians stay None.
+        let spec_no_agg = spec_from_scored_plan(&school, &HashMap::new(), &plan, None, "no-agg");
+        assert!(spec_no_agg.nodes[0].median_complexity.is_none());
+
+        // With an aggregator that has seen this course, medians populate.
+        let mut agg = MetricsAggregator::new(AggregatorConfig::default());
+        agg.add_plan(&course_metrics, 60.0);
+        let spec_agg = spec_from_scored_plan(&school, &HashMap::new(), &plan, Some(&agg), "agg");
+        assert_eq!(spec_agg.nodes[0].median_complexity, Some(6.0));
+        assert_eq!(spec_agg.nodes[0].median_delay, Some(2.0));
+        assert_eq!(spec_agg.nodes[0].median_blocking, Some(4.0));
     }
 }

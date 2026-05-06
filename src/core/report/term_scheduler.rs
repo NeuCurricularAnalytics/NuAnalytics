@@ -872,6 +872,51 @@ mod tests {
     use super::*;
     use crate::core::models::Course;
 
+    /// `f32` comparisons here are exact: each assertion checks a value
+    /// returned from a function that simply returns one of three compile-
+    /// time constants (the `Course`'s declared credits or one of the two
+    /// placeholder defaults).  No floating-point arithmetic is involved.
+    #[allow(clippy::float_cmp)]
+    #[test]
+    fn test_course_credits_with_fallback_known_course() {
+        let mut school = School::new("T".to_string());
+        let c = Course::new(
+            "Calculus I".to_string(),
+            "MATH".to_string(),
+            "127".to_string(),
+            5.0,
+        );
+        school.add_course(c);
+        assert_eq!(course_credits_with_fallback(&school, "MATH127"), 5.0);
+    }
+
+    /// See the rationale on the previous test: comparing constant returns.
+    #[allow(clippy::float_cmp)]
+    #[test]
+    fn test_course_credits_with_fallback_small_placeholder_suffix_s() {
+        let school = School::new("T".to_string());
+        assert_eq!(
+            course_credits_with_fallback(&school, "FE03S"),
+            DEFAULT_SMALL_PLACEHOLDER_CREDITS
+        );
+    }
+
+    /// See the rationale on the previous test: comparing constant returns.
+    #[allow(clippy::float_cmp)]
+    #[test]
+    fn test_course_credits_with_fallback_default_for_unknown() {
+        let school = School::new("T".to_string());
+        assert_eq!(
+            course_credits_with_fallback(&school, "ELEC001"),
+            DEFAULT_PLACEHOLDER_CREDITS
+        );
+        // Empty key falls back to the standard default (does not end in 'S').
+        assert_eq!(
+            course_credits_with_fallback(&school, ""),
+            DEFAULT_PLACEHOLDER_CREDITS
+        );
+    }
+
     fn create_test_school() -> School {
         let mut school = School::new("Test University".to_string());
 

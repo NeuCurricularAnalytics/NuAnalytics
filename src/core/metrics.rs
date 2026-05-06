@@ -567,6 +567,18 @@ mod tests {
     use super::*;
     use crate::core::planner::parse_curriculum_csv;
 
+    /// Path to the canonical sample curriculum used by the `matches_sample_*`
+    /// regression tests. Lives under `samples/planner-output/correct/` after
+    /// the directory was reorganised (commit `cb9c82a`).
+    const SAMPLE_CURRICULUM_CSV: &str =
+        "samples/planner-output/correct/Colostate_CSDegree_w_metrics.csv";
+
+    /// Parse the canonical sample CSV.  Used by the four `matches_sample_*`
+    /// tests; centralised so the path lives in one place.
+    fn sample_school() -> crate::core::models::School {
+        parse_curriculum_csv(SAMPLE_CURRICULUM_CSV).expect("parse sample curriculum")
+    }
+
     #[test]
     fn computes_delay_on_simple_dag() {
         let mut dag = DAG::new();
@@ -597,9 +609,7 @@ mod tests {
 
     #[test]
     fn matches_sample_delay_values() {
-        let school =
-            parse_curriculum_csv("samples/planner-output/correct/Colostate_CSDegree_w_metrics.csv")
-                .expect("parse sample curriculum");
+        let school = sample_school();
         let dag = school.build_dag();
         let delays = compute_delay(&dag).expect("delay factors");
 
@@ -646,9 +656,7 @@ mod tests {
 
     #[test]
     fn matches_sample_blocking_values() {
-        let school =
-            parse_curriculum_csv("samples/planner-output/correct/Colostate_CSDegree_w_metrics.csv")
-                .expect("parse sample curriculum");
+        let school = sample_school();
         let dag = school.build_dag();
         let blocking = compute_blocking(&dag).expect("blocking factors");
 
@@ -678,9 +686,7 @@ mod tests {
 
     #[test]
     fn matches_sample_complexity_values() {
-        let school =
-            parse_curriculum_csv("samples/planner-output/correct/Colostate_CSDegree_w_metrics.csv")
-                .expect("parse sample curriculum");
+        let school = sample_school();
         let dag = school.build_dag();
 
         let delay = compute_delay(&dag).expect("delay");
@@ -736,9 +742,7 @@ mod tests {
 
     #[test]
     fn matches_sample_centrality_values() {
-        let school =
-            parse_curriculum_csv("samples/planner-output/correct/Colostate_CSDegree_w_metrics.csv")
-                .expect("parse sample curriculum");
+        let school = sample_school();
         let dag = school.build_dag();
         let centrality = compute_centrality(&dag).expect("centrality");
 

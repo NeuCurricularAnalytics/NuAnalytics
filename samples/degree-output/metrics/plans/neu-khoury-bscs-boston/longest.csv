@@ -1,0 +1,54 @@
+Curriculum,Bachelor of Science in Computer Science (Boston) - Longest Path
+Institution,Northeastern University
+Degree Type,"BS"
+System Type,semester
+CIP,""
+Total Structural Complexity,190.0
+Longest Delay,6
+Longest Delay Chain,"CS2000 → CS2100 → CS3100 → CS3650 → CY4740 → CY4760"
+Terms Required,8
+Courses
+Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
+1,"Issues in Race, Science, and Technology","AFCS","2600","","","",4,"Northeastern University","AFCS2600",1.0,0,1,0
+2,"Communication and Storytelling","COMM","1511","","","",4,"Northeastern University","COMM1511",1.0,0,1,0
+3,"First Year Seminar","CS","1200","","","",1,"Northeastern University","CS1200",1.0,0,1,0
+4,"Professional Development for Khoury Co-op","CS","1210","9","","",1,"Northeastern University","CS1210",3.0,0,3,0
+5,"Discrete Structures","CS","1800","","6","",4,"Northeastern University","CS1800",11.0,7,4,0
+6,"Seminar for CS 1800","CS","1802","","5","",1,"Northeastern University","CS1802",1.0,0,1,0
+7,"Introduction to Program Design and Implementation","CS","2000","","8","",4,"Northeastern University","CS2000",25.0,19,6,0
+8,"Lab for CS 2000","CS","2001","","7","",1,"Northeastern University","CS2001",1.0,0,1,0
+9,"Program Design and Implementation 1","CS","2100","7","10","",4,"Northeastern University","CS2100",24.0,18,6,60
+10,"Lab for CS 2100","CS","2101","","9","",1,"Northeastern University","CS2101",1.0,0,1,0
+11,"Logic and Computation","CS","2800","5;9","","",4,"Northeastern University","CS2800",5.0,1,4,7
+12,"Algorithms and Data","CS","3000","9;5","","",4,"Northeastern University","CS3000",10.0,5,5,30
+13,"Program Design and Implementation 2","CS","3100","9","14","",4,"Northeastern University","CS3100",15.0,9,6,30
+14,"Lab for CS 3100","CS","3101","","13","",1,"Northeastern University","CS3101",1.0,0,1,0
+15,"Computer Systems","CS","3650","13","","",4,"Northeastern University","CS3650",11.0,5,6,21
+16,"Theory of Computation","CS","3800","9","","",4,"Northeastern University","CS3800",3.0,0,3,0
+17,"Programming Languages","CS","4400","13;12","","",4,"Northeastern University","CS4400",6.0,1,5,14
+18,"Compilers","CS","4410","17","","",4,"Northeastern University","CS4410",5.0,0,5,0
+19,"Fundamentals of Software Engineering","CS","4530","13","","",4,"Northeastern University","CS4530",4.0,0,4,0
+20,"Network Fundamentals","CS","4700","15","","",4,"Northeastern University","CS4700",5.0,0,5,0
+21,"Distributed Systems","CS","4730","15","","",4,"Northeastern University","CS4730",5.0,0,5,0
+22,"Advanced Algorithms","CS","4810","12","","",4,"Northeastern University","CS4810",4.0,0,4,0
+23,"Computer-Aided Reasoning","CS","4820","11;12","","",4,"Northeastern University","CS4820",4.0,0,4,0
+24,"System Specification, Verification, and Synthesis","CS","4830","12","","",4,"Northeastern University","CS4830",4.0,0,4,0
+25,"Systems Security","CY","3740","15","","",4,"Northeastern University","CY3740",5.0,0,5,0
+26,"Network Security","CY","4740","15","","",4,"Northeastern University","CY4740",7.0,1,6,6
+27,"Security of Wireless and Mobile Systems","CY","4760","25","","",4,"Northeastern University","CY4760",6.0,0,6,0
+28,"Foundations of Data Science","DS","3000","9","","",4,"Northeastern University","DS3000",3.0,0,3,0
+29,"Introduction to Digital Design and Computer Architecture","EECE","2310","","30","",4,"Northeastern University","EECE2310",1.0,0,1,0
+30,"Lab for EECE 2310","EECE","2311","","29","",1,"Northeastern University","EECE2311",1.0,0,1,0
+31,"GE Elective","GE","01","","","",3,"Northeastern University","",1.0,0,1,0
+32,"GE Elective","GE","02","","","",3,"Northeastern University","",1.0,0,1,0
+33,"GE Elective","GE","03","","","",3,"Northeastern University","",1.0,0,1,0
+34,"GE Elective","GE","04","","","",3,"Northeastern University","",1.0,0,1,0
+35,"GE Elective","GE","05","","","",3,"Northeastern University","",1.0,0,1,0
+36,"GE Elective","GE","06","","","",3,"Northeastern University","",1.0,0,1,0
+37,"GE Elective","GE","07","","","",3,"Northeastern University","",1.0,0,1,0
+38,"GE Elective","GE","08","","","",3,"Northeastern University","",1.0,0,1,0
+39,"GE Elective","GE","09","","","",3,"Northeastern University","",1.0,0,1,0
+40,"GE Elective","GE","10S","","","",2,"Northeastern University","",1.0,0,1,0
+41,"Calculus 1 for Science and Engineering","MATH","1341","","","",4,"Northeastern University","MATH1341",3.0,1,2,0
+42,"Calculus 2 for Science and Engineering","MATH","1342","41","","",4,"Northeastern University","MATH1342",2.0,0,2,0
+43,"Statistics and Software","MATH","2280","","","",4,"Northeastern University","MATH2280",1.0,0,1,0

@@ -566,56 +566,48 @@ fn is_yaml_path(path: &Path) -> bool {
 /// Returns `Err(())` if any action failed for this file. Errors are written
 /// to stderr inline so the batch caller does not need to format them.
 fn run_one(degree_path: &Path, options: &DegreeOptions, config: &Config) -> Result<(), ()> {
-    let mut has_error = false;
-    let mut actions_run = 0;
+    let mut state = ActionRunState::default();
 
     if options.validate {
-        if actions_run > 0 {
-            print_separator();
-        }
-        if let Err(e) = validate_degree(degree_path, options.verbose) {
-            eprintln!("Error: {e}");
-            has_error = true;
-        }
-        actions_run += 1;
+        state.run(|| validate_degree(degree_path, options.verbose));
     }
-
     if options.print_graph {
-        if actions_run > 0 {
-            print_separator();
-        }
-        if let Err(e) = print_graph(degree_path, options.verbose) {
-            eprintln!("Error: {e}");
-            has_error = true;
-        }
-        actions_run += 1;
+        state.run(|| print_graph(degree_path, options.verbose));
     }
-
     if options.audit {
-        if actions_run > 0 {
-            print_separator();
-        }
-        if let Err(e) = audit_degree(degree_path, config, options.verbose) {
-            eprintln!("Error: {e}");
-            has_error = true;
-        }
-        actions_run += 1;
+        state.run(|| audit_degree(degree_path, config, options.verbose));
     }
-
     if options.analyze {
-        if actions_run > 0 {
-            print_separator();
-        }
-        if let Err(e) = analyze_degree(degree_path, options, config) {
-            eprintln!("Error: {e}");
-            has_error = true;
-        }
+        state.run(|| analyze_degree(degree_path, options, config));
     }
 
-    if has_error {
+    if state.has_error {
         Err(())
     } else {
         Ok(())
+    }
+}
+
+/// Tracks action sequencing within `run_one`: prints a separator between
+/// successive actions and records whether any action failed.
+#[derive(Default)]
+struct ActionRunState {
+    actions_run: usize,
+    has_error: bool,
+}
+
+impl ActionRunState {
+    /// Run one action, prefixing it with a separator if a prior action ran,
+    /// and capturing any error to stderr without aborting.
+    fn run<E: std::fmt::Display>(&mut self, action: impl FnOnce() -> Result<(), E>) {
+        if self.actions_run > 0 {
+            print_separator();
+        }
+        if let Err(e) = action() {
+            eprintln!("Error: {e}");
+            self.has_error = true;
+        }
+        self.actions_run += 1;
     }
 }
 
