@@ -17,6 +17,18 @@ use serde::Deserialize;
 
 // ── Request type ──────────────────────────────────────────────────────────────
 
+/// Output shape selector for the `get_curriculum_visualization` tool.
+#[derive(Debug, Default, Clone, Copy, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum VisualizationFormat {
+    /// Full `<!DOCTYPE html>…</html>` page that opens directly in a browser.
+    #[default]
+    Standalone,
+    /// Self-contained fragment (`<style>` + `<div>` + `<script>`) suitable for
+    /// embedding inside another HTML document.
+    Fragment,
+}
+
 /// Request parameters for the `get_curriculum_visualization` tool.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetCurriculumVisualizationRequest {
@@ -28,18 +40,30 @@ pub struct GetCurriculumVisualizationRequest {
         description = "Serialized CurriculumGraphSpec JSON from analyze_degree's selected_plans[N].graph_spec"
     )]
     pub graph_spec_json: String,
+
+    /// Output shape: `"standalone"` (default) returns a full HTML page;
+    /// `"fragment"` returns a self-contained snippet (style + div + script)
+    /// safe to embed inside another document's `<body>`.
+    #[serde(default)]
+    #[schemars(
+        description = "Output shape: \"standalone\" (default, full HTML page) or \"fragment\" (embeddable snippet)"
+    )]
+    pub format: VisualizationFormat,
 }
 
 // ── Execution ─────────────────────────────────────────────────────────────────
 
-/// Render a [`CurriculumGraphSpec`] as a self-contained HTML page.
+/// Render a [`CurriculumGraphSpec`] as HTML in the requested shape.
 ///
 /// On parse failure returns a minimal HTML error page so the response is
 /// always valid HTML (never a raw error string).
 #[must_use]
-pub fn execute_html(graph_spec_json: &str) -> String {
+pub fn execute_html(graph_spec_json: &str, format: VisualizationFormat) -> String {
     match serde_json::from_str::<CurriculumGraphSpec>(graph_spec_json) {
-        Ok(spec) => VanillaJsRenderer.render_standalone(&spec),
+        Ok(spec) => match format {
+            VisualizationFormat::Standalone => VanillaJsRenderer.render_standalone(&spec),
+            VisualizationFormat::Fragment => VanillaJsRenderer.render(&spec),
+        },
         Err(e) => error_html(&format!("Invalid graph_spec JSON: {e}")),
     }
 }
@@ -99,7 +123,7 @@ mod tests {
     fn test_execute_html_valid_spec() {
         let spec = sample_spec();
         let json = serde_json::to_string(&spec).unwrap();
-        let html = execute_html(&json);
+        let html = execute_html(&json, VisualizationFormat::Standalone);
         assert!(
             html.starts_with("<!DOCTYPE html>"),
             "should be full HTML page"
@@ -110,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_execute_html_invalid_json() {
-        let html = execute_html("not-valid-json");
+        let html = execute_html("not-valid-json", VisualizationFormat::Standalone);
         assert!(html.starts_with("<!DOCTYPE html>"));
         assert!(html.contains("Visualization Error"));
     }
@@ -119,9 +143,51 @@ mod tests {
     fn test_execute_html_roundtrip() {
         let spec = sample_spec();
         let json = serde_json::to_string(&spec).unwrap();
-        let html = execute_html(&json);
+        let html = execute_html(&json, VisualizationFormat::Standalone);
         assert!(html.contains("graph-test"));
         assert!(html.contains("svg-test"));
+    }
+
+    #[test]
+    fn test_execute_html_fragment_omits_doctype() {
+        let spec = sample_spec();
+        let json = serde_json::to_string(&spec).unwrap();
+        let html = execute_html(&json, VisualizationFormat::Fragment);
+        assert!(
+            !html.starts_with("<!DOCTYPE html>"),
+            "fragment should not include DOCTYPE"
+        );
+        assert!(
+            !html.contains("<html"),
+            "fragment should not include <html>"
+        );
+        assert!(
+            !html.contains("<body"),
+            "fragment should not include <body>"
+        );
+        assert!(
+            html.contains("nu-graph"),
+            "fragment should include graph CSS"
+        );
+        assert!(
+            html.contains("nuGraphs.register"),
+            "fragment should include JS"
+        );
+        assert!(html.contains("CS101"), "fragment should include course");
+    }
+
+    #[test]
+    fn test_visualization_format_defaults_to_standalone() {
+        let req: GetCurriculumVisualizationRequest =
+            serde_json::from_str(r#"{"graph_spec_json":"{}"}"#).unwrap();
+        assert!(matches!(req.format, VisualizationFormat::Standalone));
+    }
+
+    #[test]
+    fn test_visualization_format_deserializes_fragment() {
+        let req: GetCurriculumVisualizationRequest =
+            serde_json::from_str(r#"{"graph_spec_json":"{}","format":"fragment"}"#).unwrap();
+        assert!(matches!(req.format, VisualizationFormat::Fragment));
     }
 
     #[test]
@@ -174,7 +240,7 @@ mod tests {
             critical_path_ids: vec!["CS101".to_string(), "CS201".to_string()],
         };
         let json = serde_json::to_string(&spec).unwrap();
-        let html = execute_html(&json);
+        let html = execute_html(&json, VisualizationFormat::Standalone);
         assert!(html.starts_with("<!DOCTYPE html>"));
         assert!(html.contains("\"from\":\"CS101\""));
         assert!(html.contains("\"to\":\"CS201\""));

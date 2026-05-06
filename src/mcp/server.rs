@@ -106,14 +106,14 @@ impl NuAnalyticsMcpServer {
 
     /// Render a curriculum graph visualization from an `analyze_degree` result
     #[tool(
-        description = "Render a self-contained interactive HTML curriculum graph from a graph_spec produced by analyze_degree. Returns HTML with embedded JavaScript showing course nodes arranged by term, prerequisite/corequisite edges drawn as Bezier curves, complexity badges, and interactive hover highlighting of prerequisite chains and the critical path. Typical flow: (1) call analyze_degree, (2) serialize selected_plans[N].graph_spec to JSON, (3) pass it as graph_spec_json to this tool."
+        description = "Render an interactive HTML curriculum graph from a graph_spec produced by analyze_degree. The output shows course nodes arranged by term, prerequisite/corequisite edges drawn as Bezier curves, complexity badges, hover highlighting of prerequisite chains, and a click-to-open course detail modal. Set format=\"standalone\" (default) for a full HTML page openable in a browser, or format=\"fragment\" for a self-contained snippet (style + div + script) that can be embedded inside a larger HTML document. Typical flow: (1) call analyze_degree, (2) serialize selected_plans[N].graph_spec to JSON, (3) pass it as graph_spec_json to this tool."
     )]
     #[allow(clippy::unused_self)]
     fn get_curriculum_visualization(
         &self,
         Parameters(req): Parameters<GetCurriculumVisualizationRequest>,
     ) -> String {
-        visualize::execute_html(&req.graph_spec_json)
+        visualize::execute_html(&req.graph_spec_json, req.format)
     }
 
     // ── Institution tools ───────────────────────────────────────────────────
