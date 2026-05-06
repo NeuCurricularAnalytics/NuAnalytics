@@ -597,8 +597,9 @@ mod tests {
 
     #[test]
     fn matches_sample_delay_values() {
-        let school = parse_curriculum_csv("samples/correct/Colostate_CSDegree_w_metrics.csv")
-            .expect("parse sample curriculum");
+        let school =
+            parse_curriculum_csv("samples/planner-output/correct/Colostate_CSDegree_w_metrics.csv")
+                .expect("parse sample curriculum");
         let dag = school.build_dag();
         let delays = compute_delay(&dag).expect("delay factors");
 
@@ -645,8 +646,9 @@ mod tests {
 
     #[test]
     fn matches_sample_blocking_values() {
-        let school = parse_curriculum_csv("samples/correct/Colostate_CSDegree_w_metrics.csv")
-            .expect("parse sample curriculum");
+        let school =
+            parse_curriculum_csv("samples/planner-output/correct/Colostate_CSDegree_w_metrics.csv")
+                .expect("parse sample curriculum");
         let dag = school.build_dag();
         let blocking = compute_blocking(&dag).expect("blocking factors");
 
@@ -676,8 +678,9 @@ mod tests {
 
     #[test]
     fn matches_sample_complexity_values() {
-        let school = parse_curriculum_csv("samples/correct/Colostate_CSDegree_w_metrics.csv")
-            .expect("parse sample curriculum");
+        let school =
+            parse_curriculum_csv("samples/planner-output/correct/Colostate_CSDegree_w_metrics.csv")
+                .expect("parse sample curriculum");
         let dag = school.build_dag();
 
         let delay = compute_delay(&dag).expect("delay");
@@ -733,8 +736,9 @@ mod tests {
 
     #[test]
     fn matches_sample_centrality_values() {
-        let school = parse_curriculum_csv("samples/correct/Colostate_CSDegree_w_metrics.csv")
-            .expect("parse sample curriculum");
+        let school =
+            parse_curriculum_csv("samples/planner-output/correct/Colostate_CSDegree_w_metrics.csv")
+                .expect("parse sample curriculum");
         let dag = school.build_dag();
         let centrality = compute_centrality(&dag).expect("centrality");
 
