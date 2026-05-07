@@ -643,6 +643,19 @@ mod tests {
         assert_eq!(extract_query_param(line, "state"), Some("x y".to_string()));
     }
 
+    #[test]
+    fn test_extract_query_param_decodes_plus_as_space() {
+        // form_urlencoded decodes literal '+' as a space character — this
+        // pins that behavior, which was previously covered by the now-deleted
+        // test_percent_decode_plus_as_space.
+        let line = "GET /callback?state=hello+world&code=a+b HTTP/1.1";
+        assert_eq!(
+            extract_query_param(line, "state"),
+            Some("hello world".to_string())
+        );
+        assert_eq!(extract_query_param(line, "code"), Some("a b".to_string()));
+    }
+
     // --- parse_provider ----------------------------------------------------
 
     #[test]

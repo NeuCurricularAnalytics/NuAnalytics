@@ -134,6 +134,23 @@ fn find_col(headers_upper: &[String], candidates: &[&str]) -> Option<usize> {
         .find_map(|&name| headers_upper.iter().position(|h| h == name))
 }
 
+/// [`find_col`] that returns a `ParseError` naming the first candidate and the
+/// source file when no candidate matches — used during column-resolution at the
+/// top of each ingest pass.
+fn require_col(
+    headers_upper: &[String],
+    candidates: &[&str],
+    path: &Path,
+) -> DatabaseResult<usize> {
+    find_col(headers_upper, candidates).ok_or_else(|| {
+        DatabaseError::ParseError(format!(
+            "{} column not found in {}",
+            candidates[0],
+            path.display()
+        ))
+    })
+}
+
 /// Uppercase all CSV headers once, for reuse across all [`find_col`] calls.
 fn uppercase_headers(record: &csv::StringRecord) -> Vec<String> {
     record.iter().map(str::to_uppercase).collect()
@@ -189,12 +206,8 @@ pub async fn ingest_institutions(
         ($($name:expr),+) => { find_col(&headers, &[$($name),+]) };
     }
 
-    let col_unitid = col!("UNITID").ok_or_else(|| {
-        DatabaseError::ParseError(format!("UNITID column not found in {}", path.display()))
-    })?;
-    let col_name = col!("INSTNM").ok_or_else(|| {
-        DatabaseError::ParseError(format!("INSTNM column not found in {}", path.display()))
-    })?;
+    let col_unitid = require_col(&headers, &["UNITID"], path)?;
+    let col_name = require_col(&headers, &["INSTNM"], path)?;
     let col_city = col!("CITY");
     let col_state = col!("STABBR");
     let col_sector = col!("SECTOR");
@@ -393,15 +406,9 @@ pub async fn ingest_completions(
         ($($name:expr),+) => { find_col(&headers, &[$($name),+]) };
     }
 
-    let col_unitid = col!("UNITID").ok_or_else(|| {
-        DatabaseError::ParseError(format!("UNITID column not found in {}", path.display()))
-    })?;
-    let col_cipcode = col!("CIPCODE").ok_or_else(|| {
-        DatabaseError::ParseError(format!("CIPCODE column not found in {}", path.display()))
-    })?;
-    let col_awlevel = col!("AWLEVEL").ok_or_else(|| {
-        DatabaseError::ParseError(format!("AWLEVEL column not found in {}", path.display()))
-    })?;
+    let col_unitid = require_col(&headers, &["UNITID"], path)?;
+    let col_cipcode = require_col(&headers, &["CIPCODE"], path)?;
+    let col_awlevel = require_col(&headers, &["AWLEVEL"], path)?;
     // Include both MAJORNUM=1 (primary) and MAJORNUM=2 (double-major) so CS completions
     // are counted even when CS is the student's second major. majornum is stored on each
     // row and included in the unique constraint, preventing duplicate conflicts.
