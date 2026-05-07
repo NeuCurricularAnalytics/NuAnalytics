@@ -37,6 +37,10 @@ use crate::mcp::tools::{
 /// Database tools (IPEDS queries) are enabled when `db` is `Some`.
 #[derive(Debug, Clone)]
 pub struct NuAnalyticsMcpServer {
+    // Read indirectly by the rmcp #[tool_handler] macro's generated trait impl
+    // for dispatch; rustc's dead_code analysis under release/LTO can't trace
+    // that read through the macro expansion, so silence the false positive.
+    #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
     /// Database client — `None` if database is not configured or disabled
     #[cfg(feature = "database")]
