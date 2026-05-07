@@ -20,6 +20,20 @@ pub fn parse_json_array<T: serde::de::DeserializeOwned>(value: &serde_json::Valu
         .unwrap_or_default()
 }
 
+/// Deserialize the first element of a JSON array into `T`.
+///
+/// Returns `None` when the value is not an array, the array is empty,
+/// or the first element fails to deserialize. The helper does *not*
+/// scan ahead to find a successfully-deserializing item — `parse_first`
+/// means the first, not the first that happens to deserialize.
+#[must_use]
+pub fn parse_first<T: serde::de::DeserializeOwned>(value: &serde_json::Value) -> Option<T> {
+    value
+        .as_array()?
+        .first()
+        .and_then(|item| serde_json::from_value(item.clone()).ok())
+}
+
 /// Parse a comma-separated list of trimmed, non-empty strings.
 ///
 /// `"11.0101, 11.0701, "` → `["11.0101", "11.0701"]`
@@ -78,6 +92,48 @@ mod tests {
         let json = serde_json::json!({"not": "an array"});
         let items: Vec<serde_json::Value> = parse_json_array(&json);
         assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_parse_first_returns_first_element() {
+        #[derive(Deserialize)]
+        struct Item {
+            id: i32,
+        }
+        let json = serde_json::json!([{"id": 1}, {"id": 2}]);
+        let item: Option<Item> = parse_first(&json);
+        assert_eq!(item.unwrap().id, 1);
+    }
+
+    #[test]
+    fn test_parse_first_empty_array_returns_none() {
+        let json = serde_json::json!([]);
+        let item: Option<serde_json::Value> = parse_first(&json);
+        assert!(item.is_none());
+    }
+
+    #[test]
+    fn test_parse_first_non_array_returns_none() {
+        let json = serde_json::json!({"not": "an array"});
+        let item: Option<serde_json::Value> = parse_first(&json);
+        assert!(item.is_none());
+    }
+
+    #[test]
+    fn test_parse_first_failed_deserialize_returns_none() {
+        #[derive(Deserialize)]
+        struct Item {
+            #[allow(dead_code)] // only used by serde, not read directly in test
+            id: i32,
+        }
+        // First element is missing the required `id` field; the helper must
+        // return None rather than scanning ahead to the second element.
+        let json = serde_json::json!([{"name": "no id"}, {"id": 1}]);
+        let item: Option<Item> = parse_first(&json);
+        assert!(
+            item.is_none(),
+            "parse_first must not skip ahead past a failed first element"
+        );
     }
 
     #[test]

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::core::database::models::StoredDegree;
 use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::mcp::tools::shared::{error_json, parse_json_array, to_json_pretty};
+use crate::mcp::tools::shared::{error_json, parse_first, parse_json_array, to_json_pretty};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -297,10 +297,7 @@ async fn fetch_by_id(client: &Arc<DbClient>, id: &str) -> String {
         Err(e) => return error_json(e),
     };
 
-    let degree: Option<DegreeDetail> = result
-        .as_array()
-        .and_then(|arr| arr.first())
-        .and_then(|item| serde_json::from_value(item.clone()).ok());
+    let degree: Option<DegreeDetail> = parse_first(&result);
 
     degree.map_or_else(
         || {

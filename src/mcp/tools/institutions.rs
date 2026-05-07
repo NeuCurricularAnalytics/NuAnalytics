@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::mcp::tools::shared::{error_json, parse_json_array, to_json_pretty};
+use crate::mcp::tools::shared::{error_json, parse_first, parse_json_array, to_json_pretty};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -146,10 +146,7 @@ pub async fn execute_get_json(client: &Arc<DbClient>, req: GetInstitutionRequest
         Err(e) => return error_json(e),
     };
 
-    let institution: Option<InstitutionDetail> = result
-        .as_array()
-        .and_then(|arr| arr.first())
-        .and_then(|item| serde_json::from_value(item.clone()).ok());
+    let institution: Option<InstitutionDetail> = parse_first(&result);
 
     institution.map_or_else(
         || {
