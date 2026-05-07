@@ -48,6 +48,57 @@ const DEMO_COLS_NO_KEY: &str = "total,total_men,total_women,\
     white_men,white_women,two_or_more_men,two_or_more_women,\
     unknown_race_men,unknown_race_women";
 
+/// Fetch the most recent `year` value for the given table + filter set.
+///
+/// Returns `None` if no rows match. Used to default the `year` filter on
+/// completion queries to the latest reporting cycle when callers omit it,
+/// instead of silently aggregating across cycles (which broke per-year
+/// representation ratios).
+async fn fetch_latest_year(
+    client: &Arc<DbClient>,
+    table: &str,
+    filters: &QueryFilters,
+) -> Option<i32> {
+    let result = client
+        .select(table, "year", filters, Some(2_000))
+        .await
+        .ok()?;
+    result
+        .as_array()?
+        .iter()
+        .filter_map(|item| {
+            item.get("year")
+                .and_then(serde_json::Value::as_i64)
+                .and_then(|y| i32::try_from(y).ok())
+        })
+        .max()
+}
+
+/// Resolve the effective `year` for a multi-institution completions query.
+///
+/// Returns `requested` if the caller specified a year; otherwise probes the
+/// COMPLETIONS table for the latest cycle covering the given unitid set +
+/// CIP filter so cross-school responses land on the same reporting cycle.
+async fn resolve_year(
+    client: &Arc<DbClient>,
+    requested: Option<i32>,
+    unitids: &[i32],
+    award_level: Option<i32>,
+    cip_filter: Option<&CipFilter<'_>>,
+) -> Option<i32> {
+    if let Some(y) = requested {
+        return Some(y);
+    }
+    let probe_filters = apply_cip_filter(
+        QueryFilters::new()
+            .in_list("unitid", unitids)
+            .eq("award_level", award_level),
+        cip_filter,
+        "cip_code",
+    );
+    fetch_latest_year(client, tables::COMPLETIONS, &probe_filters).await
+}
+
 // ============================================================================
 // Request types
 // ============================================================================
@@ -421,6 +472,17 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
         .to_string();
     }
 
+    // Resolve `year`: explicit value wins; otherwise pick the latest available
+    // across the matched institution set (one query, scoped by unitid + cip).
+    let effective_year = resolve_year(
+        client,
+        req.year,
+        &institution_unitids,
+        req.award_level,
+        cip_filter.as_ref(),
+    )
+    .await;
+
     // Use DB-side in_list batching (same as execute_schools_json) so the unitid
     // filter is pushed to the DB instead of applied in Rust after a 50K-row fetch.
     // The Rust-side approach silently dropped data beyond the row limit.
@@ -429,7 +491,7 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
         &institution_unitids,
         cip_filter.as_ref(),
         req.award_level,
-        req.year,
+        effective_year,
     )
     .await;
 
@@ -439,14 +501,20 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
         return serde_json::json!({
             "message": "No completion records found for the given filters",
             "institutions_checked": institution_unitids.len(),
-            "cip_filter": cip_label
+            "cip_filter": cip_label,
+            "year": effective_year,
         })
         .to_string();
     }
 
     let enrollment = if include_representation {
-        let totals_by_uid =
-            fetch_totals_by_unitid(client, &institution_unitids, req.award_level, req.year).await;
+        let totals_by_uid = fetch_totals_by_unitid(
+            client,
+            &institution_unitids,
+            req.award_level,
+            effective_year,
+        )
+        .await;
         let agg = aggregate_demo_map(&totals_by_uid);
         (agg.total > 0).then_some(agg)
     } else {
@@ -461,7 +529,7 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
             state: req.state,
             cip_prefix: cip_label,
             award_level: req.award_level,
-            year: req.year,
+            year: effective_year,
         },
         institutions_matched: institution_unitids.len(),
         total_completions: completions.total,
@@ -518,6 +586,8 @@ struct RowDemographic {
 
 #[derive(Debug, Serialize)]
 struct CompletionRow {
+    /// Reporting cycle year (e.g. 2024 for 2023-2024). Always present.
+    year: Option<i32>,
     cip_code: String,
     cip_title: Option<String>,
     award_level: Option<i32>,
@@ -560,20 +630,30 @@ pub async fn execute_institution_json(
         Some(CipFilter::Codes(&cip_codes_vec))
     };
 
-    let comp_filters = apply_cip_filter(
+    // Build base filters without `year` so we can resolve the latest cycle if
+    // the caller omitted it.
+    let base_filters = apply_cip_filter(
         QueryFilters::new()
             .eq("unitid", Some(req.unitid))
             .eq("award_level", req.award_level)
-            .eq("year", req.year)
-            .eq("major_num", req.major_num), // None = no filter
+            .eq("major_num", req.major_num),
         cip_filter.as_ref(),
         "cip_code",
     );
 
+    // Resolve `year`: explicit value wins; otherwise pick the latest available.
+    let effective_year = if let Some(y) = req.year {
+        Some(y)
+    } else {
+        fetch_latest_year(client, tables::COMPLETIONS, &base_filters).await
+    };
+
+    let comp_filters = base_filters.eq("year", effective_year);
+
     let comp_result = match client
         .select(
             tables::COMPLETIONS,
-            &format!("cip_code,award_level,major_num,{DEMO_COLS_NO_KEY}"),
+            &format!("year,cip_code,award_level,major_num,{DEMO_COLS_NO_KEY}"),
             &comp_filters,
             Some(2000),
         )
@@ -588,6 +668,7 @@ pub async fn execute_institution_json(
         return serde_json::json!({
             "unitid": req.unitid,
             "name": inst_name,
+            "year": effective_year,
             "message": "No completion records found for the given filters"
         })
         .to_string();
@@ -606,7 +687,7 @@ pub async fn execute_institution_json(
     let cip_titles = fetch_cip_titles(client, &cip_codes).await;
 
     let school_totals = if include_representation {
-        fetch_school_totals_for(client, req.unitid, req.award_level, req.year).await
+        fetch_school_totals_for(client, req.unitid, req.award_level, effective_year).await
     } else {
         None
     };
@@ -628,7 +709,7 @@ pub async fn execute_institution_json(
     to_json_pretty(&InstitutionCompletionsResponse {
         unitid: req.unitid,
         name: inst_name,
-        year: req.year,
+        year: effective_year,
         award_level: req.award_level,
         cip_prefix: req.cip_prefix,
         total_rows,
@@ -644,6 +725,10 @@ fn build_completion_row(
     cip_titles: &HashMap<String, String>,
     school_totals: Option<&DemographicCounts>,
 ) -> CompletionRow {
+    let year = item
+        .get("year")
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|v| i32::try_from(v).ok());
     let cip_code = item
         .get("cip_code")
         .and_then(serde_json::Value::as_str)
@@ -664,6 +749,7 @@ fn build_completion_row(
         .unwrap_or(0);
 
     CompletionRow {
+        year,
         cip_code,
         cip_title,
         award_level,
@@ -879,6 +965,18 @@ pub async fn execute_schools_json(
 
     let unitids: Vec<i32> = institutions.iter().map(|i| i.unitid).collect();
 
+    // Resolve `year`: explicit value wins; otherwise pick the latest available
+    // across the matched institution set so multi-school comparisons land on
+    // the same reporting cycle instead of silently merging four cycles.
+    let effective_year = resolve_year(
+        client,
+        req.year,
+        &unitids,
+        req.award_level,
+        cip_filter.as_ref(),
+    )
+    .await;
+
     // Step 2: fetch completions in batches to avoid Cloudflare Worker size limits.
     // All CIP codes are stored, so unfiltered queries for 150 institutions can
     // return 50K+ rows — a single large response crashes the Supabase proxy.
@@ -887,13 +985,13 @@ pub async fn execute_schools_json(
         &unitids,
         cip_filter.as_ref(),
         req.award_level,
-        req.year,
+        effective_year,
     )
     .await;
 
     // Step 3: fetch totals for representation denominators
     let totals_by_uid = if include_representation {
-        fetch_totals_by_unitid(client, &unitids, req.award_level, req.year).await
+        fetch_totals_by_unitid(client, &unitids, req.award_level, effective_year).await
     } else {
         HashMap::new()
     };
@@ -903,7 +1001,7 @@ pub async fn execute_schools_json(
         &institutions,
         &completions_by_uid,
         &totals_by_uid,
-        req.year,
+        effective_year,
         req.min_completions,
     );
 
@@ -919,7 +1017,7 @@ pub async fn execute_schools_json(
             "inst_size_min": req.inst_size_min,
             "cip_filter": cip_label,
             "award_level": req.award_level,
-            "year": req.year,
+            "year": effective_year,
         },
         "schools": results
     }))
@@ -2062,5 +2160,73 @@ mod tests {
         let result = build_demographics(&c, Some(&e));
         let women = result.iter().find(|g| g.group == "Women").unwrap();
         assert_float_opt_eq(women.representation_ratio, Some(1.0));
+    }
+
+    // ── build_completion_row() — year threading ──────────────────────────────
+
+    /// Build a JSON completion record with year + minimum demographic fields.
+    fn completion_row_json(year: Option<i32>, total: i64) -> serde_json::Value {
+        let mut obj = serde_json::Map::new();
+        if let Some(y) = year {
+            obj.insert("year".into(), serde_json::json!(y));
+        }
+        obj.insert("cip_code".into(), serde_json::json!("11.0101"));
+        obj.insert("award_level".into(), serde_json::json!(5));
+        obj.insert("major_num".into(), serde_json::json!(1));
+        obj.insert("total".into(), serde_json::json!(total));
+        // Zero out demographic fields so build_row_demographics doesn't panic.
+        for f in [
+            "total_men",
+            "total_women",
+            "nonresident_alien_men",
+            "nonresident_alien_women",
+            "hispanic_men",
+            "hispanic_women",
+            "american_indian_men",
+            "american_indian_women",
+            "asian_men",
+            "asian_women",
+            "black_men",
+            "black_women",
+            "native_hawaiian_men",
+            "native_hawaiian_women",
+            "white_men",
+            "white_women",
+            "two_or_more_men",
+            "two_or_more_women",
+            "unknown_race_men",
+            "unknown_race_women",
+        ] {
+            obj.insert(f.into(), serde_json::json!(0));
+        }
+        serde_json::Value::Object(obj)
+    }
+
+    #[test]
+    fn test_build_completion_row_extracts_year_when_present() {
+        let item = completion_row_json(Some(2023), 42);
+        let titles = HashMap::new();
+        let row = build_completion_row(&item, &titles, None);
+        assert_eq!(row.year, Some(2023));
+        assert_eq!(row.total, 42);
+    }
+
+    #[test]
+    fn test_build_completion_row_year_none_when_missing() {
+        // Old-style records (or rows from a SELECT that omitted year) get None
+        let item = completion_row_json(None, 7);
+        let titles = HashMap::new();
+        let row = build_completion_row(&item, &titles, None);
+        assert_eq!(row.year, None);
+    }
+
+    #[test]
+    fn test_completion_row_serializes_year_field() {
+        // Public schema guarantee: every CompletionRow JSON includes a `year` key.
+        let item = completion_row_json(Some(2024), 1);
+        let titles = HashMap::new();
+        let row = build_completion_row(&item, &titles, None);
+        let json = serde_json::to_value(&row).unwrap();
+        assert_eq!(json.get("year"), Some(&serde_json::json!(2024)));
     }
 }
