@@ -39,6 +39,7 @@ supabase-client-sdk = { version = "0.2", features = ["auth"], optional = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
 csv = { version = "1.3", optional = true }
 zip = { version = "2", optional = true }
+form_urlencoded = { version = "1.2", optional = true }
 
 [dev-dependencies]
 tempfile = "3.10"
@@ -51,7 +52,7 @@ log-info = []
 log-debug = []
 verbose = []
 file-logging = []
-database = ["dep:supabase-client-sdk", "dep:reqwest", "dep:csv", "dep:zip", "dep:tokio"]
+database = ["dep:supabase-client-sdk", "dep:reqwest", "dep:csv", "dep:zip", "dep:tokio", "dep:form_urlencoded"]
 mcp = ["dep:rmcp", "dep:tokio", "database"]
 
 [profile.release]

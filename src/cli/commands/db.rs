@@ -271,45 +271,15 @@ async fn accept_oauth_callback(listener: tokio::net::TcpListener) -> Result<Stri
 
 /// Extract the first value of a named query parameter from an HTTP request line.
 ///
-/// Handles the most common form of URL encoding for OAuth codes (`+` and `%XX`).
+/// Handles `+` and `%XX` decoding via `form_urlencoded` — the same parser
+/// browsers use for `application/x-www-form-urlencoded` request bodies.
 fn extract_query_param(request_line: &str, name: &str) -> Option<String> {
-    // Find the query string between '?' and the trailing ' HTTP/...'
+    // Slice out the query string between '?' and the trailing ' HTTP/...'
     let qs_start = request_line.find('?')?;
     let qs_end = request_line.rfind(' ').unwrap_or(request_line.len());
     let qs = &request_line[qs_start + 1..qs_end];
 
-    let prefix = format!("{name}=");
-    qs.split('&').find_map(|pair| {
-        pair.strip_prefix(&prefix)
-            .map(|v| percent_decode(v).into_owned())
-    })
-}
-
-/// Minimal percent-decoding for OAuth callback query values.
-fn percent_decode(s: &str) -> std::borrow::Cow<'_, str> {
-    if !s.contains('%') && !s.contains('+') {
-        return std::borrow::Cow::Borrowed(s);
-    }
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        match c {
-            '+' => out.push(' '),
-            '%' => {
-                let hi = chars.next().unwrap_or('0');
-                let lo = chars.next().unwrap_or('0');
-                if let Ok(byte) = u8::from_str_radix(&format!("{hi}{lo}"), 16) {
-                    out.push(byte as char);
-                } else {
-                    out.push('%');
-                    out.push(hi);
-                    out.push(lo);
-                }
-            }
-            _ => out.push(c),
-        }
-    }
-    std::borrow::Cow::Owned(out)
+    form_urlencoded::parse(qs.as_bytes()).find_map(|(k, v)| (k == name).then(|| v.into_owned()))
 }
 
 const CALLBACK_SUCCESS_HTML: &str = r#"<!DOCTYPE html>
@@ -671,30 +641,6 @@ mod tests {
             Some("abc+123".to_string())
         );
         assert_eq!(extract_query_param(line, "state"), Some("x y".to_string()));
-    }
-
-    // --- percent_decode ----------------------------------------------------
-
-    #[test]
-    fn test_percent_decode_plain() {
-        assert_eq!(percent_decode("abc123"), "abc123");
-    }
-
-    #[test]
-    fn test_percent_decode_plus_as_space() {
-        assert_eq!(percent_decode("hello+world"), "hello world");
-    }
-
-    #[test]
-    fn test_percent_decode_hex() {
-        assert_eq!(percent_decode("hello%20world"), "hello world");
-        assert_eq!(percent_decode("a%2Bb"), "a+b");
-    }
-
-    #[test]
-    fn test_percent_decode_invalid_hex_passthrough() {
-        // Invalid %XX sequences should pass through without panicking
-        assert_eq!(percent_decode("a%GGb"), "a%GGb");
     }
 
     // --- parse_provider ----------------------------------------------------

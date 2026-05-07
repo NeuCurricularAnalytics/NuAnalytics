@@ -1212,6 +1212,7 @@ dependencies = [
  "csv",
  "dirs",
  "fastrand",
+ "form_urlencoded",
  "reqwest",
  "rmcp",
  "serde",
