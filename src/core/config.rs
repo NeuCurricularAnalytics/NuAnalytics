@@ -70,6 +70,8 @@ pub struct DatabaseConfig {
     pub management_key: String,
 }
 
+/// Default auth-file path: `.debug/dauth.json` in debug builds,
+/// `$NU_ANALYTICS/auth.json` (expanded at load time) in release.
 fn default_auth_file() -> String {
     #[cfg(debug_assertions)]
     return ".debug/dauth.json".to_string();
@@ -77,6 +79,7 @@ fn default_auth_file() -> String {
     "$NU_ANALYTICS/auth.json".to_string()
 }
 
+/// Default Supabase Management API key — empty; must be set explicitly.
 const fn default_management_key() -> String {
     String::new()
 }
@@ -668,33 +671,6 @@ impl Config {
         Ok(())
     }
 
-    /// Get a configuration value by key
-    ///
-    /// Retrieves a configuration value using a string key that maps to the config structure.
-    /// Supports all config fields in the format `section.field` or just `field` for top-level fields.
-    ///
-    /// Supported keys:
-    /// - `level`: Logging level ("debug", "info", "warn", "error")
-    /// - `file`: Log file path
-    /// - `verbose`: Verbose logging boolean
-    /// - `anon_key` (or legacy `token`): Supabase anonymous key
-    /// - `endpoint`: Database API endpoint
-    /// - `metrics_dir`: Metrics output directory path
-    /// - `reports_dir`: Reports output directory path
-    ///
-    /// # Arguments
-    /// - `key`: The configuration key to retrieve
-    ///
-    /// # Returns
-    /// - `Some(String)`: The configuration value as a string
-    /// - `None`: If the key is not recognized
-    ///
-    /// # Examples
-    /// ```ignore
-    /// let config = Config::load()?;
-    /// if let Some(level) = config.get("level") {
-    ///     println!("Current log level: {}", level);
-    /// }
     /// Strip an optional section prefix from a config key so both bare
     /// keys (`"endpoint"`) and dotted keys (`"database.endpoint"`) are
     /// accepted by `get`, `set`, and `unset`.
@@ -1110,5 +1086,153 @@ mod tests {
         let mut config = Config::default();
         let result = config.set("max_plans", "not_a_number");
         assert!(result.is_err());
+    }
+
+    // ── unset ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_unset_resets_to_default_value() {
+        let mut config = Config::default();
+        let defaults = Config::from_defaults();
+
+        config.set("level", "trace").unwrap();
+        config.unset("level", &defaults).unwrap();
+
+        assert_eq!(config.logging.level, defaults.logging.level);
+    }
+
+    #[test]
+    fn test_unset_unknown_key_returns_err() {
+        let mut config = Config::default();
+        let defaults = Config::default();
+        assert!(config.unset("nope", &defaults).is_err());
+    }
+
+    #[test]
+    fn test_unset_accepts_dotted_keys() {
+        let mut config = Config::default();
+        let mut defaults = Config::default();
+        defaults.database.endpoint = "https://default.supabase.co".to_string();
+        config.database.endpoint = "https://custom.supabase.co".to_string();
+
+        config.unset("database.endpoint", &defaults).unwrap();
+
+        assert_eq!(config.database.endpoint, "https://default.supabase.co");
+    }
+
+    #[test]
+    fn test_unset_via_legacy_token_alias() {
+        let mut config = Config::default();
+        let mut defaults = Config::default();
+        defaults.database.anon_key = "default-key".to_string();
+        config.database.anon_key = "custom-key".to_string();
+
+        config.unset("token", &defaults).unwrap();
+
+        assert_eq!(config.database.anon_key, "default-key");
+    }
+
+    // ── set: validation paths ───────────────────────────────────────────────
+
+    #[test]
+    fn test_set_calc_strategy_accepts_median_and_mean() {
+        let mut config = Config::default();
+        assert!(config.set("calc_strategy", "median").is_ok());
+        assert!(config.set("calc_strategy", "mean").is_ok());
+    }
+
+    #[test]
+    fn test_set_calc_strategy_rejects_invalid() {
+        let mut config = Config::default();
+        let err = config.set("calc_strategy", "average").unwrap_err();
+        assert!(err.contains("calc_strategy"));
+    }
+
+    #[test]
+    fn test_set_sampling_strategy_lowercases_value() {
+        let mut config = Config::default();
+        config.set("sampling_strategy", "SHUFFLED").unwrap();
+        assert_eq!(config.degree_analysis.sampling_strategy, "shuffled");
+    }
+
+    #[test]
+    fn test_set_sampling_strategy_rejects_unknown() {
+        let mut config = Config::default();
+        assert!(config.set("sampling_strategy", "random").is_err());
+    }
+
+    #[test]
+    fn test_set_prerequisite_chain_threshold_accepts_number() {
+        let mut config = Config::default();
+        config.set("prerequisite_chain_threshold", "5").unwrap();
+        assert_eq!(config.audit.prerequisite_chain_threshold, 5);
+    }
+
+    #[test]
+    fn test_set_prerequisite_chain_threshold_rejects_non_numeric() {
+        let mut config = Config::default();
+        assert!(config
+            .set("prerequisite_chain_threshold", "not-a-number")
+            .is_err());
+    }
+
+    // ── merge_defaults ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_merge_defaults_fills_only_empty_fields() {
+        let mut config = Config::default();
+        config.logging.level = "warn".to_string();
+
+        let mut defaults = Config::default();
+        defaults.logging.level = "info".to_string();
+        defaults.logging.file = "/var/log/app.log".to_string();
+
+        let changed = config.merge_defaults(&defaults);
+
+        assert!(changed);
+        assert_eq!(config.logging.level, "warn"); // not overwritten
+        assert_eq!(config.logging.file, "/var/log/app.log"); // filled
+    }
+
+    #[test]
+    fn test_merge_defaults_returns_false_when_nothing_to_fill() {
+        let mut config = Config::default();
+        config.logging.level = "warn".to_string();
+
+        let defaults = Config::default(); // all empty — nothing to merge
+
+        assert!(!config.merge_defaults(&defaults));
+    }
+
+    // ── get: aliases and unknown keys ───────────────────────────────────────
+
+    #[test]
+    fn test_get_returns_none_for_unknown_key() {
+        let config = Config::default();
+        assert_eq!(config.get("does_not_exist"), None);
+    }
+
+    #[test]
+    fn test_get_accepts_dotted_kebab_and_legacy_aliases() {
+        let mut config = Config::default();
+        config.database.anon_key = "abc".to_string();
+
+        assert_eq!(config.get("anon_key"), Some("abc".to_string()));
+        assert_eq!(config.get("anon-key"), Some("abc".to_string()));
+        assert_eq!(config.get("token"), Some("abc".to_string())); // legacy
+        assert_eq!(config.get("database.anon_key"), Some("abc".to_string()));
+    }
+
+    // ── Display ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_display_includes_all_section_headers() {
+        let config = Config::default();
+        let s = format!("{config}");
+        assert!(s.contains("[logging]"));
+        assert!(s.contains("[database]"));
+        assert!(s.contains("[paths]"));
+        assert!(s.contains("[audit]"));
+        assert!(s.contains("[degree_analysis]"));
     }
 }
