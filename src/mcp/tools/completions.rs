@@ -222,11 +222,6 @@ enum CipFilter<'a> {
     Codes(&'a [String]),
 }
 
-/// Parse a comma-separated CIP codes string. Thin wrapper over [`parse_comma_list`].
-fn parse_cip_codes(s: &str) -> Vec<String> {
-    parse_comma_list(s)
-}
-
 /// Apply `cip_filter` to `filters` for the given column. No-op when `cip_col` is empty.
 fn apply_cip_filter(
     filters: QueryFilters,
@@ -373,7 +368,7 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
     let cip_codes_vec: Vec<String> = req
         .cip_codes
         .as_deref()
-        .map(parse_cip_codes)
+        .map(parse_comma_list)
         .unwrap_or_default();
     let cip_filter: Option<CipFilter<'_>> = if cip_codes_vec.is_empty() {
         req.cip_prefix.as_deref().map(CipFilter::Prefix)
@@ -532,7 +527,7 @@ pub async fn execute_institution_json(
     let cip_codes_vec: Vec<String> = req
         .cip_codes
         .as_deref()
-        .map(parse_cip_codes)
+        .map(parse_comma_list)
         .unwrap_or_default();
     let cip_filter: Option<CipFilter<'_>> = if cip_codes_vec.is_empty() {
         req.cip_prefix.as_deref().map(CipFilter::Prefix)
@@ -806,7 +801,7 @@ pub async fn execute_schools_json(
     let cip_codes_vec: Vec<String> = req
         .cip_codes
         .as_deref()
-        .map(parse_cip_codes)
+        .map(parse_comma_list)
         .unwrap_or_default();
     let cip_filter: Option<CipFilter<'_>> = if cip_codes_vec.is_empty() {
         req.cip_prefix.as_deref().map(CipFilter::Prefix)
@@ -1342,21 +1337,6 @@ mod tests {
             (None, None) => {}
             _ => panic!("float option mismatch: {actual:?} != {expected:?}"),
         }
-    }
-
-    // ── parse_cip_codes() ────────────────────────────────────────────────────
-
-    #[test]
-    fn test_parse_cip_codes_delegates_correctly() {
-        assert_eq!(
-            parse_cip_codes("11.0101,11.0701"),
-            vec!["11.0101", "11.0701"]
-        );
-    }
-
-    #[test]
-    fn test_parse_cip_codes_empty_returns_empty() {
-        assert!(parse_cip_codes("").is_empty());
     }
 
     // ── aggregate_demo_map() ─────────────────────────────────────────────────

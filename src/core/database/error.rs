@@ -5,7 +5,7 @@ use std::fmt;
 /// Errors that can occur during database operations
 #[derive(Debug)]
 pub enum DatabaseError {
-    /// Database is not configured (missing endpoint or token)
+    /// Database is not configured (missing `endpoint` or `anon_key`)
     NotConfigured,
     /// Database is disabled in configuration
     Disabled,
@@ -24,7 +24,7 @@ impl fmt::Display for DatabaseError {
         match self {
             Self::NotConfigured => write!(
                 f,
-                "Database not configured. Set `endpoint` and `token` in [database] config."
+                "Database not configured. Set `endpoint` and `anon_key` in [database] config."
             ),
             Self::Disabled => write!(
                 f,

@@ -189,10 +189,12 @@ pub async fn ingest_institutions(
         ($($name:expr),+) => { find_col(&headers, &[$($name),+]) };
     }
 
-    let col_unitid = col!("UNITID")
-        .ok_or_else(|| DatabaseError::ParseError("UNITID column not found".to_string()))?;
-    let col_name = col!("INSTNM")
-        .ok_or_else(|| DatabaseError::ParseError("INSTNM column not found".to_string()))?;
+    let col_unitid = col!("UNITID").ok_or_else(|| {
+        DatabaseError::ParseError(format!("UNITID column not found in {}", path.display()))
+    })?;
+    let col_name = col!("INSTNM").ok_or_else(|| {
+        DatabaseError::ParseError(format!("INSTNM column not found in {}", path.display()))
+    })?;
     let col_city = col!("CITY");
     let col_state = col!("STABBR");
     let col_sector = col!("SECTOR");
@@ -391,12 +393,15 @@ pub async fn ingest_completions(
         ($($name:expr),+) => { find_col(&headers, &[$($name),+]) };
     }
 
-    let col_unitid =
-        col!("UNITID").ok_or_else(|| DatabaseError::ParseError("UNITID not found".to_string()))?;
-    let col_cipcode = col!("CIPCODE")
-        .ok_or_else(|| DatabaseError::ParseError("CIPCODE not found".to_string()))?;
-    let col_awlevel = col!("AWLEVEL")
-        .ok_or_else(|| DatabaseError::ParseError("AWLEVEL not found".to_string()))?;
+    let col_unitid = col!("UNITID").ok_or_else(|| {
+        DatabaseError::ParseError(format!("UNITID column not found in {}", path.display()))
+    })?;
+    let col_cipcode = col!("CIPCODE").ok_or_else(|| {
+        DatabaseError::ParseError(format!("CIPCODE column not found in {}", path.display()))
+    })?;
+    let col_awlevel = col!("AWLEVEL").ok_or_else(|| {
+        DatabaseError::ParseError(format!("AWLEVEL column not found in {}", path.display()))
+    })?;
     // Include both MAJORNUM=1 (primary) and MAJORNUM=2 (double-major) so CS completions
     // are counted even when CS is the student's second major. majornum is stored on each
     // row and included in the unique constraint, preventing duplicate conflicts.
@@ -458,7 +463,7 @@ pub async fn ingest_completions(
         client,
         &mut batch,
         tables::COMPLETIONS,
-        &["unitid", "cip_code", "award_level", "major_num", "year"],
+        COMPLETIONS_CONFLICT,
         &mut stats.rows_upserted,
     )
     .await?;

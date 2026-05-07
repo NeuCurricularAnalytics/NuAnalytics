@@ -70,6 +70,7 @@ pub fn execute_html(graph_spec_json: &str, format: VisualizationFormat) -> Strin
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// Render a minimal HTML error page so the tool always returns valid HTML.
 fn error_html(msg: &str) -> String {
     format!(
         "<!DOCTYPE html>\

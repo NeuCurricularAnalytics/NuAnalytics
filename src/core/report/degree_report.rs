@@ -5,6 +5,7 @@
 
 use crate::core::degree::plan_selector::{PlanCategory, ScoredPlan, SelectedPlans};
 use crate::core::models::{Degree, School, DAG};
+use crate::core::report::visualization::renderer::escape_html;
 use crate::core::statistics::aggregator::{AggregatedDegreeStats, MetricsAggregator};
 use crate::core::statistics::box_plot::{BoxPlotData, BoxPlotGenerator};
 use std::error::Error;
@@ -349,7 +350,7 @@ impl DegreeReportGenerator {
     <td>{:.1} / {:.1} / {:.1}</td>\n\
 </tr>",
                     course_id,
-                    Self::escape_html(course_name),
+                    escape_html(course_name),
                     stats.plan_count,
                     stats.complexity.median,
                     stats.complexity.min,
@@ -499,7 +500,7 @@ impl DegreeReportGenerator {
                     let name = ctx.school.get_course(key).map_or(key.as_str(), |c| &c.name);
                     format!(
                         "<span class=\"course-badge\">{key}</span> {}",
-                        Self::escape_html(name)
+                        escape_html(name)
                     )
                 })
                 .collect();
@@ -571,7 +572,7 @@ impl DegreeReportGenerator {
                     let _ = writeln!(
                         html,
                         "<li><strong>{course}</strong> - {}</li>",
-                        Self::escape_html(name)
+                        escape_html(name)
                     );
                 }
             }
@@ -587,62 +588,6 @@ impl DegreeReportGenerator {
         }
 
         html
-    }
-
-    /// Render selected plans section (legacy - kept for compatibility)
-    #[allow(dead_code)]
-    fn render_selected_plans(ctx: &DegreeReportContext) -> String {
-        let mut html = String::new();
-
-        for (category, plan) in ctx.selected_plans.iter() {
-            let plan_details = Self::render_plan_details(plan, category);
-            let _ = writeln!(
-                html,
-                "<div class=\"plan-card\">\n\
-    <h3>{}</h3>\n\
-    {plan_details}\n\
-</div>",
-                category.display_name()
-            );
-        }
-
-        html
-    }
-
-    /// Render details for a single plan (legacy - kept for compatibility)
-    #[allow(dead_code)]
-    fn render_plan_details(plan: &ScoredPlan, category: PlanCategory) -> String {
-        let mut html = String::new();
-
-        // Summary stats
-        let _ = writeln!(
-            html,
-            "<div class=\"plan-stats\">\n\
-    <div class=\"plan-stat\"><span class=\"label\">Terms:</span> <span class=\"value\">{}</span></div>\n\
-    <div class=\"plan-stat\"><span class=\"label\">Complexity:</span> <span class=\"value\">{}</span></div>\n\
-    <div class=\"plan-stat\"><span class=\"label\">Longest Delay:</span> <span class=\"value\">{}</span></div>\n\
-</div>",
-            plan.score.terms_required, plan.score.total_complexity, plan.score.longest_delay
-        );
-
-        // Course list for non-random samples (keep random samples compact)
-        if category != PlanCategory::RandomSample {
-            let _ = writeln!(html, "<details><summary>View Courses</summary><ul>");
-            for course in &plan.variant.courses {
-                let _ = writeln!(html, "<li>{course}</li>");
-            }
-            let _ = writeln!(html, "</ul></details>");
-        }
-
-        html
-    }
-
-    /// Escape HTML special characters
-    fn escape_html(s: &str) -> String {
-        s.replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('"', "&quot;")
     }
 }
 
@@ -754,14 +699,6 @@ mod tests {
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("Computer Science"));
         assert!(html.contains("Test University"));
-    }
-
-    #[test]
-    fn test_escape_html() {
-        assert_eq!(
-            DegreeReportGenerator::escape_html("Test & <Data>"),
-            "Test &amp; &lt;Data&gt;"
-        );
     }
 
     #[test]

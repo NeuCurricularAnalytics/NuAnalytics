@@ -9,7 +9,7 @@
 //! ```toml
 //! [database]
 //! endpoint = "https://your-project.supabase.co"
-//! token    = "your-anon-key"
+//! anon_key = "your-anon-key"
 //! enabled  = true
 //! ```
 //!

@@ -261,6 +261,8 @@ impl NuAnalyticsMcpServer {
 /// Database access helpers.
 #[cfg(feature = "database")]
 impl NuAnalyticsMcpServer {
+    /// Return the configured DB client, or a JSON error response naming `tool_name`
+    /// when the database is not configured.
     fn get_db(&self, tool_name: &'static str) -> Result<Arc<DbClient>, String> {
         self.db
             .as_ref()

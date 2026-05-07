@@ -208,3 +208,45 @@ pub struct DemographicRepresentation {
     /// Representation ratio: `completion_pct` / `enrollment_pct` (1.0 = proportional)
     pub representation_ratio: Option<f64>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// [`Completion::id`] must be `#[serde(skip_serializing_if = "Option::is_none")]`
+    /// so INSERT payloads omit `id` entirely. `PostgREST` rejects bulk INSERTs whose
+    /// rows declare an `id` column the database is supposed to assign.
+    #[test]
+    fn test_completion_id_omitted_when_none() {
+        let c: Completion = serde_json::from_value(serde_json::json!({
+            "id": null,
+            "unitid": 167_358,
+            "cip_code": "11.0101",
+            "award_level": 5,
+            "major_num": 1,
+            "year": 2024,
+        }))
+        .expect("minimal Completion JSON should deserialize");
+        let json = serde_json::to_string(&c).expect("Completion should serialize");
+        assert!(
+            !json.contains("\"id\""),
+            "id=None must be skipped in payload, got: {json}"
+        );
+    }
+
+    #[test]
+    fn test_institution_completion_total_id_omitted_when_none() {
+        let t: InstitutionCompletionTotal = serde_json::from_value(serde_json::json!({
+            "id": null,
+            "unitid": 167_358,
+            "award_level": 5,
+            "year": 2024,
+        }))
+        .expect("minimal totals JSON should deserialize");
+        let json = serde_json::to_string(&t).expect("totals should serialize");
+        assert!(
+            !json.contains("\"id\""),
+            "id=None must be skipped in payload, got: {json}"
+        );
+    }
+}

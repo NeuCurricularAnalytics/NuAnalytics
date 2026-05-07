@@ -330,8 +330,6 @@ mod tests {
 
     #[test]
     fn test_render_contains_graph_components() {
-        // Replaces the former generate_critical_path_ids tests; verifies the
-        // rendered HTML includes course nodes and the nuGraphs registration.
         let (school, plan, degree, metrics, summary, dag, term_plan) = create_test_context();
         let ctx = ReportContext::new(
             &school,

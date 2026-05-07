@@ -567,6 +567,43 @@ mod tests {
     }
 
     #[test]
+    fn test_report_format_arg_extension_roundtrip() {
+        for fmt in [
+            ReportFormatArg::Html,
+            ReportFormatArg::Md,
+            ReportFormatArg::Pdf,
+        ] {
+            assert_eq!(ReportFormatArg::from_extension(fmt.extension()), Some(fmt));
+        }
+    }
+
+    #[test]
+    fn test_report_format_arg_from_extension_aliases() {
+        assert_eq!(
+            ReportFormatArg::from_extension("HTML"),
+            Some(ReportFormatArg::Html)
+        );
+        assert_eq!(
+            ReportFormatArg::from_extension("htm"),
+            Some(ReportFormatArg::Html)
+        );
+        assert_eq!(
+            ReportFormatArg::from_extension("markdown"),
+            Some(ReportFormatArg::Md)
+        );
+        assert_eq!(
+            ReportFormatArg::from_extension("PDF"),
+            Some(ReportFormatArg::Pdf)
+        );
+    }
+
+    #[test]
+    fn test_report_format_arg_from_extension_rejects_unknown() {
+        assert_eq!(ReportFormatArg::from_extension("xlsx"), None);
+        assert_eq!(ReportFormatArg::from_extension(""), None);
+    }
+
+    #[test]
     fn test_log_level_to_logger_level() {
         assert_eq!(Level::from(LogLevelArg::Error), Level::Error);
         assert_eq!(Level::from(LogLevelArg::Warn), Level::Warn);

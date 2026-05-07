@@ -796,4 +796,76 @@ courses:
             assert!(!spec.terms.is_empty(), "terms must not be empty");
         }
     }
+
+    #[test]
+    fn test_parse_prereqs_strips_punct_and_filters_short_tokens() {
+        assert_eq!(parse_prereqs("CS101 & CS201"), vec!["CS101", "CS201"]);
+        assert_eq!(
+            parse_prereqs("(CS101 | CS201) & CS301"),
+            vec!["CS101", "CS201", "CS301"]
+        );
+        assert_eq!(parse_prereqs("[MATH101]"), vec!["MATH101"]);
+        assert!(parse_prereqs("").is_empty());
+        // single-character tokens are filtered out (stray operators, junk)
+        assert!(parse_prereqs("a b c").is_empty());
+    }
+
+    #[test]
+    fn test_gen_elective_placeholders_zero_or_negative() {
+        assert!(gen_elective_placeholders(0.0).is_empty());
+        assert!(gen_elective_placeholders(-3.0).is_empty());
+    }
+
+    #[test]
+    fn test_gen_elective_placeholders_full_only() {
+        // 6.0 → exactly 2 full (3-credit) electives, no remainder
+        assert_eq!(gen_elective_placeholders(6.0), vec!["ELEC_01", "ELEC_02"]);
+    }
+
+    #[test]
+    fn test_gen_elective_placeholders_with_seminar_remainder() {
+        // 7.5 → 2 full + remainder 1.5 ≥ threshold → 1 seminar (S suffix)
+        assert_eq!(
+            gen_elective_placeholders(7.5),
+            vec!["ELEC_01", "ELEC_02", "ELEC_03S"]
+        );
+    }
+
+    #[test]
+    fn test_gen_elective_placeholders_remainder_below_threshold_dropped() {
+        // 4.0 → 1 full + remainder 1.0 < 1.5 → no seminar emitted
+        assert_eq!(gen_elective_placeholders(4.0), vec!["ELEC_01"]);
+    }
+
+    #[test]
+    fn test_find_equivalent_in_plan_returns_match_when_present() {
+        let mut equivs: HashMap<String, HashSet<String>> = HashMap::new();
+        equivs.insert(
+            "MATH101".to_string(),
+            std::iter::once("MATH102".to_string()).collect(),
+        );
+        let plan: HashSet<&str> = ["MATH102", "CS101"].into_iter().collect();
+        assert_eq!(
+            find_equivalent_in_plan("MATH101", &equivs, &plan),
+            Some("MATH102")
+        );
+    }
+
+    #[test]
+    fn test_find_equivalent_in_plan_returns_none_when_absent() {
+        let mut equivs: HashMap<String, HashSet<String>> = HashMap::new();
+        equivs.insert(
+            "MATH101".to_string(),
+            std::iter::once("MATH102".to_string()).collect(),
+        );
+        let plan: HashSet<&str> = std::iter::once("CS101").collect();
+        assert_eq!(find_equivalent_in_plan("MATH101", &equivs, &plan), None);
+    }
+
+    #[test]
+    fn test_find_equivalent_in_plan_unknown_course_returns_none() {
+        let equivs: HashMap<String, HashSet<String>> = HashMap::new();
+        let plan: HashSet<&str> = std::iter::once("CS101").collect();
+        assert_eq!(find_equivalent_in_plan("MATH101", &equivs, &plan), None);
+    }
 }
