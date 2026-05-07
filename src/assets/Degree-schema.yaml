@@ -29,6 +29,79 @@
 # =============================================================================
 
 # =============================================================================
+# QUICKSTART
+# =============================================================================
+#
+# A complete, valid degree YAML in ~60 lines. Copy this and modify.
+# For full reference, request section="all" or one of the dedicated
+# sections: degree, requirements, courses, examples.
+
+# degree:
+#   id: example-bs-cs-2024
+#   institution: Example University
+#   program: B.S. Computer Science
+#   catalog_year: "2024-2025"
+#   total_credits: 120
+#   gpa_minimum: 2.0
+#   major_subjects: ["CS", "MATH"]
+#   allow_double_counting: false
+#
+# requirements:
+#
+#   # type: all — every listed course must be completed
+#   intro_sequence:
+#     name: Introductory CS
+#     type: all
+#     category: major
+#     courses: [CS1, CS2]
+#
+#   # type: select — choose N courses (or N credits) from a pool
+#   cs_electives:
+#     name: Upper-division CS electives
+#     type: select
+#     category: major
+#     count: 3
+#     from:
+#       pattern: "CS:3000+"           # match all CS courses numbered 3000+
+#       exclude: [CS5000]              # optional — exclude specific matches
+#
+#   # type: select with explicit course list
+#   quant_reasoning:
+#     name: Quantitative reasoning
+#     type: select
+#     category: gen_ed
+#     count: 1
+#     from:
+#       courses: [MATH1, STAT1]
+#
+# courses:
+#
+#   CS1:
+#     title: Introduction to Computing
+#     prefix: CS
+#     number: "1100"
+#     credits: 4
+#
+#   CS2:
+#     title: Data Structures
+#     prefix: CS
+#     number: "2100"
+#     credits: 4
+#     prerequisites_raw: "CS1"        # boolean expression: course IDs joined by & |
+#
+#   MATH1:
+#     title: Calculus I
+#     prefix: MATH
+#     number: "1100"
+#     credits: 4
+#
+#   STAT1:
+#     title: Probability and Statistics
+#     prefix: STAT
+#     number: "2100"
+#     credits: 3
+
+# =============================================================================
 # DEGREE METADATA
 # =============================================================================
 

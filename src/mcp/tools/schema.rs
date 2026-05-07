@@ -10,9 +10,10 @@ use serde::Deserialize;
 /// Request parameters for the `get_degree_schema` tool
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetSchemaRequest {
-    /// Optional section filter: "all", "degree", "requirements", "courses", or "examples"
+    /// Optional section filter: "quickstart" (~2 KB minimal example), "all" (~25 KB full reference),
+    /// "degree", "requirements", "courses", or "examples"
     #[schemars(
-        description = "Section to return: 'all' (default), 'degree', 'requirements', 'courses', or 'examples'"
+        description = "Section: 'quickstart' (~2 KB minimal example), 'all' (default, ~25 KB), 'degree', 'requirements', 'courses', or 'examples'"
     )]
     pub section: Option<String>,
 }
@@ -84,5 +85,25 @@ mod tests {
         let mixed = execute(Some("Degree"));
         assert_eq!(upper, lower);
         assert_eq!(lower, mixed);
+    }
+
+    /// Quickstart should be a compact minimal example, not the full schema.
+    /// Pinning the size gives us a regression alarm if someone accidentally
+    /// expands the section beyond its intended scope.
+    #[test]
+    fn test_get_quickstart_section_is_compact() {
+        let result = execute(Some("quickstart"));
+        assert!(result.contains("QUICKSTART"));
+        assert!(result.contains("example-bs-cs-2024"));
+        assert!(
+            result.len() < 4_000,
+            "quickstart should stay under 4 KB; got {} bytes",
+            result.len()
+        );
+        // Should NOT pull in the full schema
+        assert!(
+            !result.contains("DEGREE REQUIREMENTS SCHEMA"),
+            "quickstart must not include the schema header"
+        );
     }
 }
