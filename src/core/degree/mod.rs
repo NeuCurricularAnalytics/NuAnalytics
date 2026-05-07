@@ -58,7 +58,8 @@ pub use course_reference::CourseReference;
 
 // Re-export validation types
 pub use validation::{
-    validate_degree_program, ValidationError, ValidationResult, ValidationWarning,
+    validate_degree_program, validate_degree_program_with_options, ValidationError,
+    ValidationOptions, ValidationResult, ValidationWarning,
 };
 
 // Re-export plan generation types

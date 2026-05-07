@@ -13,8 +13,8 @@ pub mod statistics;
 // Re-export degree module types for convenience
 pub use degree::{
     load_degree_from_yaml, parse_degree_yaml, save_degree_to_yaml, serialize_degree_yaml,
-    validate_degree_program, DegreeParseError, DegreeProgram, ValidationError, ValidationResult,
-    ValidationWarning,
+    validate_degree_program, validate_degree_program_with_options, DegreeParseError, DegreeProgram,
+    ValidationError, ValidationOptions, ValidationResult, ValidationWarning,
 };
 
 // Re-export statistics types for convenience

@@ -78,11 +78,12 @@ impl NuAnalyticsMcpServer {
 
     /// Validate a degree program YAML
     #[tool(
-        description = "Validate a degree program YAML string. Returns detailed validation results including errors, warnings, and suggestions for fixing issues. Use this iteratively to build a valid degree.yaml file."
+        description = "Validate a degree program YAML string. Returns detailed validation results including errors, warnings, and suggestions for fixing issues. Use this iteratively to build a valid degree.yaml file. Pass allow_unmatched_patterns=true to surface external gen-ed pool patterns (e.g. \"*:100+\") as warnings instead of errors when courses aren't enumerated locally."
     )]
     #[allow(clippy::unused_self)]
     fn validate_degree(&self, Parameters(req): Parameters<ValidateDegreeRequest>) -> String {
-        validate::execute_json(&req.yaml_content)
+        let allow_unmatched_patterns = req.allow_unmatched_patterns.unwrap_or(false);
+        validate::execute_json(&req.yaml_content, allow_unmatched_patterns)
     }
 
     /// Audit a degree program YAML

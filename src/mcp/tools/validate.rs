@@ -4,7 +4,10 @@
 //! and returns structured feedback.
 
 use crate::core::degree::{parse_degree_yaml, DegreeParseError};
-use crate::core::{validate_degree_program, ValidationError, ValidationResult, ValidationWarning};
+use crate::core::{
+    validate_degree_program_with_options, ValidationError, ValidationOptions, ValidationResult,
+    ValidationWarning,
+};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +21,18 @@ pub struct ValidateDegreeRequest {
     /// The complete degree YAML content as a string
     #[schemars(description = "Complete degree program YAML content to validate")]
     pub yaml_content: String,
+
+    /// If true, patterns that match no enumerated courses (e.g. external
+    /// gen-ed pools like `*:100+`, `POLS:100+`) become warnings instead of
+    /// errors. Default false (strict validation).
+    #[schemars(
+        description = "If true, patterns with no matching courses become warnings instead of errors. Default false."
+    )]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
+    )]
+    pub allow_unmatched_patterns: Option<bool>,
 }
 
 /// Structured error information returned by validation
@@ -82,11 +97,14 @@ pub struct ValidationResponse {
 ///
 /// # Arguments
 /// * `yaml_content` - The degree YAML content to validate
+/// * `allow_unmatched_patterns` - If true, surface unmatched-pattern errors
+///   as warnings instead of errors (for YAMLs that intentionally reference
+///   external gen-ed pools)
 ///
 /// # Returns
 /// Structured validation response
 #[must_use]
-pub fn execute(yaml_content: &str) -> ValidationResponse {
+pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> ValidationResponse {
     // Try to parse the YAML
     let program = match parse_degree_yaml(yaml_content) {
         Ok(p) => p,
@@ -122,7 +140,10 @@ pub fn execute(yaml_content: &str) -> ValidationResponse {
     };
 
     // Run validation
-    let result = validate_degree_program(&program);
+    let opts = ValidationOptions {
+        allow_unmatched_patterns,
+    };
+    let result = validate_degree_program_with_options(&program, opts);
 
     // Convert validation result to response format
     let errors = convert_validation_errors(&result);
@@ -143,12 +164,14 @@ pub fn execute(yaml_content: &str) -> ValidationResponse {
 ///
 /// # Arguments
 /// * `yaml_content` - The degree YAML content to validate
+/// * `allow_unmatched_patterns` - If true, surface unmatched-pattern errors
+///   as warnings (see `execute`)
 ///
 /// # Returns
 /// JSON string representation of the validation response
 #[must_use]
-pub fn execute_json(yaml_content: &str) -> String {
-    let response = execute(yaml_content);
+pub fn execute_json(yaml_content: &str, allow_unmatched_patterns: bool) -> String {
+    let response = execute(yaml_content, allow_unmatched_patterns);
     serde_json::to_string_pretty(&response)
         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
 }
@@ -313,6 +336,15 @@ fn convert_validation_warnings(result: &ValidationResult) -> Vec<ValidationWarni
                     ),
                 }
             }
+            ValidationWarning::PatternMatchesNoCoursesAllowed {
+                pattern,
+                requirement_id,
+            } => ValidationWarningInfo {
+                warning_type: "PatternMatchesNoCoursesAllowed".to_string(),
+                message: format!(
+                    "Pattern '{pattern}' in requirement '{requirement_id}' matches no enumerated courses (allowed via allow_unmatched_patterns)"
+                ),
+            },
         })
         .collect()
 }
@@ -409,7 +441,7 @@ courses:
 
     #[test]
     fn test_valid_degree() {
-        let response = execute(VALID_YAML);
+        let response = execute(VALID_YAML, false);
         assert!(
             response.is_valid,
             "Expected valid but got errors: {:?}",
@@ -422,7 +454,7 @@ courses:
 
     #[test]
     fn test_invalid_degree_missing_course() {
-        let response = execute(INVALID_YAML);
+        let response = execute(INVALID_YAML, false);
         assert!(!response.is_valid);
         assert!(
             response.parse_error.is_none(),
@@ -438,14 +470,14 @@ courses:
 
     #[test]
     fn test_malformed_yaml() {
-        let response = execute("not: valid: yaml: {{");
+        let response = execute("not: valid: yaml: {{", false);
         assert!(!response.is_valid);
         assert!(response.parse_error.is_some());
     }
 
     #[test]
     fn test_context_populated() {
-        let response = execute(VALID_YAML);
+        let response = execute(VALID_YAML, false);
         assert!(
             response.is_valid,
             "Expected valid but got errors: {:?}",
@@ -459,7 +491,7 @@ courses:
 
     #[test]
     fn test_execute_json_returns_valid_json() {
-        let json_str = execute_json(VALID_YAML);
+        let json_str = execute_json(VALID_YAML, false);
         let parsed: Result<serde_json::Value, _> = serde_json::from_str(&json_str);
         assert!(parsed.is_ok(), "Output should be valid JSON");
         let value = parsed.unwrap();
@@ -468,7 +500,7 @@ courses:
 
     #[test]
     fn test_execute_json_with_errors() {
-        let json_str = execute_json(INVALID_YAML);
+        let json_str = execute_json(INVALID_YAML, false);
         let parsed: Result<serde_json::Value, _> = serde_json::from_str(&json_str);
         assert!(parsed.is_ok(), "Output should be valid JSON");
         let value = parsed.unwrap();
@@ -508,7 +540,7 @@ courses:
     credits: 4
     prerequisites_raw: "CS101"
 "#;
-        let response = execute(yaml);
+        let response = execute(yaml, false);
         assert!(!response.is_valid);
         assert!(response
             .errors
@@ -518,15 +550,92 @@ courses:
 
     #[test]
     fn test_suggestions_for_valid_degree() {
-        let response = execute(VALID_YAML);
+        let response = execute(VALID_YAML, false);
         assert!(response.is_valid);
         assert!(response.suggestions.iter().any(|s| s.contains("valid")));
     }
 
     #[test]
     fn test_suggestions_for_invalid_degree() {
-        let response = execute(INVALID_YAML);
+        let response = execute(INVALID_YAML, false);
         assert!(!response.is_valid);
         assert!(response.suggestions.iter().any(|s| s.contains("Fix")));
+    }
+
+    /// YAML with an external gen-ed pool pattern (`POLS:100+`) that matches
+    /// no enumerated courses. Used by both flag-state tests below.
+    const EXTERNAL_POOL_YAML: &str = r#"
+degree:
+  id: test-degree
+  institution: Test University
+  program: Test Program
+  total_credits: 120
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Introduction
+    type: all
+    category: major
+    courses: [CS101]
+
+  external_geneds:
+    name: Political Science Gen-Ed
+    type: select
+    category: gened
+    count: 1
+    from:
+      pattern: "POLS:100+"
+
+courses:
+  CS101:
+    title: Intro to CS
+    prefix: CS
+    number: "101"
+    credits: 4
+"#;
+
+    #[test]
+    fn test_unmatched_pattern_is_error_by_default() {
+        let response = execute(EXTERNAL_POOL_YAML, false);
+        assert!(
+            !response.is_valid,
+            "POLS:100+ should fail strict validation when no POLS courses exist"
+        );
+        assert!(
+            response
+                .errors
+                .iter()
+                .any(|e| e.error_type == "PatternMatchesNoCourses"),
+            "expected PatternMatchesNoCourses error, got {:?}",
+            response.errors
+        );
+    }
+
+    #[test]
+    fn test_unmatched_pattern_is_warning_when_allowed() {
+        let response = execute(EXTERNAL_POOL_YAML, true);
+        assert!(
+            response.is_valid,
+            "allow_unmatched_patterns=true must keep validation valid; errors: {:?}",
+            response.errors
+        );
+        // The previous error must NOT appear
+        assert!(
+            !response
+                .errors
+                .iter()
+                .any(|e| e.error_type == "PatternMatchesNoCourses"),
+            "PatternMatchesNoCourses must not be raised when flag is on"
+        );
+        // ...but a corresponding warning should
+        assert!(
+            response
+                .warnings
+                .iter()
+                .any(|w| w.warning_type == "PatternMatchesNoCoursesAllowed"),
+            "expected PatternMatchesNoCoursesAllowed warning, got {:?}",
+            response.warnings
+        );
     }
 }

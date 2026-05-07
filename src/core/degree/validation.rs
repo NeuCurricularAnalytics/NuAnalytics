@@ -193,6 +193,29 @@ pub enum ValidationWarning {
         /// The required course that triggers this choice
         required_by: String,
     },
+
+    /// Pattern matched no enumerated courses, but the caller opted in to
+    /// `allow_unmatched_patterns` so it's surfaced as a warning instead of
+    /// an error. Common for external gen-ed pools (`*:100+`, `POLS:100+`)
+    /// that aren't enumerated locally.
+    PatternMatchesNoCoursesAllowed {
+        /// The pattern that didn't match any enumerated course
+        pattern: String,
+        /// Requirement ID containing the pattern
+        requirement_id: String,
+    },
+}
+
+/// Options that adjust validation behavior.
+///
+/// Defaults preserve the original strict behavior; callers opt in to looser
+/// modes when the YAML intentionally leaves some pools un-enumerated.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ValidationOptions {
+    /// Treat `PatternMatchesNoCourses` as a warning instead of an error.
+    /// Useful when a degree YAML references external pools (e.g. `*:100+`,
+    /// `POLS:100+`) that aren't enumerated in the local `courses:` block.
+    pub allow_unmatched_patterns: bool,
 }
 
 impl ValidationResult {
@@ -245,6 +268,7 @@ impl ValidationResult {
             let mut isolated = Vec::new();
             let mut hidden_req = Vec::new();
             let mut hidden_opts = Vec::new();
+            let mut unmatched_patterns = Vec::new();
 
             for warning in &self.warnings {
                 match warning {
@@ -256,6 +280,9 @@ impl ValidationResult {
                     ValidationWarning::IsolatedCourse { .. } => isolated.push(warning),
                     ValidationWarning::HiddenRequirement { .. } => hidden_req.push(warning),
                     ValidationWarning::HiddenRequirementOption { .. } => hidden_opts.push(warning),
+                    ValidationWarning::PatternMatchesNoCoursesAllowed { .. } => {
+                        unmatched_patterns.push(warning);
+                    }
                 }
             }
 
@@ -275,6 +302,7 @@ impl ValidationResult {
             print_group("Missing Cross-Listed Courses", &missing_cross_listed);
             print_group("Broad Patterns", &broad_pattern);
             print_group("Isolated Courses", &isolated);
+            print_group("Unmatched Patterns (External Pools)", &unmatched_patterns);
         }
 
         report
@@ -287,7 +315,7 @@ impl Default for ValidationResult {
     }
 }
 
-/// Validate a complete degree program
+/// Validate a complete degree program with default options.
 ///
 /// Performs comprehensive validation including:
 /// - Circular prerequisite detection
@@ -295,10 +323,21 @@ impl Default for ValidationResult {
 /// - Pattern matching validation
 /// - Requirement configuration validation
 ///
-/// # Returns
-/// A `ValidationResult` containing all errors and warnings found
+/// Equivalent to `validate_degree_program_with_options(program,
+/// ValidationOptions::default())`. Use the `_with_options` variant to
+/// loosen specific checks (e.g. allow patterns that match no enumerated
+/// courses, for external gen-ed pools).
 #[must_use]
 pub fn validate_degree_program(program: &DegreeProgram) -> ValidationResult {
+    validate_degree_program_with_options(program, ValidationOptions::default())
+}
+
+/// Validate a complete degree program with caller-supplied options.
+#[must_use]
+pub fn validate_degree_program_with_options(
+    program: &DegreeProgram,
+    opts: ValidationOptions,
+) -> ValidationResult {
     let mut result = ValidationResult::new();
 
     // Build DAG for prerequisite validation (Strict only for cycle detection)
@@ -311,7 +350,7 @@ pub fn validate_degree_program(program: &DegreeProgram) -> ValidationResult {
     validate_course_prerequisites(&program.courses, &mut result);
 
     // 3. Validate requirements reference valid courses
-    validate_requirements(&program.requirements, &program.courses, &mut result);
+    validate_requirements(&program.requirements, &program.courses, opts, &mut result);
 
     // 4. Validate cross-listing relationships
     validate_cross_listing(&program.courses, &mut result);
@@ -604,6 +643,7 @@ fn validate_course_prerequisites(courses: &HashMap<String, Course>, result: &mut
 fn validate_requirements(
     requirements: &HashMap<String, Requirement>,
     courses: &HashMap<String, Course>,
+    opts: ValidationOptions,
     result: &mut ValidationResult,
 ) {
     for (req_id, req) in requirements {
@@ -614,10 +654,10 @@ fn validate_requirements(
                 }
             }
             RequirementType::Select => {
-                validate_select_requirement(req, req_id, courses, result);
+                validate_select_requirement(req, req_id, courses, opts, result);
             }
             RequirementType::OneOf => {
-                validate_oneof_requirement(req, req_id, courses, result);
+                validate_oneof_requirement(req, req_id, courses, opts, result);
             }
         }
     }
@@ -628,11 +668,12 @@ fn validate_select_requirement(
     req: &Requirement,
     req_id: &str,
     courses: &HashMap<String, Course>,
+    opts: ValidationOptions,
     result: &mut ValidationResult,
 ) {
     // Only validate if there's a 'from' clause present
     if let Some(from) = &req.from {
-        validate_from_clause(from, req_id, courses, result);
+        validate_from_clause(from, req_id, courses, opts, result);
 
         // Validate count, credits, or groups_required are specified when using 'from'
         let has_selection_spec = req.count.is_some()
@@ -658,6 +699,7 @@ fn validate_oneof_requirement(
     req: &Requirement,
     req_id: &str,
     courses: &HashMap<String, Course>,
+    opts: ValidationOptions,
     result: &mut ValidationResult,
 ) {
     if let Some(options) = &req.options {
@@ -669,7 +711,7 @@ fn validate_oneof_requirement(
                 .enumerate()
                 .map(|(i, r)| (format!("{req_id}:{}:{i}", option.id), r.clone()))
                 .collect();
-            validate_requirements(&nested_reqs, courses, result);
+            validate_requirements(&nested_reqs, courses, opts, result);
         }
     } else {
         result.add_error(ValidationError::InvalidRequirement {
@@ -684,6 +726,7 @@ fn validate_from_clause(
     from: &FromClause,
     req_id: &str,
     courses: &HashMap<String, Course>,
+    opts: ValidationOptions,
     result: &mut ValidationResult,
 ) {
     // Validate explicit course list
@@ -693,13 +736,13 @@ fn validate_from_clause(
 
     // Validate pattern
     if let Some(pattern) = &from.pattern {
-        validate_pattern(pattern, req_id, courses, result);
+        validate_pattern(pattern, req_id, courses, opts, result);
     }
 
     // Validate included patterns
     if let Some(patterns) = &from.include {
         for pattern in patterns {
-            validate_pattern(pattern, req_id, courses, result);
+            validate_pattern(pattern, req_id, courses, opts, result);
         }
     }
 
@@ -717,6 +760,7 @@ fn validate_pattern(
     pattern: &str,
     req_id: &str,
     courses: &HashMap<String, Course>,
+    opts: ValidationOptions,
     result: &mut ValidationResult,
 ) {
     // Parse pattern: "PREFIX:LEVEL" where LEVEL can be "*", "300+", "100-299", etc.
@@ -757,10 +801,17 @@ fn validate_pattern(
     let matches = match_pattern(pattern, courses);
 
     if matches.is_empty() {
-        result.add_error(ValidationError::PatternMatchesNoCourses {
-            pattern: pattern.to_string(),
-            requirement_id: req_id.to_string(),
-        });
+        if opts.allow_unmatched_patterns {
+            result.add_warning(ValidationWarning::PatternMatchesNoCoursesAllowed {
+                pattern: pattern.to_string(),
+                requirement_id: req_id.to_string(),
+            });
+        } else {
+            result.add_error(ValidationError::PatternMatchesNoCourses {
+                pattern: pattern.to_string(),
+                requirement_id: req_id.to_string(),
+            });
+        }
     } else if matches.len() > 50 {
         // Warn if pattern is too broad
         result.add_warning(ValidationWarning::BroadPattern {
@@ -1300,6 +1351,14 @@ fn format_warning(warning: &ValidationWarning) -> String {
                 "One of [{}] is implicitly required by '{}' (prerequisite choice)",
                 options.join(", "),
                 required_by
+            )
+        }
+        ValidationWarning::PatternMatchesNoCoursesAllowed {
+            pattern,
+            requirement_id,
+        } => {
+            format!(
+                "Pattern '{pattern}' in requirement '{requirement_id}' matches no enumerated courses (allowed via allow_unmatched_patterns)"
             )
         }
     }
