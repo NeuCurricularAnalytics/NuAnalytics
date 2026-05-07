@@ -155,8 +155,8 @@ fn render_style(out: &mut String) {
   font-weight: 600; font-size: .75rem; color: var(--nu-primary); margin-top: 6px;
 }}
 .nu-graph .course-node .course-name {{
-  font-size: .65rem; color: #666; line-height: 1.2;
-  max-height: 2.4em; overflow: hidden;
+  font-size: .65rem; color: #666; line-height: 1.2; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis;
 }}
 .nu-graph .connections-svg {{
   position: absolute; top: 0; left: 0;
@@ -284,7 +284,6 @@ fn render_graph_html(spec: &CurriculumGraphSpec, id: &str, out: &mut String) {
             let node = spec.nodes.iter().find(|n| &n.id == course_id);
             let complexity = node.map_or(0, |n| n.complexity);
             let name = node.map_or("", |n| n.name.as_str());
-            let short_name = if name.len() > 22 { &name[..19] } else { name };
             let cls = complexity_class(complexity);
 
             let _ = writeln!(
@@ -299,7 +298,7 @@ fn render_graph_html(spec: &CurriculumGraphSpec, id: &str, out: &mut String) {
             let _ = writeln!(
                 out,
                 "<div class=\"course-name\">{}</div>",
-                escape_html(short_name)
+                escape_html(name)
             );
             let _ = writeln!(out, "</div>");
         }
@@ -613,5 +612,41 @@ mod tests {
     fn test_render_wires_up_click_handlers() {
         let html = VanillaJsRenderer.render(&minimal_spec());
         assert!(html.contains("attachClickHandlers"));
+    }
+
+    /// Long names previously got byte-sliced to 19 chars; the full name now
+    /// flows into the HTML and CSS line-clamp handles overflow at render time.
+    #[test]
+    fn test_render_emits_full_course_name_without_truncation() {
+        let mut spec = minimal_spec();
+        let long_name = "Calculus for Physical Scientists I";
+        spec.nodes[0].name = long_name.to_string();
+        let html = VanillaJsRenderer.render(&spec);
+        assert!(
+            html.contains(long_name),
+            "rendered HTML should carry the full course name, got: {html}"
+        );
+        // The old 19-byte truncation produced "Calculus for Physic" — guard
+        // against regression by asserting the truncated form is NOT present
+        // as a standalone course-name body.
+        assert!(
+            !html.contains(">Calculus for Physic<"),
+            "course name must not be byte-truncated to 19 chars"
+        );
+    }
+
+    /// The previous `&name[..19]` byte slice panicked when byte 19 fell
+    /// inside a multi-byte UTF-8 codepoint. Removing the slice eliminates
+    /// the latent panic; this test pins down the new behavior.
+    #[test]
+    fn test_render_does_not_panic_on_non_ascii_course_name() {
+        let mut spec = minimal_spec();
+        // Build a name where the boundary at byte 19 lands mid-codepoint:
+        // ASCII chars get 1 byte, "é" gets 2, "🎓" gets 4. Crafting the
+        // string so byte 19 sits inside a multi-byte char.
+        spec.nodes[0].name = "Introducción a la algorítmica 🎓".to_string();
+        // Should not panic — and the full name should appear in the HTML.
+        let html = VanillaJsRenderer.render(&spec);
+        assert!(html.contains("Introducción"));
     }
 }
