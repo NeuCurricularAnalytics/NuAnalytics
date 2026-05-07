@@ -96,12 +96,18 @@ impl NuAnalyticsMcpServer {
 
     /// Analyze a degree program YAML
     #[tool(
-        description = "Run full degree analysis: generate all possible course plans, compute aggregate metrics (complexity, delay, credits), and identify shortest/longest paths. Returns statistics across plans and term-by-term schedules for selected plans. Use after validate_degree confirms the YAML is valid. Optionally specify include_courses to constrain all plans to include specific courses."
+        description = "Run full degree analysis: generate all possible course plans, compute aggregate metrics (complexity, delay, credits), and identify shortest/longest paths. Returns statistics across plans and term-by-term schedules for selected plans. Set include_graph_spec=true (default false) when you need to render visualizations — each spec is ~30 KB so omitting them keeps the response compact. Use after validate_degree confirms the YAML is valid. Optionally specify include_courses to constrain all plans to include specific courses."
     )]
     #[allow(clippy::unused_self)]
     fn analyze_degree(&self, Parameters(req): Parameters<AnalyzeDegreeRequest>) -> String {
         let include_courses = req.include_courses.map(|s| shared::parse_comma_list(&s));
-        analyze::execute_json(&req.yaml_content, req.max_plans, include_courses)
+        let include_graph_spec = req.include_graph_spec.unwrap_or(false);
+        analyze::execute_json(
+            &req.yaml_content,
+            req.max_plans,
+            include_courses,
+            include_graph_spec,
+        )
     }
 
     /// Render a curriculum graph visualization from an `analyze_degree` result

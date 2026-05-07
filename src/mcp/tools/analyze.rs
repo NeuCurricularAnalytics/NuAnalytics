@@ -42,6 +42,19 @@ pub struct AnalyzeDegreeRequest {
         description = "Comma-separated list of course codes to include in all plans (e.g., 'CS150B,MATH156,CS414'). These courses will be present in every generated plan."
     )]
     pub include_courses: Option<String>,
+
+    /// Include full visualization `graph_spec` for each selected plan (default false).
+    ///
+    /// Each spec is ~30 KB; pass true only when you'll render the visualization.
+    /// Pair with `get_curriculum_visualization` to render the returned spec to HTML.
+    #[schemars(
+        description = "Include full graph_spec per selected plan (default false). Each spec is ~30 KB; opt in only when rendering."
+    )]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
+    )]
+    pub include_graph_spec: Option<bool>,
 }
 
 /// Serializable metric statistics (includes quartiles for box plots)
@@ -82,10 +95,13 @@ pub struct PlanSummaryJson {
     pub course_count: usize,
     /// Term-by-term schedule
     pub schedule: Vec<TermJson>,
-    /// Complete visualization spec for this plan.
+    /// Complete visualization spec for this plan. Only populated when
+    /// `include_graph_spec=true` is set on the `analyze_degree` request;
+    /// otherwise the field is omitted from the response entirely.
     ///
     /// Pass the serialized form of this field directly to
     /// `get_curriculum_visualization` to render an interactive HTML graph.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub graph_spec: Option<CurriculumGraphSpec>,
 }
 
@@ -149,11 +165,14 @@ const DEFAULT_MAX_PLANS: usize = 500;
 /// * `yaml_content` - The degree program YAML content
 /// * `max_plans` - Maximum number of plans to generate (default: 500)
 /// * `include_courses` - Optional courses to always include in all plans
+/// * `include_graph_spec` - When true, populates `graph_spec` on each
+///   selected plan (default false; suppresses ~30 KB per plan)
 #[must_use]
 pub fn execute(
     yaml_content: &str,
     max_plans: Option<usize>,
     include_courses: Option<Vec<String>>,
+    include_graph_spec: bool,
 ) -> AnalysisResponse {
     let max = max_plans.unwrap_or(DEFAULT_MAX_PLANS);
     let include = include_courses.unwrap_or_default();
@@ -247,6 +266,7 @@ pub fn execute(
         plans_processed,
         max,
         &stats,
+        include_graph_spec,
     )
 }
 
@@ -304,7 +324,7 @@ fn run_plan_analysis(
 
 /// Build the analysis response from aggregated results.
 ///
-/// The function has 8 parameters because it synthesises data from every stage
+/// The function has 9 parameters because it synthesises data from every stage
 /// of the analysis pipeline; grouping them into a context struct would just
 /// move the same data without reducing coupling.
 #[allow(clippy::too_many_arguments)]
@@ -317,6 +337,7 @@ fn build_response(
     plans_processed: usize,
     max: usize,
     stats: &crate::core::degree::PlanGenerationStats,
+    include_graph_spec: bool,
 ) -> AnalysisResponse {
     let degree_stats = aggregator.degree_stats();
     let selected = selector.into_selected_plans();
@@ -324,14 +345,18 @@ fn build_response(
     let selected_plans: Vec<PlanSummaryJson> = selected
         .iter()
         .map(|(cat, plan)| {
-            let graph_id = cat.display_name().to_lowercase().replace(' ', "-");
-            let graph_spec = Some(spec_from_scored_plan(
-                school,
-                equivalences,
-                plan,
-                Some(aggregator),
-                &graph_id,
-            ));
+            let graph_spec = if include_graph_spec {
+                let graph_id = cat.display_name().to_lowercase().replace(' ', "-");
+                Some(spec_from_scored_plan(
+                    school,
+                    equivalences,
+                    plan,
+                    Some(aggregator),
+                    &graph_id,
+                ))
+            } else {
+                None
+            };
 
             PlanSummaryJson {
                 category: cat.display_name().to_string(),
@@ -379,13 +404,15 @@ fn build_response(
 /// * `yaml_content` - The degree program YAML content
 /// * `max_plans` - Maximum number of plans to generate
 /// * `include_courses` - Optional courses to always include in all plans
+/// * `include_graph_spec` - When true, include `graph_spec` per selected plan
 #[must_use]
 pub fn execute_json(
     yaml_content: &str,
     max_plans: Option<usize>,
     include_courses: Option<Vec<String>>,
+    include_graph_spec: bool,
 ) -> String {
-    let response = execute(yaml_content, max_plans, include_courses);
+    let response = execute(yaml_content, max_plans, include_courses, include_graph_spec);
     serde_json::to_string_pretty(&response)
         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
 }
@@ -727,7 +754,7 @@ courses:
 
     #[test]
     fn test_analyze_valid_degree() {
-        let response = execute(TEST_YAML, Some(10), None);
+        let response = execute(TEST_YAML, Some(10), None, false);
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
         assert!(response.complexity.is_some());
@@ -737,14 +764,14 @@ courses:
 
     #[test]
     fn test_analyze_malformed_yaml() {
-        let response = execute("not: valid: yaml: {{", Some(10), None);
+        let response = execute("not: valid: yaml: {{", Some(10), None, false);
         assert!(!response.success);
         assert!(response.error.is_some());
     }
 
     #[test]
     fn test_analyze_json_output() {
-        let json = execute_json(TEST_YAML, Some(10), None);
+        let json = execute_json(TEST_YAML, Some(10), None, false);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["success"].as_bool().unwrap());
         assert!(parsed["plans_analyzed"].as_u64().unwrap() > 0);
@@ -752,7 +779,7 @@ courses:
 
     #[test]
     fn test_selected_plans_have_schedules() {
-        let response = execute(TEST_YAML, Some(10), None);
+        let response = execute(TEST_YAML, Some(10), None, false);
         for plan in &response.selected_plans {
             assert!(
                 !plan.schedule.is_empty(),
@@ -766,7 +793,7 @@ courses:
 
     #[test]
     fn test_include_courses() {
-        let response = execute(TEST_YAML, Some(10), Some(vec!["CS101".to_string()]));
+        let response = execute(TEST_YAML, Some(10), Some(vec!["CS101".to_string()]), false);
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
         // All plans should include CS101
@@ -787,13 +814,40 @@ courses:
     }
 
     #[test]
-    fn test_selected_plans_have_graph_spec() {
-        let response = execute(TEST_YAML, Some(10), None);
+    fn test_analyze_omits_graph_spec_by_default() {
+        // include_graph_spec=false (default) — graph_spec must be None in-memory and
+        // skipped entirely from the JSON output (no `"graph_spec": null` either).
+        let response = execute(TEST_YAML, Some(10), None, false);
+        assert!(response.success);
+        assert!(!response.selected_plans.is_empty());
+        for plan in &response.selected_plans {
+            assert!(
+                plan.graph_spec.is_none(),
+                "Plan {} unexpectedly carries graph_spec when flag is false",
+                plan.category
+            );
+        }
+        let json: serde_json::Value =
+            serde_json::from_str(&execute_json(TEST_YAML, Some(10), None, false)).unwrap();
+        for plan in json["selected_plans"].as_array().unwrap() {
+            assert!(
+                plan.get("graph_spec").is_none(),
+                "graph_spec key must not appear in JSON when include_graph_spec=false"
+            );
+        }
+    }
+
+    #[test]
+    fn test_analyze_includes_graph_spec_when_requested() {
+        let response = execute(TEST_YAML, Some(10), None, true);
         assert!(response.success);
         assert!(!response.selected_plans.is_empty());
         for plan in &response.selected_plans {
             let spec = plan.graph_spec.as_ref().unwrap_or_else(|| {
-                panic!("Plan {} should have graph_spec populated", plan.category)
+                panic!(
+                    "Plan {} should have graph_spec when flag is true",
+                    plan.category
+                )
             });
             assert!(!spec.graph_id.is_empty(), "graph_id must not be empty");
             assert!(!spec.nodes.is_empty(), "nodes must not be empty");
