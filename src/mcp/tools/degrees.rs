@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::core::database::models::StoredDegree;
 use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::mcp::tools::shared::{error_json, parse_first, parse_json_array, to_json_pretty};
+use crate::mcp::tools::shared::{self, error_json, parse_first, parse_json_array, to_json_pretty};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +20,7 @@ const DEGREE_DETAIL_COLS: &str = "degree_id,unitid,cip_code,catalog_year,yaml_co
 pub struct SearchDegreesRequest {
     /// IPEDS UNITID of the institution
     #[schemars(description = "IPEDS UNITID of the institution")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub unitid: Option<i32>,
     /// CIP code prefix to filter by (e.g. `\"11.\"` for all CS, `\"11.01.\"` for one family)
     #[schemars(description = "CIP code prefix (e.g. \"11.\" for computer science)")]
@@ -29,6 +30,7 @@ pub struct SearchDegreesRequest {
     pub catalog_year: Option<String>,
     /// Maximum results to return (default 20, max 50)
     #[schemars(description = "Maximum results (default 20, max 50)")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_usize")]
     pub limit: Option<usize>,
 }
 
@@ -46,6 +48,7 @@ pub struct GetDegreeRequest {
     pub degree_id: Option<String>,
     /// IPEDS UNITID of the institution
     #[schemars(description = "IPEDS UNITID of the institution")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub unitid: Option<i32>,
     /// Full 7-character CIP code in dot notation (e.g. `\"11.0101\"`)
     #[schemars(description = "CIP code in dot notation (e.g. \"11.0101\" for CS General)")]
@@ -77,6 +80,7 @@ pub struct StoreDegreeRequest {
     pub degree_id: String,
     /// IPEDS UNITID of the institution offering this degree
     #[schemars(description = "IPEDS UNITID of the institution")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub unitid: Option<i32>,
     /// CIP code in dot notation (e.g. `\"11.0101\"`)
     #[schemars(description = "CIP code (e.g. \"11.0101\")")]

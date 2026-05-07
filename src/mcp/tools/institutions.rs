@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::mcp::tools::shared::{error_json, parse_first, parse_json_array, to_json_pretty};
+use crate::mcp::tools::shared::{self, error_json, parse_first, parse_json_array, to_json_pretty};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -24,23 +24,29 @@ pub struct SearchInstitutionsRequest {
     #[schemars(
         description = "Carnegie classification (15=R1, 16=R2, 21=R1-2021, 22=R2-2021). Use get_lookup_codes(\"carnegie_class\") for full list."
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub carnegie_class: Option<i32>,
     /// Control type (1=public, 2=private nonprofit, 3=for-profit)
     #[schemars(description = "Control type: 1=public, 2=private nonprofit, 3=for-profit")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub control: Option<i32>,
     /// If true, return only HBCUs
     #[schemars(description = "Filter to Historically Black Colleges and Universities")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_bool")]
     pub hbcu: Option<bool>,
     /// If true, return only Tribal colleges
     #[schemars(description = "Filter to Tribal colleges and universities")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_bool")]
     pub tribal: Option<bool>,
     /// Minimum institution size bucket (1=<1000, 2=1000-4999, 3=5000-9999, 4=10000-19999, 5=20000+)
     #[schemars(
         description = "Minimum size bucket: 1=<1000, 2=1000-4999, 3=5000-9999, 4=10000-19999, 5=20000+"
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub inst_size_min: Option<i32>,
     /// Maximum results to return (default 25, max 100)
     #[schemars(description = "Maximum results (default 25, max 100)")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_usize")]
     pub limit: Option<usize>,
 }
 

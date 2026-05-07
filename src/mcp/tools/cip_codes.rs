@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::mcp::tools::shared::{error_json, parse_json_array, to_json_pretty};
+use crate::mcp::tools::shared::{self, error_json, parse_json_array, to_json_pretty};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +35,7 @@ pub struct SearchCipCodesRequest {
     pub prefix: Option<String>,
     /// Maximum results to return (default 25, max 100)
     #[schemars(description = "Maximum results (default 25, max 100)")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_usize")]
     pub limit: Option<usize>,
 }
 

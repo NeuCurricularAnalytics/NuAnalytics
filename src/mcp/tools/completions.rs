@@ -19,7 +19,9 @@ use std::sync::Arc;
 
 use crate::core::database::models::DemographicRepresentation;
 use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::mcp::tools::shared::{error_json, parse_comma_list, parse_json_array, to_json_pretty};
+use crate::mcp::tools::shared::{
+    self, error_json, parse_comma_list, parse_json_array, to_json_pretty,
+};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -55,14 +57,17 @@ const DEMO_COLS_NO_KEY: &str = "total,total_men,total_women,\
 pub struct CompletionDemographicsRequest {
     /// Filter to a single institution by IPEDS Unit ID (overrides institution group filters)
     #[schemars(description = "IPEDS Unit ID — filter to one institution")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub unitid: Option<i32>,
     /// Carnegie classification code (15=R1, 16=R2, 21=R1-2021, 22=R2-2021). Use `get_lookup_codes` for full list.
     #[schemars(
         description = "Carnegie classification (15=R1, 16=R2, 21=R1-2021). Use get_lookup_codes(\"carnegie_class\")."
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub carnegie_class: Option<i32>,
     /// Control type: 1=public, 2=private nonprofit, `None`=all
     #[schemars(description = "Control type: 1=public, 2=private nonprofit, None=all")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub control: Option<i32>,
     /// Two-letter state abbreviation (e.g. `\"MA\"`)
     #[schemars(description = "Two-letter state abbreviation")]
@@ -84,16 +89,19 @@ pub struct CompletionDemographicsRequest {
     #[schemars(
         description = "Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all"
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub award_level: Option<i32>,
-    /// Academic year (e.g. 2024 for 2023-2024); uses all years if `None` (provide year for accurate ratios)
+    /// Academic year (e.g. 2024 for 2023-2024). Defaults to the most recent year if omitted.
     #[schemars(
-        description = "Academic year (e.g. 2024). Provide for accurate representation ratios."
+        description = "Academic year (e.g. 2024). Defaults to the most recent year if omitted."
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub year: Option<i32>,
     /// Include representation ratios comparing CS completions to all-major completion totals (default true)
     #[schemars(
         description = "Include representation ratios: CS completion% / institution total completion% (default true)"
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_bool")]
     pub include_representation: Option<bool>,
 }
 
@@ -103,13 +111,17 @@ pub struct GetInstitutionCompletionsRequest {
     /// IPEDS Unit ID of the institution (from `search_institutions`)
     #[schemars(description = "IPEDS Unit ID of the institution")]
     pub unitid: i32,
-    /// Academic year (e.g. 2024). Provide for accurate representation ratios.
-    #[schemars(description = "Academic year (e.g. 2024). Omit to aggregate all available years.")]
+    /// Academic year (e.g. 2024). Defaults to the most recent year if omitted.
+    #[schemars(
+        description = "Academic year (e.g. 2024). Defaults to the most recent year if omitted."
+    )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub year: Option<i32>,
     /// Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all
     #[schemars(
         description = "Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all"
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub award_level: Option<i32>,
     /// CIP code prefix in dot notation with trailing dot for families (e.g. `\"11.\"` for all CS, `\"11.01.\"` for CS General).
     /// Omit for all CIP codes at this institution. Use `cip_codes` for exact code lists.
@@ -125,11 +137,13 @@ pub struct GetInstitutionCompletionsRequest {
     pub cip_codes: Option<String>,
     /// Major number: 1=primary major only (default), 2=second major, None=both
     #[schemars(description = "Major number: 1=primary (default), 2=second major, None=both")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub major_num: Option<i32>,
     /// Include representation ratios comparing each CIP row to institution-wide totals (default true)
     #[schemars(
         description = "Include representation ratios vs. school-wide completion profile (default true)"
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_bool")]
     pub include_representation: Option<bool>,
 }
 
@@ -141,28 +155,34 @@ pub struct GetSchoolsCompletionDemographicsRequest {
     #[schemars(
         description = "IPEDS Unit ID — target a single school. Takes priority over carnegie_class, control, state, etc."
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub unitid: Option<i32>,
     /// Carnegie classification (15=R1, 16=R2, 21=R1-2021). Use `get_lookup_codes("carnegie_class")` for full list.
     #[schemars(
         description = "Carnegie classification (15=R1, 16=R2, 21=R1-2021). Use get_lookup_codes(\"carnegie_class\")."
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub carnegie_class: Option<i32>,
     /// Control type: 1=public, 2=private nonprofit, 3=for-profit
     #[schemars(description = "Control type: 1=public, 2=private nonprofit, 3=for-profit")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub control: Option<i32>,
     /// Two-letter state abbreviation
     #[schemars(description = "Two-letter state abbreviation")]
     pub state: Option<String>,
     /// Filter to HBCUs only
     #[schemars(description = "Filter to Historically Black Colleges and Universities")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_bool")]
     pub hbcu: Option<bool>,
     /// Filter to Tribal colleges only
     #[schemars(description = "Filter to Tribal colleges")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_bool")]
     pub tribal: Option<bool>,
     /// Minimum institution size bucket (1=<1000, 2=1000-4999, 3=5000-9999, 4=10000-19999, 5=20000+)
     #[schemars(
         description = "Minimum size bucket: 2=\"above 1000 students\", 3=\"above 5000\", etc."
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub inst_size_min: Option<i32>,
 
     // ── Completion filters ──
@@ -182,11 +202,13 @@ pub struct GetSchoolsCompletionDemographicsRequest {
     #[schemars(
         description = "Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all"
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub award_level: Option<i32>,
-    /// Academic year (e.g. 2024). Strongly recommended for accurate representation ratios.
+    /// Academic year (e.g. 2024). Defaults to the most recent year if omitted.
     #[schemars(
-        description = "Academic year (e.g. 2024). Strongly recommended for accurate ratios."
+        description = "Academic year (e.g. 2024). Defaults to the most recent year if omitted."
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub year: Option<i32>,
 
     // ── Output options ──
@@ -194,14 +216,17 @@ pub struct GetSchoolsCompletionDemographicsRequest {
     #[schemars(
         description = "Include representation ratios vs. school-wide completions (default true)"
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_bool")]
     pub include_representation: Option<bool>,
     /// Skip schools with fewer than this many completions in the filtered results (post-aggregation)
     #[schemars(
         description = "Skip schools with fewer total completions than this threshold (post-filter)"
     )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_i64")]
     pub min_completions: Option<i64>,
     /// Maximum schools to return (default 50, max 200)
     #[schemars(description = "Maximum schools to return (default 50, max 200)")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_usize")]
     pub limit: Option<usize>,
 }
 

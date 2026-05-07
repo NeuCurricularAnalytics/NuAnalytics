@@ -31,6 +31,10 @@ pub struct AnalyzeDegreeRequest {
     #[schemars(
         description = "Maximum plans to generate (default: 500, higher = more accurate but slower)"
     )]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
+    )]
     pub max_plans: Option<usize>,
 
     /// Courses to always include in all generated plans

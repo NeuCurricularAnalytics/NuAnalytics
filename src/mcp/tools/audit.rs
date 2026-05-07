@@ -26,6 +26,10 @@ pub struct AuditDegreeRequest {
 
     /// Prerequisite chain depth threshold (default: 3)
     #[schemars(description = "Minimum chain length to flag as deep (default: 3)")]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
+    )]
     pub chain_threshold: Option<usize>,
 }
 
