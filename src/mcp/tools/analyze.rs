@@ -21,11 +21,27 @@ use std::collections::{HashMap, HashSet};
 // ============================================================================
 
 /// Request parameters for the `analyze_degree` tool
+///
+/// Provide exactly one YAML source: `yaml_content` (inline), `yaml_path`
+/// (workspace-relative file), or `degree_id` (stored in the database —
+/// requires the `database` feature).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct AnalyzeDegreeRequest {
-    /// The complete degree YAML content as a string
-    #[schemars(description = "Complete degree program YAML content to analyze")]
-    pub yaml_content: String,
+    /// Inline YAML content. Mutually exclusive with `yaml_path` / `degree_id`.
+    #[schemars(description = "Complete degree program YAML content (inline)")]
+    pub yaml_content: Option<String>,
+
+    /// Filesystem path the server will read. Mutually exclusive with the others.
+    #[schemars(
+        description = "Path to a YAML file on the MCP server's filesystem. Mutually exclusive with yaml_content/degree_id."
+    )]
+    pub yaml_path: Option<String>,
+
+    /// Stored `degree_id` (DB lookup). Mutually exclusive with the others.
+    #[schemars(
+        description = "Stored degree ID (DB lookup). Requires the database feature; mutually exclusive with yaml_content/yaml_path."
+    )]
+    pub degree_id: Option<String>,
 
     /// Maximum number of plans to generate (default: 500)
     #[schemars(
@@ -45,16 +61,33 @@ pub struct AnalyzeDegreeRequest {
 
     /// Include full visualization `graph_spec` for each selected plan (default false).
     ///
-    /// Each spec is ~30 KB; pass true only when you'll render the visualization.
-    /// Pair with `get_curriculum_visualization` to render the returned spec to HTML.
+    /// `selected_plans` always returns a curated set independent of `max_plans`:
+    /// shortest + longest + (optional) calc-ready-shortest + 3 random samples.
+    /// Typical size is 5–6 plans (5 when no calculus track, 6 with calc-ready).
+    /// Each `graph_spec` is ~30 KB; pass true only when you'll render the
+    /// visualization. Pair with `get_curriculum_visualization` to render the
+    /// returned spec to HTML. Use `plan_indices` to limit which plans get a
+    /// `graph_spec` instead of paying the cost for all of them.
     #[schemars(
-        description = "Include full graph_spec per selected plan (default false). Each spec is ~30 KB; opt in only when rendering."
+        description = "Include full graph_spec per selected plan (default false). selected_plans is always a curated 5-6 plans (shortest + longest + optional calc-ready + 3 random) regardless of max_plans. Each spec is ~30 KB; opt in only when rendering. Combine with plan_indices to limit which plans receive a spec."
     )]
     #[serde(
         default,
         deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
     )]
     pub include_graph_spec: Option<bool>,
+
+    /// Comma-separated `selected_plans` indices that should receive a
+    /// `graph_spec` (only consulted when `include_graph_spec=true`).
+    ///
+    /// E.g. `"0,2"` keeps the spec on the shortest path and the calc-ready
+    /// shortest while dropping it from the longest and the random samples.
+    /// Indices outside the returned `selected_plans` range are ignored.
+    /// When omitted, every selected plan receives a spec (current behavior).
+    #[schemars(
+        description = "Comma-separated selected_plans indices to include graph_spec for (e.g. \"0,2\"). Only honored when include_graph_spec=true. Omit to include specs for all selected plans."
+    )]
+    pub plan_indices: Option<String>,
 }
 
 /// Serializable metric statistics (includes quartiles for box plots)
@@ -137,6 +170,16 @@ pub struct AnalysisResponse {
     pub plans_analyzed: usize,
     /// Whether the result was truncated (more plans exist)
     pub was_truncated: bool,
+    /// Total population size — the unique plans that exist for this YAML.
+    ///
+    /// When `is_full_population` is true, this equals `plans_analyzed`. When
+    /// false, this is an upper-bound estimate from the requirement-choice
+    /// product (real unique count after dedup may be lower).
+    pub population_size: usize,
+    /// True when every unique plan was analyzed (no sampling, no truncation).
+    /// Equivalent to `!was_truncated`; exposed so callers can frame results
+    /// honestly as "full population" vs "sample of N plans".
+    pub is_full_population: bool,
 
     /// Aggregate complexity statistics across all plans
     pub complexity: Option<MetricStatsJson>,
@@ -167,12 +210,15 @@ const DEFAULT_MAX_PLANS: usize = 500;
 /// * `include_courses` - Optional courses to always include in all plans
 /// * `include_graph_spec` - When true, populates `graph_spec` on each
 ///   selected plan (default false; suppresses ~30 KB per plan)
+/// * `plan_indices` - When `Some`, only the listed `selected_plans` indices
+///   receive a `graph_spec` (only consulted when `include_graph_spec=true`)
 #[must_use]
 pub fn execute(
     yaml_content: &str,
     max_plans: Option<usize>,
     include_courses: Option<Vec<String>>,
     include_graph_spec: bool,
+    plan_indices: Option<&[usize]>,
 ) -> AnalysisResponse {
     let max = max_plans.unwrap_or(DEFAULT_MAX_PLANS);
     let include = include_courses.unwrap_or_default();
@@ -190,6 +236,8 @@ pub fn execute(
                 total_requirements: 0,
                 plans_analyzed: 0,
                 was_truncated: false,
+                population_size: 0,
+                is_full_population: false,
                 complexity: None,
                 longest_delay: None,
                 total_credits: None,
@@ -267,6 +315,7 @@ pub fn execute(
         max,
         &stats,
         include_graph_spec,
+        plan_indices,
     )
 }
 
@@ -338,14 +387,18 @@ fn build_response(
     max: usize,
     stats: &crate::core::degree::PlanGenerationStats,
     include_graph_spec: bool,
+    plan_indices: Option<&[usize]>,
 ) -> AnalysisResponse {
     let degree_stats = aggregator.degree_stats();
     let selected = selector.into_selected_plans();
 
     let selected_plans: Vec<PlanSummaryJson> = selected
         .iter()
-        .map(|(cat, plan)| {
-            let graph_spec = if include_graph_spec {
+        .enumerate()
+        .map(|(idx, (cat, plan))| {
+            let spec_wanted =
+                include_graph_spec && plan_indices.is_none_or(|allowed| allowed.contains(&idx));
+            let graph_spec = if spec_wanted {
                 let graph_id = cat.display_name().to_lowercase().replace(' ', "-");
                 Some(spec_from_scored_plan(
                     school,
@@ -382,6 +435,14 @@ fn build_response(
         })
         .collect();
 
+    let was_truncated = plans_processed >= max && stats.total_possible > max;
+    let is_full_population = !was_truncated;
+    let population_size = if is_full_population {
+        plans_processed
+    } else {
+        stats.total_possible
+    };
+
     AnalysisResponse {
         success: true,
         error: None,
@@ -390,7 +451,9 @@ fn build_response(
         total_courses: program.courses.len(),
         total_requirements: program.requirements.len(),
         plans_analyzed: plans_processed,
-        was_truncated: plans_processed >= max && stats.total_possible > max,
+        was_truncated,
+        population_size,
+        is_full_population,
         complexity: Some(metric_stats_json(&degree_stats.total_complexity)),
         longest_delay: Some(metric_stats_json(&degree_stats.longest_delay)),
         total_credits: Some(metric_stats_json(&degree_stats.total_credits)),
@@ -405,14 +468,23 @@ fn build_response(
 /// * `max_plans` - Maximum number of plans to generate
 /// * `include_courses` - Optional courses to always include in all plans
 /// * `include_graph_spec` - When true, include `graph_spec` per selected plan
+/// * `plan_indices` - Optional whitelist of `selected_plans` indices for
+///   `graph_spec` inclusion; consulted only when `include_graph_spec=true`
 #[must_use]
 pub fn execute_json(
     yaml_content: &str,
     max_plans: Option<usize>,
     include_courses: Option<Vec<String>>,
     include_graph_spec: bool,
+    plan_indices: Option<&[usize]>,
 ) -> String {
-    let response = execute(yaml_content, max_plans, include_courses, include_graph_spec);
+    let response = execute(
+        yaml_content,
+        max_plans,
+        include_courses,
+        include_graph_spec,
+        plan_indices,
+    );
     serde_json::to_string_pretty(&response)
         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
 }
@@ -754,7 +826,7 @@ courses:
 
     #[test]
     fn test_analyze_valid_degree() {
-        let response = execute(TEST_YAML, Some(10), None, false);
+        let response = execute(TEST_YAML, Some(10), None, false, None);
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
         assert!(response.complexity.is_some());
@@ -764,14 +836,14 @@ courses:
 
     #[test]
     fn test_analyze_malformed_yaml() {
-        let response = execute("not: valid: yaml: {{", Some(10), None, false);
+        let response = execute("not: valid: yaml: {{", Some(10), None, false, None);
         assert!(!response.success);
         assert!(response.error.is_some());
     }
 
     #[test]
     fn test_analyze_json_output() {
-        let json = execute_json(TEST_YAML, Some(10), None, false);
+        let json = execute_json(TEST_YAML, Some(10), None, false, None);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["success"].as_bool().unwrap());
         assert!(parsed["plans_analyzed"].as_u64().unwrap() > 0);
@@ -779,7 +851,7 @@ courses:
 
     #[test]
     fn test_selected_plans_have_schedules() {
-        let response = execute(TEST_YAML, Some(10), None, false);
+        let response = execute(TEST_YAML, Some(10), None, false, None);
         for plan in &response.selected_plans {
             assert!(
                 !plan.schedule.is_empty(),
@@ -793,7 +865,13 @@ courses:
 
     #[test]
     fn test_include_courses() {
-        let response = execute(TEST_YAML, Some(10), Some(vec!["CS101".to_string()]), false);
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            Some(vec!["CS101".to_string()]),
+            false,
+            None,
+        );
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
         // All plans should include CS101
@@ -817,7 +895,7 @@ courses:
     fn test_analyze_omits_graph_spec_by_default() {
         // include_graph_spec=false (default) — graph_spec must be None in-memory and
         // skipped entirely from the JSON output (no `"graph_spec": null` either).
-        let response = execute(TEST_YAML, Some(10), None, false);
+        let response = execute(TEST_YAML, Some(10), None, false, None);
         assert!(response.success);
         assert!(!response.selected_plans.is_empty());
         for plan in &response.selected_plans {
@@ -828,7 +906,7 @@ courses:
             );
         }
         let json: serde_json::Value =
-            serde_json::from_str(&execute_json(TEST_YAML, Some(10), None, false)).unwrap();
+            serde_json::from_str(&execute_json(TEST_YAML, Some(10), None, false, None)).unwrap();
         for plan in json["selected_plans"].as_array().unwrap() {
             assert!(
                 plan.get("graph_spec").is_none(),
@@ -839,7 +917,7 @@ courses:
 
     #[test]
     fn test_analyze_includes_graph_spec_when_requested() {
-        let response = execute(TEST_YAML, Some(10), None, true);
+        let response = execute(TEST_YAML, Some(10), None, true, None);
         assert!(response.success);
         assert!(!response.selected_plans.is_empty());
         for plan in &response.selected_plans {
@@ -853,6 +931,67 @@ courses:
             assert!(!spec.nodes.is_empty(), "nodes must not be empty");
             assert!(!spec.terms.is_empty(), "terms must not be empty");
         }
+    }
+
+    #[test]
+    fn test_plan_indices_filters_graph_spec_attachment() {
+        // Only index 0 should carry graph_spec; the rest must be None even
+        // though include_graph_spec=true.
+        let response = execute(TEST_YAML, Some(10), None, true, Some(&[0]));
+        assert!(response.success);
+        let mut plans = response.selected_plans.into_iter();
+        let first = plans.next().expect("at least one selected plan");
+        assert!(
+            first.graph_spec.is_some(),
+            "plan_indices=[0] must keep graph_spec on the first plan"
+        );
+        for plan in plans {
+            assert!(
+                plan.graph_spec.is_none(),
+                "plan_indices=[0] must drop graph_spec from plan '{}'",
+                plan.category
+            );
+        }
+    }
+
+    #[test]
+    fn test_plan_indices_ignored_when_include_graph_spec_false() {
+        // plan_indices is a no-op when graph_spec attachment is off.
+        let response = execute(TEST_YAML, Some(10), None, false, Some(&[0, 1, 2]));
+        assert!(response.success);
+        for plan in &response.selected_plans {
+            assert!(
+                plan.graph_spec.is_none(),
+                "plan_indices must not force graph_spec when include_graph_spec=false"
+            );
+        }
+    }
+
+    #[test]
+    fn test_plan_indices_out_of_range_silently_ignored() {
+        // Index past the end is dropped without error.
+        let response = execute(TEST_YAML, Some(10), None, true, Some(&[999]));
+        assert!(response.success);
+        for plan in &response.selected_plans {
+            assert!(
+                plan.graph_spec.is_none(),
+                "out-of-range plan_indices should produce no graph_specs"
+            );
+        }
+    }
+
+    #[test]
+    fn test_population_size_matches_plans_analyzed_when_full() {
+        // The simple TEST_YAML has only one valid plan (CS101 → CS201).
+        // With max_plans well above the population we expect:
+        //   was_truncated=false, is_full_population=true,
+        //   population_size==plans_analyzed.
+        let response = execute(TEST_YAML, Some(500), None, false, None);
+        assert!(response.success);
+        assert!(!response.was_truncated);
+        assert!(response.is_full_population);
+        assert_eq!(response.population_size, response.plans_analyzed);
+        assert!(response.population_size > 0);
     }
 
     #[test]

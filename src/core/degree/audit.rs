@@ -79,18 +79,32 @@ pub fn find_upper_level_without_prereqs(
     missing
 }
 
+/// One entry returned by [`find_deep_chains`]: the course key plus both the
+/// pretty-printed forms (kept for CLI output) and the structured branch list
+/// (used by the MCP layer to surface per-branch arrays).
+#[derive(Debug, Clone)]
+pub struct DeepChainResult {
+    /// Course key whose prerequisite chain met the threshold
+    pub course: String,
+    /// Branch lengths formatted for display (e.g. `"5, 3"`)
+    pub branch_lengths: String,
+    /// Full chain formatted for display (e.g. `(A → B → C) & (D → E)`)
+    pub chain: String,
+    /// Structured branches; each branch is leaf-to-immediate-prereq order
+    pub branches: Vec<Vec<String>>,
+}
+
 /// Find courses with deep prerequisite chains (at or above `threshold`).
 ///
 /// Only courses that are "in scope" (matching major subjects or appearing in
-/// requirements) are considered. Returns a sorted list of
-/// `(course_key, formatted_branch_lengths, formatted_chain)` tuples, ordered
-/// by maximum chain length descending then course key alphabetically.
+/// requirements) are considered. Returns a list ordered by maximum chain
+/// length descending then course key alphabetically.
 #[must_use]
 pub fn find_deep_chains(
     program: &DegreeProgram,
     graph_result: &CourseGraphResult,
     threshold: usize,
-) -> Vec<(String, String, String)> {
+) -> Vec<DeepChainResult> {
     let major_subjects = program.degree.major_subjects.as_ref();
     let requirement_courses = collect_requirement_courses(program);
     let mut deep = Vec::new();
@@ -103,15 +117,20 @@ pub fn find_deep_chains(
         if let Some(chain) = graph_result.graph.structured_prerequisite_chain(key) {
             let max_branch_len = chain.branch_lengths().into_iter().max().unwrap_or(0);
             if max_branch_len >= threshold {
-                deep.push((key.to_string(), chain.format_lengths(), chain.format()));
+                deep.push(DeepChainResult {
+                    course: key.to_string(),
+                    branch_lengths: chain.format_lengths(),
+                    chain: chain.format(),
+                    branches: chain.branches.clone(),
+                });
             }
         }
     }
 
     deep.sort_by(|a, b| {
-        let a_max = parse_max_chain_length(&a.1);
-        let b_max = parse_max_chain_length(&b.1);
-        b_max.cmp(&a_max).then_with(|| a.0.cmp(&b.0))
+        let a_max = parse_max_chain_length(&a.branch_lengths);
+        let b_max = parse_max_chain_length(&b.branch_lengths);
+        b_max.cmp(&a_max).then_with(|| a.course.cmp(&b.course))
     });
     deep
 }

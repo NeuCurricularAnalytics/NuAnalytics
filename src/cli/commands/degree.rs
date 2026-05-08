@@ -396,24 +396,24 @@ fn print_deep_chains_section(
             deep_chains.len()
         );
         println!();
-        for (course, chain_lengths, chain_str) in &deep_chains {
-            println!("  • {course} (chains: {chain_lengths})");
+        for entry in &deep_chains {
+            println!("  • {} (chains: {})", entry.course, entry.branch_lengths);
             if verbose {
-                println!("    Chain: {chain_str}");
+                println!("    Chain: {}", entry.chain);
             }
         }
     }
     println!();
-    // Convert to expected format (use max chain length for sorting/summary)
     deep_chains
         .into_iter()
-        .map(|(c, lens, s)| {
-            let max_len = lens
+        .map(|entry| {
+            let max_len = entry
+                .branch_lengths
                 .split(", ")
                 .filter_map(|n| n.parse::<usize>().ok())
                 .max()
                 .unwrap_or(0);
-            (c, max_len, s)
+            (entry.course, max_len, entry.chain)
         })
         .collect()
 }

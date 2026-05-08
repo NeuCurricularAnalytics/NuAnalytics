@@ -74,7 +74,29 @@ impl CurriculumGraphRenderer for VanillaJsRenderer {
         render_modal_style(&mut out);
         render_legend(&mut out);
         render_graph_html(spec, id, &mut out);
-        render_script(spec, id, &mut out);
+        render_script(spec, id, &mut out, true);
+        out
+    }
+}
+
+impl VanillaJsRenderer {
+    /// Render a fragment without inlining the shared `GRAPH_VANILLA_JS` library.
+    ///
+    /// Useful when a single page embeds many graphs: include the library once,
+    /// then emit one ~10 KB fragment per graph instead of one ~30 KB fragment
+    /// per graph. The caller is responsible for ensuring `window.nuGraphs` is
+    /// defined before the fragment's script runs (e.g. by emitting the full
+    /// `render` output for the first graph and `render_without_library` for
+    /// the rest).
+    #[must_use]
+    pub fn render_without_library(&self, spec: &CurriculumGraphSpec) -> String {
+        let id = &spec.graph_id;
+        let mut out = String::new();
+        render_style(&mut out);
+        render_modal_style(&mut out);
+        render_legend(&mut out);
+        render_graph_html(spec, id, &mut out);
+        render_script(spec, id, &mut out, false);
         out
     }
 }
@@ -370,7 +392,7 @@ impl<'a> From<&'a CourseNode> for NodeJs<'a> {
 ///
 /// The shared `GRAPH_VANILLA_JS` asset is included inline but guards itself with
 /// `if (!window.nuGraphs)` so it is safe to emit multiple times on one page.
-fn render_script(spec: &CurriculumGraphSpec, id: &str, out: &mut String) {
+fn render_script(spec: &CurriculumGraphSpec, id: &str, out: &mut String, include_library: bool) {
     // serde_json::to_string never fails for these fully-owned, finite types.
     let edges_js: Vec<EdgeJs<'_>> = spec.edges.iter().map(EdgeJs::from).collect();
     let nodes_js: Vec<NodeJs<'_>> = spec.nodes.iter().map(NodeJs::from).collect();
@@ -380,10 +402,15 @@ fn render_script(spec: &CurriculumGraphSpec, id: &str, out: &mut String) {
         serde_json::to_string(&spec.critical_path_ids).unwrap_or_else(|_| "[]".to_string());
     let id_json = serde_json::to_string(id).unwrap_or_else(|_| "\"\"".to_string());
 
+    let library = if include_library {
+        GRAPH_VANILLA_JS
+    } else {
+        ""
+    };
     let _ = write!(
         out,
         "<script>\n\
-         {GRAPH_VANILLA_JS}\n\
+         {library}\n\
          nuGraphs.register({id_json}, {{ edges: {edges_json}, criticalPath: {critical_json}, nodes: {nodes_json} }});\n\
          if (document.readyState !== 'loading') {{\n\
            nuGraphs.draw({id_json});\n\
@@ -507,6 +534,33 @@ mod tests {
         assert!(html.starts_with("<!DOCTYPE html>"));
         assert!(html.contains("<body"));
         assert!(html.contains("nuGraphs.register"));
+    }
+
+    #[test]
+    fn test_render_without_library_drops_shared_prelude() {
+        // Direct renderer-level coverage for the size-saving variant: the
+        // per-graph register call and structural HTML must remain, but the
+        // shared GRAPH_VANILLA_JS prelude (window.nuGraphs = …) must NOT.
+        let with_lib = VanillaJsRenderer.render(&minimal_spec());
+        let without_lib = VanillaJsRenderer.render_without_library(&minimal_spec());
+
+        assert!(
+            !without_lib.contains("window.nuGraphs ="),
+            "render_without_library must drop the shared library prelude"
+        );
+        assert!(
+            with_lib.contains("window.nuGraphs ="),
+            "control: render() should still inline the library"
+        );
+        assert!(without_lib.contains("nuGraphs.register"));
+        assert!(without_lib.contains(".nu-graph"));
+        assert!(without_lib.contains("data-graph-id=\"test\""));
+        assert!(
+            without_lib.len() < with_lib.len(),
+            "library-less variant must be smaller ({} >= {})",
+            without_lib.len(),
+            with_lib.len()
+        );
     }
 
     #[test]

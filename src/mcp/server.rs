@@ -82,37 +82,62 @@ impl NuAnalyticsMcpServer {
 
     /// Validate a degree program YAML
     #[tool(
-        description = "Validate a degree program YAML string. Returns detailed validation results including errors, warnings, and suggestions for fixing issues. Use this iteratively to build a valid degree.yaml file. Pass allow_unmatched_patterns=true to surface external gen-ed pool patterns (e.g. \"*:100+\") as warnings instead of errors when courses aren't enumerated locally."
+        description = "Validate a degree program YAML. Returns detailed validation results including errors, warnings, and suggestions. Provide exactly ONE YAML source: yaml_content (inline string), yaml_path (file on the server's filesystem), or degree_id (DB lookup). Pass allow_unmatched_patterns=true to surface external gen-ed pool patterns (e.g. \"*:100+\") as warnings instead of errors when courses aren't enumerated locally."
     )]
-    #[allow(clippy::unused_self)]
     fn validate_degree(&self, Parameters(req): Parameters<ValidateDegreeRequest>) -> String {
         let allow_unmatched_patterns = req.allow_unmatched_patterns.unwrap_or(false);
-        validate::execute_json(&req.yaml_content, allow_unmatched_patterns)
+        let source = match shared::parse_yaml_source(req.yaml_content, req.yaml_path, req.degree_id)
+        {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        self.run_yaml_tool("validate_degree", source, move |yaml| {
+            validate::execute_json(yaml, allow_unmatched_patterns)
+        })
     }
 
     /// Audit a degree program YAML
     #[tool(
-        description = "Run a comprehensive audit on a degree program YAML. Includes validation, detection of upper-level courses missing prerequisites, and identification of deep prerequisite chains. Returns structured results with actionable findings."
+        description = "Run a comprehensive audit on a degree program YAML: validation, missing prerequisites on upper-level courses, and deep prerequisite chains. Provide exactly ONE YAML source: yaml_content (inline), yaml_path (file path), or degree_id (DB lookup). Returns structured findings."
     )]
-    #[allow(clippy::unused_self)]
     fn audit_degree(&self, Parameters(req): Parameters<AuditDegreeRequest>) -> String {
-        audit::execute_json(&req.yaml_content, req.chain_threshold)
+        let chain_threshold = req.chain_threshold;
+        let source = match shared::parse_yaml_source(req.yaml_content, req.yaml_path, req.degree_id)
+        {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        self.run_yaml_tool("audit_degree", source, move |yaml| {
+            audit::execute_json(yaml, chain_threshold)
+        })
     }
 
     /// Analyze a degree program YAML
     #[tool(
-        description = "Run full degree analysis: generate all possible course plans, compute aggregate metrics (complexity, delay, credits), and identify shortest/longest paths. Returns statistics across plans and term-by-term schedules for selected plans. Set include_graph_spec=true (default false) when you need to render visualizations — each spec is ~30 KB so omitting them keeps the response compact. Use after validate_degree confirms the YAML is valid. Optionally specify include_courses to constrain all plans to include specific courses."
+        description = "Run full degree analysis: generate all possible course plans, compute aggregate metrics (complexity, delay, credits), and identify shortest/longest paths. Provide exactly ONE YAML source: yaml_content (inline), yaml_path (file path), or degree_id (DB lookup). Returns aggregate stats across the analyzed plans plus a curated selected_plans list (always shortest + longest + optional calc-ready-shortest + 3 random samples — 5-6 plans typical, independent of max_plans). The complexity/longest_delay/total_credits objects use the standard 5-number summary (min/q1/median/q3/max + mean/std_dev) — to plot as a boxplot in Chart.js, add the chartjs-chart-boxplot plugin. The response also includes is_full_population: when true, plans_analyzed is the entire population for this YAML; when false, it's a sample capped at max_plans. Set include_graph_spec=true (default false) when you need to render visualizations — each spec is ~30 KB so omitting them keeps the response compact. Use after validate_degree confirms the YAML is valid. Optionally specify include_courses to constrain all plans to include specific courses."
     )]
-    #[allow(clippy::unused_self)]
     fn analyze_degree(&self, Parameters(req): Parameters<AnalyzeDegreeRequest>) -> String {
         let include_courses = req.include_courses.map(|s| shared::parse_comma_list(&s));
         let include_graph_spec = req.include_graph_spec.unwrap_or(false);
-        analyze::execute_json(
-            &req.yaml_content,
-            req.max_plans,
-            include_courses,
-            include_graph_spec,
-        )
+        let max_plans = req.max_plans;
+        let plan_indices: Option<Vec<usize>> = req
+            .plan_indices
+            .as_deref()
+            .map(shared::parse_comma_list_usize);
+        let source = match shared::parse_yaml_source(req.yaml_content, req.yaml_path, req.degree_id)
+        {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        self.run_yaml_tool("analyze_degree", source, move |yaml| {
+            analyze::execute_json(
+                yaml,
+                max_plans,
+                include_courses,
+                include_graph_spec,
+                plan_indices.as_deref(),
+            )
+        })
     }
 
     /// Render a curriculum graph visualization from an `analyze_degree` result
@@ -183,7 +208,7 @@ impl NuAnalyticsMcpServer {
     /// Get CS completion demographics for a single institution
     #[cfg(feature = "database")]
     #[tool(
-        description = "Get completion demographics per CIP program for a single institution. Returns per-CIP rows with demographic counts + representation ratios, plus a cross_tab section showing the race×gender breakdown aggregated across all selected programs. cross_tab fields: women_pct_within_group (gender parity: % of race group that are women), women/men_pct_of_total (share of all CS completions), women/men_representation_ratio (vs institution baseline). Use cip_prefix=\"11.\" for CS. Provide year for accurate ratios."
+        description = "Get completion demographics per CIP program for a single institution. Returns per-CIP rows with demographic counts + representation ratios, plus a cross_tab section showing the race×gender breakdown aggregated across all selected programs. cross_tab fields: women_pct_within_group (gender parity: % of race group that are women), women/men_pct_of_total (share of all CS completions), women/men_representation_ratio (vs institution baseline). Use cip_prefix=\"11.\" for CS. Provide year for accurate ratios. When the CIP filter matches no rows, the response includes nearby_cips_with_data — top CIPs at this institution that DO have completions — so you can see whether the school files the program under a different CIP code (the most common IPEDS user error)."
     )]
     fn get_institution_completions(
         &self,
@@ -249,12 +274,53 @@ impl NuAnalyticsMcpServer {
     /// Compare multiple stored degree programs
     #[cfg(feature = "database")]
     #[tool(
-        description = "Compare multiple stored degree programs by their IDs. Returns side-by-side metadata and YAML content for each degree. Provide a comma-separated list of degree IDs."
+        description = "Compare multiple stored degree programs by their IDs. Returns side-by-side metadata, YAML content, and (by default) analyze-style metrics per degree (complexity, longest_delay, total_credits — same shape as analyze_degree). Set include_metrics=false to skip the analysis pass for a metadata-only comparison. Provide a comma-separated list of degree IDs."
     )]
     fn compare_degrees(&self, Parameters(req): Parameters<CompareDegreesRequest>) -> String {
         self.call_db("compare_degrees", |db| async move {
             degrees::execute_compare_json(&db, req).await
         })
+    }
+
+    /// Run a degree-pipeline tool against a [`YamlSource`].
+    ///
+    /// Resolves the YAML from inline content, a filesystem path, or a stored
+    /// degree id, then invokes `run` with the resolved string. Errors at any
+    /// resolution step return a JSON error string.
+    fn run_yaml_tool<F>(
+        &self,
+        #[cfg_attr(not(feature = "database"), allow(unused_variables))] tool: &'static str,
+        source: shared::YamlSource,
+        run: F,
+    ) -> String
+    where
+        F: FnOnce(&str) -> String,
+    {
+        match source {
+            shared::YamlSource::Content(yaml) => run(&yaml),
+            shared::YamlSource::Path(p) => match shared::read_yaml_file(&p) {
+                Ok(yaml) => run(&yaml),
+                Err(e) => e,
+            },
+            #[cfg(feature = "database")]
+            shared::YamlSource::DegreeId(id) => {
+                let db = match self.get_db(tool) {
+                    Ok(db) => db,
+                    Err(e) => return e,
+                };
+                let resolved = run_db_async_result(move || async move {
+                    shared::fetch_yaml_by_degree_id(&db, &id).await
+                });
+                match resolved {
+                    Ok(yaml) => run(&yaml),
+                    Err(e) => e,
+                }
+            }
+            #[cfg(not(feature = "database"))]
+            shared::YamlSource::DegreeId(_) => shared::error_json(
+                "degree_id lookup requires the nu-analytics 'database' feature; pass yaml_content or yaml_path instead",
+            ),
+        }
     }
 
     /// Save a validated degree program to the database
@@ -302,6 +368,19 @@ fn run_db_async<F, Fut>(f: F) -> String
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = String>,
+{
+    tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(f()))
+}
+
+/// Run an async database operation that yields a `Result<T, String>`.
+///
+/// Used by tools that need to thread a fetched value back into a sync
+/// pipeline (e.g. resolving `degree_id` to YAML before calling validate).
+#[cfg(feature = "database")]
+fn run_db_async_result<T, F, Fut>(f: F) -> Result<T, String>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<T, String>>,
 {
     tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(f()))
 }

@@ -3,10 +3,13 @@
 //! Provides the `validate_degree` MCP tool that validates degree YAML content
 //! and returns structured feedback.
 
-use crate::core::degree::{parse_degree_yaml, DegreeParseError};
+use crate::core::degree::audit::{detect_lowest_course_level, find_upper_level_without_prereqs};
+use crate::core::degree::{parse_degree_yaml, DegreeParseError, RequirementResolver};
+use crate::core::models::degree::{FromClause, Requirement, RequirementType};
+use crate::core::models::CourseGraph;
 use crate::core::{
-    validate_degree_program_with_options, ValidationError, ValidationOptions, ValidationResult,
-    ValidationWarning,
+    validate_degree_program_with_options, DegreeProgram, ValidationError, ValidationOptions,
+    ValidationResult, ValidationWarning,
 };
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
@@ -16,11 +19,30 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Request parameters for the `validate_degree` tool
+///
+/// Provide exactly one YAML source: `yaml_content` (inline string),
+/// `yaml_path` (workspace-relative file), or `degree_id` (stored in the
+/// database — requires the `database` feature). Inline content avoids
+/// re-pasting the whole YAML on every call once it's stored.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ValidateDegreeRequest {
-    /// The complete degree YAML content as a string
-    #[schemars(description = "Complete degree program YAML content to validate")]
-    pub yaml_content: String,
+    /// Inline YAML content. Mutually exclusive with `yaml_path` / `degree_id`.
+    #[schemars(description = "Complete degree program YAML content (inline)")]
+    pub yaml_content: Option<String>,
+
+    /// Filesystem path (workspace-relative) to a YAML file the server will read.
+    /// Mutually exclusive with `yaml_content` / `degree_id`.
+    #[schemars(
+        description = "Path to a YAML file on the MCP server's filesystem. Mutually exclusive with yaml_content/degree_id."
+    )]
+    pub yaml_path: Option<String>,
+
+    /// Stored `degree_id` (from `store_degree`). Looked up via the database;
+    /// the same YAML is then validated. Mutually exclusive with the others.
+    #[schemars(
+        description = "Stored degree ID (DB lookup). Requires the database feature; mutually exclusive with yaml_content/yaml_path."
+    )]
+    pub degree_id: Option<String>,
 
     /// If true, patterns that match no enumerated courses (e.g. external
     /// gen-ed pools like `*:100+`, `POLS:100+`) become warnings instead of
@@ -85,8 +107,31 @@ pub struct ValidationResponse {
     pub warnings: Vec<ValidationWarningInfo>,
     /// Context about what's defined in the degree
     pub context: Option<DegreeContext>,
+    /// Pool resolution for every requirement that uses a `from` clause.
+    /// Lets callers spot patterns that silently match nothing or that resolve
+    /// to a smaller set than expected.
+    pub resolved_pools: Vec<ResolvedPoolInfo>,
     /// General suggestions for improvement
     pub suggestions: Vec<String>,
+}
+
+/// One requirement's resolved selection pool, surfaced so the caller can
+/// confirm patterns matched the expected courses.
+#[derive(Debug, Serialize)]
+pub struct ResolvedPoolInfo {
+    /// Requirement identifier (or dotted path for nested options)
+    pub requirement_id: String,
+    /// Requirement type (`"select"` or `"one_of"`)
+    pub requirement_type: &'static str,
+    /// Number of courses matched by the requirement's `from` clause after
+    /// applying include/exclude patterns
+    pub pool_size: usize,
+    /// Up to 10 sample course keys from the resolved pool, alphabetised
+    pub sample: Vec<String>,
+    /// Set when no courses match the patterns — the requirement is unsatisfiable
+    /// as written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<&'static str>,
 }
 
 // ============================================================================
@@ -115,6 +160,7 @@ pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> Validation
                 errors: vec![],
                 warnings: vec![],
                 context: None,
+                resolved_pools: vec![],
                 suggestions: vec![
                     "Fix the YAML syntax error first, then re-validate.".to_string(),
                     "Use get_degree_schema to review the expected format.".to_string(),
@@ -145,10 +191,20 @@ pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> Validation
     };
     let result = validate_degree_program_with_options(&program, opts);
 
+    // Cheap hint surface: count upper-level courses lacking prereqs, so the
+    // caller knows whether to spend an audit_degree round-trip. Audit remains
+    // authoritative for the actual list and chain analysis.
+    let unprereqed_upper_level = count_upper_level_missing_prereqs(&program);
+
+    // Resolve every `from` clause so the caller can see which courses each
+    // pattern actually matched — catches `exclude` patterns that drop nothing
+    // and `include` patterns too narrow to be useful.
+    let resolved_pools = collect_resolved_pools(&program);
+
     // Convert validation result to response format
     let errors = convert_validation_errors(&result);
     let warnings = convert_validation_warnings(&result);
-    let suggestions = generate_suggestions(&result, &context);
+    let suggestions = generate_suggestions(&result, &context, unprereqed_upper_level);
 
     ValidationResponse {
         is_valid: result.is_valid,
@@ -156,6 +212,7 @@ pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> Validation
         errors,
         warnings,
         context: Some(context),
+        resolved_pools,
         suggestions,
     }
 }
@@ -349,7 +406,11 @@ fn convert_validation_warnings(result: &ValidationResult) -> Vec<ValidationWarni
         .collect()
 }
 
-fn generate_suggestions(result: &ValidationResult, context: &DegreeContext) -> Vec<String> {
+fn generate_suggestions(
+    result: &ValidationResult,
+    context: &DegreeContext,
+    unprereqed_upper_level: usize,
+) -> Vec<String> {
     let mut suggestions = Vec::new();
 
     if result.is_valid {
@@ -383,7 +444,97 @@ fn generate_suggestions(result: &ValidationResult, context: &DegreeContext) -> V
         }
     }
 
+    if unprereqed_upper_level > 0 {
+        suggestions.push(format!(
+            "Note: {unprereqed_upper_level} upper-level course(s) declare no prerequisites; run audit_degree for the list and to surface implicit-requirement issues."
+        ));
+    }
+
     suggestions
+}
+
+/// Count upper-level courses that declare no prerequisites.
+///
+/// Mirrors the `audit_degree` probe but returns only the count, used to emit
+/// a one-line hint in validate's suggestions without forcing a separate call.
+fn count_upper_level_missing_prereqs(program: &DegreeProgram) -> usize {
+    let graph_result = CourseGraph::from_degree_program(program);
+    let lowest_level = detect_lowest_course_level(program);
+    find_upper_level_without_prereqs(&graph_result, lowest_level).len()
+}
+
+/// Walk every requirement (including nested `one_of` options) and resolve the
+/// `from` clause to its pool of matching courses.
+fn collect_resolved_pools(program: &DegreeProgram) -> Vec<ResolvedPoolInfo> {
+    let mut resolver = RequirementResolver::new(&program.courses);
+    let mut pools = Vec::new();
+    for (id, req) in &program.requirements {
+        collect_pools_from_req(id, req, &mut resolver, &mut pools);
+    }
+    // Stable order so callers don't depend on HashMap iteration.
+    pools.sort_by(|a, b| a.requirement_id.cmp(&b.requirement_id));
+    pools
+}
+
+/// Recurse into a requirement, emitting one [`ResolvedPoolInfo`] per `from`
+/// clause encountered (including those inside `one_of` options).
+fn collect_pools_from_req(
+    id: &str,
+    req: &Requirement,
+    resolver: &mut RequirementResolver<'_>,
+    out: &mut Vec<ResolvedPoolInfo>,
+) {
+    if let Some(from) = &req.from {
+        if matches!(
+            req.req_type,
+            RequirementType::Select | RequirementType::OneOf
+        ) {
+            out.push(build_pool_info(id, &req.req_type, from, resolver));
+        }
+    }
+    if let Some(options) = &req.options {
+        for option in options {
+            for nested in &option.requirements {
+                let base = format!("{id}.{}", option.id);
+                let nested_id = nested
+                    .name
+                    .as_deref()
+                    .map_or_else(|| base.clone(), |n| format!("{base}:{n}"));
+                collect_pools_from_req(&nested_id, nested, resolver, out);
+            }
+        }
+    }
+}
+
+fn build_pool_info(
+    id: &str,
+    req_type: &RequirementType,
+    from: &FromClause,
+    resolver: &mut RequirementResolver<'_>,
+) -> ResolvedPoolInfo {
+    let pool = resolver.resolve_pool(from);
+    let warning = if pool.is_empty() {
+        Some("Resolved pool is empty — patterns matched no enumerated courses")
+    } else {
+        None
+    };
+    let mut sample: Vec<String> = pool.iter().take(10).cloned().collect();
+    sample.sort();
+    ResolvedPoolInfo {
+        requirement_id: id.to_string(),
+        requirement_type: requirement_type_label(req_type),
+        pool_size: pool.len(),
+        sample,
+        warning,
+    }
+}
+
+const fn requirement_type_label(req_type: &RequirementType) -> &'static str {
+    match req_type {
+        RequirementType::All => "all",
+        RequirementType::Select => "select",
+        RequirementType::OneOf => "one_of",
+    }
 }
 
 #[cfg(test)]
@@ -609,6 +760,80 @@ courses:
                 .any(|e| e.error_type == "PatternMatchesNoCourses"),
             "expected PatternMatchesNoCourses error, got {:?}",
             response.errors
+        );
+    }
+
+    #[test]
+    fn test_resolved_pools_lists_select_requirements() {
+        let yaml = r#"
+degree:
+  id: test
+  institution: T
+  program: T
+  total_credits: 120
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101]
+  cs_electives:
+    name: CS Electives
+    type: select
+    category: major
+    count: 1
+    from:
+      pattern: "CS:300+"
+
+courses:
+  CS101:
+    title: A
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS300:
+    title: B
+    prefix: CS
+    number: "300"
+    credits: 4
+    prerequisites_raw: "CS101"
+  CS400:
+    title: C
+    prefix: CS
+    number: "400"
+    credits: 4
+    prerequisites_raw: "CS300"
+"#;
+        let response = execute(yaml, false);
+        let pool = response
+            .resolved_pools
+            .iter()
+            .find(|p| p.requirement_id == "cs_electives")
+            .expect("cs_electives should be resolved");
+        assert_eq!(pool.requirement_type, "select");
+        assert!(
+            pool.pool_size >= 2,
+            "CS:300+ should match at least CS300 and CS400"
+        );
+        assert!(pool.warning.is_none(), "non-empty pool should not warn");
+    }
+
+    #[test]
+    fn test_resolved_pools_warns_when_pattern_matches_nothing() {
+        // POLS:100+ matches nothing in this YAML — caller wants a single
+        // surface to spot that without scanning every error type.
+        let response = execute(EXTERNAL_POOL_YAML, true);
+        let pool = response
+            .resolved_pools
+            .iter()
+            .find(|p| p.requirement_id == "external_geneds")
+            .expect("external_geneds should be in resolved_pools");
+        assert_eq!(pool.pool_size, 0);
+        assert!(
+            pool.warning.is_some(),
+            "empty pool must surface a warning string"
         );
     }
 

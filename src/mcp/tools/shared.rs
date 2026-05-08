@@ -2,6 +2,106 @@
 
 use serde::{de, Deserialize, Deserializer};
 
+#[cfg(feature = "database")]
+use std::sync::Arc;
+
+#[cfg(feature = "database")]
+use crate::core::database::{tables, DbClient, QueryFilters};
+
+/// How a degree YAML was supplied to validate/audit/analyze.
+///
+/// Exactly one source is required. `Path` is read from the filesystem at the
+/// MCP server's working directory; `DegreeId` is fetched from the configured
+/// database (requires the `database` feature).
+#[derive(Debug)]
+pub enum YamlSource {
+    /// Inline YAML body passed by the caller.
+    Content(String),
+    /// Path to a YAML file on the MCP server's filesystem.
+    Path(String),
+    /// Stored degree id; the server fetches the YAML from the database.
+    DegreeId(String),
+}
+
+/// Pick a [`YamlSource`] from the three optional input fields.
+///
+/// Returns a JSON error string when the caller supplied none or more than one,
+/// so the handler can return it directly.
+///
+/// # Errors
+/// Returns a JSON error string when zero or more than one source is provided.
+pub fn parse_yaml_source(
+    yaml_content: Option<String>,
+    yaml_path: Option<String>,
+    degree_id: Option<String>,
+) -> Result<YamlSource, String> {
+    let count = u8::from(yaml_content.is_some())
+        + u8::from(yaml_path.is_some())
+        + u8::from(degree_id.is_some());
+    if count == 0 {
+        return Err(error_json(
+            "Must provide exactly one of: yaml_content, yaml_path, or degree_id",
+        ));
+    }
+    if count > 1 {
+        return Err(error_json(
+            "Provide exactly one of: yaml_content, yaml_path, or degree_id (not multiple)",
+        ));
+    }
+    if let Some(c) = yaml_content {
+        return Ok(YamlSource::Content(c));
+    }
+    if let Some(p) = yaml_path {
+        return Ok(YamlSource::Path(p));
+    }
+    Ok(YamlSource::DegreeId(degree_id.unwrap_or_default()))
+}
+
+/// Read a YAML file from `path`. Errors are returned as JSON strings ready to
+/// surface to the MCP client.
+///
+/// # Errors
+/// Returns a JSON error string if the file cannot be opened or read.
+pub fn read_yaml_file(path: &str) -> Result<String, String> {
+    std::fs::read_to_string(path).map_err(|e| {
+        serde_json::json!({
+            "error": format!("Failed to read yaml_path: {e}"),
+            "path": path,
+        })
+        .to_string()
+    })
+}
+
+/// Fetch a stored degree YAML by `degree_id`. Returns the YAML content on
+/// success; on failure returns a JSON error string ready to surface.
+///
+/// # Errors
+/// Returns a JSON error string if the database query fails or the row is missing.
+#[cfg(feature = "database")]
+pub async fn fetch_yaml_by_degree_id(
+    client: &Arc<DbClient>,
+    degree_id: &str,
+) -> Result<String, String> {
+    let filters = QueryFilters::new().eq("degree_id", Some(degree_id));
+    let result = client
+        .select(tables::DEGREES, "yaml_content", &filters, Some(1))
+        .await
+        .map_err(error_json)?;
+    result
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|item| item.get("yaml_content"))
+        .and_then(serde_json::Value::as_str)
+        .map(String::from)
+        .ok_or_else(|| {
+            serde_json::json!({
+                "error": "degree_id not found",
+                "degree_id": degree_id,
+            })
+            .to_string()
+        })
+}
+
 /// Serialize a JSON error response string from a display-able error value.
 pub fn error_json(msg: impl std::fmt::Display) -> String {
     serde_json::json!({ "error": msg.to_string() }).to_string()
@@ -45,6 +145,21 @@ pub fn parse_comma_list(s: &str) -> Vec<String> {
         .map(str::trim)
         .filter(|c| !c.is_empty())
         .map(String::from)
+        .collect()
+}
+
+/// Parse a comma-separated list of `usize` values, silently dropping any
+/// entry that fails to parse (negative, non-numeric, etc.).
+///
+/// `"0, 2, abc, 5"` → `[0, 2, 5]`. Used for tool parameters like
+/// `analyze_degree`'s `plan_indices`, where invalid entries should be
+/// ignored rather than rejecting the whole request.
+#[must_use]
+pub fn parse_comma_list_usize(s: &str) -> Vec<usize> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .filter_map(|c| c.parse::<usize>().ok())
         .collect()
 }
 
@@ -290,6 +405,98 @@ mod tests {
     #[test]
     fn test_parse_comma_list_single_entry() {
         assert_eq!(parse_comma_list("11.0101"), vec!["11.0101"]);
+    }
+
+    // ─── parse_comma_list_usize ─────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_comma_list_usize_empty_returns_empty() {
+        assert!(parse_comma_list_usize("").is_empty());
+        assert!(parse_comma_list_usize(",,,").is_empty());
+    }
+
+    #[test]
+    fn test_parse_comma_list_usize_single_value() {
+        assert_eq!(parse_comma_list_usize("5"), vec![5]);
+    }
+
+    #[test]
+    fn test_parse_comma_list_usize_multiple_values_with_whitespace() {
+        assert_eq!(parse_comma_list_usize("1, 3, 5, 10"), vec![1, 3, 5, 10]);
+    }
+
+    #[test]
+    fn test_parse_comma_list_usize_silently_drops_invalid_entries() {
+        // Negatives and non-numeric tokens are dropped without aborting the
+        // parse — callers want best-effort filtering, not all-or-nothing.
+        assert_eq!(parse_comma_list_usize("1, abc, 3, -5, 7"), vec![1, 3, 7]);
+    }
+
+    // ─── parse_yaml_source ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_yaml_source_zero_sources_errors() {
+        let err = parse_yaml_source(None, None, None).unwrap_err();
+        assert!(err.contains("Must provide exactly one of"));
+    }
+
+    #[test]
+    fn test_parse_yaml_source_multiple_sources_errors() {
+        let err = parse_yaml_source(
+            Some("inline".to_string()),
+            Some("/tmp/x.yaml".to_string()),
+            None,
+        )
+        .unwrap_err();
+        assert!(err.contains("not multiple"));
+    }
+
+    #[test]
+    fn test_parse_yaml_source_single_content_resolves_to_content() {
+        let src = parse_yaml_source(Some("body".to_string()), None, None).unwrap();
+        assert!(matches!(src, YamlSource::Content(s) if s == "body"));
+    }
+
+    #[test]
+    fn test_parse_yaml_source_single_path_resolves_to_path() {
+        let src = parse_yaml_source(None, Some("/tmp/x.yaml".to_string()), None).unwrap();
+        assert!(matches!(src, YamlSource::Path(s) if s == "/tmp/x.yaml"));
+    }
+
+    #[test]
+    fn test_parse_yaml_source_single_degree_id_resolves_to_id() {
+        let src = parse_yaml_source(None, None, Some("deg-1".to_string())).unwrap();
+        assert!(matches!(src, YamlSource::DegreeId(s) if s == "deg-1"));
+    }
+
+    // ─── read_yaml_file ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_read_yaml_file_returns_content_for_existing_file() {
+        // Build a unique path under the OS temp dir so concurrent runs don't
+        // collide. PID + nanosecond time keeps the test hermetic without
+        // depending on unstable ThreadId APIs.
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let path = std::env::temp_dir().join(format!(
+            "nuanalytics-shared-{}-{nanos}.yaml",
+            std::process::id()
+        ));
+        let body = "degree:\n  id: ok\n";
+        std::fs::write(&path, body).expect("temp write");
+        let read = read_yaml_file(path.to_str().unwrap()).expect("read");
+        assert_eq!(read, body);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_read_yaml_file_missing_path_errors_with_context() {
+        let err = read_yaml_file("/nonexistent/nuanalytics/should-not-exist.yaml").unwrap_err();
+        assert!(err.contains("Failed to read yaml_path"));
+        assert!(err.contains("/nonexistent/nuanalytics/should-not-exist.yaml"));
     }
 
     #[test]

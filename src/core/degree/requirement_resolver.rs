@@ -432,6 +432,15 @@ impl<'a> RequirementResolver<'a> {
     ///
     /// For credit-based requirements, bundles are kept as single units.
     /// For count-based requirements, bundles are expanded into individual courses.
+    /// Resolve the courses that satisfy a [`FromClause`].
+    ///
+    /// Public wrapper around [`Self::get_selection_pool`] so validate-time
+    /// tooling can surface pool sizes without rebuilding pattern matching.
+    /// Mutates the internal pattern cache, which is why `&mut self` is needed.
+    pub fn resolve_pool(&mut self, from: &FromClause) -> Vec<String> {
+        self.get_selection_pool(Some(from))
+    }
+
     fn get_selection_pool(&mut self, from: Option<&FromClause>) -> Vec<String> {
         let Some(from) = from else {
             return Vec::new();

@@ -19,14 +19,20 @@ use serde::Deserialize;
 
 /// Output shape selector for the `get_curriculum_visualization` tool.
 #[derive(Debug, Default, Clone, Copy, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum VisualizationFormat {
     /// Full `<!DOCTYPE html>…</html>` page that opens directly in a browser.
     #[default]
     Standalone,
     /// Self-contained fragment (`<style>` + `<div>` + `<script>`) suitable for
-    /// embedding inside another HTML document.
+    /// embedding inside another HTML document. Includes the shared library
+    /// inline so the fragment is self-sufficient.
     Fragment,
+    /// Same as `Fragment`, but omits the shared `GRAPH_VANILLA_JS` library.
+    /// Use when embedding multiple graphs on one page: emit one `Fragment`
+    /// (or include the library once via another mechanism), then use this
+    /// variant for subsequent graphs to drop ~20 KB per fragment.
+    FragmentNoLibrary,
 }
 
 /// Request parameters for the `get_curriculum_visualization` tool.
@@ -43,10 +49,13 @@ pub struct GetCurriculumVisualizationRequest {
 
     /// Output shape: `"standalone"` (default) returns a full HTML page;
     /// `"fragment"` returns a self-contained snippet (style + div + script)
-    /// safe to embed inside another document's `<body>`.
+    /// safe to embed inside another document's `<body>`;
+    /// `"fragment-no-library"` is the same as `"fragment"` but omits the
+    /// shared library — use this for the 2nd+ graph on a page to save ~20 KB
+    /// per fragment.
     #[serde(default)]
     #[schemars(
-        description = "Output shape: \"standalone\" (default, full HTML page) or \"fragment\" (embeddable snippet)"
+        description = "Output shape: \"standalone\" (default, full HTML page), \"fragment\" (embeddable snippet incl. shared JS library), or \"fragment-no-library\" (smaller snippet for 2nd+ graph on a page)"
     )]
     pub format: VisualizationFormat,
 }
@@ -63,6 +72,9 @@ pub fn execute_html(graph_spec_json: &str, format: VisualizationFormat) -> Strin
         Ok(spec) => match format {
             VisualizationFormat::Standalone => VanillaJsRenderer.render_standalone(&spec),
             VisualizationFormat::Fragment => VanillaJsRenderer.render(&spec),
+            VisualizationFormat::FragmentNoLibrary => {
+                VanillaJsRenderer.render_without_library(&spec)
+            }
         },
         Err(e) => error_html(&format!("Invalid graph_spec JSON: {e}")),
     }
@@ -189,6 +201,43 @@ mod tests {
         let req: GetCurriculumVisualizationRequest =
             serde_json::from_str(r#"{"graph_spec_json":"{}","format":"fragment"}"#).unwrap();
         assert!(matches!(req.format, VisualizationFormat::Fragment));
+    }
+
+    #[test]
+    fn test_visualization_format_deserializes_fragment_no_library() {
+        let req: GetCurriculumVisualizationRequest =
+            serde_json::from_str(r#"{"graph_spec_json":"{}","format":"fragment-no-library"}"#)
+                .unwrap();
+        assert!(matches!(req.format, VisualizationFormat::FragmentNoLibrary));
+    }
+
+    #[test]
+    fn test_fragment_no_library_omits_shared_library() {
+        // FragmentNoLibrary keeps the per-graph register call but drops the
+        // shared GRAPH_VANILLA_JS prelude — the size delta is the whole point.
+        let spec = sample_spec();
+        let json = serde_json::to_string(&spec).unwrap();
+        let with_lib = execute_html(&json, VisualizationFormat::Fragment);
+        let no_lib = execute_html(&json, VisualizationFormat::FragmentNoLibrary);
+
+        assert!(no_lib.contains("nuGraphs.register"));
+        assert!(no_lib.contains("CS101"));
+        assert!(
+            no_lib.len() < with_lib.len(),
+            "FragmentNoLibrary should be smaller than Fragment ({} >= {})",
+            no_lib.len(),
+            with_lib.len()
+        );
+        // The library exposes a `nuGraphs` namespace via `window.nuGraphs = ...`;
+        // FragmentNoLibrary must NOT contain that initialization.
+        assert!(
+            !no_lib.contains("window.nuGraphs ="),
+            "library prelude (window.nuGraphs = ...) must not appear in FragmentNoLibrary"
+        );
+        assert!(
+            with_lib.contains("window.nuGraphs ="),
+            "library prelude must appear in Fragment"
+        );
     }
 
     #[test]

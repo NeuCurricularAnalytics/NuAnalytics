@@ -64,6 +64,21 @@ pub struct CompareDegreesRequest {
     /// Comma-separated degree IDs to compare (e.g. `\"neu-cs-2024,mit-cs-2024\"`)
     #[schemars(description = "Comma-separated degree IDs to compare")]
     pub degree_ids: String,
+
+    /// Include side-by-side analyze metrics (`complexity`, `longest_delay`,
+    /// `total_credits`) for each degree. Default true. Set false to skip the
+    /// analysis pass when you only want metadata + YAML.
+    #[schemars(
+        description = "Include analyze-style metrics per degree (default true). Set false to skip the analysis pass for performance."
+    )]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_bool")]
+    pub include_metrics: Option<bool>,
+
+    /// Cap on plans generated per degree during the analysis pass. Forwarded
+    /// to `analyze_degree`'s `max_plans`. Default 500.
+    #[schemars(description = "max_plans for the per-degree analysis pass (default 500)")]
+    #[serde(default, deserialize_with = "shared::deserialize_opt_usize")]
+    pub max_plans: Option<usize>,
 }
 
 /// Request parameters for `store_degree`
@@ -213,6 +228,11 @@ pub async fn execute_get_json(client: &Arc<DbClient>, req: GetDegreeRequest) -> 
 }
 
 /// Execute `compare_degrees` and return JSON.
+///
+/// When `include_metrics=true` (default), each returned degree carries a
+/// `metrics` object with the analyze pipeline's aggregate statistics so
+/// callers can diff `complexity` / `longest_delay` / `total_credits` side-by-side
+/// in a single call.
 pub async fn execute_compare_json(client: &Arc<DbClient>, req: CompareDegreesRequest) -> String {
     let ids: Vec<&str> = req
         .degree_ids
@@ -224,6 +244,9 @@ pub async fn execute_compare_json(client: &Arc<DbClient>, req: CompareDegreesReq
     if ids.is_empty() {
         return error_json("No degree IDs provided");
     }
+
+    let include_metrics = req.include_metrics.unwrap_or(true);
+    let max_plans = req.max_plans;
 
     let mut degrees = Vec::new();
     let mut not_found = Vec::new();
@@ -244,17 +267,57 @@ pub async fn execute_compare_json(client: &Arc<DbClient>, req: CompareDegreesReq
         }
     }
 
+    let degree_records: Vec<serde_json::Value> = degrees
+        .iter()
+        .map(|d| {
+            let mut record = serde_json::json!({
+                "degree_id": d.degree_id,
+                "unitid": d.unitid,
+                "cip_code": d.cip_code,
+                "catalog_year": d.catalog_year,
+                "yaml_content": d.yaml_content,
+            });
+            if include_metrics {
+                record["metrics"] = compute_compare_metrics(&d.yaml_content, max_plans);
+            }
+            record
+        })
+        .collect();
+
     to_json_pretty(&serde_json::json!({
         "count": degrees.len(),
-        "degrees": degrees,
-        "not_found": not_found
+        "degrees": degree_records,
+        "not_found": not_found,
     }))
+}
+
+/// Run the analyze pipeline on a degree's YAML and pluck the side-by-side
+/// fields useful for `compare_degrees`. Errors surface as a `parse_error`
+/// payload so a single bad YAML doesn't fail the whole compare call.
+fn compute_compare_metrics(yaml: &str, max_plans: Option<usize>) -> serde_json::Value {
+    let response = crate::mcp::tools::analyze::execute(yaml, max_plans, None, false, None);
+    if !response.success {
+        return serde_json::json!({
+            "parse_error": response.error,
+        });
+    }
+    serde_json::json!({
+        "plans_analyzed": response.plans_analyzed,
+        "population_size": response.population_size,
+        "is_full_population": response.is_full_population,
+        "complexity": response.complexity,
+        "longest_delay": response.longest_delay,
+        "total_credits": response.total_credits,
+    })
 }
 
 /// Execute `store_degree` and return JSON. Requires authentication.
 pub async fn execute_store_json(client: &Arc<DbClient>, req: StoreDegreeRequest) -> String {
     if !client.is_authenticated() {
+        // `error_code` is the stable programmatic key callers should branch on;
+        // `error` and `solution` remain the human-readable surface.
         return serde_json::json!({
+            "error_code": "auth_required",
             "error": "Write operations require authentication",
             "solution": "Run `nuanalytics db login` to sign in, then retry"
         })
@@ -313,4 +376,70 @@ async fn fetch_by_id(client: &Arc<DbClient>, id: &str) -> String {
         },
         |d| to_json_pretty(&d),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_compare_metrics_returns_metrics_for_valid_yaml() {
+        // Minimal valid YAML lets us assert the metrics object carries the
+        // analyze fields rather than a parse_error escape hatch.
+        let yaml = r#"
+degree:
+  id: t
+  institution: T
+  program: T
+  total_credits: 8
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101, CS201]
+
+courses:
+  CS101:
+    title: A
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS201:
+    title: B
+    prefix: CS
+    number: "201"
+    credits: 4
+    prerequisites_raw: "CS101"
+"#;
+        let value = compute_compare_metrics(yaml, Some(10));
+        assert!(value.is_object(), "metrics must be a JSON object");
+        assert!(value.get("plans_analyzed").is_some());
+        assert!(value.get("complexity").is_some());
+        assert!(value.get("longest_delay").is_some());
+        assert!(value.get("total_credits").is_some());
+        assert!(
+            value.get("parse_error").is_none(),
+            "valid YAML must not surface a parse_error key"
+        );
+    }
+
+    #[test]
+    fn test_compute_compare_metrics_surfaces_parse_error_for_invalid_yaml() {
+        // Failure mode the field report cared about: if a single bad YAML
+        // shows up in compare_degrees, return its parse error inline so the
+        // good degrees still come back with metrics.
+        let value = compute_compare_metrics("not: valid: yaml: {{", None);
+        assert!(value.is_object());
+        assert!(
+            value.get("parse_error").is_some(),
+            "invalid YAML must surface parse_error"
+        );
+        assert!(
+            value.get("plans_analyzed").is_none(),
+            "no analysis fields when parsing fails"
+        );
+    }
 }

@@ -499,7 +499,8 @@ pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsReq
 
     if completions.total == 0 {
         return serde_json::json!({
-            "message": "No completion records found for the given filters",
+            "total_rows": 0,
+            "note": "No completion records found for the given filters",
             "institutions_checked": institution_unitids.len(),
             "cip_filter": cip_label,
             "year": effective_year,
@@ -665,11 +666,27 @@ pub async fn execute_institution_json(
 
     let rows_raw = comp_result.as_array().cloned().unwrap_or_default();
     if rows_raw.is_empty() {
+        // Probe the institution at the same year/award_level WITHOUT the CIP filter
+        // so the caller sees which CIPs the school actually files completions under.
+        // This collapses the common "wrong CIP code" round-trip from 3+ calls to 1.
+        let nearby = fetch_nearby_cips_for_institution(
+            client,
+            req.unitid,
+            effective_year,
+            req.award_level,
+            req.major_num,
+            cip_filter.as_ref(),
+        )
+        .await;
         return serde_json::json!({
             "unitid": req.unitid,
             "name": inst_name,
             "year": effective_year,
-            "message": "No completion records found for the given filters"
+            "award_level": req.award_level,
+            "cip_prefix": req.cip_prefix,
+            "total_rows": 0,
+            "note": "No completion records found for the given filters",
+            "nearby_cips_with_data": nearby,
         })
         .to_string();
     }
@@ -1235,6 +1252,91 @@ async fn fetch_school_totals_for(
         })
 }
 
+/// Suggested CIP code at an institution that has completion data, used when
+/// the caller's CIP filter returned zero rows.
+#[derive(Debug, Serialize)]
+struct NearbyCip {
+    cip_code: String,
+    cip_title: Option<String>,
+    total_completions: i64,
+}
+
+/// Fetch CIPs that DO have completion data at this institution + year, sorted
+/// by total completions desc. Used to suggest alternatives when the caller's
+/// CIP filter returned zero rows (the most common IPEDS user error: wrong CIP
+/// code for the program — e.g. asking for 11.0701 when the school files BSCS
+/// under 11.0101).
+///
+/// `excluded` is the filter that already returned zero — we drop matches so
+/// suggestions don't echo back the empty input. Returns up to 10 entries.
+async fn fetch_nearby_cips_for_institution(
+    client: &Arc<DbClient>,
+    unitid: i32,
+    year: Option<i32>,
+    award_level: Option<i32>,
+    major_num: Option<i32>,
+    excluded: Option<&CipFilter<'_>>,
+) -> Vec<NearbyCip> {
+    let filters = QueryFilters::new()
+        .eq("unitid", Some(unitid))
+        .eq("year", year)
+        .eq("award_level", award_level)
+        .eq("major_num", major_num);
+
+    let Ok(result) = client
+        .select(tables::COMPLETIONS, "cip_code,total", &filters, Some(2_000))
+        .await
+    else {
+        return Vec::new();
+    };
+
+    let mut totals: HashMap<String, i64> = HashMap::new();
+    if let Some(arr) = result.as_array() {
+        for item in arr {
+            let Some(code) = item.get("cip_code").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            if cip_matches_excluded(code, excluded) {
+                continue;
+            }
+            let total = item
+                .get("total")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0);
+            *totals.entry(code.to_string()).or_insert(0) += total;
+        }
+    }
+
+    let mut entries: Vec<(String, i64)> = totals.into_iter().filter(|(_, t)| *t > 0).collect();
+    entries.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    entries.truncate(10);
+
+    let codes: Vec<String> = entries.iter().map(|(c, _)| c.clone()).collect();
+    let titles = fetch_cip_titles(client, &codes).await;
+
+    entries
+        .into_iter()
+        .map(|(cip_code, total_completions)| {
+            let cip_title = titles.get(&cip_code).cloned();
+            NearbyCip {
+                cip_code,
+                cip_title,
+                total_completions,
+            }
+        })
+        .collect()
+}
+
+/// True iff `code` matches the filter that already returned zero, so we don't
+/// echo it back in the suggestions list.
+fn cip_matches_excluded(code: &str, excluded: Option<&CipFilter<'_>>) -> bool {
+    match excluded {
+        Some(CipFilter::Prefix(p)) => code.starts_with(*p),
+        Some(CipFilter::Codes(codes)) => codes.iter().any(|c| c == code),
+        None => false,
+    }
+}
+
 /// Fetch CIP code titles for a set of codes. Returns a `HashMap<cip_code, title>`.
 async fn fetch_cip_titles(client: &Arc<DbClient>, cip_codes: &[String]) -> HashMap<String, String> {
     if cip_codes.is_empty() {
@@ -1493,6 +1595,46 @@ mod tests {
         let result = aggregate_demo_map(&map);
         assert_eq!(result.total, 150);
         assert_eq!(result.total_women, 80);
+    }
+
+    // ── cip_matches_excluded() ───────────────────────────────────────────────
+    // The helper drives the "drop CIPs already attempted" filter for the
+    // nearby-CIP suggestion path; covering its branches keeps the suggestion
+    // shape stable when callers pass either Prefix or Codes filters.
+
+    #[test]
+    fn test_cip_matches_excluded_none_filter_returns_false() {
+        assert!(!cip_matches_excluded("11.0101", None));
+    }
+
+    #[test]
+    fn test_cip_matches_excluded_prefix_match_returns_true() {
+        let codes_owned: Vec<String> = vec![];
+        let _ = codes_owned; // silence unused warning
+        let prefix = "11.";
+        let filter = CipFilter::Prefix(prefix);
+        assert!(cip_matches_excluded("11.0101", Some(&filter)));
+    }
+
+    #[test]
+    fn test_cip_matches_excluded_prefix_miss_returns_false() {
+        let prefix = "14.";
+        let filter = CipFilter::Prefix(prefix);
+        assert!(!cip_matches_excluded("11.0101", Some(&filter)));
+    }
+
+    #[test]
+    fn test_cip_matches_excluded_codes_match_returns_true() {
+        let codes = vec!["11.0101".to_string(), "11.0701".to_string()];
+        let filter = CipFilter::Codes(&codes);
+        assert!(cip_matches_excluded("11.0101", Some(&filter)));
+    }
+
+    #[test]
+    fn test_cip_matches_excluded_codes_miss_returns_false() {
+        let codes = vec!["11.0101".to_string()];
+        let filter = CipFilter::Codes(&codes);
+        assert!(!cip_matches_excluded("30.7001", Some(&filter)));
     }
 
     // ── apply_cip_filter() ───────────────────────────────────────────────────
