@@ -231,8 +231,8 @@ pub fn execute(
         degree_name: Some(artifacts.program.degree.name.clone()),
         institution: artifacts.program.degree.institution.clone(),
         plans_analyzed: artifacts.plans_processed,
-        population_size: population_size(&artifacts),
-        is_full_population: is_full_population(&artifacts),
+        population_size: artifacts.population_size(),
+        is_full_population: artifacts.is_full_population(),
         selected_plans_count: artifacts.selected.total_count(),
         html_bytes,
         html_content: if inline_html { Some(html) } else { None },
@@ -352,19 +352,6 @@ fn write_artifacts_to_disk(
     }
 
     Ok(())
-}
-
-const fn population_size(artifacts: &AnalysisArtifacts) -> usize {
-    if is_full_population(artifacts) {
-        artifacts.plans_processed
-    } else {
-        artifacts.stats.total_possible
-    }
-}
-
-const fn is_full_population(artifacts: &AnalysisArtifacts) -> bool {
-    !(artifacts.plans_processed >= artifacts.max_plans
-        && artifacts.stats.total_possible > artifacts.max_plans)
 }
 
 fn error_response(error: &str) -> GenerateDegreeReportResponse {
@@ -548,5 +535,78 @@ courses:
         assert!(parsed["html_content"].is_string());
         assert!(parsed["html_bytes"].as_u64().is_some());
         assert!(parsed["selected_plans_count"].as_u64().unwrap() > 0);
+    }
+
+    /// Build a unique tmp path so concurrent test runs don't collide.
+    fn unique_tmp_path(prefix: &str) -> std::path::PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("{prefix}-{}-{nanos}", std::process::id()))
+    }
+
+    #[test]
+    fn test_output_dir_pointing_at_file_surfaces_write_error() {
+        // create_dir_all should reject the file → execute returns an error
+        // response rather than panicking or silently dropping work.
+        let file_path = unique_tmp_path("nuanalytics-report-is-file");
+        std::fs::write(&file_path, "not a directory").expect("create temp file");
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            Some(file_path.to_str().unwrap()),
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(!response.success);
+        let err = response.error.expect("error must be populated");
+        assert!(
+            err.contains("Failed to write artifacts"),
+            "error message should identify the failed operation, got: {err}"
+        );
+        assert!(response.html_content.is_none());
+        assert!(response.report_html_path.is_none());
+
+        std::fs::remove_file(&file_path).ok();
+    }
+
+    #[test]
+    fn test_output_dir_with_all_companions_off_writes_only_html_no_inline_body() {
+        // The opposite of test_output_dir_with_return_html_inline_keeps_both:
+        // companions explicitly disabled, return_html_inline=false. Expect a
+        // single HTML file on disk and a response without html_content.
+        let dir = unique_tmp_path("nuanalytics-report-html-only");
+        let dir_str = dir.to_string_lossy().into_owned();
+
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            Some(&dir_str),
+            Some(false),
+            Some(false),
+            Some(false),
+            Some(false),
+        );
+        assert!(response.success, "error: {:?}", response.error);
+        assert!(
+            response.html_content.is_none(),
+            "return_html_inline=false must suppress the response body"
+        );
+        let html_path = response
+            .report_html_path
+            .as_deref()
+            .expect("HTML must still be written to disk");
+        assert!(std::path::Path::new(html_path).exists(), "{html_path}");
+        assert!(response.plan_csv_paths.is_empty());
+        assert!(response.jsonl_summary_path.is_none());
+        assert!(response.index_csv_path.is_none());
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

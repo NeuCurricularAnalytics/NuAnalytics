@@ -259,6 +259,27 @@ pub(super) struct AnalysisArtifacts {
     pub max_plans: usize,
 }
 
+impl AnalysisArtifacts {
+    /// True when every distinct plan was analyzed — the cap was not hit, or
+    /// the cap was hit but the underlying upper bound did not exceed it.
+    /// Sibling tools (`analyze_degree` JSON output, the HTML report) use this
+    /// to frame results honestly as "full population" vs "sample of N".
+    pub const fn is_full_population(&self) -> bool {
+        !(self.plans_processed >= self.max_plans && self.stats.total_possible > self.max_plans)
+    }
+
+    /// Effective population size: the actual processed count when the run
+    /// covered everything, otherwise the upper-bound estimate from the
+    /// requirement-choice product.
+    pub const fn population_size(&self) -> usize {
+        if self.is_full_population() {
+            self.plans_processed
+        } else {
+            self.stats.total_possible
+        }
+    }
+}
+
 /// Run the full analysis pipeline against `yaml_content` and return the
 /// produced artifacts. On YAML parse failure, returns a formatted error
 /// string suitable for surfacing through MCP tools.
@@ -465,15 +486,9 @@ fn build_response(
         })
         .collect();
 
-    let plans_processed = artifacts.plans_processed;
-    let max = artifacts.max_plans;
-    let was_truncated = plans_processed >= max && artifacts.stats.total_possible > max;
-    let is_full_population = !was_truncated;
-    let population_size = if is_full_population {
-        plans_processed
-    } else {
-        artifacts.stats.total_possible
-    };
+    let is_full_population = artifacts.is_full_population();
+    let was_truncated = !is_full_population;
+    let population_size = artifacts.population_size();
 
     AnalysisResponse {
         success: true,
@@ -482,7 +497,7 @@ fn build_response(
         institution: artifacts.program.degree.institution.clone(),
         total_courses: artifacts.program.courses.len(),
         total_requirements: artifacts.program.requirements.len(),
-        plans_analyzed: plans_processed,
+        plans_analyzed: artifacts.plans_processed,
         was_truncated,
         population_size,
         is_full_population,
@@ -864,6 +879,63 @@ courses:
         assert!(response.complexity.is_some());
         assert!(response.total_credits.is_some());
         assert!(!response.selected_plans.is_empty());
+    }
+
+    #[test]
+    fn test_build_artifacts_populates_pipeline_outputs() {
+        // Direct coverage of the shared pipeline entry point. Every artifact
+        // field must be populated so sibling tools (the HTML report) don't
+        // have to defensively check for empty/None state.
+        let artifacts =
+            build_artifacts(TEST_YAML, Some(10), None).expect("build_artifacts on valid YAML");
+        assert_eq!(artifacts.program.degree.name, "Test Program");
+        assert_eq!(
+            artifacts.program.degree.institution.as_deref(),
+            Some("Test University")
+        );
+        assert_eq!(artifacts.max_plans, 10);
+        assert!(artifacts.plans_processed > 0);
+        assert!(artifacts.selected.total_count() > 0);
+        assert!(artifacts.stats.total_possible > 0);
+        // Pipeline outputs the analyzed-plan stats too.
+        let stats = artifacts.aggregator.degree_stats();
+        assert!(stats.plan_count > 0);
+    }
+
+    #[test]
+    fn test_build_artifacts_returns_parse_error_for_malformed_yaml() {
+        // AnalysisArtifacts deliberately doesn't derive Debug (it owns a
+        // MetricsAggregator that wouldn't print usefully anyway), so use a
+        // match instead of `unwrap_err` to interrogate the failure.
+        let result = build_artifacts("not: valid: yaml: {{", Some(10), None);
+        let Err(err) = result else {
+            panic!("expected parse failure for malformed YAML");
+        };
+        assert!(
+            err.to_lowercase().contains("yaml") || err.to_lowercase().contains("error"),
+            "parse error must mention yaml/error context, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_build_artifacts_respects_include_courses() {
+        // Every selected plan must contain the forced course.
+        let artifacts =
+            build_artifacts(TEST_YAML, Some(10), Some(vec!["CS101".to_string()])).unwrap();
+        for (_cat, plan) in artifacts.selected.iter() {
+            assert!(
+                plan.variant.courses.iter().any(|c| c == "CS101"),
+                "include_courses=CS101 must force every selected plan to contain CS101"
+            );
+        }
+    }
+
+    #[test]
+    fn test_artifacts_is_full_population_when_under_cap() {
+        // TEST_YAML has only one valid plan; max=500 means we never hit the cap.
+        let artifacts = build_artifacts(TEST_YAML, Some(500), None).unwrap();
+        assert!(artifacts.is_full_population());
+        assert_eq!(artifacts.population_size(), artifacts.plans_processed);
     }
 
     #[test]
