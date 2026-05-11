@@ -124,9 +124,8 @@ pub struct RenderPlanGraphResponse {
     /// *projected* size (computed by rendering then dropping the string),
     /// so callers can decide whether to pay the actual rendering cost.
     pub html_bytes: usize,
-    /// Total nodes in the generated `CurriculumGraphSpec` (courses + the
-    /// term frames the renderer wraps them in). Useful as a complexity
-    /// proxy during dry-run probing.
+    /// Number of course nodes in the generated `CurriculumGraphSpec`.
+    /// Useful as a complexity proxy during dry-run probing.
     pub node_count: Option<usize>,
     /// Whether this response was a dry-run probe (no HTML payload).
     pub dry_run: bool,
@@ -206,6 +205,9 @@ pub fn execute(
         VisualizationFormat::FragmentNoLibrary => VanillaJsRenderer.render_without_library(&spec),
     };
     let html_bytes = html.len();
+    // Dry-run still renders so `html_bytes` reports the *actual* payload
+    // size the caller would have received — cheap relative to the cached
+    // analyze pipeline, and the only honest source of the projected size.
     let html_field = if dry_run { None } else { Some(html) };
 
     RenderPlanGraphResponse {
@@ -354,6 +356,10 @@ courses:
         );
         assert!(response.terms.is_some_and(|t| t > 0));
         assert!(response.html_bytes > 0);
+        // dry_run=false must still populate node_count so callers always see
+        // the graph-complexity proxy regardless of the rendering decision.
+        assert!(!response.dry_run);
+        assert!(response.node_count.is_some_and(|n| n > 0));
     }
 
     #[test]

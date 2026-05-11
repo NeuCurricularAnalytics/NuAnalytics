@@ -557,9 +557,7 @@ impl NuAnalyticsMcpServer {
 /// Run a tool body inside `catch_unwind` so an unexpected panic in the
 /// analysis pipeline surfaces as a structured JSON error instead of taking
 /// down the MCP server. The tool body is treated as unwind-safe — every
-/// MCP tool body is pure (no shared mutable state besides the
-/// process-wide caches, which only hold `Arc`s and are robust to a
-/// poisoned mutex since callers see `Err`s on subsequent locks).
+/// MCP tool body is pure aside from process-wide `Arc`-shared caches.
 fn guard_panics<F>(tool: &'static str, f: F) -> String
 where
     F: FnOnce() -> String,
@@ -567,7 +565,7 @@ where
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
         Ok(s) => s,
         Err(payload) => {
-            let message = panic_payload_to_string(&payload);
+            let message = panic_payload_to_string(&*payload);
             serde_json::json!({
                 "success": false,
                 "error": format!("{tool} panicked: {message}"),
@@ -578,10 +576,10 @@ where
     }
 }
 
-/// Pull a human-readable message out of a `Box<dyn Any + Send>` panic
-/// payload. Panics started by `panic!("...")` carry a `&'static str` or
-/// `String`; anything else falls back to a generic placeholder.
-fn panic_payload_to_string(payload: &Box<dyn std::any::Any + Send>) -> String {
+/// Pull a human-readable message out of a panic payload. Panics started by
+/// `panic!("literal")` carry a `&'static str`; panics with formatting carry
+/// a `String`; anything else falls back to a generic placeholder.
+fn panic_payload_to_string(payload: &(dyn std::any::Any + Send)) -> String {
     payload
         .downcast_ref::<&'static str>()
         .map(|s| (*s).to_string())
@@ -794,6 +792,19 @@ mod tests {
             "error must include the panic message: got {error:?}"
         );
         assert!(parsed["hint"].is_string(), "hint must be populated");
+    }
+
+    #[test]
+    fn test_guard_panics_extracts_formatted_string_panic_message() {
+        // panic! with formatting allocates a String payload — exercises the
+        // downcast_ref::<String>() branch in panic_payload_to_string.
+        let result = guard_panics("fmt", || panic!("dynamic {} value", 42));
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let error = parsed["error"].as_str().unwrap();
+        assert!(
+            error.contains("dynamic 42 value"),
+            "formatted panic message must reach the response: got {error:?}"
+        );
     }
 
     #[test]
