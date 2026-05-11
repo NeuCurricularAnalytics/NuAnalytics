@@ -613,17 +613,17 @@ fn build_per_course_metrics(artifacts: &AnalysisArtifacts) -> Vec<CourseMetricsJ
     ids.sort();
     ids.into_iter()
         .filter_map(|id| {
-            artifacts.aggregator.course_stats(&id).map(|s| {
-                let plan_count = s.plan_count;
-                CourseMetricsJson {
+            artifacts
+                .aggregator
+                .course_stats(&id)
+                .map(|s| CourseMetricsJson {
                     course_id: id,
-                    plan_count,
+                    plan_count: s.plan_count,
                     complexity: metric_stats_json(&s.complexity),
                     centrality: metric_stats_json(&s.centrality),
                     delay: metric_stats_json(&s.delay),
                     blocking: metric_stats_json(&s.blocking),
-                }
-            })
+                })
         })
         .collect()
 }
@@ -1331,6 +1331,21 @@ courses:
         for entry in &on.per_course_metrics {
             assert!(entry.plan_count > 0);
         }
+        // Guard against a silent regression where the entries populate but
+        // every metric stays at MetricStatsJson::default() (all zeros).
+        let any_nonzero = on
+            .per_course_metrics
+            .iter()
+            .any(|c| c.complexity.max > 0.0 || c.delay.max > 0.0 || c.blocking.max > 0.0);
+        assert!(
+            any_nonzero,
+            "metric stats must reflect real aggregator data, not Default zeros"
+        );
+        let on_json = serde_json::to_string(&on).unwrap();
+        assert!(
+            on_json.contains("\"per_course_metrics\""),
+            "field must serialise into the JSON when the flag is set"
+        );
     }
 
     #[test]
