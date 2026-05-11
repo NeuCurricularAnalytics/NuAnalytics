@@ -6,10 +6,11 @@ use std::sync::Arc;
 
 use crate::core::config::DatabaseConfig;
 use crate::mcp::tools::{
-    analyze, audit, course_detail, pipeline, report, schema, shared, validate, visualize,
-    AnalyzeDegreeRequest, AuditDegreeRequest, DegreePipelineRequest, GenerateDegreeReportRequest,
-    GetCourseDetailRequest, GetCurriculumVisualizationRequest, GetSchemaRequest,
-    ValidateDegreeRequest,
+    analyze, audit, course_detail, match_courses, pipeline, plan_graph, report, samples, schema,
+    shared, validate, visualize, AnalyzeDegreeRequest, AuditDegreeRequest, DegreePipelineRequest,
+    FindCoursesMatchingRequest, GenerateDegreeReportRequest, GetCourseDetailRequest,
+    GetCurriculumVisualizationRequest, GetSchemaRequest, ListSampleDegreesRequest,
+    RenderPlanGraphRequest, ValidateDegreeRequest,
 };
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -224,6 +225,68 @@ impl NuAnalyticsMcpServer {
         })
     }
 
+    /// List the bundled sample degree YAMLs
+    #[tool(
+        description = "List the sample degree YAMLs bundled with this MCP server (three real curricula: CSU Fort Collins, Northeastern Khoury, UH Manoa). Default response is metadata-only (institution, program, total_credits, summary). Pass include_yaml=true to also receive the full embedded YAML body for each sample — pipe that body into validate_degree / audit_degree / analyze_degree / generate_degree_report. Use this to bootstrap exploration when the caller doesn't have a YAML in hand."
+    )]
+    #[allow(clippy::unused_self)]
+    fn list_sample_degrees(&self, Parameters(req): Parameters<ListSampleDegreesRequest>) -> String {
+        samples::execute_json(req.include_yaml.unwrap_or(false))
+    }
+
+    /// Preview which courses match a set of patterns in a degree YAML
+    #[tool(
+        description = "Resolve a set of include/exclude patterns against the courses defined in a YAML and return the matched course list with titles + levels. Same pattern grammar as `select` requirements (e.g. \"CS:300+\", \"MATH:300-499\"). Useful when sketching a new requirement and you want to preview the resulting pool before committing it to the YAML. Same yaml source modes as analyze_degree."
+    )]
+    fn find_courses_matching(
+        &self,
+        Parameters(req): Parameters<FindCoursesMatchingRequest>,
+    ) -> String {
+        let patterns = shared::parse_comma_list(&req.patterns);
+        let exclude = req
+            .exclude
+            .as_deref()
+            .map(shared::parse_comma_list)
+            .unwrap_or_default();
+        let source = match shared::parse_yaml_source(req.yaml_content, req.yaml_path, req.degree_id)
+        {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        self.run_yaml_tool("find_courses_matching", source, move |yaml| {
+            match_courses::execute_json(yaml, patterns, exclude)
+        })
+    }
+
+    /// Render the curriculum graph for one selected plan in a single call
+    #[tool(
+        description = "Render the curriculum graph HTML for one selected plan in a single call (analyze + extract graph_spec + visualize in one tool). Pick a plan via plan_category=\"shortest\" | \"longest\" | \"calc-ready-shortest\" | \"sample\" (with optional sample_index, 1-indexed) OR via plan_index (0-indexed offset into the analyze response's selected_plans). format defaults to \"standalone\" — pass \"fragment\" or \"fragment-no-library\" to embed in another HTML document. Same yaml source modes + analyze knobs (max_plans, include_courses) as analyze_degree."
+    )]
+    fn render_plan_graph(&self, Parameters(req): Parameters<RenderPlanGraphRequest>) -> String {
+        let plan_category = req.plan_category;
+        let sample_index = req.sample_index;
+        let plan_index = req.plan_index;
+        let format = req.format;
+        let max_plans = req.max_plans;
+        let include_courses = req.include_courses.map(|s| shared::parse_comma_list(&s));
+        let source = match shared::parse_yaml_source(req.yaml_content, req.yaml_path, req.degree_id)
+        {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        self.run_yaml_tool("render_plan_graph", source, move |yaml| {
+            plan_graph::execute_json(
+                yaml,
+                plan_category.as_deref(),
+                sample_index,
+                plan_index,
+                format,
+                max_plans,
+                include_courses,
+            )
+        })
+    }
+
     /// Render a curriculum graph visualization from an `analyze_degree` result
     #[tool(
         description = "Render an interactive HTML curriculum graph from a graph_spec produced by analyze_degree. The output shows course nodes arranged by term, prerequisite/corequisite edges drawn as Bezier curves, complexity badges, hover highlighting of prerequisite chains, and a click-to-open course detail modal. Set format=\"standalone\" (default) for a full HTML page openable in a browser, or format=\"fragment\" for a self-contained snippet (style + div + script) that can be embedded inside a larger HTML document. Typical flow: (1) call analyze_degree, (2) serialize selected_plans[N].graph_spec to JSON, (3) pass it as graph_spec_json to this tool."
@@ -369,10 +432,10 @@ impl NuAnalyticsMcpServer {
         })
     }
 
-    /// Compare multiple stored degree programs
+    /// Compare multiple stored degree programs (and/or inline YAMLs)
     #[cfg(feature = "database")]
     #[tool(
-        description = "Compare multiple stored degree programs by their IDs. Returns side-by-side metadata, YAML content, and (by default) analyze-style metrics per degree (complexity, longest_delay, total_credits — same shape as analyze_degree). Set include_metrics=false to skip the analysis pass for a metadata-only comparison. Provide a comma-separated list of degree IDs."
+        description = "Compare multiple degrees side-by-side. Provide `sources` (structured list of {label?, degree_id?|yaml_content?|yaml_path?}, exactly one source per entry) and/or `degree_ids` (legacy comma-separated stored-IDs form). `sources` lets you benchmark an in-progress inline YAML against a stored peer without storing it first. Returns metadata + YAML content per entry, plus (default) analyze-style metrics (complexity, longest_delay, total_credits, plans_analyzed). Set include_metrics=false to skip the analysis pass."
     )]
     fn compare_degrees(&self, Parameters(req): Parameters<CompareDegreesRequest>) -> String {
         self.call_db("compare_degrees", |db| async move {

@@ -5,8 +5,11 @@
 pub mod analyze;
 pub mod audit;
 pub mod course_detail;
+pub mod match_courses;
 pub mod pipeline;
+pub mod plan_graph;
 pub mod report;
+pub mod samples;
 pub mod schema;
 pub mod shared;
 pub mod validate;
@@ -30,8 +33,11 @@ pub mod scaffold;
 pub use analyze::AnalyzeDegreeRequest;
 pub use audit::AuditDegreeRequest;
 pub use course_detail::GetCourseDetailRequest;
+pub use match_courses::FindCoursesMatchingRequest;
 pub use pipeline::DegreePipelineRequest;
+pub use plan_graph::RenderPlanGraphRequest;
 pub use report::GenerateDegreeReportRequest;
+pub use samples::ListSampleDegreesRequest;
 pub use schema::GetSchemaRequest;
 pub use validate::{
     DegreeContext, ValidateDegreeRequest, ValidationErrorInfo, ValidationResponse,

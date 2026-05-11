@@ -58,12 +58,29 @@ pub struct GetDegreeRequest {
     pub catalog_year: Option<String>,
 }
 
-/// Request parameters for `compare_degrees`
+/// Request parameters for `compare_degrees`.
+///
+/// Accept either the legacy `degree_ids` comma-separated form (DB-only) or
+/// the structured `sources` array — the latter lets callers mix stored
+/// degrees with inline YAML / filesystem paths in one comparison without
+/// having to `store_degree` first.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CompareDegreesRequest {
-    /// Comma-separated degree IDs to compare (e.g. `\"neu-cs-2024,mit-cs-2024\"`)
-    #[schemars(description = "Comma-separated degree IDs to compare")]
-    pub degree_ids: String,
+    /// Legacy comma-separated degree IDs to compare (e.g.
+    /// `\"neu-cs-2024,mit-cs-2024\"`). Each ID is looked up in the stored
+    /// degrees table.
+    #[schemars(
+        description = "Comma-separated stored degree IDs to compare (legacy form; prefer `sources` for mixed inline/stored input)."
+    )]
+    pub degree_ids: Option<String>,
+
+    /// Structured list of degree sources to compare. Each entry resolves
+    /// from one of `degree_id`, `yaml_content`, or `yaml_path`. Use this
+    /// when you want to benchmark an in-progress YAML against a stored peer.
+    #[schemars(
+        description = "Structured per-degree sources (mix of stored IDs, inline YAMLs, and filesystem paths). Each entry must specify exactly one of degree_id/yaml_content/yaml_path. Optional `label` controls the response order key."
+    )]
+    pub sources: Option<Vec<DegreeSource>>,
 
     /// Include side-by-side analyze metrics (`complexity`, `longest_delay`,
     /// `total_credits`) for each degree. Default true. Set false to skip the
@@ -79,6 +96,32 @@ pub struct CompareDegreesRequest {
     #[schemars(description = "max_plans for the per-degree analysis pass (default 500)")]
     #[serde(default, deserialize_with = "shared::deserialize_opt_usize")]
     pub max_plans: Option<usize>,
+}
+
+/// One degree to include in a comparison.
+///
+/// Exactly one of the three source fields (`degree_id`, `yaml_content`,
+/// `yaml_path`) must be set. An optional `label` controls the response's
+/// display name when the caller wants something more readable than the
+/// resolved slug or filename.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DegreeSource {
+    /// Free-form label used in the response. Falls back to the resolved
+    /// `degree_id` or YAML's degree id when omitted.
+    #[schemars(description = "Display label for this source in the response (optional).")]
+    pub label: Option<String>,
+
+    /// Stored degree id — looked up in the database.
+    #[schemars(description = "Stored degree ID (DB lookup).")]
+    pub degree_id: Option<String>,
+
+    /// Inline YAML body.
+    #[schemars(description = "Inline YAML body for this degree.")]
+    pub yaml_content: Option<String>,
+
+    /// Filesystem path the MCP server will read.
+    #[schemars(description = "Path to a YAML file on the MCP server's filesystem.")]
+    pub yaml_path: Option<String>,
 }
 
 /// Request parameters for `store_degree`
@@ -233,62 +276,163 @@ pub async fn execute_get_json(client: &Arc<DbClient>, req: GetDegreeRequest) -> 
 /// `metrics` object with the analyze pipeline's aggregate statistics so
 /// callers can diff `complexity` / `longest_delay` / `total_credits` side-by-side
 /// in a single call.
+///
+/// Accepts both the legacy `degree_ids` comma-separated form and the
+/// structured `sources` list. When both are provided, `sources` is processed
+/// first; the legacy IDs are appended without labels.
 pub async fn execute_compare_json(client: &Arc<DbClient>, req: CompareDegreesRequest) -> String {
-    let ids: Vec<&str> = req
-        .degree_ids
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    if ids.is_empty() {
-        return error_json("No degree IDs provided");
-    }
-
     let include_metrics = req.include_metrics.unwrap_or(true);
     let max_plans = req.max_plans;
 
-    let mut degrees = Vec::new();
-    let mut not_found = Vec::new();
+    let mut resolved: Vec<ResolvedDegree> = Vec::new();
+    let mut not_found: Vec<String> = Vec::new();
 
-    for id in &ids {
-        let result_str = fetch_by_id(client, id).await;
-        // Try to parse back — if it has "error" key it's not found
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result_str) {
-            if parsed.get("error").is_some() {
-                not_found.push(*id);
-            } else if let Ok(d) = serde_json::from_value::<DegreeDetail>(parsed) {
-                degrees.push(d);
-            } else {
-                not_found.push(*id);
+    if let Some(sources) = &req.sources {
+        for (idx, source) in sources.iter().enumerate() {
+            match resolve_source(client, source, idx).await {
+                Ok(rd) => resolved.push(rd),
+                Err(missing) => not_found.push(missing),
             }
-        } else {
-            not_found.push(*id);
         }
     }
 
-    let degree_records: Vec<serde_json::Value> = degrees
+    if let Some(ids_str) = req.degree_ids.as_deref() {
+        let ids: Vec<&str> = ids_str
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        for id in ids {
+            match fetch_detail_by_id(client, id).await {
+                Some(detail) => resolved.push(ResolvedDegree::from_detail(None, detail)),
+                None => not_found.push(id.to_string()),
+            }
+        }
+    }
+
+    if resolved.is_empty() && not_found.is_empty() {
+        return error_json(
+            "No degrees to compare. Provide `sources` (structured list) or `degree_ids` (legacy comma-separated form).",
+        );
+    }
+
+    let degree_records: Vec<serde_json::Value> = resolved
         .iter()
-        .map(|d| {
+        .map(|rd| {
             let mut record = serde_json::json!({
-                "degree_id": d.degree_id,
-                "unitid": d.unitid,
-                "cip_code": d.cip_code,
-                "catalog_year": d.catalog_year,
-                "yaml_content": d.yaml_content,
+                "label": rd.label,
+                "degree_id": rd.degree_id,
+                "unitid": rd.unitid,
+                "cip_code": rd.cip_code,
+                "catalog_year": rd.catalog_year,
+                "yaml_content": rd.yaml_content,
             });
             if include_metrics {
-                record["metrics"] = compute_compare_metrics(&d.yaml_content, max_plans);
+                record["metrics"] = compute_compare_metrics(&rd.yaml_content, max_plans);
             }
             record
         })
         .collect();
 
     to_json_pretty(&serde_json::json!({
-        "count": degrees.len(),
+        "count": resolved.len(),
         "degrees": degree_records,
         "not_found": not_found,
     }))
+}
+
+/// Internal: an already-resolved degree ready to fold into the response.
+struct ResolvedDegree {
+    label: Option<String>,
+    degree_id: Option<String>,
+    unitid: Option<i32>,
+    cip_code: Option<String>,
+    catalog_year: Option<String>,
+    yaml_content: String,
+}
+
+impl ResolvedDegree {
+    fn from_detail(label: Option<String>, detail: DegreeDetail) -> Self {
+        Self {
+            label,
+            degree_id: Some(detail.degree_id),
+            unitid: detail.unitid,
+            cip_code: detail.cip_code,
+            catalog_year: detail.catalog_year,
+            yaml_content: detail.yaml_content,
+        }
+    }
+
+    const fn from_inline(label: Option<String>, yaml_content: String) -> Self {
+        Self {
+            label,
+            degree_id: None,
+            unitid: None,
+            cip_code: None,
+            catalog_year: None,
+            yaml_content,
+        }
+    }
+}
+
+/// Resolve one `DegreeSource` entry. Returns `Err(missing_label)` when the
+/// source pointed at a stored id that doesn't exist (collected into
+/// `not_found`) or when the entry's three input fields are misconfigured.
+async fn resolve_source(
+    client: &Arc<DbClient>,
+    source: &DegreeSource,
+    idx: usize,
+) -> Result<ResolvedDegree, String> {
+    let count = u8::from(source.degree_id.is_some())
+        + u8::from(source.yaml_content.is_some())
+        + u8::from(source.yaml_path.is_some());
+    if count != 1 {
+        // Surface as not_found rather than a top-level error so the rest of
+        // the compare call still produces useful output for the good entries.
+        let label = source
+            .label
+            .clone()
+            .unwrap_or_else(|| format!("sources[{idx}]"));
+        return Err(format!(
+            "{label} (expected exactly one of degree_id, yaml_content, yaml_path)"
+        ));
+    }
+
+    if let Some(id) = source.degree_id.as_deref() {
+        return fetch_detail_by_id(client, id)
+            .await
+            .map(|detail| ResolvedDegree::from_detail(source.label.clone(), detail))
+            .ok_or_else(|| source.label.clone().unwrap_or_else(|| id.to_string()));
+    }
+    if let Some(yaml) = source.yaml_content.clone() {
+        return Ok(ResolvedDegree::from_inline(source.label.clone(), yaml));
+    }
+    if let Some(path) = source.yaml_path.as_deref() {
+        let Ok(yaml) = shared::read_yaml_file(path) else {
+            return Err(source
+                .label
+                .clone()
+                .unwrap_or_else(|| format!("yaml_path={path}")));
+        };
+        return Ok(ResolvedDegree::from_inline(source.label.clone(), yaml));
+    }
+    // Unreachable given the count check above.
+    Err(source
+        .label
+        .clone()
+        .unwrap_or_else(|| format!("sources[{idx}]")))
+}
+
+/// Fetch a stored degree's full detail by id; returns `None` if missing or
+/// the row fails to deserialize. Wraps the JSON-string helper used elsewhere
+/// in this module.
+async fn fetch_detail_by_id(client: &Arc<DbClient>, id: &str) -> Option<DegreeDetail> {
+    let result_str = fetch_by_id(client, id).await;
+    let parsed: serde_json::Value = serde_json::from_str(&result_str).ok()?;
+    if parsed.get("error").is_some() {
+        return None;
+    }
+    serde_json::from_value::<DegreeDetail>(parsed).ok()
 }
 
 /// Run the analyze pipeline on a degree's YAML and pluck the side-by-side
