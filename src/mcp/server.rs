@@ -106,7 +106,7 @@ impl NuAnalyticsMcpServer {
 
     /// Audit a degree program YAML
     #[tool(
-        description = "Run a comprehensive audit on a degree program YAML: validation, missing prerequisites on upper-level courses, and deep prerequisite chains. Provide exactly ONE YAML source: yaml_content (inline), yaml_path (file path), or degree_id (DB lookup). Returns structured findings."
+        description = "Run a comprehensive audit on a degree program YAML: validation, missing prerequisites on upper-level courses, and deep prerequisite chains. Provide exactly ONE YAML source: yaml_content (inline), yaml_path (file path), or degree_id (DB lookup). Returns structured findings. For each deep-chain entry, prefer the structured `branches: [{length, path: [course_id]}]` field over the legacy human-readable `chain` string when consuming results programmatically."
     )]
     fn audit_degree(&self, Parameters(req): Parameters<AuditDegreeRequest>) -> String {
         let chain_threshold = req.chain_threshold;
@@ -275,7 +275,7 @@ impl NuAnalyticsMcpServer {
 
     /// Render the curriculum graph for one selected plan in a single call
     #[tool(
-        description = "Render the curriculum graph HTML for one selected plan in a single call (analyze + extract graph_spec + visualize in one tool). Pick a plan via plan_category=\"shortest\" | \"longest\" | \"calc-ready-shortest\" | \"sample\" (with optional sample_index, 1-indexed) OR via plan_index (0-indexed offset into the analyze response's selected_plans). format defaults to \"standalone\" — pass \"fragment\" or \"fragment-no-library\" to embed in another HTML document. Same yaml source modes + analyze knobs (max_plans, include_courses) as analyze_degree."
+        description = "Render the curriculum graph HTML for one selected plan in a single call (analyze + extract graph_spec + visualize in one tool). Pick a plan via plan_category=\"shortest\" | \"longest\" | \"calc-ready-shortest\" | \"sample\" (with optional sample_index, 1-indexed) OR via plan_index (0-indexed offset into the analyze response's selected_plans). format defaults to \"standalone\" — pass \"fragment\" or \"fragment-no-library\" to embed in another HTML document. Set dry_run=true to skip the HTML payload and return only the picker metadata + node_count + projected html_bytes (cheap probe before committing to a 100-300 KB render). Same yaml source modes + analyze knobs (max_plans, include_courses) as analyze_degree."
     )]
     fn render_plan_graph(&self, Parameters(req): Parameters<RenderPlanGraphRequest>) -> String {
         let plan_category = req.plan_category;
@@ -284,6 +284,7 @@ impl NuAnalyticsMcpServer {
         let format = req.format;
         let max_plans = req.max_plans;
         let include_courses = req.include_courses.map(|s| shared::parse_comma_list(&s));
+        let dry_run = req.dry_run.unwrap_or(false);
         let source = match shared::parse_yaml_source(req.yaml_content, req.yaml_path, req.degree_id)
         {
             Ok(s) => s,
@@ -298,6 +299,7 @@ impl NuAnalyticsMcpServer {
                 format,
                 max_plans,
                 include_courses.as_deref(),
+                dry_run,
             )
         })
     }
@@ -463,26 +465,22 @@ impl NuAnalyticsMcpServer {
     /// Resolves the YAML from inline content, a filesystem path, or a stored
     /// degree id, then invokes `run` with the resolved string. Errors at any
     /// resolution step return a JSON error string.
-    fn run_yaml_tool<F>(
-        &self,
-        #[cfg_attr(not(feature = "database"), allow(unused_variables))] tool: &'static str,
-        source: shared::YamlSource,
-        run: F,
-    ) -> String
+    fn run_yaml_tool<F>(&self, tool: &'static str, source: shared::YamlSource, run: F) -> String
     where
         F: FnOnce(&str) -> String,
     {
-        match source {
-            shared::YamlSource::Content(yaml) => run(&yaml),
+        let yaml = match source {
+            shared::YamlSource::Content(y) => y,
             shared::YamlSource::Path(p) => match shared::read_yaml_file(&p) {
-                Ok(yaml) => run(&yaml),
-                Err(e) => e,
+                Ok(y) => y,
+                Err(e) => return e,
             },
             shared::YamlSource::DegreeId(id) => match self.resolve_degree_id(tool, &id) {
-                Ok(yaml) => run(&yaml),
-                Err(e) => e,
+                Ok(y) => y,
+                Err(e) => return e,
             },
-        }
+        };
+        guard_panics(tool, || run(&yaml))
     }
 
     /// Resolve a `degree_id` to a YAML body using the layered lookup:
@@ -554,6 +552,41 @@ impl NuAnalyticsMcpServer {
     //         degrees::execute_store_json(&db, req).await
     //     })
     // }
+}
+
+/// Run a tool body inside `catch_unwind` so an unexpected panic in the
+/// analysis pipeline surfaces as a structured JSON error instead of taking
+/// down the MCP server. The tool body is treated as unwind-safe — every
+/// MCP tool body is pure (no shared mutable state besides the
+/// process-wide caches, which only hold `Arc`s and are robust to a
+/// poisoned mutex since callers see `Err`s on subsequent locks).
+fn guard_panics<F>(tool: &'static str, f: F) -> String
+where
+    F: FnOnce() -> String,
+{
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(s) => s,
+        Err(payload) => {
+            let message = panic_payload_to_string(&payload);
+            serde_json::json!({
+                "success": false,
+                "error": format!("{tool} panicked: {message}"),
+                "hint": "This is a bug in the MCP server — please report the YAML that triggered it. The server is still running.",
+            })
+            .to_string()
+        }
+    }
+}
+
+/// Pull a human-readable message out of a `Box<dyn Any + Send>` panic
+/// payload. Panics started by `panic!("...")` carry a `&'static str` or
+/// `String`; anything else falls back to a generic placeholder.
+fn panic_payload_to_string(payload: &Box<dyn std::any::Any + Send>) -> String {
+    payload
+        .downcast_ref::<&'static str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "non-string panic payload".to_string())
 }
 
 /// Database access helpers.
@@ -730,4 +763,49 @@ pub fn run(db_config: &DatabaseConfig) -> Result<(), String> {
 
     rt.block_on(run_server(db_config))
         .map_err(|e| format!("MCP server error: {e}"))
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_guard_panics_returns_value_on_normal_completion() {
+        let result = guard_panics("noop", || "{\"success\":true}".to_string());
+        assert_eq!(result, "{\"success\":true}");
+    }
+
+    #[test]
+    fn test_guard_panics_translates_string_panic_into_json_error() {
+        let result = guard_panics("explode", || panic!("intentional test panic"));
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["success"].as_bool(), Some(false));
+        let error = parsed["error"].as_str().expect("error string");
+        assert!(
+            error.contains("explode panicked"),
+            "error must name the tool: got {error:?}"
+        );
+        assert!(
+            error.contains("intentional test panic"),
+            "error must include the panic message: got {error:?}"
+        );
+        assert!(parsed["hint"].is_string(), "hint must be populated");
+    }
+
+    #[test]
+    fn test_guard_panics_handles_non_string_payload() {
+        let result = guard_panics("weird", || {
+            std::panic::panic_any(42_i32);
+        });
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["success"].as_bool(), Some(false));
+        assert!(parsed["error"]
+            .as_str()
+            .unwrap()
+            .contains("non-string panic payload"));
+    }
 }

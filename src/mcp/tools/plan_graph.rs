@@ -87,6 +87,18 @@ pub struct RenderPlanGraphRequest {
         description = "Comma-separated course codes every generated plan must include (e.g. \"CS150B,MATH156\")"
     )]
     pub include_courses: Option<String>,
+
+    /// Skip the HTML render and return only the picker metadata + projected
+    /// payload size. Cheap way to confirm a plan exists / preview how heavy
+    /// the response will be before paying the ~100-300 KB render cost.
+    #[schemars(
+        description = "Skip rendering and return only the picker metadata + node_count + projected html_bytes (default false)."
+    )]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
+    )]
+    pub dry_run: Option<bool>,
 }
 
 /// Response for `render_plan_graph`.
@@ -106,10 +118,18 @@ pub struct RenderPlanGraphResponse {
     pub complexity: Option<usize>,
     /// Longest delay factor.
     pub longest_delay: Option<usize>,
-    /// Rendered HTML body.
+    /// Rendered HTML body. Omitted when `dry_run=true`.
     pub html: Option<String>,
-    /// Convenience: size of `html` in bytes.
+    /// Size of the rendered HTML in bytes. When `dry_run=true` this is the
+    /// *projected* size (computed by rendering then dropping the string),
+    /// so callers can decide whether to pay the actual rendering cost.
     pub html_bytes: usize,
+    /// Total nodes in the generated `CurriculumGraphSpec` (courses + the
+    /// term frames the renderer wraps them in). Useful as a complexity
+    /// proxy during dry-run probing.
+    pub node_count: Option<usize>,
+    /// Whether this response was a dry-run probe (no HTML payload).
+    pub dry_run: bool,
 }
 
 // ============================================================================
@@ -131,6 +151,7 @@ pub fn execute(
     format: VisualizationFormat,
     max_plans: Option<usize>,
     include_courses: Option<&[String]>,
+    dry_run: bool,
 ) -> RenderPlanGraphResponse {
     if plan_category.is_none() && plan_index.is_none() {
         return error_response(
@@ -178,12 +199,14 @@ pub fn execute(
         Some(&artifacts.aggregator),
         &graph_id,
     );
+    let node_count = spec.nodes.len();
     let html = match format {
         VisualizationFormat::Standalone => VanillaJsRenderer.render_standalone(&spec),
         VisualizationFormat::Fragment => VanillaJsRenderer.render(&spec),
         VisualizationFormat::FragmentNoLibrary => VanillaJsRenderer.render_without_library(&spec),
     };
     let html_bytes = html.len();
+    let html_field = if dry_run { None } else { Some(html) };
 
     RenderPlanGraphResponse {
         success: true,
@@ -193,8 +216,10 @@ pub fn execute(
         terms: Some(plan.score.terms_required),
         complexity: Some(plan.score.total_complexity),
         longest_delay: Some(plan.score.longest_delay),
-        html: Some(html),
+        html: html_field,
         html_bytes,
+        node_count: Some(node_count),
+        dry_run,
     }
 }
 
@@ -209,6 +234,7 @@ pub fn execute_json(
     format: VisualizationFormat,
     max_plans: Option<usize>,
     include_courses: Option<&[String]>,
+    dry_run: bool,
 ) -> String {
     let response = execute(
         yaml_content,
@@ -218,6 +244,7 @@ pub fn execute_json(
         format,
         max_plans,
         include_courses,
+        dry_run,
     );
     serde_json::to_string_pretty(&response)
         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
@@ -261,6 +288,8 @@ fn error_response(error: impl Into<String>) -> RenderPlanGraphResponse {
         longest_delay: None,
         html: None,
         html_bytes: 0,
+        node_count: None,
+        dry_run: false,
     }
 }
 
@@ -312,6 +341,7 @@ courses:
             VisualizationFormat::Standalone,
             Some(10),
             None,
+            false,
         );
         assert!(response.success, "error: {:?}", response.error);
         let html = response.html.expect("html must be populated on success");
@@ -336,6 +366,7 @@ courses:
             VisualizationFormat::Fragment,
             Some(10),
             None,
+            false,
         );
         assert!(response.success);
         assert_eq!(response.plan_index, Some(0));
@@ -354,6 +385,7 @@ courses:
             VisualizationFormat::Standalone,
             None,
             None,
+            false,
         );
         assert!(!response.success);
         let err = response.error.unwrap();
@@ -370,6 +402,7 @@ courses:
             VisualizationFormat::Standalone,
             None,
             None,
+            false,
         );
         assert!(!response.success);
         assert!(response.error.unwrap().contains("not both"));
@@ -385,6 +418,7 @@ courses:
             VisualizationFormat::Standalone,
             Some(10),
             None,
+            false,
         );
         assert!(!response.success);
         assert!(response.error.unwrap().contains("No selected plan matches"));
@@ -400,6 +434,7 @@ courses:
             VisualizationFormat::Standalone,
             Some(10),
             None,
+            false,
         );
         assert!(!response.success);
         assert!(response.error.unwrap().contains("Selected_plans has"));
@@ -463,6 +498,34 @@ courses:
     }
 
     #[test]
+    fn test_dry_run_skips_html_payload_but_reports_size_and_nodes() {
+        let response = execute(
+            TEST_YAML,
+            Some("shortest"),
+            None,
+            None,
+            VisualizationFormat::Standalone,
+            Some(10),
+            None,
+            true,
+        );
+        assert!(response.success, "error: {:?}", response.error);
+        assert!(response.dry_run);
+        assert!(
+            response.html.is_none(),
+            "dry_run must drop the HTML payload"
+        );
+        assert!(
+            response.html_bytes > 0,
+            "html_bytes must be the projected (not actual-returned) size"
+        );
+        assert!(response.node_count.is_some_and(|n| n > 0));
+        // Picker metadata still populated so the caller can verify the
+        // resolution before paying the render cost.
+        assert_eq!(response.plan_category.as_deref(), Some("Shortest Path"));
+    }
+
+    #[test]
     fn test_fragment_no_library_drops_shared_prelude() {
         let response = execute(
             TEST_YAML,
@@ -472,6 +535,7 @@ courses:
             VisualizationFormat::FragmentNoLibrary,
             Some(10),
             None,
+            false,
         );
         assert!(response.success);
         let html = response.html.unwrap();
