@@ -2,16 +2,22 @@
 //!
 //! Provides the `analyze_degree` MCP tool that runs full degree analysis:
 //! generates plans, computes aggregate metrics, and returns structured results.
+//!
+//! The pipeline (parse → graph → plan generation → aggregation) is factored
+//! into [`build_artifacts`] / [`AnalysisArtifacts`] so sibling tools (e.g.
+//! `generate_degree_report`) can reuse the same flow without duplicating
+//! ~50 lines of orchestration.
 
 use crate::core::degree::{
-    parse_degree_yaml, DegreeParseError, PlanGenerator, PlanGeneratorConfig, PlanSelector,
-    PlanSelectorConfig, PlanVariant, SamplingStrategy,
+    parse_degree_yaml, DegreeParseError, PlanGenerationStats, PlanGenerator, PlanGeneratorConfig,
+    PlanSelector, PlanSelectorConfig, PlanVariant, SamplingStrategy, SelectedPlans,
 };
 use crate::core::metrics::compute_all_metrics;
 use crate::core::models::{Course, CourseGraph, School, DAG};
 use crate::core::report::visualization::{spec_from_scored_plan, CurriculumGraphSpec};
 use crate::core::report::SchedulerConfig;
 use crate::core::statistics::{AggregatorConfig, MetricStats, MetricsAggregator};
+use crate::core::DegreeProgram;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -220,47 +226,64 @@ pub fn execute(
     include_graph_spec: bool,
     plan_indices: Option<&[usize]>,
 ) -> AnalysisResponse {
+    match build_artifacts(yaml_content, max_plans, include_courses) {
+        Ok(artifacts) => build_response(&artifacts, include_graph_spec, plan_indices),
+        Err(e) => parse_error_response(&e),
+    }
+}
+
+/// Owned bundle of every value the analysis pipeline produces — the parsed
+/// program, the course graph (as a DAG + the equivalence map), the metrics
+/// aggregator, and the curated [`SelectedPlans`] alongside the generation
+/// stats. Sibling tools (e.g. the HTML report renderer) consume this struct
+/// so the pipeline is implemented exactly once.
+pub(super) struct AnalysisArtifacts {
+    /// Parsed degree program.
+    pub program: DegreeProgram,
+    /// School/course catalog derived from the program.
+    pub school: School,
+    /// Course DAG built from the prerequisite graph (cycles already broken).
+    pub dag: DAG,
+    /// Map from course key to the set of equivalent courses.
+    pub equivalences: HashMap<String, HashSet<String>>,
+    /// Aggregated metrics across every plan that was processed.
+    pub aggregator: MetricsAggregator,
+    /// Curated selected plans (shortest, longest, calc-ready, random samples).
+    pub selected: SelectedPlans,
+    /// Number of plans actually processed (after dedup, capped at `max_plans`).
+    pub plans_processed: usize,
+    /// Pre-generation stats; `stats.total_possible` is the upper bound on
+    /// distinct plans for this YAML.
+    pub stats: PlanGenerationStats,
+    /// The effective `max_plans` cap used by the run.
+    pub max_plans: usize,
+}
+
+/// Run the full analysis pipeline against `yaml_content` and return the
+/// produced artifacts. On YAML parse failure, returns a formatted error
+/// string suitable for surfacing through MCP tools.
+///
+/// # Errors
+/// Returns a formatted parse-error string when the YAML cannot be parsed.
+pub(super) fn build_artifacts(
+    yaml_content: &str,
+    max_plans: Option<usize>,
+    include_courses: Option<Vec<String>>,
+) -> Result<AnalysisArtifacts, String> {
     let max = max_plans.unwrap_or(DEFAULT_MAX_PLANS);
     let include = include_courses.unwrap_or_default();
 
-    // Parse YAML
-    let program = match parse_degree_yaml(yaml_content) {
-        Ok(p) => p,
-        Err(e) => {
-            return AnalysisResponse {
-                success: false,
-                error: Some(format_parse_error(&e)),
-                degree_name: None,
-                institution: None,
-                total_courses: 0,
-                total_requirements: 0,
-                plans_analyzed: 0,
-                was_truncated: false,
-                population_size: 0,
-                is_full_population: false,
-                complexity: None,
-                longest_delay: None,
-                total_credits: None,
-                selected_plans: vec![],
-            };
-        }
-    };
+    let program = parse_degree_yaml(yaml_content).map_err(|e| format_parse_error(&e))?;
 
-    // Build school and graph
     let school = build_school(&program);
-    let graph_result = CourseGraph::from_degree_program(&program);
-
-    // Handle cycles
-    let mut graph_result = graph_result;
+    let mut graph_result = CourseGraph::from_degree_program(&program);
     if !graph_result.cycles.is_empty() {
         graph_result.graph.break_cycles(&graph_result.cycles);
         graph_result.cycles.clear();
     }
-
     let dag = build_dag(&graph_result.graph);
     let equivalences = build_equivalences(&program.requirements);
 
-    // Configure and run plan generation
     let gen_config = PlanGeneratorConfig {
         max_plans: max,
         ignore_duplicates: true,
@@ -270,7 +293,6 @@ pub fn execute(
         include_courses: include,
         ..Default::default()
     };
-
     let generator = PlanGenerator::new(&program.requirements, &program.courses, gen_config.clone());
     let stats = generator.get_stats();
 
@@ -279,7 +301,6 @@ pub fn execute(
         track_per_course: true,
         exact_mode: stats.total_possible <= 10000,
     };
-
     let selector_config = PlanSelectorConfig {
         sample_count: gen_config.sample_count,
         scheduler_config: SchedulerConfig::default(),
@@ -287,36 +308,57 @@ pub fn execute(
     };
 
     let mut aggregator = MetricsAggregator::new(agg_config);
-    let mut selector = PlanSelector::new(&school, &dag, selector_config);
-
-    let ctx = AnalysisCtx {
-        graph: &graph_result.graph,
-        equivalences: &equivalences,
-        school: &school,
-        target_credits: program.degree.total_credits,
+    let plans_processed;
+    let selected = {
+        let mut selector = PlanSelector::new(&school, &dag, selector_config);
+        let ctx = AnalysisCtx {
+            graph: &graph_result.graph,
+            equivalences: &equivalences,
+            school: &school,
+            target_credits: program.degree.total_credits,
+        };
+        plans_processed = run_plan_analysis(
+            &generator,
+            &gen_config,
+            &ctx,
+            max,
+            &mut aggregator,
+            &mut selector,
+        );
+        selector.into_selected_plans()
     };
 
-    let plans_processed = run_plan_analysis(
-        &generator,
-        &gen_config,
-        &ctx,
-        max,
-        &mut aggregator,
-        &mut selector,
-    );
-
-    build_response(
-        &program,
-        &school,
-        &equivalences,
-        &aggregator,
-        selector,
+    Ok(AnalysisArtifacts {
+        program,
+        school,
+        dag,
+        equivalences,
+        aggregator,
+        selected,
         plans_processed,
-        max,
-        &stats,
-        include_graph_spec,
-        plan_indices,
-    )
+        stats,
+        max_plans: max,
+    })
+}
+
+/// Build the parse-error escape hatch for the analyze response.
+fn parse_error_response(error: &str) -> AnalysisResponse {
+    AnalysisResponse {
+        success: false,
+        error: Some(error.to_string()),
+        degree_name: None,
+        institution: None,
+        total_courses: 0,
+        total_requirements: 0,
+        plans_analyzed: 0,
+        was_truncated: false,
+        population_size: 0,
+        is_full_population: false,
+        complexity: None,
+        longest_delay: None,
+        total_credits: None,
+        selected_plans: vec![],
+    }
 }
 
 /// Context for plan analysis processing
@@ -371,28 +413,16 @@ fn run_plan_analysis(
     plans_processed
 }
 
-/// Build the analysis response from aggregated results.
-///
-/// The function has 9 parameters because it synthesises data from every stage
-/// of the analysis pipeline; grouping them into a context struct would just
-/// move the same data without reducing coupling.
-#[allow(clippy::too_many_arguments)]
+/// Build the analysis response from a populated [`AnalysisArtifacts`] bundle.
 fn build_response(
-    program: &crate::core::DegreeProgram,
-    school: &School,
-    equivalences: &HashMap<String, HashSet<String>>,
-    aggregator: &MetricsAggregator,
-    selector: PlanSelector<'_>,
-    plans_processed: usize,
-    max: usize,
-    stats: &crate::core::degree::PlanGenerationStats,
+    artifacts: &AnalysisArtifacts,
     include_graph_spec: bool,
     plan_indices: Option<&[usize]>,
 ) -> AnalysisResponse {
-    let degree_stats = aggregator.degree_stats();
-    let selected = selector.into_selected_plans();
+    let degree_stats = artifacts.aggregator.degree_stats();
 
-    let selected_plans: Vec<PlanSummaryJson> = selected
+    let selected_plans: Vec<PlanSummaryJson> = artifacts
+        .selected
         .iter()
         .enumerate()
         .map(|(idx, (cat, plan))| {
@@ -401,10 +431,10 @@ fn build_response(
             let graph_spec = if spec_wanted {
                 let graph_id = cat.display_name().to_lowercase().replace(' ', "-");
                 Some(spec_from_scored_plan(
-                    school,
-                    equivalences,
+                    &artifacts.school,
+                    &artifacts.equivalences,
                     plan,
-                    Some(aggregator),
+                    Some(&artifacts.aggregator),
                     &graph_id,
                 ))
             } else {
@@ -435,21 +465,23 @@ fn build_response(
         })
         .collect();
 
-    let was_truncated = plans_processed >= max && stats.total_possible > max;
+    let plans_processed = artifacts.plans_processed;
+    let max = artifacts.max_plans;
+    let was_truncated = plans_processed >= max && artifacts.stats.total_possible > max;
     let is_full_population = !was_truncated;
     let population_size = if is_full_population {
         plans_processed
     } else {
-        stats.total_possible
+        artifacts.stats.total_possible
     };
 
     AnalysisResponse {
         success: true,
         error: None,
-        degree_name: Some(program.degree.name.clone()),
-        institution: program.degree.institution.clone(),
-        total_courses: program.courses.len(),
-        total_requirements: program.requirements.len(),
+        degree_name: Some(artifacts.program.degree.name.clone()),
+        institution: artifacts.program.degree.institution.clone(),
+        total_courses: artifacts.program.courses.len(),
+        total_requirements: artifacts.program.requirements.len(),
         plans_analyzed: plans_processed,
         was_truncated,
         population_size,

@@ -6,8 +6,9 @@ use std::sync::Arc;
 
 use crate::core::config::DatabaseConfig;
 use crate::mcp::tools::{
-    analyze, audit, schema, shared, validate, visualize, AnalyzeDegreeRequest, AuditDegreeRequest,
-    GetCurriculumVisualizationRequest, GetSchemaRequest, ValidateDegreeRequest,
+    analyze, audit, report, schema, shared, validate, visualize, AnalyzeDegreeRequest,
+    AuditDegreeRequest, GenerateDegreeReportRequest, GetCurriculumVisualizationRequest,
+    GetSchemaRequest, ValidateDegreeRequest,
 };
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -136,6 +137,40 @@ impl NuAnalyticsMcpServer {
                 include_courses,
                 include_graph_spec,
                 plan_indices.as_deref(),
+            )
+        })
+    }
+
+    /// Generate the full HTML degree report (plus optional CSV / JSONL / index artifacts)
+    #[tool(
+        description = "Build the full HTML degree analysis report — the same artifact the CLI `degree --analyze` command produces. Provide exactly ONE YAML source: yaml_content (inline), yaml_path (file path), or degree_id (DB lookup). Same analysis knobs as analyze_degree (max_plans, include_courses). Set output_dir to write the HTML report + optional per-plan CSVs + JSONL summary + index.csv into a directory; in that mode html_content is omitted from the response (override with return_html_inline=true). Without output_dir, the rendered HTML is returned inline (~200-300 KB for a typical degree). Companion outputs (write_plan_csvs / write_jsonl_summary / write_index_csv) default to true in disk mode and are ignored in inline mode."
+    )]
+    fn generate_degree_report(
+        &self,
+        Parameters(req): Parameters<GenerateDegreeReportRequest>,
+    ) -> String {
+        let max_plans = req.max_plans;
+        let include_courses = req.include_courses.map(|s| shared::parse_comma_list(&s));
+        let output_dir = req.output_dir;
+        let write_plan_csvs = req.write_plan_csvs;
+        let write_jsonl_summary = req.write_jsonl_summary;
+        let write_index_csv = req.write_index_csv;
+        let return_html_inline = req.return_html_inline;
+        let source = match shared::parse_yaml_source(req.yaml_content, req.yaml_path, req.degree_id)
+        {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        self.run_yaml_tool("generate_degree_report", source, move |yaml| {
+            report::execute_json(
+                yaml,
+                max_plans,
+                include_courses,
+                output_dir.as_deref(),
+                write_plan_csvs,
+                write_jsonl_summary,
+                write_index_csv,
+                return_html_inline,
             )
         })
     }
@@ -444,8 +479,9 @@ impl ServerHandler for NuAnalyticsMcpServer {
                 3. validate_degree — check for structural errors\n\
                 4. Fix issues; repeat until valid\n\
                 5. audit_degree — comprehensive quality check (missing prereqs, deep chains)\n\
-                6. analyze_degree — plan generation and metrics\n\
-                7. store_degree — save validated degree to database (requires db login)\
+                6. analyze_degree — plan generation and metrics (JSON)\n\
+                7. generate_degree_report — full HTML report (same artifact as `degree --analyze`); optional CSV / JSONL outputs via output_dir\n\
+                8. store_degree — save validated degree to database (requires db login)\
                 {db_section}"
             ),
         )

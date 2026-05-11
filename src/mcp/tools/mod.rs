@@ -4,6 +4,7 @@
 
 pub mod analyze;
 pub mod audit;
+pub mod report;
 pub mod schema;
 pub mod shared;
 pub mod validate;
@@ -24,6 +25,7 @@ pub mod lookup;
 // Re-export tool types for convenience
 pub use analyze::AnalyzeDegreeRequest;
 pub use audit::AuditDegreeRequest;
+pub use report::GenerateDegreeReportRequest;
 pub use schema::GetSchemaRequest;
 pub use validate::{
     DegreeContext, ValidateDegreeRequest, ValidationErrorInfo, ValidationResponse,
