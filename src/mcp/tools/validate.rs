@@ -11,7 +11,9 @@ use crate::core::{
     validate_degree_program_with_options, DegreeProgram, ValidationError, ValidationOptions,
     ValidationResult, ValidationWarning,
 };
-use crate::mcp::tools::shared::ToolFollowup;
+use crate::mcp::tools::shared::{
+    ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_AUDIT_DEGREE, TOOL_GET_DEGREE_SCHEMA,
+};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -170,7 +172,7 @@ pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> Validation
                     "Use get_degree_schema to review the expected format.".to_string(),
                 ],
                 tool_followups: vec![ToolFollowup {
-                    tool: "get_degree_schema",
+                    tool: TOOL_GET_DEGREE_SCHEMA,
                     reason: "YAML parse error; review the schema before retrying.".to_string(),
                     suggested_args: serde_json::json!({ "section": "quickstart" }),
                 }],
@@ -234,7 +236,7 @@ fn build_followups(result: &ValidationResult, unprereqed_upper_level: usize) -> 
     let mut followups = Vec::new();
     if unprereqed_upper_level > 0 {
         followups.push(ToolFollowup {
-            tool: "audit_degree",
+            tool: TOOL_AUDIT_DEGREE,
             reason: format!(
                 "{unprereqed_upper_level} upper-level course(s) declare no prerequisites — audit_degree surfaces the list and finds implicit-requirement issues."
             ),
@@ -243,7 +245,7 @@ fn build_followups(result: &ValidationResult, unprereqed_upper_level: usize) -> 
     }
     if result.is_valid && result.errors.is_empty() {
         followups.push(ToolFollowup {
-            tool: "analyze_degree",
+            tool: TOOL_ANALYZE_DEGREE,
             reason: "Validation passed; run analyze_degree to compute plan-level metrics and selected plans.".to_string(),
             suggested_args: serde_json::json!({}),
         });
@@ -868,6 +870,78 @@ courses:
         assert!(
             pool.warning.is_some(),
             "empty pool must surface a warning string"
+        );
+    }
+
+    #[test]
+    fn test_tool_followups_suggest_audit_when_upper_level_lacks_prereqs() {
+        // CS101 anchors the lowest level; CS300 is upper-level without any
+        // declared prerequisites — triggers validate's prereq-coverage hint.
+        let yaml = r#"
+degree:
+  id: t
+  institution: T
+  program: T
+  total_credits: 8
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101, CS300]
+
+courses:
+  CS101:
+    title: Intro CS
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS300:
+    title: Upper CS
+    prefix: CS
+    number: "300"
+    credits: 4
+"#;
+        let response = execute(yaml, false);
+        assert!(response.is_valid);
+        assert!(
+            response
+                .tool_followups
+                .iter()
+                .any(|f| f.tool == "audit_degree"),
+            "unprereqed upper-level course must trigger an audit_degree followup; got {:?}",
+            response.tool_followups
+        );
+    }
+
+    #[test]
+    fn test_tool_followups_suggest_analyze_when_validation_passes_clean() {
+        let response = execute(VALID_YAML, false);
+        assert!(response.is_valid);
+        assert!(
+            response
+                .tool_followups
+                .iter()
+                .any(|f| f.tool == "analyze_degree"),
+            "valid YAML must suggest analyze_degree; got {:?}",
+            response.tool_followups
+        );
+    }
+
+    #[test]
+    fn test_tool_followups_suggest_schema_on_parse_error() {
+        let response = execute("not: valid: yaml: {{", false);
+        assert!(!response.is_valid);
+        assert!(response.parse_error.is_some());
+        assert!(
+            response
+                .tool_followups
+                .iter()
+                .any(|f| f.tool == "get_degree_schema"),
+            "parse-error response must point at get_degree_schema; got {:?}",
+            response.tool_followups
         );
     }
 

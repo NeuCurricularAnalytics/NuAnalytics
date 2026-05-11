@@ -8,6 +8,24 @@ use std::sync::Arc;
 #[cfg(feature = "database")]
 use crate::core::database::{tables, DbClient, QueryFilters};
 
+// ─── Tool-name constants ─────────────────────────────────────────────────────
+// Used by the `tool_followups` builders so a rename of the actual MCP handler
+// in server.rs surfaces as a compile-time grep instead of silently breaking
+// follow-up suggestions.
+
+/// MCP tool name: schema documentation.
+pub const TOOL_GET_DEGREE_SCHEMA: &str = "get_degree_schema";
+/// MCP tool name: degree validation.
+pub const TOOL_VALIDATE_DEGREE: &str = "validate_degree";
+/// MCP tool name: degree audit (deep prereq chains + missing prereqs).
+pub const TOOL_AUDIT_DEGREE: &str = "audit_degree";
+/// MCP tool name: full degree analysis (plan generation + aggregate metrics).
+pub const TOOL_ANALYZE_DEGREE: &str = "analyze_degree";
+/// MCP tool name: per-course detail view.
+pub const TOOL_GET_COURSE_DETAIL: &str = "get_course_detail";
+/// MCP tool name: one-call plan-graph rendering.
+pub const TOOL_RENDER_PLAN_GRAPH: &str = "render_plan_graph";
+
 /// Hint about the next MCP call a tool's response suggests the caller make.
 ///
 /// Tools attach a `tool_followups: Vec<ToolFollowup>` array when their output

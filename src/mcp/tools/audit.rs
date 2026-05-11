@@ -11,7 +11,10 @@ use crate::core::degree::{parse_degree_yaml, DegreeParseError};
 use crate::core::models::CourseGraph;
 use crate::core::validate_degree_program;
 use crate::core::DegreeProgram;
-use crate::mcp::tools::shared::ToolFollowup;
+use crate::mcp::tools::shared::{
+    ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_GET_COURSE_DETAIL, TOOL_RENDER_PLAN_GRAPH,
+    TOOL_VALIDATE_DEGREE,
+};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -157,7 +160,7 @@ pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditRespo
                 institution: None,
                 total_courses: 0,
                 tool_followups: vec![ToolFollowup {
-                    tool: "validate_degree",
+                    tool: TOOL_VALIDATE_DEGREE,
                     reason: "audit_degree couldn't parse the YAML; validate_degree surfaces the parse error in a more structured form.".to_string(),
                     suggested_args: serde_json::json!({}),
                 }],
@@ -236,7 +239,7 @@ fn build_audit_followups(
     let mut followups = Vec::new();
     if let Some(worst) = deep_chains.iter().max_by_key(|d| d.max_depth) {
         followups.push(ToolFollowup {
-            tool: "render_plan_graph",
+            tool: TOOL_RENDER_PLAN_GRAPH,
             reason: format!(
                 "Deepest chain found on {} ({} steps); the longest path graph shows the chain in context.",
                 worst.course, worst.max_depth,
@@ -250,7 +253,7 @@ fn build_audit_followups(
         .count();
     if internal_missing > 0 {
         followups.push(ToolFollowup {
-            tool: "get_course_detail",
+            tool: TOOL_GET_COURSE_DETAIL,
             reason: format!(
                 "{internal_missing} internal upper-level course(s) lack prerequisites — get_course_detail returns each course's requirement references + dependents so you can decide whether to add them."
             ),
@@ -259,7 +262,7 @@ fn build_audit_followups(
     }
     if passed {
         followups.push(ToolFollowup {
-            tool: "analyze_degree",
+            tool: TOOL_ANALYZE_DEGREE,
             reason: "Audit passed; analyze_degree computes plan-level metrics + selected plans for the report.".to_string(),
             suggested_args: serde_json::json!({}),
         });
@@ -533,6 +536,111 @@ courses:
         assert!(
             branch.path.iter().any(|c| c == "CS100"),
             "path should include CS100 leaf"
+        );
+    }
+
+    #[test]
+    fn test_tool_followups_suggest_render_plan_graph_on_deep_chains() {
+        // 4-deep chain CS100 → CS200 → CS300 → CS400 triggers the audit
+        // deep-chain finder; the response should propose visualising it.
+        let yaml = r#"
+degree:
+  id: t
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+  major_subjects: ["CS"]
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS400]
+
+courses:
+  CS100:
+    title: A
+    prefix: CS
+    number: "100"
+    credits: 3
+  CS200:
+    title: B
+    prefix: CS
+    number: "200"
+    credits: 3
+    prerequisites_raw: "CS100"
+  CS300:
+    title: C
+    prefix: CS
+    number: "300"
+    credits: 3
+    prerequisites_raw: "CS200"
+  CS400:
+    title: D
+    prefix: CS
+    number: "400"
+    credits: 3
+    prerequisites_raw: "CS300"
+"#;
+        let response = execute(yaml, Some(3));
+        assert!(!response.deep_chains.is_empty());
+        assert!(
+            response
+                .tool_followups
+                .iter()
+                .any(|f| f.tool == "render_plan_graph"),
+            "deep chains must trigger a render_plan_graph followup; got {:?}",
+            response.tool_followups
+        );
+    }
+
+    #[test]
+    fn test_tool_followups_suggest_course_detail_on_internal_missing_prereq() {
+        // CS300 is upper-level + in major_subjects but declares no prereqs.
+        // Audit tags it as internal_missing_prereq → followup should point at
+        // get_course_detail so the caller can inspect requirement references.
+        let yaml = r#"
+degree:
+  id: t
+  institution: T
+  program: T
+  total_credits: 8
+  gpa_minimum: 2.0
+  major_subjects: ["CS"]
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101, CS300]
+
+courses:
+  CS101:
+    title: Intro CS
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS300:
+    title: Upper CS
+    prefix: CS
+    number: "300"
+    credits: 4
+"#;
+        let response = execute(yaml, None);
+        assert!(response
+            .missing_prerequisites
+            .iter()
+            .any(|m| m.kind == "internal_missing_prereq"));
+        assert!(
+            response
+                .tool_followups
+                .iter()
+                .any(|f| f.tool == "get_course_detail"),
+            "internal missing prereqs must trigger get_course_detail; got {:?}",
+            response.tool_followups
         );
     }
 

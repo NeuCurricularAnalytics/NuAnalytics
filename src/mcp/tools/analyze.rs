@@ -18,7 +18,9 @@ use crate::core::report::visualization::{spec_from_scored_plan, CurriculumGraphS
 use crate::core::report::SchedulerConfig;
 use crate::core::statistics::{AggregatorConfig, MetricStats, MetricsAggregator};
 use crate::core::DegreeProgram;
-use crate::mcp::tools::shared::ToolFollowup;
+use crate::mcp::tools::shared::{
+    ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_AUDIT_DEGREE, TOOL_VALIDATE_DEGREE,
+};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -390,7 +392,7 @@ fn parse_error_response(error: &str) -> AnalysisResponse {
         total_credits: None,
         selected_plans: vec![],
         tool_followups: vec![ToolFollowup {
-            tool: "validate_degree",
+            tool: TOOL_VALIDATE_DEGREE,
             reason: "analyze_degree couldn't parse the YAML; validate_degree surfaces the parse error in a more structured form.".to_string(),
             suggested_args: serde_json::json!({}),
         }],
@@ -543,12 +545,17 @@ fn build_analysis_followups(
     let mut followups = Vec::new();
 
     if was_truncated {
+        // Double the cap as a follow-up suggestion. `saturating_mul(2)`
+        // guards against usize overflow on absurdly large caps; the
+        // `.max(+1)` guard catches the `max_plans == usize::MAX` corner
+        // where doubling would saturate back to the same value and we'd
+        // otherwise echo the input.
         let next = artifacts
             .max_plans
             .saturating_mul(2)
             .max(artifacts.max_plans + 1);
         followups.push(ToolFollowup {
-            tool: "analyze_degree",
+            tool: TOOL_ANALYZE_DEGREE,
             reason: format!(
                 "Result was truncated at max_plans={} (population estimate {}). Rerun with a larger cap to widen the sample.",
                 artifacts.max_plans, artifacts.stats.total_possible,
@@ -558,7 +565,7 @@ fn build_analysis_followups(
     } else if is_full_population && artifacts.plans_processed > 0 && artifacts.plans_processed < 50
     {
         followups.push(ToolFollowup {
-            tool: "audit_degree",
+            tool: TOOL_AUDIT_DEGREE,
             reason: format!(
                 "Full population is small ({}). audit_degree's deep-chain analysis is cheap here and surfaces structural issues.",
                 artifacts.plans_processed,
@@ -573,7 +580,7 @@ fn build_analysis_followups(
     {
         if shortest.critical_path.len() >= 6 {
             followups.push(ToolFollowup {
-                tool: "audit_degree",
+                tool: TOOL_AUDIT_DEGREE,
                 reason: format!(
                     "Shortest path's critical chain is {} courses long; rerunning audit_degree with a stricter chain_threshold surfaces every chain at that depth.",
                     shortest.critical_path.len(),
@@ -1006,6 +1013,23 @@ courses:
                 "include_courses=CS101 must force every selected plan to contain CS101"
             );
         }
+    }
+
+    #[test]
+    fn test_tool_followups_suggest_audit_on_small_full_population() {
+        // TEST_YAML resolves to a single valid plan ⇒ is_full_population=true
+        // and plans_processed < 50, which triggers the audit suggestion.
+        let response = execute(TEST_YAML, Some(500), None, false, None);
+        assert!(response.success);
+        assert!(response.is_full_population);
+        assert!(
+            response
+                .tool_followups
+                .iter()
+                .any(|f| f.tool == "audit_degree"),
+            "small full population should suggest audit_degree; got {:?}",
+            response.tool_followups
+        );
     }
 
     #[test]
