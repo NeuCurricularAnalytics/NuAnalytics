@@ -383,44 +383,54 @@ async fn resolve_source(
     source: &DegreeSource,
     idx: usize,
 ) -> Result<ResolvedDegree, String> {
-    let count = u8::from(source.degree_id.is_some())
-        + u8::from(source.yaml_content.is_some())
-        + u8::from(source.yaml_path.is_some());
-    if count != 1 {
-        // Surface as not_found rather than a top-level error so the rest of
-        // the compare call still produces useful output for the good entries.
-        let label = source
-            .label
-            .clone()
-            .unwrap_or_else(|| format!("sources[{idx}]"));
-        return Err(format!(
-            "{label} (expected exactly one of degree_id, yaml_content, yaml_path)"
-        ));
+    let label = source
+        .label
+        .clone()
+        .unwrap_or_else(|| format!("sources[{idx}]"));
+
+    // Surface validation + lookup failures via `not_found` rather than a
+    // top-level error so the rest of the compare call still produces useful
+    // output for the good entries. Each error label embeds the underlying
+    // cause so the caller can debug without a second round-trip.
+    if let Err(msg) = validate_source_count(source) {
+        return Err(format!("{label}: {msg}"));
     }
 
     if let Some(id) = source.degree_id.as_deref() {
         return fetch_detail_by_id(client, id)
             .await
             .map(|detail| ResolvedDegree::from_detail(source.label.clone(), detail))
-            .ok_or_else(|| source.label.clone().unwrap_or_else(|| id.to_string()));
+            .ok_or_else(|| format!("{label}: degree_id {id:?} not found in database"));
     }
     if let Some(yaml) = source.yaml_content.clone() {
         return Ok(ResolvedDegree::from_inline(source.label.clone(), yaml));
     }
     if let Some(path) = source.yaml_path.as_deref() {
-        let Ok(yaml) = shared::read_yaml_file(path) else {
-            return Err(source
-                .label
-                .clone()
-                .unwrap_or_else(|| format!("yaml_path={path}")));
+        return match shared::read_yaml_file(path) {
+            Ok(yaml) => Ok(ResolvedDegree::from_inline(source.label.clone(), yaml)),
+            Err(read_err) => Err(format!(
+                "{label}: yaml_path={path:?} failed to read — {read_err}"
+            )),
         };
-        return Ok(ResolvedDegree::from_inline(source.label.clone(), yaml));
     }
-    // Unreachable given the count check above.
-    Err(source
-        .label
-        .clone()
-        .unwrap_or_else(|| format!("sources[{idx}]")))
+    // Unreachable given `validate_source_count` succeeded above.
+    Err(format!(
+        "{label}: internal error — no source field resolved"
+    ))
+}
+
+/// Validate that a [`DegreeSource`] sets exactly one of its three source
+/// fields. Returned as a free function so unit tests can exercise the
+/// invariant without needing an async test harness or a stub `DbClient`.
+fn validate_source_count(source: &DegreeSource) -> Result<(), &'static str> {
+    let count = u8::from(source.degree_id.is_some())
+        + u8::from(source.yaml_content.is_some())
+        + u8::from(source.yaml_path.is_some());
+    match count {
+        0 => Err("expected exactly one of degree_id, yaml_content, yaml_path (got none)"),
+        1 => Ok(()),
+        _ => Err("expected exactly one of degree_id, yaml_content, yaml_path (got multiple)"),
+    }
 }
 
 /// Fetch a stored degree's full detail by id; returns `None` if missing or
@@ -568,6 +578,56 @@ courses:
             value.get("parse_error").is_none(),
             "valid YAML must not surface a parse_error key"
         );
+    }
+
+    #[test]
+    fn test_validate_source_count_rejects_zero_fields_set() {
+        let source = DegreeSource {
+            label: Some("none-set".to_string()),
+            degree_id: None,
+            yaml_content: None,
+            yaml_path: None,
+        };
+        let err = validate_source_count(&source).unwrap_err();
+        assert!(err.contains("none"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_validate_source_count_rejects_multiple_fields_set() {
+        let source = DegreeSource {
+            label: None,
+            degree_id: Some("id".to_string()),
+            yaml_content: Some("yaml".to_string()),
+            yaml_path: None,
+        };
+        let err = validate_source_count(&source).unwrap_err();
+        assert!(err.contains("multiple"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_validate_source_count_accepts_exactly_one_field() {
+        for source in [
+            DegreeSource {
+                label: None,
+                degree_id: Some("id".to_string()),
+                yaml_content: None,
+                yaml_path: None,
+            },
+            DegreeSource {
+                label: None,
+                degree_id: None,
+                yaml_content: Some("yaml".to_string()),
+                yaml_path: None,
+            },
+            DegreeSource {
+                label: None,
+                degree_id: None,
+                yaml_content: None,
+                yaml_path: Some("/tmp/x.yaml".to_string()),
+            },
+        ] {
+            assert!(validate_source_count(&source).is_ok());
+        }
     }
 
     #[test]

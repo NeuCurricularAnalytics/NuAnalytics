@@ -113,6 +113,26 @@ impl PlanCategory {
             Self::RandomSample => "random-sample",
         }
     }
+
+    /// Parse a user-supplied string into a [`PlanCategory`].
+    ///
+    /// Accepts the canonical `file_name` form (`"shortest"`,
+    /// `"calc-ready-shortest"`, …), the `display_name` lowercased + dashed
+    /// (`"shortest-path"`, `"calculus-ready-shortest"`), and the underscore
+    /// variants (`"calc_ready_shortest"`, `"random_sample"`). Matching is
+    /// case-insensitive. Returns `None` when the input matches no variant.
+    #[must_use]
+    pub fn from_user_input(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "shortest" | "shortest-path" => Some(Self::Shortest),
+            "longest" | "longest-path" => Some(Self::Longest),
+            "calc-ready-shortest" | "calculus-ready-shortest" | "calc_ready_shortest" => {
+                Some(Self::CalcReadyShortest)
+            }
+            "sample" | "random-sample" | "random_sample" => Some(Self::RandomSample),
+            _ => None,
+        }
+    }
 }
 
 /// Configuration for plan selection

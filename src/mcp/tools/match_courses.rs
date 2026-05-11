@@ -300,6 +300,31 @@ courses:
     }
 
     #[test]
+    fn test_multiple_patterns_combined_with_exclude() {
+        // Cross-subject pool (CS:* + MATH:*) minus two specific course keys.
+        // Verifies that exclude applies to the union of include patterns and
+        // that multiple include patterns merge rather than override.
+        let response = execute(
+            TEST_YAML,
+            vec!["CS:*".to_string(), "MATH:*".to_string()],
+            vec!["CS400".to_string(), "MATH156".to_string()],
+        );
+        assert!(response.success);
+        let ids: Vec<&str> = response
+            .matched
+            .iter()
+            .map(|m| m.course_id.as_str())
+            .collect();
+        // CS pool minus the excluded CS course; MATH pool excluded entirely.
+        assert!(ids.contains(&"CS101"));
+        assert!(ids.contains(&"CS200"));
+        assert!(ids.contains(&"CS300"));
+        assert!(!ids.contains(&"CS400"));
+        assert!(!ids.contains(&"MATH156"));
+        assert_eq!(response.match_count, ids.len());
+    }
+
+    #[test]
     fn test_matched_entries_carry_title_and_level() {
         let response = execute(TEST_YAML, vec!["CS:300+".to_string()], Vec::new());
         assert!(response.success);

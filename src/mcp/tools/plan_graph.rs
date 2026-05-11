@@ -236,17 +236,7 @@ fn pick_by_category<'a, P>(
     category: &str,
     sample_index: Option<usize>,
 ) -> Option<(usize, PlanCategory, &'a P)> {
-    let category_norm = category.to_ascii_lowercase();
-    let target_pc = match category_norm.as_str() {
-        "shortest" | "shortest-path" => Some(PlanCategory::Shortest),
-        "longest" | "longest-path" => Some(PlanCategory::Longest),
-        "calc-ready-shortest" | "calculus-ready-shortest" | "calc_ready_shortest" => {
-            Some(PlanCategory::CalcReadyShortest)
-        }
-        "sample" | "random-sample" | "random_sample" => Some(PlanCategory::RandomSample),
-        _ => None,
-    };
-    let target = target_pc?;
+    let target = PlanCategory::from_user_input(category)?;
 
     if target == PlanCategory::RandomSample {
         let want = sample_index.unwrap_or(1);
@@ -413,6 +403,63 @@ courses:
         );
         assert!(!response.success);
         assert!(response.error.unwrap().contains("Selected_plans has"));
+    }
+
+    #[test]
+    fn test_pick_by_category_accepts_canonical_and_alias_inputs() {
+        // Use stub i32 plans so we can build a synthetic entries slice without
+        // dragging in the full analyze pipeline. PlanCategory is Copy and the
+        // picker is generic over the plan type. The chosen P=i32 avoids the
+        // clippy::ignored_unit_patterns warning that fires when the picker's
+        // `_` placeholders match against unit-typed reference holes.
+        let stub: i32 = 0;
+        let entries: Vec<(usize, PlanCategory, &i32)> = vec![
+            (0, PlanCategory::Shortest, &stub),
+            (1, PlanCategory::Longest, &stub),
+            (2, PlanCategory::CalcReadyShortest, &stub),
+            (3, PlanCategory::RandomSample, &stub),
+            (4, PlanCategory::RandomSample, &stub),
+        ];
+
+        // Each variant accepts the canonical form + at least one alias.
+        for input in ["shortest", "Shortest-Path", "SHORTEST"] {
+            let pick = pick_by_category(&entries, input, None);
+            assert_eq!(
+                pick.map(|(i, _, _)| i),
+                Some(0),
+                "input {input:?} should resolve to Shortest"
+            );
+        }
+        for input in ["longest", "longest-path"] {
+            assert_eq!(
+                pick_by_category(&entries, input, None).map(|(i, _, _)| i),
+                Some(1)
+            );
+        }
+        for input in [
+            "calc-ready-shortest",
+            "calculus-ready-shortest",
+            "calc_ready_shortest",
+        ] {
+            assert_eq!(
+                pick_by_category(&entries, input, None).map(|(i, _, _)| i),
+                Some(2),
+                "input {input:?} should resolve to CalcReadyShortest"
+            );
+        }
+
+        // sample without index → first sample; sample with index → nth.
+        assert_eq!(
+            pick_by_category(&entries, "sample", None).map(|(i, _, _)| i),
+            Some(3)
+        );
+        assert_eq!(
+            pick_by_category(&entries, "random-sample", Some(2)).map(|(i, _, _)| i),
+            Some(4)
+        );
+
+        // Unknown strings return None.
+        assert!(pick_by_category(&entries, "nonsense", None).is_none());
     }
 
     #[test]
