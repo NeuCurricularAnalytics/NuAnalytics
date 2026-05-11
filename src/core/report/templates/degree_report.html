@@ -81,6 +81,68 @@
             color: var(--primary-color);
         }
 
+        /* ── Collapsible report sections ─────────────────────────────────────
+           Each major h2 lives inside <details class="report-section" open>
+           with the heading rendered via <summary>. The native disclosure
+           triangle is hidden in favour of a CSS rotating chevron, so the
+           summary still looks like a regular section header. */
+        details.report-section {
+            margin: 0 0 1.5rem 0;
+        }
+        details.report-section > summary {
+            cursor: pointer;
+            user-select: none;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.25rem 0;
+        }
+        /* Hide the default <summary> disclosure marker on every engine. */
+        details.report-section > summary::-webkit-details-marker {
+            display: none;
+        }
+        details.report-section > summary::marker {
+            display: none;
+            content: "";
+        }
+        details.report-section > summary::before {
+            content: "▸";
+            display: inline-block;
+            color: var(--secondary-color);
+            font-size: 0.9em;
+            transition: transform 0.15s ease-out;
+        }
+        details.report-section[open] > summary::before {
+            transform: rotate(90deg);
+        }
+        details.report-section > summary > h2 {
+            display: inline;
+            margin: 0;
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        details.report-section > summary:hover > h2 {
+            color: var(--secondary-color);
+        }
+        details.report-section > summary:focus-visible {
+            outline: 2px solid var(--secondary-color);
+            outline-offset: 4px;
+            border-radius: 4px;
+        }
+        /* Print: drop the chevron + click affordance so the headings look
+           like regular h2s. Forcing closed sections open in print requires
+           JS (the browser's UA stylesheet hides non-summary children when
+           [open] is absent); see the beforeprint handler in <script>. */
+        @media print {
+            details.report-section > summary::before {
+                display: none;
+            }
+            details.report-section > summary {
+                cursor: default;
+            }
+        }
+
         /* Statistics cards */
         .stats-grid {
             display: grid;
@@ -282,129 +344,127 @@
         }
 
         /* Selected plans */
-        .plans-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 1.5rem;
+        /* Per-plan panel body — stats flow left-to-right; term schedule
+           is a grid of color-coded term cards. */
+        .tab-panel .plan-overview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+        }
+        .tab-panel .plan-overview .stat-card {
+            flex: 1 1 140px;
+            min-width: 120px;
         }
 
-        .plan-card {
-            background: var(--light-bg);
-            border-radius: 6px;
-            padding: 1rem;
-            border: 1px solid var(--border-color);
-        }
-
-        .plan-card h3 {
-            color: var(--secondary-color);
-            margin-bottom: 0.75rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 2px solid var(--secondary-color);
-        }
-
-        .plan-stats {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .plan-stat {
-            text-align: center;
-        }
-
-        .plan-stat .label {
-            font-size: 0.7rem;
-            color: #666;
-            display: block;
-        }
-
-        .plan-stat .value {
-            font-weight: bold;
-            color: var(--primary-color);
-        }
-
-        details {
-            margin-top: 0.5rem;
-        }
-
-        details summary {
-            cursor: pointer;
-            color: var(--secondary-color);
-            font-size: 0.85rem;
-        }
-
-        details ul {
-            margin-top: 0.5rem;
-            padding-left: 1.5rem;
-            font-size: 0.85rem;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
-        /* Special plan section (full details) */
-        .special-plan {
-            background: white;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            margin-bottom: 2rem;
-            padding: 1.5rem;
-        }
-
-        .special-plan h3 {
-            color: var(--secondary-color);
-            margin-bottom: 1rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 2px solid var(--secondary-color);
-        }
-
-        .special-plan .plan-overview {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .special-plan .critical-path {
+        .tab-panel .critical-path {
             background: linear-gradient(90deg, var(--light-bg), white);
             padding: 0.75rem;
             border-radius: 6px;
-            font-family: monospace;
-            font-size: 0.9rem;
-            margin-bottom: 1rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.85rem;
+            margin-bottom: 1.25rem;
         }
 
-        .special-plan .term-schedule {
+        .tab-panel .term-schedule h4 {
+            margin: 1rem 0 0.5rem;
+            color: var(--primary-color);
+            font-size: 1rem;
+        }
+
+        .tab-panel .term-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0.75rem;
             margin-bottom: 1.5rem;
         }
 
-        .special-plan .term-schedule table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.85rem;
+        .tab-panel .term-card {
+            background: var(--light-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
-        .special-plan .term-schedule th,
-        .special-plan .term-schedule td {
-            padding: 0.5rem;
-            text-align: left;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .special-plan .term-schedule th {
+        .tab-panel .term-card-header {
             background: var(--primary-color);
-            color: white;
+            color: #fff;
+            padding: 0.4rem 0.75rem;
             font-weight: 600;
+            font-size: 0.85rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }
+        .tab-panel .term-card-header .term-credits {
+            font-weight: 400;
+            opacity: 0.9;
+            font-size: 0.78rem;
         }
 
-        .special-plan .course-badge {
-            display: inline-block;
-            background: var(--secondary-color);
-            color: white;
-            padding: 0.1rem 0.3rem;
-            border-radius: 3px;
+        .tab-panel .term-courses {
+            list-style: none;
+            margin: 0;
+            padding: 0.5rem 0.5rem 0.6rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+
+        .tab-panel .term-course {
+            display: grid;
+            grid-template-columns: minmax(0, auto) 1fr auto;
+            align-items: baseline;
+            gap: 0.5rem;
+            padding: 0.3rem 0.5rem;
+            background: #fff;
+            border-radius: 4px;
+            border-left: 3px solid #b0b8c1; /* default — non-major / supporting */
+            font-size: 0.82rem;
+        }
+        .tab-panel .term-course--major {
+            border-left-color: var(--secondary-color);
+            background: #eef5fb;
+        }
+        .tab-panel .term-course .course-id {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+        .tab-panel .term-course .course-name {
+            color: #555;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .tab-panel .term-course .course-credits {
+            color: #777;
             font-size: 0.75rem;
-            margin-right: 0.25rem;
+            font-variant-numeric: tabular-nums;
+        }
+        .tab-panel .term-courses-legend {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.75rem;
+            color: #666;
+            margin: 0.25rem 0 0.75rem;
+        }
+        .tab-panel .term-courses-legend .legend-swatch {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            margin-right: 0.3rem;
+            vertical-align: middle;
+        }
+        .tab-panel .term-courses-legend .legend-swatch--major {
+            background: var(--secondary-color);
+        }
+        .tab-panel .term-courses-legend .legend-swatch--other {
+            background: #b0b8c1;
         }
 
         /* Curriculum graphs are rendered by VanillaJsRenderer with scoped .nu-graph CSS */
@@ -422,8 +482,72 @@
             .box-plot-container {
                 break-inside: avoid;
             }
-            .special-plan {
+            .tab-panel {
                 break-inside: avoid;
+            }
+            .term-card {
+                break-inside: avoid;
+            }
+        }
+
+        /* ── Tabbed plans section ─────────────────────────────────────────── */
+        /* Scoped under .nu-plan-tabs to avoid colliding with the .nu-graph
+           scope used by the curriculum graph fragments themselves. */
+        .nu-plan-tabs {
+            margin: 1.5rem 0;
+        }
+        .nu-plan-tabs .tab-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem;
+            border-bottom: 2px solid #ddd;
+            margin-bottom: 1rem;
+        }
+        .nu-plan-tabs .tab-btn {
+            background: #f6f6f6;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            border-radius: 4px 4px 0 0;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: #555;
+            font-family: inherit;
+            transition: background-color 0.15s, color 0.15s;
+        }
+        .nu-plan-tabs .tab-btn:hover:not(.tab-btn--active) {
+            background: #eaeaea;
+        }
+        .nu-plan-tabs .tab-btn--active {
+            background: #fff;
+            color: #2c3e50;
+            font-weight: 600;
+            margin-bottom: -2px;
+            border-bottom: 2px solid #fff;
+        }
+        .nu-plan-tabs .tab-btn:focus-visible {
+            outline: 2px solid #3498db;
+            outline-offset: 2px;
+        }
+        .nu-plan-tabs .tab-panel {
+            display: none;
+        }
+        .nu-plan-tabs .tab-panel--active {
+            display: block;
+        }
+        .nu-plan-tabs .plan-tabs-empty {
+            color: #666;
+            font-style: italic;
+        }
+        /* Print: collapse tabs into a flat list so every panel makes the page. */
+        @media print {
+            .nu-plan-tabs .tab-strip {
+                display: none;
+            }
+            .nu-plan-tabs .tab-panel {
+                display: block !important;
+                page-break-inside: avoid;
+                margin-bottom: 2rem;
             }
         }
     </style>
@@ -459,30 +583,33 @@
             </div>
         </div>
 
-        <h2>Degree Statistics</h2>
-        <div class="stats-grid">
-            {{stats_section}}
-        </div>
+        <details class="report-section" open>
+            <summary><h2>Degree Statistics</h2></summary>
+            <div class="stats-grid">
+                {{stats_section}}
+            </div>
+        </details>
 
-        <h2>Metric Distributions</h2>
-        <div class="box-plots-grid">
-            {{box_plots}}
-        </div>
+        <details class="report-section" open>
+            <summary><h2>Metric Distributions</h2></summary>
+            <div class="box-plots-grid">
+                {{box_plots}}
+            </div>
+        </details>
 
-        <h2>Per-Course Statistics</h2>
-        <div class="course-stats-legend">
-            <span class="legend-item"><span class="legend-color-box major"></span> Major courses (sorted first by complexity)</span>
-            <span class="legend-item"><span class="legend-color-box non-major"></span> Non-major courses (electives, gen-eds, supporting)</span>
-        </div>
-        {{course_stats_table}}
+        <details class="report-section" open>
+            <summary><h2>Per-Course Statistics</h2></summary>
+            <div class="course-stats-legend">
+                <span class="legend-item"><span class="legend-color-box major"></span> Major courses (sorted first by complexity)</span>
+                <span class="legend-item"><span class="legend-color-box non-major"></span> Non-major courses (electives, gen-eds, supporting)</span>
+            </div>
+            {{course_stats_table}}
+        </details>
 
-        <h2>Special Plans</h2>
-        {{special_plans_section}}
-
-        <h2>Random Samples</h2>
-        <div class="plans-grid">
-            {{random_samples_section}}
-        </div>
+        <details class="report-section" open>
+            <summary><h2>Plans</h2></summary>
+            {{plan_tabs_section}}
+        </details>
 
         <footer style="margin-top: 2rem; text-align: center; font-size: 0.8rem; color: #666;">
             Generated by NuAnalytics Degree Analyzer
@@ -575,7 +702,56 @@
             }
 
         });
-        // Graph JS is embedded inline within each special plan's HTML block by VanillaJsRenderer.
+
+        // ── Print: force every collapsible section open ───────────────────
+        // The browser's UA stylesheet hides non-summary children when
+        // <details> lacks the [open] attribute, so a user who collapses a
+        // section before printing would otherwise miss it in the output.
+        // Save+restore the original state around beforeprint/afterprint.
+        (function () {
+            const sections = document.querySelectorAll('details.report-section');
+            let savedState = null;
+            window.addEventListener('beforeprint', function () {
+                savedState = Array.from(sections).map(function (d) { return d.open; });
+                sections.forEach(function (d) { d.open = true; });
+            });
+            window.addEventListener('afterprint', function () {
+                if (!savedState) return;
+                sections.forEach(function (d, i) { d.open = savedState[i]; });
+                savedState = null;
+            });
+        }());
+
+        // ── Plan tab switcher ──────────────────────────────────────────────
+        // The graph fragments are rendered eagerly into hidden panels. The
+        // shared nuGraphs library handles initial layout on DOMContentLoaded;
+        // we trigger nuGraphs.drawAll() again on tab switch so a previously
+        // hidden panel's SVG (which the library sized to 0) gets re-laid-out
+        // at the freshly-revealed container width.
+        document.addEventListener('DOMContentLoaded', function () {
+            const tabsRoot = document.querySelector('.nu-plan-tabs');
+            if (!tabsRoot) return;
+            const buttons = tabsRoot.querySelectorAll('.tab-btn');
+            const panels = tabsRoot.querySelectorAll('.tab-panel');
+            buttons.forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    const target = btn.getAttribute('data-tab-target');
+                    buttons.forEach(function (b) {
+                        const active = b === btn;
+                        b.classList.toggle('tab-btn--active', active);
+                        b.setAttribute('aria-selected', active ? 'true' : 'false');
+                    });
+                    panels.forEach(function (p) {
+                        const active = p.getAttribute('data-tab-id') === target;
+                        p.classList.toggle('tab-panel--active', active);
+                    });
+                    if (window.nuGraphs && typeof window.nuGraphs.drawAll === 'function') {
+                        window.nuGraphs.drawAll();
+                    }
+                });
+            });
+        });
+        // Graph JS is embedded inline within each plan's HTML block by VanillaJsRenderer.
     </script>
 </body>
 </html>
