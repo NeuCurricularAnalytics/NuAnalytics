@@ -28,8 +28,12 @@ use crate::mcp::tools::{
     CompletionDemographicsRequest, GetDegreeRequest, GetInstitutionCompletionsRequest,
     GetInstitutionRequest, GetLookupCodesRequest, GetSchoolsCompletionDemographicsRequest,
     ScaffoldDegreeYamlRequest, SearchCipCodesRequest, SearchDegreesRequest,
-    SearchInstitutionsRequest, StoreDegreeRequest,
+    SearchInstitutionsRequest,
 };
+// `StoreDegreeRequest` import kept out of the active list while the
+// store_degree MCP tool is shelved (see TODO in the impl block); the type
+// itself still lives in `degrees::StoreDegreeRequest` for when the DB
+// write path is provisioned.
 
 // ============================================================================
 // MCP Server Implementation
@@ -289,7 +293,7 @@ impl NuAnalyticsMcpServer {
 
     /// Render a curriculum graph visualization from an `analyze_degree` result
     #[tool(
-        description = "Render an interactive HTML curriculum graph from a graph_spec produced by analyze_degree. The output shows course nodes arranged by term, prerequisite/corequisite edges drawn as Bezier curves, complexity badges, hover highlighting of prerequisite chains, and a click-to-open course detail modal. Set format=\"standalone\" (default) for a full HTML page openable in a browser, or format=\"fragment\" for a self-contained snippet (style + div + script) that can be embedded inside a larger HTML document. Typical flow: (1) call analyze_degree, (2) serialize selected_plans[N].graph_spec to JSON, (3) pass it as graph_spec_json to this tool."
+        description = "Low-level: most callers should use `render_plan_graph` instead — that tool runs analyze + extracts the graph_spec + renders in one call. Use this tool only when you already have a graph_spec in hand and want full control over rendering. Renders an interactive HTML curriculum graph from a graph_spec produced by analyze_degree. The output shows course nodes arranged by term, prerequisite/corequisite edges drawn as Bezier curves, complexity badges, hover highlighting of prerequisite chains, and a click-to-open course detail modal. Set format=\"standalone\" (default) for a full HTML page openable in a browser, format=\"fragment\" for an embeddable snippet, or format=\"fragment-no-library\" when the page already loaded the shared library."
     )]
     #[allow(clippy::unused_self)]
     fn get_curriculum_visualization(
@@ -484,16 +488,22 @@ impl NuAnalyticsMcpServer {
         }
     }
 
-    /// Save a validated degree program to the database
-    #[cfg(feature = "database")]
-    #[tool(
-        description = "Save a validated degree program YAML to the database. Requires authentication (run `nuanalytics db login` first). Uses upsert on degree_id — safe to re-run after updates. Provide unitid (from search_institutions) and cip_code for the program. The degree YAML should be validated with validate_degree before storing."
-    )]
-    fn store_degree(&self, Parameters(req): Parameters<StoreDegreeRequest>) -> String {
-        self.call_db("store_degree", |db| async move {
-            degrees::execute_store_json(&db, req).await
-        })
-    }
+    // TODO(database): re-enable `store_degree` once the deployed Supabase
+    // schema provisions the `degrees` write path and the auth flow is set up
+    // (`nuanalytics db login`). The implementation in
+    // `degrees::execute_store_json` + `StoreDegreeRequest` is in place and
+    // works against a locally-configured DB; only the MCP exposure is
+    // shelved so callers don't see a tool that returns auth errors.
+    //
+    // #[cfg(feature = "database")]
+    // #[tool(
+    //     description = "Save a validated degree program YAML to the database. Requires authentication (run `nuanalytics db login` first). Uses upsert on degree_id — safe to re-run after updates. Provide unitid (from search_institutions) and cip_code for the program. The degree YAML should be validated with validate_degree before storing."
+    // )]
+    // fn store_degree(&self, Parameters(req): Parameters<StoreDegreeRequest>) -> String {
+    //     self.call_db("store_degree", |db| async move {
+    //         degrees::execute_store_json(&db, req).await
+    //     })
+    // }
 }
 
 /// Database access helpers.
@@ -587,7 +597,7 @@ impl ServerHandler for NuAnalyticsMcpServer {
             \n\
             Degree programs:\n\
             - search_degrees(unitid=167358) / get_degree(unitid=167358, cip_code=\"11.0101\") → retrieve stored degrees\n\
-            - store_degree(degree_id=\"...\", yaml_content=\"...\") → save validated degree (requires db login)"
+            - search_degrees + get_degree → read-only DB access; storage of new degrees is not yet provisioned"
         } else {
             "\n\nDatabase tools: Not available (database not configured or disabled)"
         };
@@ -606,8 +616,7 @@ impl ServerHandler for NuAnalyticsMcpServer {
                 4. Fix issues; repeat until valid\n\
                 5. audit_degree — comprehensive quality check (missing prereqs, deep chains)\n\
                 6. analyze_degree — plan generation and metrics (JSON)\n\
-                7. generate_degree_report — full HTML report (same artifact as `degree --analyze`); optional CSV / JSONL outputs via output_dir\n\
-                8. store_degree — save validated degree to database (requires db login)\
+                7. generate_degree_report — full HTML report (same artifact as `degree --analyze`); optional CSV / JSONL outputs via output_dir\
                 {db_section}"
             ),
         )

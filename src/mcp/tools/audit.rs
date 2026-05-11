@@ -11,6 +11,7 @@ use crate::core::degree::{parse_degree_yaml, DegreeParseError};
 use crate::core::models::CourseGraph;
 use crate::core::validate_degree_program;
 use crate::core::DegreeProgram;
+use crate::mcp::tools::shared::ToolFollowup;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -123,6 +124,9 @@ pub struct AuditResponse {
     pub institution: Option<String>,
     /// Total courses defined
     pub total_courses: usize,
+    /// Structured hints about the next MCP call worth making, based on the
+    /// audit outcome (deep chains → render the worst plan, etc.).
+    pub tool_followups: Vec<ToolFollowup>,
 }
 
 // ============================================================================
@@ -152,6 +156,11 @@ pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditRespo
                 degree_name: None,
                 institution: None,
                 total_courses: 0,
+                tool_followups: vec![ToolFollowup {
+                    tool: "validate_degree",
+                    reason: "audit_degree couldn't parse the YAML; validate_degree surfaces the parse error in a more structured form.".to_string(),
+                    suggested_args: serde_json::json!({}),
+                }],
             };
         }
     };
@@ -200,6 +209,8 @@ pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditRespo
     let passed =
         validation.errors.is_empty() && missing_prereqs.is_empty() && deep_chains.is_empty();
 
+    let tool_followups = build_audit_followups(passed, &missing_prereqs, &deep_chains);
+
     AuditResponse {
         passed,
         parse_error: None,
@@ -212,7 +223,48 @@ pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditRespo
         degree_name: Some(program.degree.name.clone()),
         institution: program.degree.institution.clone(),
         total_courses: program.courses.len(),
+        tool_followups,
     }
+}
+
+/// Build follow-up suggestions for an audit response.
+fn build_audit_followups(
+    passed: bool,
+    missing_prereqs: &[MissingPrereqInfo],
+    deep_chains: &[DeepChainInfo],
+) -> Vec<ToolFollowup> {
+    let mut followups = Vec::new();
+    if let Some(worst) = deep_chains.iter().max_by_key(|d| d.max_depth) {
+        followups.push(ToolFollowup {
+            tool: "render_plan_graph",
+            reason: format!(
+                "Deepest chain found on {} ({} steps); the longest path graph shows the chain in context.",
+                worst.course, worst.max_depth,
+            ),
+            suggested_args: serde_json::json!({ "plan_category": "longest" }),
+        });
+    }
+    let internal_missing = missing_prereqs
+        .iter()
+        .filter(|m| m.kind == "internal_missing_prereq")
+        .count();
+    if internal_missing > 0 {
+        followups.push(ToolFollowup {
+            tool: "get_course_detail",
+            reason: format!(
+                "{internal_missing} internal upper-level course(s) lack prerequisites — get_course_detail returns each course's requirement references + dependents so you can decide whether to add them."
+            ),
+            suggested_args: serde_json::json!({}),
+        });
+    }
+    if passed {
+        followups.push(ToolFollowup {
+            tool: "analyze_degree",
+            reason: "Audit passed; analyze_degree computes plan-level metrics + selected plans for the report.".to_string(),
+            suggested_args: serde_json::json!({}),
+        });
+    }
+    followups
 }
 
 /// Execute and serialize the result as JSON

@@ -1,12 +1,33 @@
 //! Shared utilities for MCP tool implementations.
 
-use serde::{de, Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer, Serialize};
 
 #[cfg(feature = "database")]
 use std::sync::Arc;
 
 #[cfg(feature = "database")]
 use crate::core::database::{tables, DbClient, QueryFilters};
+
+/// Hint about the next MCP call a tool's response suggests the caller make.
+///
+/// Tools attach a `tool_followups: Vec<ToolFollowup>` array when their output
+/// implies an obvious next step — `analyze_degree` flagging a sample with
+/// `was_truncated=true` suggesting a rerun with higher `max_plans`,
+/// `audit_degree` finding deep chains suggesting `render_plan_graph` to
+/// visualise them, etc. The default is an empty vector when the response
+/// state doesn't warrant a follow-up — no token cost for happy-path calls.
+#[derive(Debug, Serialize)]
+pub struct ToolFollowup {
+    /// MCP tool name the caller should consider invoking next
+    /// (e.g. `"audit_degree"`, `"render_plan_graph"`).
+    pub tool: &'static str,
+    /// Short human-readable explanation of why this follow-up is suggested.
+    pub reason: String,
+    /// JSON object the caller can plug straight into the suggested tool's
+    /// request. Always emitted as a JSON object even when empty so callers
+    /// can spread it without a type check.
+    pub suggested_args: serde_json::Value,
+}
 
 /// How a degree YAML was supplied to validate/audit/analyze.
 ///

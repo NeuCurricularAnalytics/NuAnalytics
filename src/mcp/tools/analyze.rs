@@ -18,6 +18,7 @@ use crate::core::report::visualization::{spec_from_scored_plan, CurriculumGraphS
 use crate::core::report::SchedulerConfig;
 use crate::core::statistics::{AggregatorConfig, MetricStats, MetricsAggregator};
 use crate::core::DegreeProgram;
+use crate::mcp::tools::shared::ToolFollowup;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -200,6 +201,11 @@ pub struct AnalysisResponse {
 
     /// Selected special plans
     pub selected_plans: Vec<PlanSummaryJson>,
+
+    /// Structured hints about the next MCP call worth making, based on the
+    /// analyze outcome (truncation, long critical path, small full
+    /// population, etc.).
+    pub tool_followups: Vec<ToolFollowup>,
 }
 
 // ============================================================================
@@ -383,6 +389,11 @@ fn parse_error_response(error: &str) -> AnalysisResponse {
         longest_delay: None,
         total_credits: None,
         selected_plans: vec![],
+        tool_followups: vec![ToolFollowup {
+            tool: "validate_degree",
+            reason: "analyze_degree couldn't parse the YAML; validate_degree surfaces the parse error in a more structured form.".to_string(),
+            suggested_args: serde_json::json!({}),
+        }],
     }
 }
 
@@ -493,6 +504,12 @@ fn build_response(
     let is_full_population = artifacts.is_full_population();
     let was_truncated = !is_full_population;
     let population_size = artifacts.population_size();
+    let tool_followups = build_analysis_followups(
+        artifacts,
+        &selected_plans,
+        was_truncated,
+        is_full_population,
+    );
 
     AnalysisResponse {
         success: true,
@@ -509,7 +526,64 @@ fn build_response(
         longest_delay: Some(metric_stats_json(&degree_stats.longest_delay)),
         total_credits: Some(metric_stats_json(&degree_stats.total_credits)),
         selected_plans,
+        tool_followups,
     }
+}
+
+/// Build follow-up suggestions for an analyze response. Triggered on three
+/// signals: truncated sample (rerun with higher cap), tiny full population
+/// (cheap to audit deeply), or long critical path on the shortest plan
+/// (re-audit with a stricter chain threshold).
+fn build_analysis_followups(
+    artifacts: &AnalysisArtifacts,
+    selected_plans: &[PlanSummaryJson],
+    was_truncated: bool,
+    is_full_population: bool,
+) -> Vec<ToolFollowup> {
+    let mut followups = Vec::new();
+
+    if was_truncated {
+        let next = artifacts
+            .max_plans
+            .saturating_mul(2)
+            .max(artifacts.max_plans + 1);
+        followups.push(ToolFollowup {
+            tool: "analyze_degree",
+            reason: format!(
+                "Result was truncated at max_plans={} (population estimate {}). Rerun with a larger cap to widen the sample.",
+                artifacts.max_plans, artifacts.stats.total_possible,
+            ),
+            suggested_args: serde_json::json!({ "max_plans": next }),
+        });
+    } else if is_full_population && artifacts.plans_processed > 0 && artifacts.plans_processed < 50
+    {
+        followups.push(ToolFollowup {
+            tool: "audit_degree",
+            reason: format!(
+                "Full population is small ({}). audit_degree's deep-chain analysis is cheap here and surfaces structural issues.",
+                artifacts.plans_processed,
+            ),
+            suggested_args: serde_json::json!({}),
+        });
+    }
+
+    if let Some(shortest) = selected_plans
+        .iter()
+        .find(|p| p.category == "Shortest Path")
+    {
+        if shortest.critical_path.len() >= 6 {
+            followups.push(ToolFollowup {
+                tool: "audit_degree",
+                reason: format!(
+                    "Shortest path's critical chain is {} courses long; rerunning audit_degree with a stricter chain_threshold surfaces every chain at that depth.",
+                    shortest.critical_path.len(),
+                ),
+                suggested_args: serde_json::json!({ "chain_threshold": 4 }),
+            });
+        }
+    }
+
+    followups
 }
 
 /// Execute and serialize as JSON

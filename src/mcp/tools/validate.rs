@@ -11,6 +11,7 @@ use crate::core::{
     validate_degree_program_with_options, DegreeProgram, ValidationError, ValidationOptions,
     ValidationResult, ValidationWarning,
 };
+use crate::mcp::tools::shared::ToolFollowup;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -113,6 +114,9 @@ pub struct ValidationResponse {
     pub resolved_pools: Vec<ResolvedPoolInfo>,
     /// General suggestions for improvement
     pub suggestions: Vec<String>,
+    /// Structured hints about the next MCP call worth making, based on the
+    /// validation outcome (e.g. unprereqed upper-level courses → run audit).
+    pub tool_followups: Vec<ToolFollowup>,
 }
 
 /// One requirement's resolved selection pool, surfaced so the caller can
@@ -165,6 +169,11 @@ pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> Validation
                     "Fix the YAML syntax error first, then re-validate.".to_string(),
                     "Use get_degree_schema to review the expected format.".to_string(),
                 ],
+                tool_followups: vec![ToolFollowup {
+                    tool: "get_degree_schema",
+                    reason: "YAML parse error; review the schema before retrying.".to_string(),
+                    suggested_args: serde_json::json!({ "section": "quickstart" }),
+                }],
             };
         }
     };
@@ -206,6 +215,8 @@ pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> Validation
     let warnings = convert_validation_warnings(&result);
     let suggestions = generate_suggestions(&result, &context, unprereqed_upper_level);
 
+    let tool_followups = build_followups(&result, unprereqed_upper_level);
+
     ValidationResponse {
         is_valid: result.is_valid,
         parse_error: None,
@@ -214,7 +225,30 @@ pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> Validation
         context: Some(context),
         resolved_pools,
         suggestions,
+        tool_followups,
     }
+}
+
+/// Build follow-up suggestions for a validate response.
+fn build_followups(result: &ValidationResult, unprereqed_upper_level: usize) -> Vec<ToolFollowup> {
+    let mut followups = Vec::new();
+    if unprereqed_upper_level > 0 {
+        followups.push(ToolFollowup {
+            tool: "audit_degree",
+            reason: format!(
+                "{unprereqed_upper_level} upper-level course(s) declare no prerequisites — audit_degree surfaces the list and finds implicit-requirement issues."
+            ),
+            suggested_args: serde_json::json!({}),
+        });
+    }
+    if result.is_valid && result.errors.is_empty() {
+        followups.push(ToolFollowup {
+            tool: "analyze_degree",
+            reason: "Validation passed; run analyze_degree to compute plan-level metrics and selected plans.".to_string(),
+            suggested_args: serde_json::json!({}),
+        });
+    }
+    followups
 }
 
 /// Execute and serialize the result as JSON
