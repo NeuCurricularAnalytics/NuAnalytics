@@ -29,7 +29,7 @@ use crate::mcp::tools::analyze::AnalysisArtifacts;
 
 /// Prefix that marks an in-memory YAML-cache handle.
 ///
-/// `degree_id` resolution in `run_yaml_tool` matches against this prefix
+/// `degree_id` resolution in `resolve_degree_id` matches against this prefix
 /// before falling through to the sample registry or the DB lookup.
 pub const YAML_CACHE_PREFIX: &str = "cache:";
 
@@ -130,9 +130,8 @@ fn make_artifact_key(
     yaml.hash(&mut hasher);
     max_plans.hash(&mut hasher);
     if let Some(courses) = include_courses {
-        // Sort + hash each entry individually. clippy's `collection_is_never_read`
-        // would fire on a "build the vec, hash the vec" pattern because it can't
-        // see through sort_unstable to the subsequent read.
+        // Sort before hashing so different orderings of the same set produce
+        // the same key — callers shouldn't have to canonicalise upstream.
         let mut sorted: Vec<&str> = courses.iter().map(String::as_str).collect();
         sorted.sort_unstable();
         for entry in &sorted {
@@ -221,9 +220,7 @@ pub(crate) fn cached_artifacts(
 ) -> Result<Arc<AnalysisArtifacts>, String> {
     let key = make_artifact_key(yaml, max_plans, include_courses);
 
-    // Cache-hit path: bind the lock guard to a local so it drops before we
-    // return rather than living for the full `if let` (clippy's
-    // `significant_drop_in_scrutinee`).
+    // Drop the lock guard before returning the Arc on a hit.
     let hit = ARTIFACT_CACHE
         .lock()
         .expect("artifact cache mutex poisoned")
@@ -232,8 +229,7 @@ pub(crate) fn cached_artifacts(
         return Ok(arc);
     }
 
-    let owned_includes = include_courses.map(<[String]>::to_vec);
-    let artifacts = crate::mcp::tools::analyze::build_artifacts(yaml, max_plans, owned_includes)?;
+    let artifacts = crate::mcp::tools::analyze::build_artifacts(yaml, max_plans, include_courses)?;
     let arc = Arc::new(artifacts);
     ARTIFACT_CACHE
         .lock()
@@ -287,10 +283,9 @@ mod tests {
 
     #[test]
     fn test_cached_artifacts_returns_same_arc_on_repeated_lookup() {
-        // P0 artifact cache: two sequential cached_artifacts calls with the
-        // same inputs must return the same Arc, so downstream tools share
-        // work instead of running build_artifacts twice. Use the embedded
-        // CSU sample (cheap to parse, deterministic across runs).
+        // Repeated `cached_artifacts` calls with the same inputs must return
+        // the same Arc so downstream tools share work instead of re-running
+        // the analysis pipeline.
         let yaml = crate::mcp::tools::samples::yaml_for_key("csu")
             .expect("csu sample key must resolve to embedded YAML");
         let first = cached_artifacts(yaml, Some(50), None).expect("first build");
@@ -309,5 +304,77 @@ mod tests {
         let none = make_artifact_key("yaml", Some(10), None);
         let empty = make_artifact_key("yaml", Some(10), Some(&[]));
         assert_ne!(none, empty);
+    }
+
+    #[test]
+    fn test_make_artifact_key_distinguishes_max_plans() {
+        // Different `max_plans` must produce different keys — otherwise a
+        // capped-at-50 result would be returned for a caller asking for 500.
+        let small = make_artifact_key("yaml", Some(50), None);
+        let large = make_artifact_key("yaml", Some(500), None);
+        assert_ne!(small, large);
+        let none = make_artifact_key("yaml", None, None);
+        assert_ne!(small, none);
+    }
+
+    #[test]
+    fn test_yaml_cache_get_returns_none_for_expired_entry() {
+        // Backdate the insertion to before the TTL window so the next `get`
+        // sees it as expired. Exercises the elapsed-time gate in `get` (and
+        // implicitly `sweep_expired`'s identical check).
+        let mut cache = YamlCache::default();
+        let body = "degree:\n  id: ttl\n".to_string();
+        let handle = cache.insert(body);
+        let stale = Instant::now()
+            .checked_sub(YAML_CACHE_TTL + Duration::from_secs(1))
+            .expect("Instant supports the backdated arithmetic on this platform");
+        cache
+            .entries
+            .get_mut(&handle)
+            .expect("present after insert")
+            .inserted_at = stale;
+        assert!(cache.get(&handle).is_none());
+    }
+
+    #[test]
+    fn test_cached_artifacts_returns_distinct_arc_when_max_plans_differs() {
+        // Same YAML, different `max_plans` → different keys → distinct Arcs.
+        // Guards against silent cache-key collisions that would serve a
+        // smaller result set for a caller asking for more plans.
+        let yaml = crate::mcp::tools::samples::yaml_for_key("csu")
+            .expect("csu sample key must resolve to embedded YAML");
+        let a = cached_artifacts(yaml, Some(25), None).expect("first build");
+        let b = cached_artifacts(yaml, Some(50), None).expect("second build");
+        assert!(
+            !Arc::ptr_eq(&a, &b),
+            "different max_plans must produce distinct cache entries"
+        );
+    }
+
+    #[test]
+    fn test_artifact_cache_evicts_least_recently_used_at_capacity() {
+        // Insert ARTIFACT_CACHE_CAPACITY + 1 distinct entries into a fresh
+        // ArtifactCache and confirm the oldest entry was evicted while the
+        // most recent ones survive.
+        let yaml = crate::mcp::tools::samples::yaml_for_key("csu")
+            .expect("csu sample key must resolve to embedded YAML");
+        let sample =
+            crate::mcp::tools::analyze::build_artifacts(yaml, Some(10), None).expect("build");
+        let shared = Arc::new(sample);
+
+        let mut cache = ArtifactCache::default();
+        for k in 0..ARTIFACT_CACHE_CAPACITY as u64 {
+            cache.insert(k, shared.clone());
+        }
+        assert_eq!(cache.len(), ARTIFACT_CACHE_CAPACITY);
+
+        // Bump key 1's recency so key 0 becomes the eviction target.
+        assert!(cache.get(1).is_some());
+        cache.insert(99, shared);
+
+        assert_eq!(cache.len(), ARTIFACT_CACHE_CAPACITY);
+        assert!(cache.get(0).is_none(), "oldest entry should be evicted");
+        assert!(cache.get(1).is_some(), "recently accessed key must remain");
+        assert!(cache.get(99).is_some(), "newest insertion must be present");
     }
 }

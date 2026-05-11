@@ -249,6 +249,9 @@ pub fn execute(
 /// aggregator, and the curated [`SelectedPlans`] alongside the generation
 /// stats. Sibling tools (e.g. the HTML report renderer) consume this struct
 /// so the pipeline is implemented exactly once.
+///
+/// Exposed at `pub(crate)` so [`crate::mcp::cache::cached_artifacts`] can
+/// Arc-wrap the bundle and share it across tools.
 pub(crate) struct AnalysisArtifacts {
     /// Parsed degree program.
     pub program: DegreeProgram,
@@ -296,15 +299,20 @@ impl AnalysisArtifacts {
 /// produced artifacts. On YAML parse failure, returns a formatted error
 /// string suitable for surfacing through MCP tools.
 ///
+/// Prefer [`crate::mcp::cache::cached_artifacts`] over calling this directly
+/// — the cache shares the resulting [`AnalysisArtifacts`] Arc across sibling
+/// tools so the expensive pipeline runs once per `(yaml, max_plans,
+/// include_courses)` combination.
+///
 /// # Errors
 /// Returns a formatted parse-error string when the YAML cannot be parsed.
 pub(crate) fn build_artifacts(
     yaml_content: &str,
     max_plans: Option<usize>,
-    include_courses: Option<Vec<String>>,
+    include_courses: Option<&[String]>,
 ) -> Result<AnalysisArtifacts, String> {
     let max = max_plans.unwrap_or(DEFAULT_MAX_PLANS);
-    let include = include_courses.unwrap_or_default();
+    let include = include_courses.map(<[String]>::to_vec).unwrap_or_default();
 
     let program = parse_degree_yaml(yaml_content).map_err(|e| format_parse_error(&e))?;
 
@@ -1005,8 +1013,7 @@ courses:
     #[test]
     fn test_build_artifacts_respects_include_courses() {
         // Every selected plan must contain the forced course.
-        let artifacts =
-            build_artifacts(TEST_YAML, Some(10), Some(vec!["CS101".to_string()])).unwrap();
+        let artifacts = build_artifacts(TEST_YAML, Some(10), Some(&["CS101".to_string()])).unwrap();
         for (_cat, plan) in artifacts.selected.iter() {
             assert!(
                 plan.variant.courses.iter().any(|c| c == "CS101"),

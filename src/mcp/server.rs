@@ -530,10 +530,9 @@ impl NuAnalyticsMcpServer {
         }
         #[cfg(not(feature = "database"))]
         {
-            let _ = id;
-            Err(shared::error_json(
-                "degree_id lookup requires the nu-analytics 'database' feature, a bundled sample key, or a `cache:` handle",
-            ))
+            Err(shared::error_json(&format!(
+                "degree_id '{id}' did not match any cache handle or bundled sample key; database lookups require the nu-analytics 'database' feature"
+            )))
         }
     }
 
