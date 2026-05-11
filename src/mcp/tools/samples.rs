@@ -71,6 +71,16 @@ const SAMPLES: &[SampleMeta] = &[
     },
 ];
 
+/// Look up a bundled sample's YAML body by its short key.
+///
+/// Returns `None` when no sample matches. Used by the server's layered
+/// `degree_id` resolver so `degree_id="csu"` (etc.) returns the embedded
+/// YAML without going through the database.
+#[must_use]
+pub fn yaml_for_key(key: &str) -> Option<&'static str> {
+    SAMPLES.iter().find(|s| s.key == key).map(|s| s.yaml)
+}
+
 // ============================================================================
 // Request / Response types
 // ============================================================================

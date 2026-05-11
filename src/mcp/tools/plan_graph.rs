@@ -11,7 +11,7 @@ use crate::core::degree::plan_selector::PlanCategory;
 use crate::core::report::visualization::{
     spec_from_scored_plan, CurriculumGraphRenderer, VanillaJsRenderer,
 };
-use crate::mcp::tools::analyze::build_artifacts;
+use crate::mcp::cache::cached_artifacts;
 use crate::mcp::tools::visualize::VisualizationFormat;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
@@ -130,7 +130,7 @@ pub fn execute(
     plan_index: Option<usize>,
     format: VisualizationFormat,
     max_plans: Option<usize>,
-    include_courses: Option<Vec<String>>,
+    include_courses: Option<&[String]>,
 ) -> RenderPlanGraphResponse {
     if plan_category.is_none() && plan_index.is_none() {
         return error_response(
@@ -141,7 +141,7 @@ pub fn execute(
         return error_response("Provide plan_category OR plan_index, not both.");
     }
 
-    let artifacts = match build_artifacts(yaml_content, max_plans, include_courses) {
+    let artifacts = match cached_artifacts(yaml_content, max_plans, include_courses) {
         Ok(a) => a,
         Err(e) => return error_response(e),
     };
@@ -208,7 +208,7 @@ pub fn execute_json(
     plan_index: Option<usize>,
     format: VisualizationFormat,
     max_plans: Option<usize>,
-    include_courses: Option<Vec<String>>,
+    include_courses: Option<&[String]>,
 ) -> String {
     let response = execute(
         yaml_content,

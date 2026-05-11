@@ -40,6 +40,7 @@
 //! mcp::run()?;
 //! ```
 
+pub mod cache;
 pub mod schema_content;
 pub mod server;
 pub mod tools;

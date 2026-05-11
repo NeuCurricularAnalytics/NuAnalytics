@@ -130,7 +130,7 @@ pub fn execute(
     allow_unmatched_patterns: bool,
     chain_threshold: Option<usize>,
     max_plans: Option<usize>,
-    include_courses: Option<Vec<String>>,
+    include_courses: Option<&[String]>,
     skip_audit: bool,
     skip_analyze: bool,
 ) -> DegreePipelineResponse {
@@ -183,7 +183,7 @@ pub fn execute_json(
     allow_unmatched_patterns: bool,
     chain_threshold: Option<usize>,
     max_plans: Option<usize>,
-    include_courses: Option<Vec<String>>,
+    include_courses: Option<&[String]>,
     skip_audit: bool,
     skip_analyze: bool,
 ) -> String {

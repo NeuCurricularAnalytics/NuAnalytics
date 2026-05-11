@@ -6,11 +6,11 @@ use std::sync::Arc;
 
 use crate::core::config::DatabaseConfig;
 use crate::mcp::tools::{
-    analyze, audit, course_detail, match_courses, pipeline, plan_graph, report, samples, schema,
-    shared, validate, visualize, AnalyzeDegreeRequest, AuditDegreeRequest, DegreePipelineRequest,
-    FindCoursesMatchingRequest, GenerateDegreeReportRequest, GetCourseDetailRequest,
-    GetCurriculumVisualizationRequest, GetSchemaRequest, ListSampleDegreesRequest,
-    RenderPlanGraphRequest, ValidateDegreeRequest,
+    analyze, audit, cache, course_detail, match_courses, pipeline, plan_graph, report, samples,
+    schema, shared, validate, visualize, AnalyzeDegreeRequest, AuditDegreeRequest,
+    CacheYamlRequest, DegreePipelineRequest, FindCoursesMatchingRequest,
+    GenerateDegreeReportRequest, GetCourseDetailRequest, GetCurriculumVisualizationRequest,
+    GetSchemaRequest, ListSampleDegreesRequest, RenderPlanGraphRequest, ValidateDegreeRequest,
 };
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -141,7 +141,7 @@ impl NuAnalyticsMcpServer {
             analyze::execute_json(
                 yaml,
                 max_plans,
-                include_courses,
+                include_courses.as_deref(),
                 include_graph_spec,
                 plan_indices.as_deref(),
             )
@@ -188,7 +188,7 @@ impl NuAnalyticsMcpServer {
                 allow_unmatched_patterns,
                 chain_threshold,
                 max_plans,
-                include_courses,
+                include_courses.as_deref(),
                 skip_audit,
                 skip_analyze,
             )
@@ -219,7 +219,7 @@ impl NuAnalyticsMcpServer {
             report::execute_json(
                 yaml,
                 max_plans,
-                include_courses,
+                include_courses.as_deref(),
                 output_dir.as_deref(),
                 write_plan_csvs,
                 write_jsonl_summary,
@@ -227,6 +227,15 @@ impl NuAnalyticsMcpServer {
                 return_html_inline,
             )
         })
+    }
+
+    /// Cache an inline YAML body and return a degree_id-style handle
+    #[tool(
+        description = "Cache an inline degree YAML body in the server and return a handle (\"cache:{hex}\") that any other tool accepts as a `degree_id`. Removes the per-call repaste tax for hosted MCP clients whose filesystem the server can't see (yaml_path returns ENOENT in that setup). Handle is content-hashed and idempotent — caching the same body twice returns the same handle. TTL is about 1 hour. After caching: pass the handle as `degree_id` on validate_degree / audit_degree / analyze_degree / generate_degree_report / get_course_detail / render_plan_graph / find_courses_matching / degree_pipeline / compare_degrees."
+    )]
+    #[allow(clippy::unused_self)]
+    fn cache_yaml(&self, Parameters(req): Parameters<CacheYamlRequest>) -> String {
+        cache::execute_json(req.yaml_content)
     }
 
     /// List the bundled sample degree YAMLs
@@ -286,7 +295,7 @@ impl NuAnalyticsMcpServer {
                 plan_index,
                 format,
                 max_plans,
-                include_courses,
+                include_courses.as_deref(),
             )
         })
     }
@@ -467,24 +476,64 @@ impl NuAnalyticsMcpServer {
                 Ok(yaml) => run(&yaml),
                 Err(e) => e,
             },
-            #[cfg(feature = "database")]
-            shared::YamlSource::DegreeId(id) => {
-                let db = match self.get_db(tool) {
-                    Ok(db) => db,
-                    Err(e) => return e,
-                };
-                let resolved = run_db_async_result(move || async move {
-                    shared::fetch_yaml_by_degree_id(&db, &id).await
-                });
-                match resolved {
-                    Ok(yaml) => run(&yaml),
-                    Err(e) => e,
-                }
-            }
-            #[cfg(not(feature = "database"))]
-            shared::YamlSource::DegreeId(_) => shared::error_json(
-                "degree_id lookup requires the nu-analytics 'database' feature; pass yaml_content or yaml_path instead",
-            ),
+            shared::YamlSource::DegreeId(id) => match self.resolve_degree_id(tool, &id) {
+                Ok(yaml) => run(&yaml),
+                Err(e) => e,
+            },
+        }
+    }
+
+    /// Resolve a `degree_id` to a YAML body using the layered lookup:
+    ///
+    /// 1. **YAML cache** — handles minted by `cache_yaml` (prefix
+    ///    `cache:`). In-memory; works regardless of DB availability.
+    /// 2. **Bundled samples** — the three sample keys (`csu`, `neu-khoury`,
+    ///    `uhm`) returned by `list_sample_degrees`. Embedded at compile time.
+    /// 3. **Database** — stored degrees by id (requires the `database`
+    ///    feature + a configured client).
+    ///
+    /// Returns a JSON error string on any failure path so the calling
+    /// handler can return it verbatim.
+    fn resolve_degree_id(
+        &self,
+        #[cfg_attr(not(feature = "database"), allow(unused_variables))] tool: &'static str,
+        id: &str,
+    ) -> Result<String, String> {
+        if id.starts_with(crate::mcp::cache::YAML_CACHE_PREFIX) {
+            let cache = crate::mcp::cache::YAML_CACHE
+                .lock()
+                .expect("yaml cache mutex poisoned");
+            return cache.get(id).map_or_else(
+                || {
+                    Err(serde_json::json!({
+                        "error": "Unknown or expired YAML cache handle",
+                        "degree_id": id,
+                        "hint": "Call cache_yaml(yaml_content=...) to mint a fresh handle. Cache TTL is ~1 hour.",
+                    })
+                    .to_string())
+                },
+                |arc| Ok((*arc).to_string()),
+            );
+        }
+
+        if let Some(yaml) = crate::mcp::tools::samples::yaml_for_key(id) {
+            return Ok(yaml.to_string());
+        }
+
+        #[cfg(feature = "database")]
+        {
+            let db = self.get_db(tool)?;
+            let id_owned = id.to_string();
+            run_db_async_result(move || async move {
+                shared::fetch_yaml_by_degree_id(&db, &id_owned).await
+            })
+        }
+        #[cfg(not(feature = "database"))]
+        {
+            let _ = id;
+            Err(shared::error_json(
+                "degree_id lookup requires the nu-analytics 'database' feature, a bundled sample key, or a `cache:` handle",
+            ))
         }
     }
 

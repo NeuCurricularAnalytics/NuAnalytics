@@ -14,9 +14,7 @@ use crate::core::degree::audit::extract_course_level;
 use crate::core::degree::{parse_degree_yaml, DegreeParseError};
 use crate::core::models::CourseGraph;
 use crate::core::DegreeProgram;
-use crate::mcp::tools::analyze::{
-    build_artifacts, metric_stats_json, AnalysisArtifacts, MetricStatsJson,
-};
+use crate::mcp::tools::analyze::{metric_stats_json, AnalysisArtifacts, MetricStatsJson};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -168,7 +166,7 @@ pub fn execute(
     }
 
     if include_analysis {
-        match build_artifacts(yaml_content, max_plans, None) {
+        match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, None) {
             Ok(artifacts) => build_response_with_analysis(course_id, &artifacts),
             Err(e) => error_response(course_id, e),
         }

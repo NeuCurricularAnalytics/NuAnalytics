@@ -234,11 +234,11 @@ const DEFAULT_MAX_PLANS: usize = 500;
 pub fn execute(
     yaml_content: &str,
     max_plans: Option<usize>,
-    include_courses: Option<Vec<String>>,
+    include_courses: Option<&[String]>,
     include_graph_spec: bool,
     plan_indices: Option<&[usize]>,
 ) -> AnalysisResponse {
-    match build_artifacts(yaml_content, max_plans, include_courses) {
+    match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, include_courses) {
         Ok(artifacts) => build_response(&artifacts, include_graph_spec, plan_indices),
         Err(e) => parse_error_response(&e),
     }
@@ -249,7 +249,7 @@ pub fn execute(
 /// aggregator, and the curated [`SelectedPlans`] alongside the generation
 /// stats. Sibling tools (e.g. the HTML report renderer) consume this struct
 /// so the pipeline is implemented exactly once.
-pub(super) struct AnalysisArtifacts {
+pub(crate) struct AnalysisArtifacts {
     /// Parsed degree program.
     pub program: DegreeProgram,
     /// School/course catalog derived from the program.
@@ -298,7 +298,7 @@ impl AnalysisArtifacts {
 ///
 /// # Errors
 /// Returns a formatted parse-error string when the YAML cannot be parsed.
-pub(super) fn build_artifacts(
+pub(crate) fn build_artifacts(
     yaml_content: &str,
     max_plans: Option<usize>,
     include_courses: Option<Vec<String>>,
@@ -606,7 +606,7 @@ fn build_analysis_followups(
 pub fn execute_json(
     yaml_content: &str,
     max_plans: Option<usize>,
-    include_courses: Option<Vec<String>>,
+    include_courses: Option<&[String]>,
     include_graph_spec: bool,
     plan_indices: Option<&[usize]>,
 ) -> String {
@@ -1074,7 +1074,7 @@ courses:
         let response = execute(
             TEST_YAML,
             Some(10),
-            Some(vec!["CS101".to_string()]),
+            Some(&["CS101".to_string()]),
             false,
             None,
         );

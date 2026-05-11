@@ -4,6 +4,7 @@
 
 pub mod analyze;
 pub mod audit;
+pub mod cache;
 pub mod course_detail;
 pub mod match_courses;
 pub mod pipeline;
@@ -32,6 +33,7 @@ pub mod scaffold;
 // Re-export tool types for convenience
 pub use analyze::AnalyzeDegreeRequest;
 pub use audit::AuditDegreeRequest;
+pub use cache::CacheYamlRequest;
 pub use course_detail::GetCourseDetailRequest;
 pub use match_courses::FindCoursesMatchingRequest;
 pub use pipeline::DegreePipelineRequest;

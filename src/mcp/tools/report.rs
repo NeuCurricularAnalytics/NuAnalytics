@@ -21,7 +21,7 @@ use crate::core::report::degree_report::{DegreeReportContext, DegreeReportGenera
 use crate::core::report::plan_export::{
     export_degree_summary_jsonl, export_index_csv, export_selected_plans, PlanExportConfig,
 };
-use crate::mcp::tools::analyze::{build_artifacts, AnalysisArtifacts};
+use crate::mcp::tools::analyze::AnalysisArtifacts;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -183,17 +183,18 @@ pub struct GenerateDegreeReportResponse {
 pub fn execute(
     yaml_content: &str,
     max_plans: Option<usize>,
-    include_courses: Option<Vec<String>>,
+    include_courses: Option<&[String]>,
     output_dir: Option<&str>,
     write_plan_csvs: Option<bool>,
     write_jsonl_summary: Option<bool>,
     write_index_csv: Option<bool>,
     return_html_inline: Option<bool>,
 ) -> GenerateDegreeReportResponse {
-    let artifacts = match build_artifacts(yaml_content, max_plans, include_courses) {
-        Ok(a) => a,
-        Err(e) => return error_response(&e),
-    };
+    let artifacts =
+        match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, include_courses) {
+            Ok(a) => a,
+            Err(e) => return error_response(&e),
+        };
 
     let html = match render_html(&artifacts) {
         Ok(s) => s,
@@ -250,7 +251,7 @@ pub fn execute(
 pub fn execute_json(
     yaml_content: &str,
     max_plans: Option<usize>,
-    include_courses: Option<Vec<String>>,
+    include_courses: Option<&[String]>,
     output_dir: Option<&str>,
     write_plan_csvs: Option<bool>,
     write_jsonl_summary: Option<bool>,
