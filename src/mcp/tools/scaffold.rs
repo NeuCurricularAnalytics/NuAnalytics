@@ -293,9 +293,15 @@ fn year_slug(catalog_year: Option<&str>) -> String {
     )
 }
 
-/// Build the minimal YAML body. Note this is a hand-rolled string template
-/// (no Tera/Askama in tree) — the format matches the existing samples'
-/// header style so callers can extend with the schema-doc patterns.
+/// Build the minimal YAML body as a hand-rolled string template.
+///
+/// We deliberately don't pipe through `serde_yaml` here because the output
+/// embeds caller-facing `# TODO: …` comments (placeholder hints for
+/// `total_credits`, `major_subjects`) and matches the formatting style of
+/// the existing sample YAMLs — both of which a serializer would erase.
+/// Every interpolated field is either an internal constant or sourced from
+/// IPEDS/CIP lookups, so there's no untrusted input to escape; `{:?}`
+/// formatting handles the inline string quoting.
 fn render_yaml(
     degree_id: &str,
     institution: &str,
@@ -357,6 +363,14 @@ mod tests {
     }
 
     #[test]
+    fn test_institution_slug_falls_back_when_every_word_is_a_stop_word() {
+        // "The And Of" — every capitalized word is filtered out, leaving the
+        // initialism empty. The function must fall back to the first-4-alpha
+        // rule rather than emit a zero-length slug.
+        assert_eq!(institution_slug("The And Of"), "thea");
+    }
+
+    #[test]
     fn test_cip_family_slug_uses_table_for_common_families() {
         assert_eq!(cip_family_slug("11.0101"), "cs");
         assert_eq!(cip_family_slug("11.0701"), "cs");
@@ -379,6 +393,25 @@ mod tests {
         assert_eq!(year_slug(None), "TBD");
         // Edge case: empty string after split → fall back.
         assert_eq!(year_slug(Some("-2025")), "TBD");
+    }
+
+    #[test]
+    fn test_render_yaml_emits_tbd_when_catalog_year_is_none() {
+        // The scaffold must produce a syntactically valid YAML body even
+        // when the caller omits the catalog year. The `catalog_year` field
+        // should fall back to the literal "TBD" placeholder.
+        let yaml = render_yaml(
+            "csu-cs-bscs-TBD",
+            "Colorado State University",
+            "Computer and Information Sciences, General.",
+            None,
+            "semester",
+            "11.0101",
+        );
+        assert!(
+            yaml.contains("catalog_year: \"TBD\""),
+            "render_yaml must emit catalog_year: \"TBD\" when catalog_year is None"
+        );
     }
 
     #[test]

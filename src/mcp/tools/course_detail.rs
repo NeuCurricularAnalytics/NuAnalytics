@@ -178,8 +178,7 @@ pub fn execute(
             graph_result.graph.break_cycles(&graph_result.cycles);
             graph_result.cycles.clear();
         }
-        let resp = populate_static_fields(course_id, &program, &graph_result.graph, None);
-        finalize_response(resp)
+        populate_static_fields(course_id, &program, &graph_result.graph, None)
     }
 }
 
@@ -274,13 +273,12 @@ fn build_response_with_analysis(
         graph_result.cycles.clear();
     }
     let analysis = course_analysis(course_id, artifacts);
-    let resp = populate_static_fields(
+    populate_static_fields(
         course_id,
         &artifacts.program,
         &graph_result.graph,
         Some(analysis),
-    );
-    finalize_response(resp)
+    )
 }
 
 /// Course analysis derived from the aggregated metrics + selected plans.
@@ -363,12 +361,6 @@ fn is_major_subject(course_id: &str, program: &DegreeProgram) -> bool {
     }
     let prefix = &course_id[..digit_pos];
     subjects.iter().any(|s| s.eq_ignore_ascii_case(prefix))
-}
-
-/// Final pass that strips analysis if empty (shouldn't happen, but guards
-/// against future refactors that don't construct it correctly).
-const fn finalize_response(resp: CourseDetailResponse) -> CourseDetailResponse {
-    resp
 }
 
 fn error_response(course_id: &str, error: impl Into<String>) -> CourseDetailResponse {
@@ -520,5 +512,127 @@ courses:
     fn test_cross_listed_field_is_empty_when_absent() {
         let response = execute(TEST_YAML, "CS101", false, None);
         assert!(response.cross_listed_as.is_empty());
+    }
+
+    #[test]
+    fn test_in_major_subjects_handles_prefix_mismatch_and_case_insensitivity() {
+        // major_subjects = ["cs"] (lowercase) should still match CS-prefixed
+        // courses, and MATH-prefixed courses should not match.
+        let yaml = r#"
+degree:
+  id: t
+  institution: T
+  program: T
+  total_credits: 8
+  gpa_minimum: 2.0
+  major_subjects: ["cs"]
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101, MATH101]
+
+courses:
+  CS101:
+    title: Intro CS
+    prefix: CS
+    number: "101"
+    credits: 4
+  MATH101:
+    title: Calc I
+    prefix: MATH
+    number: "101"
+    credits: 4
+"#;
+        let cs = execute(yaml, "CS101", false, None);
+        assert!(cs.success);
+        assert!(
+            cs.in_major_subjects,
+            "CS101 should match major_subjects=[cs] case-insensitively"
+        );
+
+        let math = execute(yaml, "MATH101", false, None);
+        assert!(math.success);
+        assert!(
+            !math.in_major_subjects,
+            "MATH101 must not match major_subjects=[cs]"
+        );
+    }
+
+    #[test]
+    fn test_in_major_subjects_returns_false_when_major_subjects_absent() {
+        // No major_subjects key in the degree → every course must report
+        // in_major_subjects=false rather than defaulting to true.
+        let yaml = r#"
+degree:
+  id: t
+  institution: T
+  program: T
+  total_credits: 4
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101]
+
+courses:
+  CS101:
+    title: Intro CS
+    prefix: CS
+    number: "101"
+    credits: 4
+"#;
+        let response = execute(yaml, "CS101", false, None);
+        assert!(response.success);
+        assert!(!response.in_major_subjects);
+    }
+
+    #[test]
+    fn test_requirements_referencing_lists_every_match() {
+        // CS101 appears in two requirements; both ids must come back.
+        let yaml = r#"
+degree:
+  id: t
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101]
+  advanced:
+    name: Advanced
+    type: all
+    category: major
+    courses: [CS101, CS201]
+
+courses:
+  CS101:
+    title: Intro CS
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS201:
+    title: Data Structures
+    prefix: CS
+    number: "201"
+    credits: 4
+"#;
+        let mut response = execute(yaml, "CS101", false, None);
+        assert!(response.success);
+        response.requirements_referencing.sort();
+        assert_eq!(
+            response.requirements_referencing,
+            vec!["advanced".to_string(), "intro".to_string()]
+        );
     }
 }
