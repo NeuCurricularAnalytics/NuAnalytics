@@ -635,6 +635,47 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_read_file_or_zip_returns_plain_csv_unchanged() {
+        // Sanity-check the non-zip branch: a file without a .zip extension is
+        // read verbatim. Acts as a control for the zip-archive test below so a
+        // regression that swaps the branches still surfaces here.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("ipeds.csv");
+        let body = "year,unitid,cip\n2024,167358,11.0101\n";
+        std::fs::write(&path, body).expect("write csv");
+        let read = read_file_or_zip(&path).expect("read");
+        assert_eq!(read, body);
+    }
+
+    #[test]
+    fn test_read_file_or_zip_extracts_first_csv_from_archive() {
+        // End-to-end exercise of the zip API surface (`ZipArchive::new`,
+        // `archive.len()`, `archive.by_index`, `f.name()`, `read_to_string`)
+        // against the version of zip pinned in Cargo.toml. The zip 2→8 bump
+        // didn't break these calls; this test pins the behaviour so a future
+        // major bump that does break them fails fast.
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("ipeds.zip");
+        let csv_body = "year,unitid,cip\n2024,167358,11.0101\n";
+        {
+            let file = std::fs::File::create(&path).expect("create zip");
+            let mut zip = zip::ZipWriter::new(file);
+            let options: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            // A non-CSV companion entry verifies the .csv discovery loop.
+            zip.start_file("README.txt", options).expect("start readme");
+            zip.write_all(b"meta").expect("write readme");
+            zip.start_file("data.csv", options).expect("start csv");
+            zip.write_all(csv_body.as_bytes()).expect("write csv");
+            zip.finish().expect("finalise zip");
+        }
+
+        let read = read_file_or_zip(&path).expect("read zip");
+        assert_eq!(read, csv_body);
+    }
+
+    #[test]
     fn test_is_relevant_cip_family_11() {
         assert!(is_relevant_cip("110101"));
         assert!(is_relevant_cip("11.0101"));
