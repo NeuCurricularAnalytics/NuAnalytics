@@ -4,6 +4,8 @@
 
 pub mod analyze;
 pub mod audit;
+pub mod course_detail;
+pub mod pipeline;
 pub mod report;
 pub mod schema;
 pub mod shared;
@@ -21,10 +23,14 @@ pub mod degrees;
 pub mod institutions;
 #[cfg(feature = "database")]
 pub mod lookup;
+#[cfg(feature = "database")]
+pub mod scaffold;
 
 // Re-export tool types for convenience
 pub use analyze::AnalyzeDegreeRequest;
 pub use audit::AuditDegreeRequest;
+pub use course_detail::GetCourseDetailRequest;
+pub use pipeline::DegreePipelineRequest;
 pub use report::GenerateDegreeReportRequest;
 pub use schema::GetSchemaRequest;
 pub use validate::{
@@ -49,3 +55,5 @@ pub use degrees::{
 pub use institutions::{GetInstitutionRequest, SearchInstitutionsRequest};
 #[cfg(feature = "database")]
 pub use lookup::GetLookupCodesRequest;
+#[cfg(feature = "database")]
+pub use scaffold::ScaffoldDegreeYamlRequest;

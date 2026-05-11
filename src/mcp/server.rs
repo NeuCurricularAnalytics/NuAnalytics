@@ -6,9 +6,10 @@ use std::sync::Arc;
 
 use crate::core::config::DatabaseConfig;
 use crate::mcp::tools::{
-    analyze, audit, report, schema, shared, validate, visualize, AnalyzeDegreeRequest,
-    AuditDegreeRequest, GenerateDegreeReportRequest, GetCurriculumVisualizationRequest,
-    GetSchemaRequest, ValidateDegreeRequest,
+    analyze, audit, course_detail, pipeline, report, schema, shared, validate, visualize,
+    AnalyzeDegreeRequest, AuditDegreeRequest, DegreePipelineRequest, GenerateDegreeReportRequest,
+    GetCourseDetailRequest, GetCurriculumVisualizationRequest, GetSchemaRequest,
+    ValidateDegreeRequest,
 };
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -22,10 +23,11 @@ use rmcp::{
 use crate::core::database::DbClient;
 #[cfg(feature = "database")]
 use crate::mcp::tools::{
-    cip_codes, completions, degrees, institutions, lookup, CompareDegreesRequest,
+    cip_codes, completions, degrees, institutions, lookup, scaffold, CompareDegreesRequest,
     CompletionDemographicsRequest, GetDegreeRequest, GetInstitutionCompletionsRequest,
     GetInstitutionRequest, GetLookupCodesRequest, GetSchoolsCompletionDemographicsRequest,
-    SearchCipCodesRequest, SearchDegreesRequest, SearchInstitutionsRequest, StoreDegreeRequest,
+    ScaffoldDegreeYamlRequest, SearchCipCodesRequest, SearchDegreesRequest,
+    SearchInstitutionsRequest, StoreDegreeRequest,
 };
 
 // ============================================================================
@@ -137,6 +139,53 @@ impl NuAnalyticsMcpServer {
                 include_courses,
                 include_graph_spec,
                 plan_indices.as_deref(),
+            )
+        })
+    }
+
+    /// Look up a single course's prerequisites, dependents, and stats
+    #[tool(
+        description = "Return everything an LLM typically wants to know about one course in a degree YAML: title/credits/level, raw + direct + transitive prerequisites, dependents, requirements that reference it, cross-listed equivalents, and (with include_analysis=true, default) per-course metric medians + term placement in every selected plan. Set include_analysis=false to skip the analysis pipeline for static-only data (~10x faster). Same yaml source modes as analyze_degree (yaml_content / yaml_path / degree_id). Use this instead of analyze_degree when the question is 'tell me about CS370 in this degree'."
+    )]
+    fn get_course_detail(&self, Parameters(req): Parameters<GetCourseDetailRequest>) -> String {
+        let course_id = req.course_id.clone();
+        let include_analysis = req.include_analysis.unwrap_or(true);
+        let max_plans = req.max_plans;
+        let source = match shared::parse_yaml_source(req.yaml_content, req.yaml_path, req.degree_id)
+        {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        self.run_yaml_tool("get_course_detail", source, move |yaml| {
+            course_detail::execute_json(yaml, &course_id, include_analysis, max_plans)
+        })
+    }
+
+    /// Run validate + audit + analyze in a single MCP call
+    #[tool(
+        description = "Combined pipeline: runs validate_degree, audit_degree, and analyze_degree on the same YAML in one call. Short-circuits when validate hits a YAML parse error (audit/analyze are then null). Use skip_audit / skip_analyze to stop earlier when you only need validate (or validate + audit). Same yaml source modes as the individual tools (yaml_content / yaml_path / degree_id). Forwards allow_unmatched_patterns to validate, chain_threshold to audit, max_plans + include_courses to analyze. Returns {validate, audit?, analyze?} — saves three round-trips for the common 'look at this degree' prompt."
+    )]
+    fn degree_pipeline(&self, Parameters(req): Parameters<DegreePipelineRequest>) -> String {
+        let allow_unmatched_patterns = req.allow_unmatched_patterns.unwrap_or(false);
+        let chain_threshold = req.chain_threshold;
+        let max_plans = req.max_plans;
+        let include_courses = req.include_courses.map(|s| shared::parse_comma_list(&s));
+        let skip_audit = req.skip_audit.unwrap_or(false);
+        let skip_analyze = req.skip_analyze.unwrap_or(false);
+        let source = match shared::parse_yaml_source(req.yaml_content, req.yaml_path, req.degree_id)
+        {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        self.run_yaml_tool("degree_pipeline", source, move |yaml| {
+            pipeline::execute_json(
+                yaml,
+                allow_unmatched_patterns,
+                chain_threshold,
+                max_plans,
+                include_courses,
+                skip_audit,
+                skip_analyze,
             )
         })
     }
@@ -279,6 +328,20 @@ impl NuAnalyticsMcpServer {
     ) -> String {
         self.call_db("get_completion_demographics", |db| async move {
             completions::execute_json(&db, req).await
+        })
+    }
+
+    /// Generate a starter degree YAML for a UNITID + CIP code
+    #[cfg(feature = "database")]
+    #[tool(
+        description = "Generate a minimal degree YAML scaffold for a UNITID + CIP code: pulls institution name from IPEDS, CIP title from the cip_codes lookup, derives a slug like \"{inst-slug}-{cip-slug}-bscs-{year}\", and emits a `degree:` header with empty `requirements:` + `courses:` ready for the caller to fill in. Defaults system_type to \"semester\" (override with the parameter). Optional catalog_year populates both the slug suffix and the YAML field. Removes the cold-start barrier for building a new degree definition."
+    )]
+    fn scaffold_degree_yaml(
+        &self,
+        Parameters(req): Parameters<ScaffoldDegreeYamlRequest>,
+    ) -> String {
+        self.call_db("scaffold_degree_yaml", |db| async move {
+            scaffold::execute_json(&db, req).await
         })
     }
 

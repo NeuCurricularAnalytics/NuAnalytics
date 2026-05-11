@@ -96,8 +96,12 @@ pub struct AnalyzeDegreeRequest {
     pub plan_indices: Option<String>,
 }
 
-/// Serializable metric statistics (includes quartiles for box plots)
-#[derive(Debug, Serialize)]
+/// Serializable metric statistics (includes quartiles for box plots).
+///
+/// Implements `Default` for zero-state fallback when a course has not been
+/// tracked by the aggregator (e.g. course-detail responses for an elective
+/// placeholder).
+#[derive(Debug, Default, Serialize)]
 pub struct MetricStatsJson {
     /// Minimum value
     pub min: f64,
@@ -547,7 +551,7 @@ fn format_parse_error(e: &DegreeParseError) -> String {
     }
 }
 
-const fn metric_stats_json(s: &MetricStats) -> MetricStatsJson {
+pub(super) const fn metric_stats_json(s: &MetricStats) -> MetricStatsJson {
     MetricStatsJson {
         min: s.min,
         q1: s.q1,
