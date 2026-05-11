@@ -97,6 +97,24 @@ pub struct AnalyzeDegreeRequest {
         description = "Comma-separated selected_plans indices to include graph_spec for (e.g. \"0,2\"). Only honored when include_graph_spec=true. Omit to include specs for all selected plans."
     )]
     pub plan_indices: Option<String>,
+
+    /// Emit a `per_course_metrics` array alongside the degree-level
+    /// statistics. Default false — the metrics are buried in the rendered
+    /// `graph_spec` payload otherwise, which costs ~30 KB per plan and
+    /// forces the caller to render HTML just to read the numbers.
+    ///
+    /// When true, the response gains one entry per course the aggregator
+    /// tracked (typically the union of courses that appeared in any of
+    /// the analyzed plans) with the standard 5-number summary for
+    /// complexity, centrality, delay, and blocking.
+    #[schemars(
+        description = "Include per-course metric medians (complexity, centrality, delay, blocking) for every tracked course in the response. Default false. Adds ~50 entries for a typical CS degree."
+    )]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
+    )]
+    pub include_per_course_metrics: Option<bool>,
 }
 
 /// Serializable metric statistics (includes quartiles for box plots).
@@ -149,6 +167,30 @@ pub struct PlanSummaryJson {
     /// `get_curriculum_visualization` to render an interactive HTML graph.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub graph_spec: Option<CurriculumGraphSpec>,
+}
+
+/// Per-course aggregate metrics for one tracked course.
+///
+/// Surfaced on `analyze_degree` responses when
+/// `include_per_course_metrics=true`. Each metric uses the same 5-number
+/// summary shape as the degree-level [`MetricStatsJson`] so callers can
+/// reuse the same boxplot-rendering code path.
+#[derive(Debug, Serialize)]
+pub struct CourseMetricsJson {
+    /// Course identifier (matches the keys in `program.courses`).
+    pub course_id: String,
+    /// Number of generated plans that contained this course. Lets the
+    /// caller weight metric reliability — a course that appeared in 3 of
+    /// 500 plans has noisier numbers than one in 480.
+    pub plan_count: usize,
+    /// Structural complexity metric.
+    pub complexity: MetricStatsJson,
+    /// Centrality metric (how often the course sits on a critical path).
+    pub centrality: MetricStatsJson,
+    /// Delay factor — terms separating the course from the degree end.
+    pub delay: MetricStatsJson,
+    /// Blocking factor — number of downstream courses gated by this one.
+    pub blocking: MetricStatsJson,
 }
 
 /// A single term in a plan schedule
@@ -204,6 +246,13 @@ pub struct AnalysisResponse {
     /// Selected special plans
     pub selected_plans: Vec<PlanSummaryJson>,
 
+    /// Per-course aggregate metrics, one entry per course the aggregator
+    /// tracked. Empty (and omitted from the JSON) unless the request set
+    /// `include_per_course_metrics=true` — the array runs ~50 entries for a
+    /// typical CS degree and most callers don't need it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub per_course_metrics: Vec<CourseMetricsJson>,
+
     /// Structured hints about the next MCP call worth making, based on the
     /// analyze outcome (truncation, long critical path, small full
     /// population, etc.).
@@ -230,6 +279,8 @@ const DEFAULT_MAX_PLANS: usize = 500;
 ///   selected plan (default false; suppresses ~30 KB per plan)
 /// * `plan_indices` - When `Some`, only the listed `selected_plans` indices
 ///   receive a `graph_spec` (only consulted when `include_graph_spec=true`)
+/// * `include_per_course_metrics` - When true, populates the
+///   `per_course_metrics` array on the response (default false)
 #[must_use]
 pub fn execute(
     yaml_content: &str,
@@ -237,9 +288,15 @@ pub fn execute(
     include_courses: Option<&[String]>,
     include_graph_spec: bool,
     plan_indices: Option<&[usize]>,
+    include_per_course_metrics: bool,
 ) -> AnalysisResponse {
     match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, include_courses) {
-        Ok(artifacts) => build_response(&artifacts, include_graph_spec, plan_indices),
+        Ok(artifacts) => build_response(
+            &artifacts,
+            include_graph_spec,
+            plan_indices,
+            include_per_course_metrics,
+        ),
         Err(e) => parse_error_response(&e),
     }
 }
@@ -399,6 +456,7 @@ fn parse_error_response(error: &str) -> AnalysisResponse {
         longest_delay: None,
         total_credits: None,
         selected_plans: vec![],
+        per_course_metrics: vec![],
         tool_followups: vec![ToolFollowup {
             tool: TOOL_VALIDATE_DEGREE,
             reason: "analyze_degree couldn't parse the YAML; validate_degree surfaces the parse error in a more structured form.".to_string(),
@@ -464,6 +522,7 @@ fn build_response(
     artifacts: &AnalysisArtifacts,
     include_graph_spec: bool,
     plan_indices: Option<&[usize]>,
+    include_per_course_metrics: bool,
 ) -> AnalysisResponse {
     let degree_stats = artifacts.aggregator.degree_stats();
 
@@ -520,6 +579,11 @@ fn build_response(
         was_truncated,
         is_full_population,
     );
+    let per_course_metrics = if include_per_course_metrics {
+        build_per_course_metrics(artifacts)
+    } else {
+        Vec::new()
+    };
 
     AnalysisResponse {
         success: true,
@@ -536,8 +600,32 @@ fn build_response(
         longest_delay: Some(metric_stats_json(&degree_stats.longest_delay)),
         total_credits: Some(metric_stats_json(&degree_stats.total_credits)),
         selected_plans,
+        per_course_metrics,
         tool_followups,
     }
+}
+
+/// Materialise every course the aggregator tracked into a sorted
+/// `Vec<CourseMetricsJson>`. Sorting by `course_id` makes the response
+/// deterministic across runs so diff-friendly snapshot tests are practical.
+fn build_per_course_metrics(artifacts: &AnalysisArtifacts) -> Vec<CourseMetricsJson> {
+    let mut ids = artifacts.aggregator.course_ids();
+    ids.sort();
+    ids.into_iter()
+        .filter_map(|id| {
+            artifacts.aggregator.course_stats(&id).map(|s| {
+                let plan_count = s.plan_count;
+                CourseMetricsJson {
+                    course_id: id,
+                    plan_count,
+                    complexity: metric_stats_json(&s.complexity),
+                    centrality: metric_stats_json(&s.centrality),
+                    delay: metric_stats_json(&s.delay),
+                    blocking: metric_stats_json(&s.blocking),
+                }
+            })
+        })
+        .collect()
 }
 
 /// Build follow-up suggestions for an analyze response. Triggered on three
@@ -610,13 +698,16 @@ fn build_analysis_followups(
 /// * `include_graph_spec` - When true, include `graph_spec` per selected plan
 /// * `plan_indices` - Optional whitelist of `selected_plans` indices for
 ///   `graph_spec` inclusion; consulted only when `include_graph_spec=true`
+/// * `include_per_course_metrics` - When true, populate `per_course_metrics`
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn execute_json(
     yaml_content: &str,
     max_plans: Option<usize>,
     include_courses: Option<&[String]>,
     include_graph_spec: bool,
     plan_indices: Option<&[usize]>,
+    include_per_course_metrics: bool,
 ) -> String {
     let response = execute(
         yaml_content,
@@ -624,6 +715,7 @@ pub fn execute_json(
         include_courses,
         include_graph_spec,
         plan_indices,
+        include_per_course_metrics,
     );
     serde_json::to_string_pretty(&response)
         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
@@ -966,7 +1058,7 @@ courses:
 
     #[test]
     fn test_analyze_valid_degree() {
-        let response = execute(TEST_YAML, Some(10), None, false, None);
+        let response = execute(TEST_YAML, Some(10), None, false, None, false);
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
         assert!(response.complexity.is_some());
@@ -1026,7 +1118,7 @@ courses:
     fn test_tool_followups_suggest_audit_on_small_full_population() {
         // TEST_YAML resolves to a single valid plan ⇒ is_full_population=true
         // and plans_processed < 50, which triggers the audit suggestion.
-        let response = execute(TEST_YAML, Some(500), None, false, None);
+        let response = execute(TEST_YAML, Some(500), None, false, None, false);
         assert!(response.success);
         assert!(response.is_full_population);
         assert!(
@@ -1049,14 +1141,14 @@ courses:
 
     #[test]
     fn test_analyze_malformed_yaml() {
-        let response = execute("not: valid: yaml: {{", Some(10), None, false, None);
+        let response = execute("not: valid: yaml: {{", Some(10), None, false, None, false);
         assert!(!response.success);
         assert!(response.error.is_some());
     }
 
     #[test]
     fn test_analyze_json_output() {
-        let json = execute_json(TEST_YAML, Some(10), None, false, None);
+        let json = execute_json(TEST_YAML, Some(10), None, false, None, false);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["success"].as_bool().unwrap());
         assert!(parsed["plans_analyzed"].as_u64().unwrap() > 0);
@@ -1064,7 +1156,7 @@ courses:
 
     #[test]
     fn test_selected_plans_have_schedules() {
-        let response = execute(TEST_YAML, Some(10), None, false, None);
+        let response = execute(TEST_YAML, Some(10), None, false, None, false);
         for plan in &response.selected_plans {
             assert!(
                 !plan.schedule.is_empty(),
@@ -1084,6 +1176,7 @@ courses:
             Some(&["CS101".to_string()]),
             false,
             None,
+            false,
         );
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
@@ -1108,7 +1201,7 @@ courses:
     fn test_analyze_omits_graph_spec_by_default() {
         // include_graph_spec=false (default) — graph_spec must be None in-memory and
         // skipped entirely from the JSON output (no `"graph_spec": null` either).
-        let response = execute(TEST_YAML, Some(10), None, false, None);
+        let response = execute(TEST_YAML, Some(10), None, false, None, false);
         assert!(response.success);
         assert!(!response.selected_plans.is_empty());
         for plan in &response.selected_plans {
@@ -1119,7 +1212,8 @@ courses:
             );
         }
         let json: serde_json::Value =
-            serde_json::from_str(&execute_json(TEST_YAML, Some(10), None, false, None)).unwrap();
+            serde_json::from_str(&execute_json(TEST_YAML, Some(10), None, false, None, false))
+                .unwrap();
         for plan in json["selected_plans"].as_array().unwrap() {
             assert!(
                 plan.get("graph_spec").is_none(),
@@ -1130,7 +1224,7 @@ courses:
 
     #[test]
     fn test_analyze_includes_graph_spec_when_requested() {
-        let response = execute(TEST_YAML, Some(10), None, true, None);
+        let response = execute(TEST_YAML, Some(10), None, true, None, false);
         assert!(response.success);
         assert!(!response.selected_plans.is_empty());
         for plan in &response.selected_plans {
@@ -1150,7 +1244,7 @@ courses:
     fn test_plan_indices_filters_graph_spec_attachment() {
         // Only index 0 should carry graph_spec; the rest must be None even
         // though include_graph_spec=true.
-        let response = execute(TEST_YAML, Some(10), None, true, Some(&[0]));
+        let response = execute(TEST_YAML, Some(10), None, true, Some(&[0]), false);
         assert!(response.success);
         let mut plans = response.selected_plans.into_iter();
         let first = plans.next().expect("at least one selected plan");
@@ -1170,7 +1264,7 @@ courses:
     #[test]
     fn test_plan_indices_ignored_when_include_graph_spec_false() {
         // plan_indices is a no-op when graph_spec attachment is off.
-        let response = execute(TEST_YAML, Some(10), None, false, Some(&[0, 1, 2]));
+        let response = execute(TEST_YAML, Some(10), None, false, Some(&[0, 1, 2]), false);
         assert!(response.success);
         for plan in &response.selected_plans {
             assert!(
@@ -1183,7 +1277,7 @@ courses:
     #[test]
     fn test_plan_indices_out_of_range_silently_ignored() {
         // Index past the end is dropped without error.
-        let response = execute(TEST_YAML, Some(10), None, true, Some(&[999]));
+        let response = execute(TEST_YAML, Some(10), None, true, Some(&[999]), false);
         assert!(response.success);
         for plan in &response.selected_plans {
             assert!(
@@ -1199,12 +1293,44 @@ courses:
         // With max_plans well above the population we expect:
         //   was_truncated=false, is_full_population=true,
         //   population_size==plans_analyzed.
-        let response = execute(TEST_YAML, Some(500), None, false, None);
+        let response = execute(TEST_YAML, Some(500), None, false, None, false);
         assert!(response.success);
         assert!(!response.was_truncated);
         assert!(response.is_full_population);
         assert_eq!(response.population_size, response.plans_analyzed);
         assert!(response.population_size > 0);
+    }
+
+    #[test]
+    fn test_per_course_metrics_omitted_by_default_present_when_flag_set() {
+        // Default: per_course_metrics empty and skipped during serialisation.
+        let off = execute(TEST_YAML, Some(10), None, false, None, false);
+        assert!(off.per_course_metrics.is_empty());
+        let off_json = serde_json::to_string(&off).unwrap();
+        assert!(
+            !off_json.contains("\"per_course_metrics\""),
+            "field must be skipped when empty"
+        );
+
+        // Opted-in: one entry per tracked course, sorted by course_id,
+        // each carrying the four metric stats objects.
+        let on = execute(TEST_YAML, Some(10), None, false, None, true);
+        assert!(on.success);
+        assert!(
+            !on.per_course_metrics.is_empty(),
+            "tracked courses must appear when flag is set"
+        );
+        let ids: Vec<&str> = on
+            .per_course_metrics
+            .iter()
+            .map(|c| c.course_id.as_str())
+            .collect();
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted, "entries must be sorted by course_id");
+        for entry in &on.per_course_metrics {
+            assert!(entry.plan_count > 0);
+        }
     }
 
     #[test]
