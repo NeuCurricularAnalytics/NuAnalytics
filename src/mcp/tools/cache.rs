@@ -12,7 +12,7 @@
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
-use crate::mcp::cache::YAML_CACHE;
+use crate::mcp::cache::{YAML_CACHE, YAML_CACHE_TTL};
 
 // ============================================================================
 // Request / Response
@@ -41,6 +41,9 @@ pub struct CacheYamlResponse {
     pub bytes: usize,
     /// Number of entries currently in the cache after this insertion.
     pub cache_entries: usize,
+    /// TTL in seconds — how long this handle stays valid from insertion.
+    /// Surfaced explicitly so callers can plan re-caching before expiry.
+    pub ttl_seconds: u64,
     /// Human-readable hint about how to use the handle.
     pub note: &'static str,
 }
@@ -70,7 +73,8 @@ pub fn execute(yaml_content: String) -> CacheYamlResponse {
         handle,
         bytes,
         cache_entries,
-        note: "Pass `handle` as `degree_id` to validate_degree / audit_degree / analyze_degree / generate_degree_report / get_course_detail / render_plan_graph / find_courses_matching / degree_pipeline. TTL ~1 hour.",
+        ttl_seconds: YAML_CACHE_TTL.as_secs(),
+        note: "Pass `handle` as `degree_id` to validate_degree / audit_degree / analyze_degree / generate_degree_report / get_course_detail / render_plan_graph / find_courses_matching / degree_pipeline. Subsequent responses surface cache_ttl_remaining_seconds so you can re-cache before expiry.",
     }
 }
 

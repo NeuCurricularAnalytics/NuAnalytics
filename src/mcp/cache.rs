@@ -33,7 +33,12 @@ use crate::mcp::tools::analyze::AnalysisArtifacts;
 /// before falling through to the sample registry or the DB lookup.
 pub const YAML_CACHE_PREFIX: &str = "cache:";
 
-const YAML_CACHE_TTL: Duration = Duration::from_secs(60 * 60);
+/// How long a `cache_yaml` handle stays valid.
+///
+/// 24 h spans a typical multi-session investigation: validate → audit →
+/// analyze → iterate on recommendations → regenerate plans without
+/// re-pasting the YAML body each time.
+pub const YAML_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const ARTIFACT_CACHE_CAPACITY: usize = 4;
 
 // ============================================================================
@@ -77,14 +82,16 @@ impl YamlCache {
         handle
     }
 
-    /// Fetch by handle. Returns `None` if missing or expired.
+    /// Fetch by handle. Returns the body plus the remaining TTL on success.
+    /// Returns `None` if missing or expired. The remaining TTL lets callers
+    /// surface "this handle expires in N seconds" so they can pre-emptively
+    /// re-cache before it lapses mid-session.
     #[must_use]
-    pub fn get(&self, handle: &str) -> Option<Arc<str>> {
+    pub fn get(&self, handle: &str) -> Option<(Arc<str>, Duration)> {
         let entry = self.entries.get(handle)?;
-        if entry.inserted_at.elapsed() > YAML_CACHE_TTL {
-            return None;
-        }
-        Some(entry.body.clone())
+        let elapsed = entry.inserted_at.elapsed();
+        let remaining = YAML_CACHE_TTL.checked_sub(elapsed)?;
+        Some((entry.body.clone(), remaining))
     }
 
     /// Current entry count. Exposed for the `cache_yaml` response so callers
@@ -263,8 +270,26 @@ mod tests {
         let mut cache = YamlCache::default();
         let body = "degree:\n  id: round-trip\n".to_string();
         let handle = cache.insert(body.clone());
-        let retrieved = cache.get(&handle).expect("present after insert");
+        let (retrieved, remaining) = cache.get(&handle).expect("present after insert");
         assert_eq!(&*retrieved, body);
+        // Fresh insert: remaining TTL should be close to the full window.
+        // Allow a small slack for the time elapsed between insert and get.
+        assert!(remaining <= YAML_CACHE_TTL);
+        let near_full = YAML_CACHE_TTL
+            .checked_sub(Duration::from_secs(60))
+            .expect("YAML_CACHE_TTL must exceed 60s");
+        assert!(
+            remaining > near_full,
+            "remaining ({remaining:?}) should be within 60s of full TTL ({YAML_CACHE_TTL:?})"
+        );
+    }
+
+    #[test]
+    fn test_yaml_cache_ttl_is_24_hours() {
+        // Bumped from 1 h to 24 h so handles survive a multi-session
+        // investigation; guard the constant directly so accidental edits
+        // (or future "tighten the cache" refactors) get caught.
+        assert_eq!(YAML_CACHE_TTL, Duration::from_secs(24 * 60 * 60));
     }
 
     #[test]

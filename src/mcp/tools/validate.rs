@@ -12,7 +12,8 @@ use crate::core::{
     ValidationResult, ValidationWarning,
 };
 use crate::mcp::tools::shared::{
-    ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_AUDIT_DEGREE, TOOL_GET_DEGREE_SCHEMA,
+    format_yaml_context, ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_AUDIT_DEGREE,
+    TOOL_GET_DEGREE_SCHEMA,
 };
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
@@ -102,8 +103,20 @@ pub struct DegreeContext {
 pub struct ValidationResponse {
     /// Whether the degree program is valid
     pub is_valid: bool,
-    /// Parse error if YAML couldn't be parsed
+    /// Parse error message when the YAML couldn't be parsed.
     pub parse_error: Option<String>,
+    /// 1-indexed line of the parse error, pulled from `serde_yaml::Location`
+    /// when available. `None` for non-positional errors (e.g. serialise failure).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parse_error_line: Option<usize>,
+    /// 1-indexed column of the parse error, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parse_error_column: Option<usize>,
+    /// ±3 source-line context window around the parse error with a caret
+    /// pointing at the column. Lets callers see the offending statement
+    /// without re-opening the YAML.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parse_error_context: Option<String>,
     /// List of validation errors
     pub errors: Vec<ValidationErrorInfo>,
     /// List of validation warnings
@@ -160,9 +173,20 @@ pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> Validation
     let program = match parse_degree_yaml(yaml_content) {
         Ok(p) => p,
         Err(e) => {
+            let (line, column) = match &e {
+                DegreeParseError::YamlError { line, column, .. } => (*line, *column),
+                DegreeParseError::IoError(_) => (None, None),
+            };
+            let context = match (line, column) {
+                (Some(l), Some(c)) => Some(format_yaml_context(yaml_content, l, c)),
+                _ => None,
+            };
             return ValidationResponse {
                 is_valid: false,
                 parse_error: Some(format_parse_error(&e)),
+                parse_error_line: line,
+                parse_error_column: column,
+                parse_error_context: context,
                 errors: vec![],
                 warnings: vec![],
                 context: None,
@@ -222,6 +246,9 @@ pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> Validation
     ValidationResponse {
         is_valid: result.is_valid,
         parse_error: None,
+        parse_error_line: None,
+        parse_error_column: None,
+        parse_error_context: None,
         errors,
         warnings,
         context: Some(context),
@@ -276,7 +303,21 @@ pub fn execute_json(yaml_content: &str, allow_unmatched_patterns: bool) -> Strin
 fn format_parse_error(e: &DegreeParseError) -> String {
     match e {
         DegreeParseError::IoError(msg) => format!("File error: {msg}"),
-        DegreeParseError::YamlError(msg) => format!("YAML syntax error: {msg}"),
+        DegreeParseError::YamlError {
+            message,
+            line,
+            column,
+        } => {
+            // Prefix the structured location ahead of the raw message so the
+            // human-readable string still carries the position info — handy
+            // for log scraping and for clients that don't parse the JSON.
+            match (line, column) {
+                (Some(l), Some(c)) => {
+                    format!("YAML syntax error at line {l} column {c}: {message}")
+                }
+                _ => format!("YAML syntax error: {message}"),
+            }
+        }
     }
 }
 
@@ -660,6 +701,44 @@ courses:
         let response = execute("not: valid: yaml: {{", false);
         assert!(!response.is_valid);
         assert!(response.parse_error.is_some());
+    }
+
+    #[test]
+    fn test_parse_error_surfaces_structured_line_column_and_context() {
+        // Construct a YAML where line 3 has a clearly broken mapping the
+        // serde_yaml parser will pin to that line — used to confirm we
+        // surface line, column, and a ±3-line context window with a caret.
+        let yaml =
+            "degree:\n  id: t\n  total_credits: [not, a, number]\nrequirements: {}\ncourses: {}\n";
+        let response = execute(yaml, false);
+        assert!(!response.is_valid);
+        assert!(response.parse_error.is_some(), "expected a parse error");
+        assert!(
+            response.parse_error_line.is_some(),
+            "parse_error_line must be populated; got response: {response:?}"
+        );
+        assert!(
+            response.parse_error_column.is_some(),
+            "parse_error_column must be populated"
+        );
+        let context = response
+            .parse_error_context
+            .as_deref()
+            .expect("parse_error_context must be populated when line+column are known");
+        assert!(
+            context.contains("^ here"),
+            "context must carry a caret marker; got:\n{context}"
+        );
+        assert!(
+            context.lines().count() >= 2,
+            "context should span multiple lines, got:\n{context}"
+        );
+        // The structured message should also surface the location for log scrapers.
+        let msg = response.parse_error.as_deref().unwrap();
+        assert!(
+            msg.contains("line"),
+            "parse_error message should mention 'line': got {msg:?}"
+        );
     }
 
     #[test]

@@ -208,6 +208,52 @@ pub fn to_json_pretty(value: &impl serde::Serialize) -> String {
         .unwrap_or_else(|e| error_json(format!("Serialization failed: {e}")))
 }
 
+/// Render a ±3-line context window around a 1-indexed `line` in `yaml`.
+///
+/// A caret points at `column` under the offending line. Used to give
+/// `validate_degree` (and any future tool that surfaces parse errors) an
+/// editor-style snippet that pins down which YAML statement broke.
+///
+/// Lines are 1-indexed to match `serde_yaml::Location`; the function clamps
+/// to `[1, total_lines]` so an out-of-range location still emits a valid
+/// window. Returns an empty string when `yaml` is empty.
+#[must_use]
+pub fn format_yaml_context(yaml: &str, line: usize, column: usize) -> String {
+    use std::fmt::Write as _;
+
+    if yaml.is_empty() {
+        return String::new();
+    }
+    let lines: Vec<&str> = yaml.lines().collect();
+    let total = lines.len();
+    if total == 0 {
+        return String::new();
+    }
+    let target = line.clamp(1, total);
+    let start = target.saturating_sub(3).max(1);
+    let end = (target + 3).min(total);
+
+    // Pad the line-number column to the widest number we'll print so the
+    // caret-column alignment is preserved regardless of digit count.
+    let gutter_width = end.to_string().len();
+
+    let mut out = String::new();
+    for (idx, content) in lines.iter().enumerate().take(end).skip(start - 1) {
+        let n = idx + 1;
+        let _ = writeln!(out, "{n:>gutter_width$}: {content}");
+        if n == target {
+            // Build the caret line: same gutter padding + ": " + spaces up
+            // to (column - 1) + a caret. Column is 1-indexed; column 0 is
+            // treated as 1 so we never produce a negative offset.
+            let caret_col = column.max(1) - 1;
+            let pad = " ".repeat(gutter_width + 2 + caret_col);
+            out.push_str(&pad);
+            out.push_str("^ here\n");
+        }
+    }
+    out
+}
+
 // ============================================================================
 // Lenient option deserializers
 // ============================================================================
@@ -331,6 +377,50 @@ mod tests {
     fn test_error_json_formats_message() {
         let out = error_json("something went wrong");
         assert_eq!(out, r#"{"error":"something went wrong"}"#);
+    }
+
+    #[test]
+    fn test_format_yaml_context_includes_caret_and_surrounding_lines() {
+        let yaml = "one\ntwo\nthree\nfour\nfive\nsix\nseven\n";
+        // Line 4, column 3 → "four", caret should sit under the 'u'.
+        let ctx = format_yaml_context(yaml, 4, 3);
+        assert!(ctx.contains("four"), "context must include offending line");
+        assert!(ctx.contains("^ here"));
+        // ±3 lines means we should see lines 1..=7 (clamped to total).
+        assert!(ctx.contains("one"));
+        assert!(ctx.contains("seven"));
+    }
+
+    #[test]
+    fn test_format_yaml_context_clamps_to_file_bounds() {
+        let yaml = "first\nsecond\nthird\n";
+        // Line 99 is well past EOF — should clamp to the last line.
+        let ctx = format_yaml_context(yaml, 99, 1);
+        assert!(ctx.contains("third"));
+        assert!(ctx.contains("^ here"));
+    }
+
+    #[test]
+    fn test_format_yaml_context_returns_empty_for_empty_input() {
+        assert!(format_yaml_context("", 1, 1).is_empty());
+    }
+
+    #[test]
+    fn test_format_yaml_context_caret_aligns_with_column() {
+        // Use a known-width gutter (single-digit line numbers) so we can
+        // count the caret offset precisely. Line 3 column 5 means the caret
+        // should sit 4 spaces past the ": " separator (column-1 spaces).
+        let yaml = "alpha\nbeta\ngamma-x\ndelta\nepsilon\n";
+        let ctx = format_yaml_context(yaml, 3, 5);
+        // Find the caret line and check its leading spaces.
+        let caret_line = ctx
+            .lines()
+            .find(|l| l.contains("^ here"))
+            .expect("caret line must exist");
+        // Gutter is "3: " (3 chars), then 4 spaces to reach column 5.
+        // So the caret sits at index 3 + 4 = 7.
+        let caret_pos = caret_line.find('^').expect("caret present");
+        assert_eq!(caret_pos, 7, "caret offset mismatch in: {caret_line:?}");
     }
 
     #[test]

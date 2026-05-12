@@ -112,12 +112,15 @@ fn caching_yaml_and_referencing_via_degree_id_round_trips() {
     assert!(handle.starts_with("cache:"));
 
     // The handle must be retrievable from the same process-wide cache.
-    let body = YAML_CACHE
+    // `get` returns (body, remaining_ttl) — assert both.
+    let (body, remaining) = YAML_CACHE
         .lock()
         .expect("yaml cache mutex poisoned")
         .get(&handle)
         .expect("cache hit");
     assert_eq!(&*body, &yaml);
+    // Fresh insert ⇒ remaining TTL is positive and at most the full window.
+    assert!(remaining.as_secs() > 0, "remaining TTL must be positive");
 
     // Re-caching the same body returns the same handle (idempotent).
     let again_json = cache::execute_json(yaml.clone());

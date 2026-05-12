@@ -463,24 +463,27 @@ impl NuAnalyticsMcpServer {
     /// Run a degree-pipeline tool against a [`YamlSource`].
     ///
     /// Resolves the YAML from inline content, a filesystem path, or a stored
-    /// degree id, then invokes `run` with the resolved string. Errors at any
-    /// resolution step return a JSON error string.
+    /// degree id, then invokes `run` with the resolved string. When the source
+    /// was a `cache:` handle, the returned JSON is augmented with
+    /// `cache_handle` + `cache_ttl_remaining_seconds` so callers can plan
+    /// re-caching. Errors at any resolution step return a JSON error string.
     fn run_yaml_tool<F>(&self, tool: &'static str, source: shared::YamlSource, run: F) -> String
     where
         F: FnOnce(&str) -> String,
     {
-        let yaml = match source {
-            shared::YamlSource::Content(y) => y,
+        let (yaml, cache_meta) = match source {
+            shared::YamlSource::Content(y) => (y, None),
             shared::YamlSource::Path(p) => match shared::read_yaml_file(&p) {
-                Ok(y) => y,
+                Ok(y) => (y, None),
                 Err(e) => return e,
             },
             shared::YamlSource::DegreeId(id) => match self.resolve_degree_id(tool, &id) {
-                Ok(y) => y,
+                Ok((y, meta)) => (y, meta),
                 Err(e) => return e,
             },
         };
-        guard_panics(tool, || run(&yaml))
+        let raw = guard_panics(tool, || run(&yaml));
+        inject_cache_meta(&raw, cache_meta)
     }
 
     /// Resolve a `degree_id` to a YAML body using the layered lookup:
@@ -498,7 +501,7 @@ impl NuAnalyticsMcpServer {
         &self,
         #[cfg_attr(not(feature = "database"), allow(unused_variables))] tool: &'static str,
         id: &str,
-    ) -> Result<String, String> {
+    ) -> Result<(String, Option<CacheMeta>), String> {
         if id.starts_with(crate::mcp::cache::YAML_CACHE_PREFIX) {
             let cache = crate::mcp::cache::YAML_CACHE
                 .lock()
@@ -508,25 +511,34 @@ impl NuAnalyticsMcpServer {
                     Err(serde_json::json!({
                         "error": "Unknown or expired YAML cache handle",
                         "degree_id": id,
-                        "hint": "Call cache_yaml(yaml_content=...) to mint a fresh handle. Cache TTL is ~1 hour.",
+                        "hint": "Call cache_yaml(yaml_content=...) to mint a fresh handle. Cache TTL is 24 hours.",
                     })
                     .to_string())
                 },
-                |arc| Ok((*arc).to_string()),
+                |(arc, remaining)| {
+                    Ok((
+                        (*arc).to_string(),
+                        Some(CacheMeta {
+                            handle: id.to_string(),
+                            ttl_remaining_seconds: remaining.as_secs(),
+                        }),
+                    ))
+                },
             );
         }
 
         if let Some(yaml) = crate::mcp::tools::samples::yaml_for_key(id) {
-            return Ok(yaml.to_string());
+            return Ok((yaml.to_string(), None));
         }
 
         #[cfg(feature = "database")]
         {
             let db = self.get_db(tool)?;
             let id_owned = id.to_string();
-            run_db_async_result(move || async move {
+            let yaml = run_db_async_result(move || async move {
                 shared::fetch_yaml_by_degree_id(&db, &id_owned).await
-            })
+            })?;
+            Ok((yaml, None))
         }
         #[cfg(not(feature = "database"))]
         {
@@ -585,6 +597,42 @@ fn panic_payload_to_string(payload: &(dyn std::any::Any + Send)) -> String {
         .map(|s| (*s).to_string())
         .or_else(|| payload.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "non-string panic payload".to_string())
+}
+
+/// Cache-resolution metadata, carried from `resolve_degree_id` back through
+/// `run_yaml_tool` so the caller can plan re-caching before expiry.
+#[derive(Debug, Clone)]
+struct CacheMeta {
+    handle: String,
+    ttl_remaining_seconds: u64,
+}
+
+/// Augment a tool's JSON response with `cache_handle` +
+/// `cache_ttl_remaining_seconds` when the YAML source was a `cache:` handle.
+///
+/// Single-point injection avoids threading the metadata through every tool's
+/// `execute()` signature. The function preserves the original string on any
+/// failure (non-object root, parse error) so a malformed response — which is
+/// a separate bug — surfaces unchanged for debugging.
+fn inject_cache_meta(raw: &str, meta: Option<CacheMeta>) -> String {
+    let Some(meta) = meta else {
+        return raw.to_string();
+    };
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return raw.to_string();
+    };
+    let serde_json::Value::Object(map) = &mut value else {
+        return raw.to_string();
+    };
+    map.insert(
+        "cache_handle".to_string(),
+        serde_json::Value::String(meta.handle),
+    );
+    map.insert(
+        "cache_ttl_remaining_seconds".to_string(),
+        serde_json::Value::Number(meta.ttl_remaining_seconds.into()),
+    );
+    serde_json::to_string_pretty(&value).unwrap_or_else(|_| raw.to_string())
 }
 
 /// Database access helpers.
@@ -818,5 +866,46 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("non-string panic payload"));
+    }
+
+    #[test]
+    fn test_inject_cache_meta_adds_fields_when_meta_present() {
+        let raw = r#"{"success": true, "is_valid": true}"#;
+        let injected = inject_cache_meta(
+            raw,
+            Some(CacheMeta {
+                handle: "cache:abc123".to_string(),
+                ttl_remaining_seconds: 12_345,
+            }),
+        );
+        let parsed: serde_json::Value =
+            serde_json::from_str(&injected).expect("injected output must be valid JSON");
+        assert_eq!(parsed["cache_handle"], "cache:abc123");
+        assert_eq!(parsed["cache_ttl_remaining_seconds"], 12_345);
+        // Existing fields preserved.
+        assert_eq!(parsed["success"], true);
+        assert_eq!(parsed["is_valid"], true);
+    }
+
+    #[test]
+    fn test_inject_cache_meta_preserves_raw_when_meta_none() {
+        let raw = r#"{"success": true}"#;
+        assert_eq!(inject_cache_meta(raw, None), raw);
+    }
+
+    #[test]
+    fn test_inject_cache_meta_preserves_non_object_root() {
+        // Tool bodies always emit objects; defend against accidental
+        // array/string roots so a parser bug doesn't get swallowed by
+        // the injection helper.
+        let raw = r#"["just", "an", "array"]"#;
+        let injected = inject_cache_meta(
+            raw,
+            Some(CacheMeta {
+                handle: "cache:xyz".to_string(),
+                ttl_remaining_seconds: 1,
+            }),
+        );
+        assert_eq!(injected, raw);
     }
 }
