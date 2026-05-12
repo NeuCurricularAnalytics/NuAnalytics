@@ -134,7 +134,9 @@ pub fn execute(
     skip_audit: bool,
     skip_analyze: bool,
 ) -> DegreePipelineResponse {
-    let validate_response = validate::execute(yaml_content, allow_unmatched_patterns);
+    // Default to surfacing hidden-prereq warnings on the bundled validate
+    // response so the pipeline caller sees them without an extra flag.
+    let validate_response = validate::execute(yaml_content, allow_unmatched_patterns, true);
 
     // Short-circuit on a hard parse failure — there's no point running audit
     // or analyze against a YAML the parser already rejected.
@@ -164,6 +166,8 @@ pub fn execute(
             false,
             None,
             false,
+            false,
+            None,
         ))
     };
 

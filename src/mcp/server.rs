@@ -94,13 +94,18 @@ impl NuAnalyticsMcpServer {
     )]
     fn validate_degree(&self, Parameters(req): Parameters<ValidateDegreeRequest>) -> String {
         let allow_unmatched_patterns = req.allow_unmatched_patterns.unwrap_or(false);
+        let include_hidden_prereq_warnings = req.include_hidden_prereq_warnings.unwrap_or(true);
         let source = match shared::parse_yaml_source(req.yaml_content, req.yaml_path, req.degree_id)
         {
             Ok(s) => s,
             Err(e) => return e,
         };
         self.run_yaml_tool("validate_degree", source, move |yaml| {
-            validate::execute_json(yaml, allow_unmatched_patterns)
+            validate::execute_json(
+                yaml,
+                allow_unmatched_patterns,
+                include_hidden_prereq_warnings,
+            )
         })
     }
 
@@ -128,6 +133,8 @@ impl NuAnalyticsMcpServer {
         let include_courses = req.include_courses.map(|s| shared::parse_comma_list(&s));
         let include_graph_spec = req.include_graph_spec.unwrap_or(false);
         let include_per_course_metrics = req.include_per_course_metrics.unwrap_or(false);
+        let include_placeholder_metrics = req.include_placeholder_metrics.unwrap_or(false);
+        let random_seed = req.random_seed;
         let max_plans = req.max_plans;
         let plan_indices: Option<Vec<usize>> = req
             .plan_indices
@@ -146,6 +153,8 @@ impl NuAnalyticsMcpServer {
                 include_graph_spec,
                 plan_indices.as_deref(),
                 include_per_course_metrics,
+                include_placeholder_metrics,
+                random_seed,
             )
         })
     }

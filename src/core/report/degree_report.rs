@@ -719,6 +719,7 @@ mod tests {
             calc_ready_shortest: None,
             random_samples: vec![],
             total_plans_seen: 10,
+            calc_ready_suppressed: false,
         }
     }
 
@@ -793,6 +794,7 @@ mod tests {
                 make_test_scored_plan("CS1000", 10, 65),
             ],
             total_plans_seen: 100,
+            calc_ready_suppressed: false,
         };
         let entries = collect_tabbed_plans(&selected);
         let labels: Vec<&str> = entries.iter().map(|e| e.tab_label.as_str()).collect();
@@ -812,6 +814,7 @@ mod tests {
             calc_ready_shortest: Some(make_test_scored_plan("CS1000", 8, 50)),
             random_samples: vec![make_test_scored_plan("CS1000", 9, 60)],
             total_plans_seen: 1,
+            calc_ready_suppressed: false,
         };
         let entries = collect_tabbed_plans(&selected);
         let labels: Vec<&str> = entries.iter().map(|e| e.tab_label.as_str()).collect();
@@ -836,6 +839,7 @@ mod tests {
                 make_test_scored_plan("CS1000", 11, 70),
             ],
             total_plans_seen: 200,
+            calc_ready_suppressed: false,
         };
         let ctx = DegreeReportContext::new(
             &school,
@@ -891,6 +895,7 @@ mod tests {
             calc_ready_shortest: None,
             random_samples: vec![],
             total_plans_seen: 0,
+            calc_ready_suppressed: false,
         };
         let ctx = DegreeReportContext::new(
             &school,

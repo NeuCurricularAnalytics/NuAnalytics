@@ -59,6 +59,21 @@ pub struct ValidateDegreeRequest {
         deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
     )]
     pub allow_unmatched_patterns: Option<bool>,
+
+    /// Surface upper-level courses (above the lowest-level anchor in the
+    /// program) that declare no prerequisites as `HiddenPrerequisite`
+    /// warnings inline with the rest of validate's output. Defaults to true
+    /// so first-time YAML authors see the issue without an extra
+    /// `audit_degree` round-trip; set to false to suppress when the
+    /// unprereqed list is expected (e.g. transfer-credit boilerplate).
+    #[schemars(
+        description = "Emit HiddenPrerequisite warnings for upper-level courses with no declared prerequisites. Default true. Same data audit_degree would surface — opt out when the unprereqed list is expected boilerplate."
+    )]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
+    )]
+    pub include_hidden_prereq_warnings: Option<bool>,
 }
 
 /// Structured error information returned by validation
@@ -168,7 +183,11 @@ pub struct ResolvedPoolInfo {
 /// # Returns
 /// Structured validation response
 #[must_use]
-pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> ValidationResponse {
+pub fn execute(
+    yaml_content: &str,
+    allow_unmatched_patterns: bool,
+    include_hidden_prereq_warnings: bool,
+) -> ValidationResponse {
     // Try to parse the YAML
     let program = match parse_degree_yaml(yaml_content) {
         Ok(p) => p,
@@ -226,10 +245,11 @@ pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> Validation
     };
     let result = validate_degree_program_with_options(&program, opts);
 
-    // Cheap hint surface: count upper-level courses lacking prereqs, so the
-    // caller knows whether to spend an audit_degree round-trip. Audit remains
-    // authoritative for the actual list and chain analysis.
-    let unprereqed_upper_level = count_upper_level_missing_prereqs(&program);
+    // Pull the full list once so we can both count for the suggestions blurb
+    // and (optionally) surface each entry as an inline warning. Audit remains
+    // authoritative for chain depth — this list is just the "no declared
+    // prereqs on a course past the lowest level" subset.
+    let unprereqed_upper_level = collect_upper_level_missing_prereqs(&program);
 
     // Resolve every `from` clause so the caller can see which courses each
     // pattern actually matched — catches `exclude` patterns that drop nothing
@@ -238,10 +258,13 @@ pub fn execute(yaml_content: &str, allow_unmatched_patterns: bool) -> Validation
 
     // Convert validation result to response format
     let errors = convert_validation_errors(&result);
-    let warnings = convert_validation_warnings(&result);
-    let suggestions = generate_suggestions(&result, &context, unprereqed_upper_level);
+    let mut warnings = convert_validation_warnings(&result);
+    if include_hidden_prereq_warnings {
+        warnings.extend(hidden_prereq_warnings(&unprereqed_upper_level));
+    }
+    let suggestions = generate_suggestions(&result, &context, unprereqed_upper_level.len());
 
-    let tool_followups = build_followups(&result, unprereqed_upper_level);
+    let tool_followups = build_followups(&result, unprereqed_upper_level.len());
 
     ValidationResponse {
         is_valid: result.is_valid,
@@ -290,8 +313,16 @@ fn build_followups(result: &ValidationResult, unprereqed_upper_level: usize) -> 
 /// # Returns
 /// JSON string representation of the validation response
 #[must_use]
-pub fn execute_json(yaml_content: &str, allow_unmatched_patterns: bool) -> String {
-    let response = execute(yaml_content, allow_unmatched_patterns);
+pub fn execute_json(
+    yaml_content: &str,
+    allow_unmatched_patterns: bool,
+    include_hidden_prereq_warnings: bool,
+) -> String {
+    let response = execute(
+        yaml_content,
+        allow_unmatched_patterns,
+        include_hidden_prereq_warnings,
+    );
     serde_json::to_string_pretty(&response)
         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
 }
@@ -530,14 +561,32 @@ fn generate_suggestions(
     suggestions
 }
 
-/// Count upper-level courses that declare no prerequisites.
+/// Collect upper-level courses that declare no prerequisites.
 ///
-/// Mirrors the `audit_degree` probe but returns only the count, used to emit
-/// a one-line hint in validate's suggestions without forcing a separate call.
-fn count_upper_level_missing_prereqs(program: &DegreeProgram) -> usize {
+/// Mirrors the `audit_degree` probe; returns the full `(course_id, level)`
+/// list so the caller can both count (for the suggestions blurb) and emit
+/// per-course inline warnings. Audit remains authoritative for chain-depth
+/// analysis — this surface only flags the "no declared prereqs on a course
+/// past the lowest level" subset.
+fn collect_upper_level_missing_prereqs(program: &DegreeProgram) -> Vec<(String, u32)> {
     let graph_result = CourseGraph::from_degree_program(program);
     let lowest_level = detect_lowest_course_level(program);
-    find_upper_level_without_prereqs(&graph_result, lowest_level).len()
+    find_upper_level_without_prereqs(&graph_result, lowest_level)
+}
+
+/// Build one `HiddenPrerequisite` warning per upper-level course missing
+/// declared prerequisites. Surfaced inline in `validate_degree` so first-time
+/// YAML authors see the issue without running a separate `audit_degree`.
+fn hidden_prereq_warnings(entries: &[(String, u32)]) -> Vec<ValidationWarningInfo> {
+    entries
+        .iter()
+        .map(|(course_id, level)| ValidationWarningInfo {
+            warning_type: "HiddenPrerequisite".to_string(),
+            message: format!(
+                "Course '{course_id}' (level {level}) declares no prerequisites — surfaces as an audit_degree finding."
+            ),
+        })
+        .collect()
 }
 
 /// Walk every requirement (including nested `one_of` options) and resolve the
@@ -669,7 +718,7 @@ courses:
 
     #[test]
     fn test_valid_degree() {
-        let response = execute(VALID_YAML, false);
+        let response = execute(VALID_YAML, false, false);
         assert!(
             response.is_valid,
             "Expected valid but got errors: {:?}",
@@ -682,7 +731,7 @@ courses:
 
     #[test]
     fn test_invalid_degree_missing_course() {
-        let response = execute(INVALID_YAML, false);
+        let response = execute(INVALID_YAML, false, false);
         assert!(!response.is_valid);
         assert!(
             response.parse_error.is_none(),
@@ -698,7 +747,7 @@ courses:
 
     #[test]
     fn test_malformed_yaml() {
-        let response = execute("not: valid: yaml: {{", false);
+        let response = execute("not: valid: yaml: {{", false, false);
         assert!(!response.is_valid);
         assert!(response.parse_error.is_some());
     }
@@ -710,7 +759,7 @@ courses:
         // surface line, column, and a ±3-line context window with a caret.
         let yaml =
             "degree:\n  id: t\n  total_credits: [not, a, number]\nrequirements: {}\ncourses: {}\n";
-        let response = execute(yaml, false);
+        let response = execute(yaml, false, false);
         assert!(!response.is_valid);
         assert!(response.parse_error.is_some(), "expected a parse error");
         assert!(
@@ -743,7 +792,7 @@ courses:
 
     #[test]
     fn test_context_populated() {
-        let response = execute(VALID_YAML, false);
+        let response = execute(VALID_YAML, false, false);
         assert!(
             response.is_valid,
             "Expected valid but got errors: {:?}",
@@ -757,7 +806,7 @@ courses:
 
     #[test]
     fn test_execute_json_returns_valid_json() {
-        let json_str = execute_json(VALID_YAML, false);
+        let json_str = execute_json(VALID_YAML, false, false);
         let parsed: Result<serde_json::Value, _> = serde_json::from_str(&json_str);
         assert!(parsed.is_ok(), "Output should be valid JSON");
         let value = parsed.unwrap();
@@ -766,7 +815,7 @@ courses:
 
     #[test]
     fn test_execute_json_with_errors() {
-        let json_str = execute_json(INVALID_YAML, false);
+        let json_str = execute_json(INVALID_YAML, false, false);
         let parsed: Result<serde_json::Value, _> = serde_json::from_str(&json_str);
         assert!(parsed.is_ok(), "Output should be valid JSON");
         let value = parsed.unwrap();
@@ -806,7 +855,7 @@ courses:
     credits: 4
     prerequisites_raw: "CS101"
 "#;
-        let response = execute(yaml, false);
+        let response = execute(yaml, false, false);
         assert!(!response.is_valid);
         assert!(response
             .errors
@@ -816,14 +865,14 @@ courses:
 
     #[test]
     fn test_suggestions_for_valid_degree() {
-        let response = execute(VALID_YAML, false);
+        let response = execute(VALID_YAML, false, false);
         assert!(response.is_valid);
         assert!(response.suggestions.iter().any(|s| s.contains("valid")));
     }
 
     #[test]
     fn test_suggestions_for_invalid_degree() {
-        let response = execute(INVALID_YAML, false);
+        let response = execute(INVALID_YAML, false, false);
         assert!(!response.is_valid);
         assert!(response.suggestions.iter().any(|s| s.contains("Fix")));
     }
@@ -863,7 +912,7 @@ courses:
 
     #[test]
     fn test_unmatched_pattern_is_error_by_default() {
-        let response = execute(EXTERNAL_POOL_YAML, false);
+        let response = execute(EXTERNAL_POOL_YAML, false, false);
         assert!(
             !response.is_valid,
             "POLS:100+ should fail strict validation when no POLS courses exist"
@@ -921,7 +970,7 @@ courses:
     credits: 4
     prerequisites_raw: "CS300"
 "#;
-        let response = execute(yaml, false);
+        let response = execute(yaml, false, false);
         let pool = response
             .resolved_pools
             .iter()
@@ -939,7 +988,7 @@ courses:
     fn test_resolved_pools_warns_when_pattern_matches_nothing() {
         // POLS:100+ matches nothing in this YAML — caller wants a single
         // surface to spot that without scanning every error type.
-        let response = execute(EXTERNAL_POOL_YAML, true);
+        let response = execute(EXTERNAL_POOL_YAML, true, false);
         let pool = response
             .resolved_pools
             .iter()
@@ -949,6 +998,90 @@ courses:
         assert!(
             pool.warning.is_some(),
             "empty pool must surface a warning string"
+        );
+    }
+
+    #[test]
+    fn test_hidden_prereq_warnings_surface_when_flag_is_set() {
+        // CS300 is upper-level (above the lowest course's level of 100) and
+        // declares no prerequisites — must surface as a HiddenPrerequisite
+        // warning when the opt-in flag is on.
+        let yaml = r#"
+degree:
+  id: hidden-prereq
+  institution: T
+  program: T
+  total_credits: 8
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101, CS300]
+
+courses:
+  CS101:
+    title: Intro CS
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS300:
+    title: Upper CS
+    prefix: CS
+    number: "300"
+    credits: 4
+"#;
+        let response = execute(yaml, false, true);
+        assert!(
+            response
+                .warnings
+                .iter()
+                .any(|w| w.warning_type == "HiddenPrerequisite" && w.message.contains("CS300")),
+            "expected a HiddenPrerequisite warning for CS300; got {:?}",
+            response.warnings
+        );
+    }
+
+    #[test]
+    fn test_hidden_prereq_warnings_suppressed_when_flag_is_off() {
+        // Same YAML as above; flag off → no HiddenPrerequisite warning.
+        let yaml = r#"
+degree:
+  id: hidden-prereq-off
+  institution: T
+  program: T
+  total_credits: 8
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101, CS300]
+
+courses:
+  CS101:
+    title: Intro CS
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS300:
+    title: Upper CS
+    prefix: CS
+    number: "300"
+    credits: 4
+"#;
+        let response = execute(yaml, false, false);
+        assert!(
+            !response
+                .warnings
+                .iter()
+                .any(|w| w.warning_type == "HiddenPrerequisite"),
+            "flag off must suppress HiddenPrerequisite warnings; got {:?}",
+            response.warnings
         );
     }
 
@@ -983,7 +1116,7 @@ courses:
     number: "300"
     credits: 4
 "#;
-        let response = execute(yaml, false);
+        let response = execute(yaml, false, false);
         assert!(response.is_valid);
         assert!(
             response
@@ -997,7 +1130,7 @@ courses:
 
     #[test]
     fn test_tool_followups_suggest_analyze_when_validation_passes_clean() {
-        let response = execute(VALID_YAML, false);
+        let response = execute(VALID_YAML, false, false);
         assert!(response.is_valid);
         assert!(
             response
@@ -1011,7 +1144,7 @@ courses:
 
     #[test]
     fn test_tool_followups_suggest_schema_on_parse_error() {
-        let response = execute("not: valid: yaml: {{", false);
+        let response = execute("not: valid: yaml: {{", false, false);
         assert!(!response.is_valid);
         assert!(response.parse_error.is_some());
         assert!(
@@ -1026,7 +1159,7 @@ courses:
 
     #[test]
     fn test_unmatched_pattern_is_warning_when_allowed() {
-        let response = execute(EXTERNAL_POOL_YAML, true);
+        let response = execute(EXTERNAL_POOL_YAML, true, false);
         assert!(
             response.is_valid,
             "allow_unmatched_patterns=true must keep validation valid; errors: {:?}",

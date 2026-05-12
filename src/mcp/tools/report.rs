@@ -191,7 +191,7 @@ pub fn execute(
     return_html_inline: Option<bool>,
 ) -> GenerateDegreeReportResponse {
     let artifacts =
-        match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, include_courses) {
+        match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, include_courses, None) {
             Ok(a) => a,
             Err(e) => return error_response(&e),
         };

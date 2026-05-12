@@ -115,6 +115,34 @@ pub struct AnalyzeDegreeRequest {
         deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
     )]
     pub include_per_course_metrics: Option<bool>,
+
+    /// Surface synthetic elective placeholders (`ELEC_*`, `FE*`) in the
+    /// `per_course_metrics` array. Off by default because placeholders carry
+    /// all-zero stats and pull down summary numbers for real courses; turn
+    /// on when comparing planning structure across degrees that lean on
+    /// different placeholder schemes.
+    #[schemars(
+        description = "Include synthetic placeholder courses (ELEC_*, FE*) in per_course_metrics. Default false. Each entry then carries placeholder: true."
+    )]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
+    )]
+    pub include_placeholder_metrics: Option<bool>,
+
+    /// Seed for the random-sample reservoir. When `None` the seed is
+    /// derived from the YAML body so a given `(yaml, max_plans,
+    /// include_courses)` tuple always returns the same Random Sample plan
+    /// — quote `seed_used` in reports to pin the run. Pass an explicit
+    /// `u64` to draw a different sample without changing the inputs.
+    #[schemars(
+        description = "Seed for the random-sample reservoir. Defaults to a stable value derived from the YAML body, so identical inputs always return the same Random Sample plan. Pass an explicit u64 to draw a different sample."
+    )]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_u64"
+    )]
+    pub random_seed: Option<u64>,
 }
 
 /// Serializable metric statistics (includes quartiles for box plots).
@@ -174,7 +202,8 @@ pub struct PlanSummaryJson {
 /// Surfaced on `analyze_degree` responses when
 /// `include_per_course_metrics=true`. Each metric uses the same 5-number
 /// summary shape as the degree-level [`MetricStatsJson`] so callers can
-/// reuse the same boxplot-rendering code path.
+/// reuse the same boxplot-rendering code path. Entries are sorted
+/// lexicographically by `course_id`.
 #[derive(Debug, Serialize)]
 pub struct CourseMetricsJson {
     /// Course identifier (matches the keys in `program.courses`).
@@ -191,6 +220,11 @@ pub struct CourseMetricsJson {
     pub delay: MetricStatsJson,
     /// Blocking factor — number of downstream courses gated by this one.
     pub blocking: MetricStatsJson,
+    /// `true` when this entry is a synthetic placeholder course (`ELEC_*`,
+    /// `FE*`). Placeholders are filtered out by default; the field is only
+    /// emitted when `include_placeholder_metrics=true` brings them back.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub placeholder: bool,
 }
 
 /// A single term in a plan schedule
@@ -235,6 +269,21 @@ pub struct AnalysisResponse {
     /// Equivalent to `!was_truncated`; exposed so callers can frame results
     /// honestly as "full population" vs "sample of N plans".
     pub is_full_population: bool,
+    /// How the analyzed plans relate to the underlying population.
+    ///
+    /// - `"exhaustive"` when every distinct plan was enumerated and analyzed
+    ///   (`is_full_population=true`).
+    /// - `"random_uniform"` when `max_plans` capped the run; the reservoir
+    ///   sampler produces a uniform random sample of the underlying plans.
+    ///
+    /// Lets callers frame summary medians honestly — "median across 20
+    /// uniformly-sampled plans from 95,760 possible" is different from
+    /// "median across all 30 plans".
+    pub sampling_method: &'static str,
+    /// Seed used to drive the reservoir-sample RNG. When the request did
+    /// not supply `random_seed`, this is the default seed derived from
+    /// the YAML body — quote it in reports to make the run reproducible.
+    pub seed_used: u64,
 
     /// Aggregate complexity statistics across all plans
     pub complexity: Option<MetricStatsJson>,
@@ -257,6 +306,12 @@ pub struct AnalysisResponse {
     /// analyze outcome (truncation, long critical path, small full
     /// population, etc.).
     pub tool_followups: Vec<ToolFollowup>,
+
+    /// Free-form notes the analyze pass produced as side effects — e.g.
+    /// "calc-ready-shortest suppressed as duplicate of shortest-path". Empty
+    /// (and omitted from the JSON) when nothing notable happened.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 // ============================================================================
@@ -282,6 +337,7 @@ const DEFAULT_MAX_PLANS: usize = 500;
 /// * `include_per_course_metrics` - When true, populates the
 ///   `per_course_metrics` array on the response (default false)
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn execute(
     yaml_content: &str,
     max_plans: Option<usize>,
@@ -289,13 +345,17 @@ pub fn execute(
     include_graph_spec: bool,
     plan_indices: Option<&[usize]>,
     include_per_course_metrics: bool,
+    include_placeholder_metrics: bool,
+    random_seed: Option<u64>,
 ) -> AnalysisResponse {
-    match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, include_courses) {
+    match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, include_courses, random_seed)
+    {
         Ok(artifacts) => build_response(
             &artifacts,
             include_graph_spec,
             plan_indices,
             include_per_course_metrics,
+            include_placeholder_metrics,
         ),
         Err(e) => parse_error_response(&e),
     }
@@ -329,6 +389,10 @@ pub(crate) struct AnalysisArtifacts {
     pub stats: PlanGenerationStats,
     /// The effective `max_plans` cap used by the run.
     pub max_plans: usize,
+    /// Seed used for the reservoir-sample RNG. Either the caller-supplied
+    /// `random_seed` or the default derived from the YAML body — surfaced on
+    /// the response so reports can cite the seed and re-run reproducibly.
+    pub seed_used: u64,
 }
 
 impl AnalysisArtifacts {
@@ -367,9 +431,14 @@ pub(crate) fn build_artifacts(
     yaml_content: &str,
     max_plans: Option<usize>,
     include_courses: Option<&[String]>,
+    random_seed: Option<u64>,
 ) -> Result<AnalysisArtifacts, String> {
     let max = max_plans.unwrap_or(DEFAULT_MAX_PLANS);
     let include = include_courses.map(<[String]>::to_vec).unwrap_or_default();
+    // Default seed = stable derivative of the YAML body, so same inputs
+    // always yield the same Random Sample plan. Callers that want a
+    // different sample pass `Some(seed)` explicitly.
+    let seed_used = random_seed.unwrap_or_else(|| default_seed_for_yaml(yaml_content));
 
     let program = parse_degree_yaml(yaml_content).map_err(|e| format_parse_error(&e))?;
 
@@ -402,6 +471,7 @@ pub(crate) fn build_artifacts(
     let selector_config = PlanSelectorConfig {
         sample_count: gen_config.sample_count,
         scheduler_config: SchedulerConfig::default(),
+        random_seed: Some(seed_used),
         ..Default::default()
     };
 
@@ -436,7 +506,22 @@ pub(crate) fn build_artifacts(
         plans_processed,
         stats,
         max_plans: max,
+        seed_used,
     })
+}
+
+/// Stable seed derived from the YAML body.
+///
+/// Reuses `DefaultHasher` so the value is consistent within a process run.
+/// Re-runs in different processes hash to the same value because the hasher
+/// is deterministic and the input is identical. Callers can pin the seed
+/// explicitly via the `random_seed` request field.
+fn default_seed_for_yaml(yaml: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    yaml.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Build the parse-error escape hatch for the analyze response.
@@ -452,6 +537,8 @@ fn parse_error_response(error: &str) -> AnalysisResponse {
         was_truncated: false,
         population_size: 0,
         is_full_population: false,
+        sampling_method: "none",
+        seed_used: 0,
         complexity: None,
         longest_delay: None,
         total_credits: None,
@@ -462,6 +549,7 @@ fn parse_error_response(error: &str) -> AnalysisResponse {
             reason: "analyze_degree couldn't parse the YAML; validate_degree surfaces the parse error in a more structured form.".to_string(),
             suggested_args: serde_json::json!({}),
         }],
+        notes: vec![],
     }
 }
 
@@ -523,6 +611,7 @@ fn build_response(
     include_graph_spec: bool,
     plan_indices: Option<&[usize]>,
     include_per_course_metrics: bool,
+    include_placeholder_metrics: bool,
 ) -> AnalysisResponse {
     let degree_stats = artifacts.aggregator.degree_stats();
 
@@ -573,17 +662,31 @@ fn build_response(
     let is_full_population = artifacts.is_full_population();
     let was_truncated = !is_full_population;
     let population_size = artifacts.population_size();
+    let complexity_stats = metric_stats_json(&degree_stats.total_complexity);
     let tool_followups = build_analysis_followups(
         artifacts,
         &selected_plans,
+        Some(&complexity_stats),
         was_truncated,
         is_full_population,
     );
     let per_course_metrics = if include_per_course_metrics {
-        build_per_course_metrics(artifacts)
+        build_per_course_metrics(artifacts, include_placeholder_metrics)
     } else {
         Vec::new()
     };
+
+    let sampling_method = if is_full_population {
+        "exhaustive"
+    } else {
+        "random_uniform"
+    };
+    let mut notes = Vec::new();
+    if artifacts.selected.calc_ready_suppressed {
+        notes.push(
+            "calc-ready-shortest suppressed as structural duplicate of shortest-path".to_string(),
+        );
+    }
 
     AnalysisResponse {
         success: true,
@@ -596,23 +699,37 @@ fn build_response(
         was_truncated,
         population_size,
         is_full_population,
-        complexity: Some(metric_stats_json(&degree_stats.total_complexity)),
+        sampling_method,
+        seed_used: artifacts.seed_used,
+        complexity: Some(complexity_stats),
         longest_delay: Some(metric_stats_json(&degree_stats.longest_delay)),
         total_credits: Some(metric_stats_json(&degree_stats.total_credits)),
         selected_plans,
         per_course_metrics,
         tool_followups,
+        notes,
     }
 }
 
 /// Materialise every course the aggregator tracked into a sorted
 /// `Vec<CourseMetricsJson>`. Sorting by `course_id` makes the response
 /// deterministic across runs so diff-friendly snapshot tests are practical.
-fn build_per_course_metrics(artifacts: &AnalysisArtifacts) -> Vec<CourseMetricsJson> {
+///
+/// By default elective placeholders (`ELEC_*`, `FE*`) are filtered out: they
+/// carry all-zero stats and drag down summary statistics for the real
+/// courses. Set `include_placeholders=true` to surface them anyway; each
+/// entry then carries a `placeholder: true` field so callers can group them
+/// separately.
+fn build_per_course_metrics(
+    artifacts: &AnalysisArtifacts,
+    include_placeholders: bool,
+) -> Vec<CourseMetricsJson> {
     let mut ids = artifacts.aggregator.course_ids();
     ids.sort();
     ids.into_iter()
+        .filter(|id| include_placeholders || !is_placeholder_course(id))
         .filter_map(|id| {
+            let placeholder = is_placeholder_course(&id);
             artifacts
                 .aggregator
                 .course_stats(&id)
@@ -623,37 +740,79 @@ fn build_per_course_metrics(artifacts: &AnalysisArtifacts) -> Vec<CourseMetricsJ
                     centrality: metric_stats_json(&s.centrality),
                     delay: metric_stats_json(&s.delay),
                     blocking: metric_stats_json(&s.blocking),
+                    placeholder,
                 })
         })
         .collect()
 }
 
+/// Synthetic placeholder course IDs generated by the elective filler
+/// (`gen_elective_placeholders`) and the free-elective backfill (`FE…`).
+/// They carry no prerequisites and a single flat credit count, so their
+/// per-course aggregator stats are always zeros — including them in the
+/// default summary inflates the zero-bias of every statistic.
+fn is_placeholder_course(id: &str) -> bool {
+    id.starts_with("ELEC_") || id.starts_with("FE")
+}
+
+/// Coefficient-of-variation threshold below which the metrics are deemed
+/// stable enough that bumping `max_plans` won't change the conclusions.
+/// 10 % is a reasonable rule-of-thumb for plan-complexity distributions —
+/// tighten when callers report still seeing meaningful shifts above it.
+const STABLE_CV_THRESHOLD: f64 = 0.10;
+
 /// Build follow-up suggestions for an analyze response. Triggered on three
-/// signals: truncated sample (rerun with higher cap), tiny full population
-/// (cheap to audit deeply), or long critical path on the shortest plan
-/// (re-audit with a stricter chain threshold).
+/// signals: truncated sample (rerun with higher cap when variance is still
+/// material), tiny full population (cheap to audit deeply), or long critical
+/// path on the shortest plan (re-audit with a stricter chain threshold).
 fn build_analysis_followups(
     artifacts: &AnalysisArtifacts,
     selected_plans: &[PlanSummaryJson],
+    complexity: Option<&MetricStatsJson>,
     was_truncated: bool,
     is_full_population: bool,
 ) -> Vec<ToolFollowup> {
     let mut followups = Vec::new();
 
     if was_truncated {
-        // Double the cap as a follow-up suggestion. `saturating_mul(2)`
-        // guards against usize overflow on absurdly large caps; the
-        // `.max(+1)` guard catches the `max_plans == usize::MAX` corner
-        // where doubling would saturate back to the same value and we'd
-        // otherwise echo the input.
-        let next = artifacts
+        // Coefficient of variation lets us decide whether bumping the cap
+        // is worth the budget. A small CV (<10 %) means the medians have
+        // stabilised — rerunning at 2× burns context for marginal change.
+        let cv = complexity
+            .filter(|s| s.mean.abs() > f64::EPSILON)
+            .map(|s| s.std_dev / s.mean.abs());
+
+        if let Some(cv) = cv {
+            if cv < STABLE_CV_THRESHOLD {
+                followups.push(ToolFollowup {
+                    tool: TOOL_ANALYZE_DEGREE,
+                    reason: format!(
+                        "Result truncated at max_plans={}, but complexity is stable (CV={cv:.2}). Bumping max_plans is unlikely to change the conclusions.",
+                        artifacts.max_plans,
+                    ),
+                    suggested_args: serde_json::json!({}),
+                });
+                // Skip the doubling suggestion below — they're alternatives,
+                // not complements.
+                return finalize_followups(followups, selected_plans);
+            }
+        }
+
+        // Otherwise: suggest doubling, but capped at population_size so
+        // we never recommend a value larger than what exists.
+        // `saturating_mul(2)` guards against usize overflow on absurdly
+        // large caps; the `.max(+1)` guard catches the corner where
+        // doubling saturates back to the same value.
+        let doubled = artifacts
             .max_plans
             .saturating_mul(2)
             .max(artifacts.max_plans + 1);
+        let next = doubled.min(artifacts.stats.total_possible.max(artifacts.max_plans));
+        let cv_note = cv.map_or_else(String::new, |cv| format!(" (CV={cv:.2})"));
         followups.push(ToolFollowup {
             tool: TOOL_ANALYZE_DEGREE,
             reason: format!(
-                "Result was truncated at max_plans={} (population estimate {}). Rerun with a larger cap to widen the sample.",
+                "Result was truncated at max_plans={} (population estimate {}){cv_note}. Rerun with a larger cap to widen the sample.",
                 artifacts.max_plans, artifacts.stats.total_possible,
             ),
             suggested_args: serde_json::json!({ "max_plans": next }),
@@ -670,6 +829,17 @@ fn build_analysis_followups(
         });
     }
 
+    finalize_followups(followups, selected_plans)
+}
+
+/// Append the "long critical path → audit with stricter threshold" follow-up
+/// after the primary `build_analysis_followups` branches resolve. Kept separate
+/// so the truncation paths can short-circuit while still picking up this
+/// chain-depth check.
+fn finalize_followups(
+    mut followups: Vec<ToolFollowup>,
+    selected_plans: &[PlanSummaryJson],
+) -> Vec<ToolFollowup> {
     if let Some(shortest) = selected_plans
         .iter()
         .find(|p| p.category == "Shortest Path")
@@ -708,6 +878,8 @@ pub fn execute_json(
     include_graph_spec: bool,
     plan_indices: Option<&[usize]>,
     include_per_course_metrics: bool,
+    include_placeholder_metrics: bool,
+    random_seed: Option<u64>,
 ) -> String {
     let response = execute(
         yaml_content,
@@ -716,6 +888,8 @@ pub fn execute_json(
         include_graph_spec,
         plan_indices,
         include_per_course_metrics,
+        include_placeholder_metrics,
+        random_seed,
     );
     serde_json::to_string_pretty(&response)
         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
@@ -1058,7 +1232,7 @@ courses:
 
     #[test]
     fn test_analyze_valid_degree() {
-        let response = execute(TEST_YAML, Some(10), None, false, None, false);
+        let response = execute(TEST_YAML, Some(10), None, false, None, false, false, None);
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
         assert!(response.complexity.is_some());
@@ -1071,8 +1245,8 @@ courses:
         // Direct coverage of the shared pipeline entry point. Every artifact
         // field must be populated so sibling tools (the HTML report) don't
         // have to defensively check for empty/None state.
-        let artifacts =
-            build_artifacts(TEST_YAML, Some(10), None).expect("build_artifacts on valid YAML");
+        let artifacts = build_artifacts(TEST_YAML, Some(10), None, None)
+            .expect("build_artifacts on valid YAML");
         assert_eq!(artifacts.program.degree.name, "Test Program");
         assert_eq!(
             artifacts.program.degree.institution.as_deref(),
@@ -1092,7 +1266,7 @@ courses:
         // AnalysisArtifacts deliberately doesn't derive Debug (it owns a
         // MetricsAggregator that wouldn't print usefully anyway), so use a
         // match instead of `unwrap_err` to interrogate the failure.
-        let result = build_artifacts("not: valid: yaml: {{", Some(10), None);
+        let result = build_artifacts("not: valid: yaml: {{", Some(10), None, None);
         let Err(err) = result else {
             panic!("expected parse failure for malformed YAML");
         };
@@ -1105,7 +1279,8 @@ courses:
     #[test]
     fn test_build_artifacts_respects_include_courses() {
         // Every selected plan must contain the forced course.
-        let artifacts = build_artifacts(TEST_YAML, Some(10), Some(&["CS101".to_string()])).unwrap();
+        let artifacts =
+            build_artifacts(TEST_YAML, Some(10), Some(&["CS101".to_string()]), None).unwrap();
         for (_cat, plan) in artifacts.selected.iter() {
             assert!(
                 plan.variant.courses.iter().any(|c| c == "CS101"),
@@ -1118,7 +1293,7 @@ courses:
     fn test_tool_followups_suggest_audit_on_small_full_population() {
         // TEST_YAML resolves to a single valid plan ⇒ is_full_population=true
         // and plans_processed < 50, which triggers the audit suggestion.
-        let response = execute(TEST_YAML, Some(500), None, false, None, false);
+        let response = execute(TEST_YAML, Some(500), None, false, None, false, false, None);
         assert!(response.success);
         assert!(response.is_full_population);
         assert!(
@@ -1134,21 +1309,30 @@ courses:
     #[test]
     fn test_artifacts_is_full_population_when_under_cap() {
         // TEST_YAML has only one valid plan; max=500 means we never hit the cap.
-        let artifacts = build_artifacts(TEST_YAML, Some(500), None).unwrap();
+        let artifacts = build_artifacts(TEST_YAML, Some(500), None, None).unwrap();
         assert!(artifacts.is_full_population());
         assert_eq!(artifacts.population_size(), artifacts.plans_processed);
     }
 
     #[test]
     fn test_analyze_malformed_yaml() {
-        let response = execute("not: valid: yaml: {{", Some(10), None, false, None, false);
+        let response = execute(
+            "not: valid: yaml: {{",
+            Some(10),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+        );
         assert!(!response.success);
         assert!(response.error.is_some());
     }
 
     #[test]
     fn test_analyze_json_output() {
-        let json = execute_json(TEST_YAML, Some(10), None, false, None, false);
+        let json = execute_json(TEST_YAML, Some(10), None, false, None, false, false, None);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["success"].as_bool().unwrap());
         assert!(parsed["plans_analyzed"].as_u64().unwrap() > 0);
@@ -1156,7 +1340,7 @@ courses:
 
     #[test]
     fn test_selected_plans_have_schedules() {
-        let response = execute(TEST_YAML, Some(10), None, false, None, false);
+        let response = execute(TEST_YAML, Some(10), None, false, None, false, false, None);
         for plan in &response.selected_plans {
             assert!(
                 !plan.schedule.is_empty(),
@@ -1177,6 +1361,8 @@ courses:
             false,
             None,
             false,
+            false,
+            None,
         );
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
@@ -1201,7 +1387,7 @@ courses:
     fn test_analyze_omits_graph_spec_by_default() {
         // include_graph_spec=false (default) — graph_spec must be None in-memory and
         // skipped entirely from the JSON output (no `"graph_spec": null` either).
-        let response = execute(TEST_YAML, Some(10), None, false, None, false);
+        let response = execute(TEST_YAML, Some(10), None, false, None, false, false, None);
         assert!(response.success);
         assert!(!response.selected_plans.is_empty());
         for plan in &response.selected_plans {
@@ -1211,9 +1397,17 @@ courses:
                 plan.category
             );
         }
-        let json: serde_json::Value =
-            serde_json::from_str(&execute_json(TEST_YAML, Some(10), None, false, None, false))
-                .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&execute_json(
+            TEST_YAML,
+            Some(10),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+        ))
+        .unwrap();
         for plan in json["selected_plans"].as_array().unwrap() {
             assert!(
                 plan.get("graph_spec").is_none(),
@@ -1224,7 +1418,7 @@ courses:
 
     #[test]
     fn test_analyze_includes_graph_spec_when_requested() {
-        let response = execute(TEST_YAML, Some(10), None, true, None, false);
+        let response = execute(TEST_YAML, Some(10), None, true, None, false, false, None);
         assert!(response.success);
         assert!(!response.selected_plans.is_empty());
         for plan in &response.selected_plans {
@@ -1244,7 +1438,16 @@ courses:
     fn test_plan_indices_filters_graph_spec_attachment() {
         // Only index 0 should carry graph_spec; the rest must be None even
         // though include_graph_spec=true.
-        let response = execute(TEST_YAML, Some(10), None, true, Some(&[0]), false);
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            true,
+            Some(&[0]),
+            false,
+            false,
+            None,
+        );
         assert!(response.success);
         let mut plans = response.selected_plans.into_iter();
         let first = plans.next().expect("at least one selected plan");
@@ -1264,7 +1467,16 @@ courses:
     #[test]
     fn test_plan_indices_ignored_when_include_graph_spec_false() {
         // plan_indices is a no-op when graph_spec attachment is off.
-        let response = execute(TEST_YAML, Some(10), None, false, Some(&[0, 1, 2]), false);
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            false,
+            Some(&[0, 1, 2]),
+            false,
+            false,
+            None,
+        );
         assert!(response.success);
         for plan in &response.selected_plans {
             assert!(
@@ -1277,7 +1489,16 @@ courses:
     #[test]
     fn test_plan_indices_out_of_range_silently_ignored() {
         // Index past the end is dropped without error.
-        let response = execute(TEST_YAML, Some(10), None, true, Some(&[999]), false);
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            true,
+            Some(&[999]),
+            false,
+            false,
+            None,
+        );
         assert!(response.success);
         for plan in &response.selected_plans {
             assert!(
@@ -1293,7 +1514,7 @@ courses:
         // With max_plans well above the population we expect:
         //   was_truncated=false, is_full_population=true,
         //   population_size==plans_analyzed.
-        let response = execute(TEST_YAML, Some(500), None, false, None, false);
+        let response = execute(TEST_YAML, Some(500), None, false, None, false, false, None);
         assert!(response.success);
         assert!(!response.was_truncated);
         assert!(response.is_full_population);
@@ -1304,7 +1525,7 @@ courses:
     #[test]
     fn test_per_course_metrics_omitted_by_default_present_when_flag_set() {
         // Default: per_course_metrics empty and skipped during serialisation.
-        let off = execute(TEST_YAML, Some(10), None, false, None, false);
+        let off = execute(TEST_YAML, Some(10), None, false, None, false, false, None);
         assert!(off.per_course_metrics.is_empty());
         let off_json = serde_json::to_string(&off).unwrap();
         assert!(
@@ -1314,7 +1535,7 @@ courses:
 
         // Opted-in: one entry per tracked course, sorted by course_id,
         // each carrying the four metric stats objects.
-        let on = execute(TEST_YAML, Some(10), None, false, None, true);
+        let on = execute(TEST_YAML, Some(10), None, false, None, true, false, None);
         assert!(on.success);
         assert!(
             !on.per_course_metrics.is_empty(),
@@ -1346,6 +1567,148 @@ courses:
             on_json.contains("\"per_course_metrics\""),
             "field must serialise into the JSON when the flag is set"
         );
+    }
+
+    #[test]
+    fn test_is_placeholder_course_matches_elec_and_fe_prefixes() {
+        assert!(is_placeholder_course("ELEC_01"));
+        assert!(is_placeholder_course("ELEC_99S"));
+        assert!(is_placeholder_course("FE01"));
+        assert!(is_placeholder_course("FE10"));
+        assert!(!is_placeholder_course("CS101"));
+        assert!(!is_placeholder_course("ELECTIVE")); // no underscore — real course id
+        assert!(!is_placeholder_course("ELE100")); // different prefix
+    }
+
+    /// Build a synthetic per-course-metric vector with one placeholder and
+    /// one real course so the filter/flag tests can run without depending on
+    /// the upstream elective-filler.
+    fn synthetic_per_course_metrics() -> Vec<CourseMetricsJson> {
+        vec![
+            CourseMetricsJson {
+                course_id: "CS101".to_string(),
+                plan_count: 5,
+                complexity: MetricStatsJson::default(),
+                centrality: MetricStatsJson::default(),
+                delay: MetricStatsJson::default(),
+                blocking: MetricStatsJson::default(),
+                placeholder: false,
+            },
+            CourseMetricsJson {
+                course_id: "ELEC_01".to_string(),
+                plan_count: 5,
+                complexity: MetricStatsJson::default(),
+                centrality: MetricStatsJson::default(),
+                delay: MetricStatsJson::default(),
+                blocking: MetricStatsJson::default(),
+                placeholder: true,
+            },
+        ]
+    }
+
+    #[test]
+    fn test_per_course_metrics_placeholder_field_serialises_only_when_true() {
+        // Default false → field omitted from JSON. True → field present.
+        let metrics = synthetic_per_course_metrics();
+        let real_json = serde_json::to_string(&metrics[0]).unwrap();
+        let placeholder_json = serde_json::to_string(&metrics[1]).unwrap();
+        assert!(
+            !real_json.contains("placeholder"),
+            "placeholder field must be skipped when false: {real_json}"
+        );
+        assert!(
+            placeholder_json.contains("\"placeholder\":true"),
+            "placeholder field must serialise when true: {placeholder_json}"
+        );
+    }
+
+    #[test]
+    fn test_is_placeholder_filter_used_by_collector() {
+        // build_per_course_metrics takes `include_placeholders: bool`. When
+        // false, every entry must satisfy !is_placeholder_course(course_id).
+        // When true, surviving entries that are placeholders must have
+        // placeholder=true.
+        //
+        // Exercise via the CSU sample which exercises the full pipeline.
+        let yaml = crate::mcp::tools::samples::yaml_for_key("csu")
+            .expect("csu sample key must resolve to embedded YAML");
+        let off = execute(yaml, Some(10), None, false, None, true, false, None);
+        assert!(off.success, "error: {:?}", off.error);
+        for entry in &off.per_course_metrics {
+            assert!(
+                !is_placeholder_course(&entry.course_id),
+                "placeholder course {} leaked into default per_course_metrics",
+                entry.course_id
+            );
+            assert!(!entry.placeholder);
+        }
+
+        let on = execute(yaml, Some(10), None, false, None, true, true, None);
+        assert!(on.success);
+        for entry in &on.per_course_metrics {
+            assert_eq!(
+                entry.placeholder,
+                is_placeholder_course(&entry.course_id),
+                "placeholder flag mismatch for {}",
+                entry.course_id
+            );
+        }
+        // The CSU sample is known to lean on ELEC_* placeholders; we expect
+        // strictly more entries with the flag on than off.
+        assert!(
+            on.per_course_metrics.len() >= off.per_course_metrics.len(),
+            "include_placeholders=true must not drop any real-course entries"
+        );
+    }
+
+    #[test]
+    fn test_default_seed_is_stable_function_of_yaml() {
+        // Same YAML → same default seed every time. Exercise the helper
+        // directly so the test doesn't depend on the shared artifact cache
+        // (which is evicted under concurrent test load).
+        let csu = crate::mcp::tools::samples::yaml_for_key("csu")
+            .expect("csu sample key must resolve to embedded YAML");
+        assert_eq!(default_seed_for_yaml(csu), default_seed_for_yaml(csu));
+        // Different YAML → different seed.
+        assert_ne!(default_seed_for_yaml(csu), default_seed_for_yaml("other"));
+    }
+
+    #[test]
+    fn test_seed_used_is_explicit_when_provided() {
+        // When the request carries `random_seed=Some(42)`, the response must
+        // echo it verbatim — reports cite this value for reproducibility.
+        let csu = crate::mcp::tools::samples::yaml_for_key("csu")
+            .expect("csu sample key must resolve to embedded YAML");
+        let seed = 42_u64;
+        let response = execute(csu, Some(50), None, false, None, false, false, Some(seed));
+        assert_eq!(response.seed_used, seed);
+    }
+
+    #[test]
+    fn test_seed_used_falls_back_to_default_seed_when_request_omits_it() {
+        let csu = crate::mcp::tools::samples::yaml_for_key("csu")
+            .expect("csu sample key must resolve to embedded YAML");
+        // build_artifacts directly so cache-eviction races don't muddy the
+        // assertion — same path the cached_artifacts wrapper uses on miss.
+        let artifacts =
+            build_artifacts(csu, Some(50), None, None).expect("csu sample must analyze cleanly");
+        assert_eq!(artifacts.seed_used, default_seed_for_yaml(csu));
+    }
+
+    #[test]
+    fn test_sampling_method_is_exhaustive_when_population_fully_enumerated() {
+        // TEST_YAML has only 2 courses → tiny population → exhaustive.
+        let response = execute(TEST_YAML, Some(500), None, false, None, false, false, None);
+        assert!(response.is_full_population);
+        assert_eq!(response.sampling_method, "exhaustive");
+    }
+
+    #[test]
+    fn test_seed_used_surfaced_on_response() {
+        let response = execute(TEST_YAML, Some(10), None, false, None, false, false, None);
+        // Default seed is non-zero (DefaultHasher.finish() on non-empty input
+        // virtually never returns 0).
+        assert!(response.seed_used != 0);
     }
 
     #[test]

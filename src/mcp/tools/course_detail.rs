@@ -166,7 +166,7 @@ pub fn execute(
     }
 
     if include_analysis {
-        match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, None) {
+        match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, None, None) {
             Ok(artifacts) => build_response_with_analysis(course_id, &artifacts),
             Err(e) => error_response(course_id, e),
         }

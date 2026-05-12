@@ -449,7 +449,8 @@ async fn fetch_detail_by_id(client: &Arc<DbClient>, id: &str) -> Option<DegreeDe
 /// fields useful for `compare_degrees`. Errors surface as a `parse_error`
 /// payload so a single bad YAML doesn't fail the whole compare call.
 fn compute_compare_metrics(yaml: &str, max_plans: Option<usize>) -> serde_json::Value {
-    let response = crate::mcp::tools::analyze::execute(yaml, max_plans, None, false, None, false);
+    let response =
+        crate::mcp::tools::analyze::execute(yaml, max_plans, None, false, None, false, false, None);
     if !response.success {
         return serde_json::json!({
             "parse_error": response.error,

@@ -312,6 +312,15 @@ pub fn deserialize_opt_usize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u
     coerce_opt::<usize>(serde_json::Value::deserialize(d)?).map_err(de::Error::custom)
 }
 
+/// Deserialize `Option<u64>` accepting `42`, `"42"`, `null`, or `""`.
+///
+/// # Errors
+/// Returns the underlying deserializer error if the input is negative,
+/// not an integer, or otherwise unparseable.
+pub fn deserialize_opt_u64<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+    coerce_opt::<u64>(serde_json::Value::deserialize(d)?).map_err(de::Error::custom)
+}
+
 /// Deserialize `Option<f32>` accepting `1.5`, `"1.5"`, `null`, or `""`.
 ///
 /// # Errors

@@ -132,6 +132,7 @@ fn make_artifact_key(
     yaml: &str,
     max_plans: Option<usize>,
     include_courses: Option<&[String]>,
+    random_seed: Option<u64>,
 ) -> ArtifactKey {
     let mut hasher = DefaultHasher::new();
     yaml.hash(&mut hasher);
@@ -148,6 +149,10 @@ fn make_artifact_key(
         // Distinguish None from Some(vec![]) — both legitimate "no constraint" forms.
         b"__none_include_courses__".hash(&mut hasher);
     }
+    // The default-seed case folds the yaml-hash back into itself, which is
+    // harmless. The explicit-seed case partitions the cache so two callers
+    // with different seeds don't share artifacts.
+    random_seed.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -218,14 +223,19 @@ pub static ARTIFACT_CACHE: LazyLock<Mutex<ArtifactCache>> =
 /// `render_plan_graph` + `analyze_degree` + `course_detail` on the same
 /// YAML share one expensive pipeline run.
 ///
+/// The cache key folds in `random_seed` so callers passing different seeds
+/// get distinct artifacts (and the default-seed case shares with the YAML
+/// hash naturally).
+///
 /// # Errors
 /// Forwards the parse-error string from [`crate::mcp::tools::analyze::build_artifacts`].
 pub(crate) fn cached_artifacts(
     yaml: &str,
     max_plans: Option<usize>,
     include_courses: Option<&[String]>,
+    random_seed: Option<u64>,
 ) -> Result<Arc<AnalysisArtifacts>, String> {
-    let key = make_artifact_key(yaml, max_plans, include_courses);
+    let key = make_artifact_key(yaml, max_plans, include_courses, random_seed);
 
     // Drop the lock guard before returning the Arc on a hit.
     let hit = ARTIFACT_CACHE
@@ -236,7 +246,8 @@ pub(crate) fn cached_artifacts(
         return Ok(arc);
     }
 
-    let artifacts = crate::mcp::tools::analyze::build_artifacts(yaml, max_plans, include_courses)?;
+    let artifacts =
+        crate::mcp::tools::analyze::build_artifacts(yaml, max_plans, include_courses, random_seed)?;
     let arc = Arc::new(artifacts);
     ARTIFACT_CACHE
         .lock()
@@ -301,8 +312,18 @@ mod tests {
     #[test]
     fn test_make_artifact_key_order_independent_for_include_courses() {
         // Same set of courses in different orders → same cache key.
-        let a = make_artifact_key("yaml", Some(10), Some(&["CS101".into(), "CS201".into()]));
-        let b = make_artifact_key("yaml", Some(10), Some(&["CS201".into(), "CS101".into()]));
+        let a = make_artifact_key(
+            "yaml",
+            Some(10),
+            Some(&["CS101".into(), "CS201".into()]),
+            None,
+        );
+        let b = make_artifact_key(
+            "yaml",
+            Some(10),
+            Some(&["CS201".into(), "CS101".into()]),
+            None,
+        );
         assert_eq!(a, b);
     }
 
@@ -313,8 +334,8 @@ mod tests {
         // the analysis pipeline.
         let yaml = crate::mcp::tools::samples::yaml_for_key("csu")
             .expect("csu sample key must resolve to embedded YAML");
-        let first = cached_artifacts(yaml, Some(50), None).expect("first build");
-        let second = cached_artifacts(yaml, Some(50), None).expect("cache hit");
+        let first = cached_artifacts(yaml, Some(50), None, None).expect("first build");
+        let second = cached_artifacts(yaml, Some(50), None, None).expect("cache hit");
         assert!(
             Arc::ptr_eq(&first, &second),
             "second call must hit the cache and return the same Arc"
@@ -326,8 +347,8 @@ mod tests {
         // None and Some(vec![]) are both "no constraint" semantically, but
         // the cache key separates them so swapping forms doesn't accidentally
         // collide (build_artifacts treats them identically; we err on safety).
-        let none = make_artifact_key("yaml", Some(10), None);
-        let empty = make_artifact_key("yaml", Some(10), Some(&[]));
+        let none = make_artifact_key("yaml", Some(10), None, None);
+        let empty = make_artifact_key("yaml", Some(10), Some(&[]), None);
         assert_ne!(none, empty);
     }
 
@@ -335,10 +356,10 @@ mod tests {
     fn test_make_artifact_key_distinguishes_max_plans() {
         // Different `max_plans` must produce different keys — otherwise a
         // capped-at-50 result would be returned for a caller asking for 500.
-        let small = make_artifact_key("yaml", Some(50), None);
-        let large = make_artifact_key("yaml", Some(500), None);
+        let small = make_artifact_key("yaml", Some(50), None, None);
+        let large = make_artifact_key("yaml", Some(500), None, None);
         assert_ne!(small, large);
-        let none = make_artifact_key("yaml", None, None);
+        let none = make_artifact_key("yaml", None, None, None);
         assert_ne!(small, none);
     }
 
@@ -368,8 +389,8 @@ mod tests {
         // smaller result set for a caller asking for more plans.
         let yaml = crate::mcp::tools::samples::yaml_for_key("csu")
             .expect("csu sample key must resolve to embedded YAML");
-        let a = cached_artifacts(yaml, Some(25), None).expect("first build");
-        let b = cached_artifacts(yaml, Some(50), None).expect("second build");
+        let a = cached_artifacts(yaml, Some(25), None, None).expect("first build");
+        let b = cached_artifacts(yaml, Some(50), None, None).expect("second build");
         assert!(
             !Arc::ptr_eq(&a, &b),
             "different max_plans must produce distinct cache entries"
@@ -384,7 +405,7 @@ mod tests {
         let yaml = crate::mcp::tools::samples::yaml_for_key("csu")
             .expect("csu sample key must resolve to embedded YAML");
         let sample =
-            crate::mcp::tools::analyze::build_artifacts(yaml, Some(10), None).expect("build");
+            crate::mcp::tools::analyze::build_artifacts(yaml, Some(10), None, None).expect("build");
         let shared = Arc::new(sample);
 
         let mut cache = ArtifactCache::default();
