@@ -5,6 +5,7 @@
 //! [`VanillaJsRenderer`] (no external dependencies); future implementations
 //! could use D3.js, Cytoscape.js, etc.
 
+use std::collections::HashMap;
 use std::fmt::Write as FmtWrite;
 
 use serde::Serialize;
@@ -287,6 +288,12 @@ fn render_legend(out: &mut String) {
 
 /// Emit term columns, course nodes, SVG overlay, and closing wrappers.
 fn render_graph_html(spec: &CurriculumGraphSpec, id: &str, out: &mut String) {
+    // Build a course-id → node lookup once. The inner loop previously did
+    // `spec.nodes.iter().find(...)` for every term × course pairing, which
+    // was O(terms × courses²) — pathological for 300+ course curricula.
+    let node_by_id: HashMap<&str, &CourseNode> =
+        spec.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+
     let _ = writeln!(out, "<div class=\"curriculum-graph-wrapper\">");
     let _ = writeln!(out, "<div class=\"curriculum-graph\" id=\"graph-{id}\">");
 
@@ -303,7 +310,7 @@ fn render_graph_html(spec: &CurriculumGraphSpec, id: &str, out: &mut String) {
         let _ = writeln!(out, "<div class=\"term-courses\">");
 
         for course_id in &term.course_ids {
-            let node = spec.nodes.iter().find(|n| &n.id == course_id);
+            let node = node_by_id.get(course_id.as_str()).copied();
             let complexity = node.map_or(0, |n| n.complexity);
             let name = node.map_or("", |n| n.name.as_str());
             let cls = complexity_class(complexity);
@@ -702,5 +709,68 @@ mod tests {
         // Should not panic — and the full name should appear in the HTML.
         let html = VanillaJsRenderer.render(&spec);
         assert!(html.contains("Introducción"));
+    }
+
+    /// Guard against regressions of the O(terms × courses²) hot loop fix.
+    /// Release-only: debug builds are far slower at HashMap construction +
+    /// String growth, and the goal is to catch a real perf regression, not
+    /// quirks of unoptimised builds.
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn test_render_500_course_curriculum_under_5s_release() {
+        use std::time::Instant;
+
+        let course_count: usize = 500;
+        let term_count: usize = 8;
+        let courses_per_term = course_count.div_ceil(term_count);
+
+        let mut nodes = Vec::with_capacity(course_count);
+        let mut terms = Vec::with_capacity(term_count);
+        for term_idx in 0..term_count {
+            let start = term_idx * courses_per_term;
+            let end = ((term_idx + 1) * courses_per_term).min(course_count);
+            let mut course_ids = Vec::with_capacity(end - start);
+            for i in start..end {
+                let id = format!("CS{i:04}");
+                course_ids.push(id.clone());
+                nodes.push(CourseNode {
+                    id,
+                    name: format!("Synthetic Course {i}"),
+                    credits: 4.0,
+                    complexity: (i % 30) + 1,
+                    delay: (i % 8) + 1,
+                    blocking: i % 5,
+                    on_critical_path: i % 17 == 0,
+                    term: term_idx + 1,
+                    median_complexity: None,
+                    median_delay: None,
+                    median_blocking: None,
+                });
+            }
+            terms.push(TermGroup {
+                number: term_idx + 1,
+                course_ids,
+            });
+        }
+
+        let spec = CurriculumGraphSpec {
+            graph_id: "bench".to_string(),
+            nodes,
+            edges: vec![],
+            terms,
+            critical_path_ids: vec![],
+        };
+
+        let start = Instant::now();
+        let html = VanillaJsRenderer.render_standalone(&spec);
+        let elapsed = start.elapsed();
+
+        assert!(!html.is_empty());
+        assert!(
+            elapsed.as_secs() < 5,
+            "render_standalone on 500-course spec took {elapsed:?}; \
+             threshold is 5 s. The hot loop in render_graph_html may \
+             have regressed to O(n²) lookup."
+        );
     }
 }
