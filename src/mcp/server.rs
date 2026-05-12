@@ -115,13 +115,14 @@ impl NuAnalyticsMcpServer {
     )]
     fn audit_degree(&self, Parameters(req): Parameters<AuditDegreeRequest>) -> String {
         let chain_threshold = req.chain_threshold;
+        let include_missing_intermediate = req.include_missing_intermediate_prereqs.unwrap_or(true);
         let source = match shared::parse_yaml_source(req.yaml_content, req.yaml_path, req.degree_id)
         {
             Ok(s) => s,
             Err(e) => return e,
         };
         self.run_yaml_tool("audit_degree", source, move |yaml| {
-            audit::execute_json(yaml, chain_threshold)
+            audit::execute_json(yaml, chain_threshold, include_missing_intermediate)
         })
     }
 

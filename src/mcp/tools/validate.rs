@@ -445,6 +445,10 @@ fn convert_validation_errors(result: &ValidationResult) -> Vec<ValidationErrorIn
         .collect()
 }
 
+// Exhaustive `match` over every ValidationWarning variant — splitting into
+// smaller helpers would just add indirection for what is already a 1:1
+// mapping table. Each new variant adds another short arm.
+#[allow(clippy::too_many_lines)]
 fn convert_validation_warnings(result: &ValidationResult) -> Vec<ValidationWarningInfo> {
     result
         .warnings
@@ -508,6 +512,42 @@ fn convert_validation_warnings(result: &ValidationResult) -> Vec<ValidationWarni
                 warning_type: "PatternMatchesNoCoursesAllowed".to_string(),
                 message: format!(
                     "Pattern '{pattern}' in requirement '{requirement_id}' matches no enumerated courses (allowed via allow_unmatched_patterns)"
+                ),
+            },
+            ValidationWarning::ImpliedElectiveConstraint { elective, requires } => {
+                ValidationWarningInfo {
+                    warning_type: "ImpliedElectiveConstraint".to_string(),
+                    message: format!(
+                        "Elective '{elective}' requires '{requires}'; both sit in optional pools, so selecting '{elective}' forces an additional pool slot for '{requires}'"
+                    ),
+                }
+            }
+            ValidationWarning::DuplicateRequirementMembership {
+                course_key,
+                requirement_ids,
+            } => ValidationWarningInfo {
+                warning_type: "DuplicateRequirementMembership".to_string(),
+                message: format!(
+                    "Course '{course_key}' appears in multiple top-level requirements [{}] with allow_double_counting=false. The plan generator doesn't enforce double-counting today, but the dual membership is likely unintentional — remove '{course_key}' from one of these requirements or set degree.allow_double_counting: true.",
+                    requirement_ids.join(", ")
+                ),
+            },
+            ValidationWarning::CreditTotalUnreachable {
+                stated_total,
+                minimum_required,
+            } => ValidationWarningInfo {
+                warning_type: "CreditTotalUnreachable".to_string(),
+                message: format!(
+                    "Minimum required credits ({minimum_required}) already exceed degree.total_credits ({stated_total}); the stated total is unreachable"
+                ),
+            },
+            ValidationWarning::CreditTotalImplausible {
+                stated_total,
+                maximum_possible,
+            } => ValidationWarningInfo {
+                warning_type: "CreditTotalImplausible".to_string(),
+                message: format!(
+                    "Maximum credits computable from declared requirements ({maximum_possible}) falls below degree.total_credits ({stated_total}); students would need ungoverned electives to reach the stated total"
                 ),
             },
         })

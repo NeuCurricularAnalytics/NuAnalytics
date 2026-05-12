@@ -5,7 +5,8 @@
 //! prerequisite chain analysis.
 
 use crate::core::degree::audit::{
-    detect_lowest_course_level, find_deep_chains, find_upper_level_without_prereqs,
+    detect_lowest_course_level, find_deep_chains, find_missing_intermediate_prereqs,
+    find_upper_level_without_prereqs, MissingIntermediateFinding,
 };
 use crate::core::degree::{parse_degree_yaml, DegreeParseError};
 use crate::core::models::CourseGraph;
@@ -52,6 +53,20 @@ pub struct AuditDegreeRequest {
         deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
     )]
     pub chain_threshold: Option<usize>,
+
+    /// Surface `missing_intermediate_prereqs` findings — heuristic same-subject
+    /// "course C declares prereq A, but B (same subject, also prereqs A,
+    /// numerically between) may belong in C's chain" warnings. Defaults to
+    /// `true`. Turn off when you've vetted the catalog and want a quieter
+    /// audit response.
+    #[schemars(
+        description = "Include missing-intermediate prerequisite findings (default true). Heuristic: flags courses where a same-subject sibling sits numerically between a declared prereq and the consuming course and shares the same prereq."
+    )]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
+    )]
+    pub include_missing_intermediate_prereqs: Option<bool>,
 }
 
 /// A course missing expected prerequisites
@@ -78,6 +93,34 @@ pub struct DeepChainBranch {
     pub length: usize,
     /// Courses in this branch, in dependency order (leaf → immediate prereq)
     pub path: Vec<String>,
+}
+
+/// One possible missing-intermediate prerequisite finding, surfaced as JSON.
+///
+/// Heuristic only — see [`find_missing_intermediate_prereqs`] for the
+/// matching rules and known limitations. Always a soft signal; never a hard
+/// error.
+#[derive(Debug, Serialize)]
+pub struct MissingIntermediateInfo {
+    /// Course that may be skipping an intermediary (e.g. `"CS165"`).
+    pub course_id: String,
+    /// Prereq the course declares directly (e.g. `"CS150B"`).
+    pub declared_prereq: String,
+    /// Same-subject candidate intermediate course (e.g. `"CS164"`).
+    pub suggested_intermediate: String,
+    /// Human-readable explanation, ready to surface to a caller.
+    pub rationale: String,
+}
+
+impl From<MissingIntermediateFinding> for MissingIntermediateInfo {
+    fn from(f: MissingIntermediateFinding) -> Self {
+        Self {
+            course_id: f.course_id,
+            declared_prereq: f.declared_prereq,
+            suggested_intermediate: f.suggested_intermediate,
+            rationale: f.rationale,
+        }
+    }
 }
 
 /// A course with a deep prerequisite chain
@@ -116,6 +159,14 @@ pub struct AuditResponse {
     /// Upper-level courses without prerequisites
     pub missing_prerequisites: Vec<MissingPrereqInfo>,
 
+    /// Possible missing intermediate prerequisites — heuristic findings
+    /// where a same-subject sibling course sits numerically between a
+    /// declared prereq and the consuming course. Empty (and skipped from
+    /// the JSON output) when nothing is detected or the caller passed
+    /// `include_missing_intermediate_prereqs=false`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub missing_intermediate_prereqs: Vec<MissingIntermediateInfo>,
+
     /// Courses with deep prerequisite chains
     pub deep_chains: Vec<DeepChainInfo>,
     /// Threshold used for deep chain detection
@@ -140,7 +191,11 @@ const DEFAULT_CHAIN_THRESHOLD: usize = 3;
 
 /// Execute the `audit_degree` tool
 #[must_use]
-pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditResponse {
+pub fn execute(
+    yaml_content: &str,
+    chain_threshold: Option<usize>,
+    include_missing_intermediate_prereqs: bool,
+) -> AuditResponse {
     let threshold = chain_threshold.unwrap_or(DEFAULT_CHAIN_THRESHOLD);
 
     // Try to parse the YAML
@@ -154,6 +209,7 @@ pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditRespo
                 validation_warnings: 0,
                 validation_report: String::new(),
                 missing_prerequisites: vec![],
+                missing_intermediate_prereqs: vec![],
                 deep_chains: vec![],
                 chain_threshold: threshold,
                 degree_name: None,
@@ -209,6 +265,18 @@ pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditRespo
         })
         .collect();
 
+    let missing_intermediate: Vec<MissingIntermediateInfo> = if include_missing_intermediate_prereqs
+    {
+        find_missing_intermediate_prereqs(&program)
+            .into_iter()
+            .map(MissingIntermediateInfo::from)
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    // `passed` reflects hard problems only — missing-intermediate findings
+    // are heuristic warnings, so they don't flip `passed` to false.
     let passed =
         validation.errors.is_empty() && missing_prereqs.is_empty() && deep_chains.is_empty();
 
@@ -221,6 +289,7 @@ pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditRespo
         validation_warnings: validation.warnings.len(),
         validation_report: validation.format_report(),
         missing_prerequisites: missing_prereqs,
+        missing_intermediate_prereqs: missing_intermediate,
         deep_chains,
         chain_threshold: threshold,
         degree_name: Some(program.degree.name.clone()),
@@ -272,8 +341,16 @@ fn build_audit_followups(
 
 /// Execute and serialize the result as JSON
 #[must_use]
-pub fn execute_json(yaml_content: &str, chain_threshold: Option<usize>) -> String {
-    let response = execute(yaml_content, chain_threshold);
+pub fn execute_json(
+    yaml_content: &str,
+    chain_threshold: Option<usize>,
+    include_missing_intermediate_prereqs: bool,
+) -> String {
+    let response = execute(
+        yaml_content,
+        chain_threshold,
+        include_missing_intermediate_prereqs,
+    );
     serde_json::to_string_pretty(&response)
         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
 }
@@ -348,7 +425,7 @@ courses:
 
     #[test]
     fn test_audit_valid_degree() {
-        let response = execute(VALID_YAML, None);
+        let response = execute(VALID_YAML, None, false);
         assert!(response.parse_error.is_none());
         assert_eq!(response.total_courses, 2);
         assert_eq!(response.degree_name, Some("Test Program".to_string()));
@@ -356,14 +433,14 @@ courses:
 
     #[test]
     fn test_audit_malformed_yaml() {
-        let response = execute("not: valid: yaml: {{", None);
+        let response = execute("not: valid: yaml: {{", None, false);
         assert!(!response.passed);
         assert!(response.parse_error.is_some());
     }
 
     #[test]
     fn test_audit_json_output() {
-        let json = execute_json(VALID_YAML, None);
+        let json = execute_json(VALID_YAML, None, false);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["total_courses"].as_u64().unwrap() > 0);
     }
@@ -379,7 +456,7 @@ courses:
 
     #[test]
     fn test_audit_with_custom_threshold() {
-        let response = execute(VALID_YAML, Some(1));
+        let response = execute(VALID_YAML, Some(1), false);
         // With threshold 1, even CS201 (1 prereq) might be flagged
         assert!(response.parse_error.is_none());
         assert_eq!(response.chain_threshold, 1);
@@ -422,7 +499,7 @@ courses:
     number: "340"
     credits: 3
 "#;
-        let response = execute(yaml, None);
+        let response = execute(yaml, None, false);
         let cs = response
             .missing_prerequisites
             .iter()
@@ -466,7 +543,7 @@ courses:
     number: "300"
     credits: 4
 "#;
-        let response = execute(yaml, None);
+        let response = execute(yaml, None, false);
         let cs = response
             .missing_prerequisites
             .iter()
@@ -520,7 +597,7 @@ courses:
     credits: 3
     prerequisites_raw: "CS300"
 "#;
-        let response = execute(yaml, Some(3));
+        let response = execute(yaml, Some(3), false);
         let cs400 = response
             .deep_chains
             .iter()
@@ -584,7 +661,7 @@ courses:
     credits: 3
     prerequisites_raw: "CS300"
 "#;
-        let response = execute(yaml, Some(3));
+        let response = execute(yaml, Some(3), false);
         assert!(!response.deep_chains.is_empty());
         assert!(
             response
@@ -629,7 +706,7 @@ courses:
     number: "300"
     credits: 4
 "#;
-        let response = execute(yaml, None);
+        let response = execute(yaml, None, false);
         assert!(response
             .missing_prerequisites
             .iter()
@@ -641,6 +718,106 @@ courses:
                 .any(|f| f.tool == "get_course_detail"),
             "internal missing prereqs must trigger get_course_detail; got {:?}",
             response.tool_followups
+        );
+    }
+
+    #[test]
+    fn test_audit_surfaces_missing_intermediate_when_flag_is_on() {
+        // CSU-style chain gap: CS165 declares CS150B; CS164 belongs in
+        // between. Audit must surface the heuristic finding when the
+        // opt-in flag is set.
+        let yaml = r#"
+degree:
+  id: csu-style
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+  major_subjects: ["CS"]
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS150B, CS164, CS165]
+
+courses:
+  CS150B:
+    title: Intro CS
+    prefix: CS
+    number: "150"
+    credits: 4
+  CS164:
+    title: Data Structures
+    prefix: CS
+    number: "164"
+    credits: 4
+    prerequisites_raw: "CS150B"
+  CS165:
+    title: Algorithms
+    prefix: CS
+    number: "165"
+    credits: 4
+    prerequisites_raw: "CS150B"
+"#;
+        let response = execute(yaml, None, true);
+        assert!(
+            response
+                .missing_intermediate_prereqs
+                .iter()
+                .any(|f| f.course_id == "CS165"
+                    && f.declared_prereq == "CS150B"
+                    && f.suggested_intermediate == "CS164"),
+            "expected CS165 finding pointing at CS164; got {:?}",
+            response.missing_intermediate_prereqs
+        );
+    }
+
+    #[test]
+    fn test_audit_omits_missing_intermediate_when_flag_is_off() {
+        // Same YAML; flag off → field empty (and skipped from JSON).
+        let yaml = r#"
+degree:
+  id: csu-style-off
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+  major_subjects: ["CS"]
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS150B, CS164, CS165]
+
+courses:
+  CS150B:
+    title: Intro CS
+    prefix: CS
+    number: "150"
+    credits: 4
+  CS164:
+    title: Data Structures
+    prefix: CS
+    number: "164"
+    credits: 4
+    prerequisites_raw: "CS150B"
+  CS165:
+    title: Algorithms
+    prefix: CS
+    number: "165"
+    credits: 4
+    prerequisites_raw: "CS150B"
+"#;
+        let response = execute(yaml, None, false);
+        assert!(response.missing_intermediate_prereqs.is_empty());
+        let json = execute_json(yaml, None, false);
+        assert!(
+            !json.contains("missing_intermediate_prereqs"),
+            "field must be skipped from JSON when empty"
         );
     }
 
@@ -670,7 +847,7 @@ courses:
     number: "101"
     credits: 4
 "#;
-        let response = execute(yaml, None);
+        let response = execute(yaml, None, false);
         assert!(!response.passed);
         assert!(response.validation_errors > 0);
     }

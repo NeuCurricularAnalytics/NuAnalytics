@@ -153,7 +153,10 @@ pub fn execute(
     let audit_response = if skip_audit {
         None
     } else {
-        Some(audit::execute(yaml_content, chain_threshold))
+        // Default to surfacing missing-intermediate prereq findings on the
+        // bundled audit response so the pipeline caller sees them without an
+        // extra flag.
+        Some(audit::execute(yaml_content, chain_threshold, true))
     };
 
     let analyze_response = if skip_analyze {
