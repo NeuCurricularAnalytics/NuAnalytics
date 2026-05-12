@@ -124,6 +124,10 @@ pub struct SampleEntry {
 /// Response for `list_sample_degrees`.
 #[derive(Debug, Serialize)]
 pub struct ListSampleDegreesResponse {
+    /// Always `true` — the sample list is in-memory and never fails.
+    /// Surfaced for consistency with the other tool responses so automated
+    /// pipelines can check the same field on every call.
+    pub success: bool,
     /// Total number of bundled samples.
     pub count: usize,
     /// One entry per bundled sample.
@@ -152,6 +156,7 @@ pub fn execute(include_yaml: bool) -> ListSampleDegreesResponse {
         })
         .collect();
     ListSampleDegreesResponse {
+        success: true,
         count: samples.len(),
         samples,
         note: "Call this tool again with include_yaml=true to receive the full YAML body, then feed yaml_content into validate_degree, audit_degree, analyze_degree, or generate_degree_report.",

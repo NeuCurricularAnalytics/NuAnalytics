@@ -129,6 +129,16 @@ pub struct RenderPlanGraphResponse {
     pub node_count: Option<usize>,
     /// Whether this response was a dry-run probe (no HTML payload).
     pub dry_run: bool,
+    /// Number of `RandomSample` entries actually present in `selected_plans`.
+    /// Populated only on the sample-index-out-of-range error path so callers
+    /// can retry with a valid index without re-running analyze.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available_samples: Option<usize>,
+    /// The 1-indexed sample number the caller requested when the
+    /// out-of-range error fired. Echoed for symmetry with
+    /// `available_samples`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_sample_index: Option<usize>,
 }
 
 // ============================================================================
@@ -184,6 +194,21 @@ pub fn execute(
     );
 
     let Some((idx, category, plan)) = picked else {
+        // Detect the specific "asked for sample N but only M exist" case so
+        // callers can retry without a fresh analyze pass.
+        let wants_sample = plan_category
+            .and_then(PlanCategory::from_user_input)
+            .is_some_and(|c| c == PlanCategory::RandomSample);
+        if wants_sample {
+            let available = entries
+                .iter()
+                .filter(|(_, cat, _)| *cat == PlanCategory::RandomSample)
+                .count();
+            let want = sample_index.unwrap_or(1);
+            if want > available {
+                return sample_index_out_of_range_response(want, available);
+            }
+        }
         return error_response(format!(
             "No selected plan matches plan_category={plan_category:?} / plan_index={plan_index:?} / sample_index={sample_index:?}. Selected_plans has {} entries.",
             entries.len()
@@ -227,6 +252,8 @@ pub fn execute(
         html_bytes,
         node_count: Some(node_count),
         dry_run,
+        available_samples: None,
+        requested_sample_index: None,
     }
 }
 
@@ -315,7 +342,24 @@ fn error_response(error: impl Into<String>) -> RenderPlanGraphResponse {
         html_bytes: 0,
         node_count: None,
         dry_run: false,
+        available_samples: None,
+        requested_sample_index: None,
     }
+}
+
+/// Specific failure response for the "`sample_index` past the end" case.
+/// Surfaces `available_samples` + `requested_sample_index` so the caller
+/// can retry against a valid index without re-running analyze.
+fn sample_index_out_of_range_response(
+    requested: usize,
+    available: usize,
+) -> RenderPlanGraphResponse {
+    let mut response = error_response(format!(
+        "sample_index={requested} exceeds available Random Sample plans ({available}). Retry with sample_index in 1..={available}."
+    ));
+    response.available_samples = Some(available);
+    response.requested_sample_index = Some(requested);
+    response
 }
 
 // ============================================================================
@@ -552,6 +596,39 @@ courses:
         // Picker metadata still populated so the caller can verify the
         // resolution before paying the render cost.
         assert_eq!(response.plan_category.as_deref(), Some("Shortest Path"));
+    }
+
+    #[test]
+    fn test_sample_index_out_of_range_surfaces_available_and_requested() {
+        // TEST_YAML has a tiny population (2 courses), so reservoir likely
+        // holds far fewer than 99 random samples. Asking for sample_index=99
+        // must surface the structured error rather than the generic
+        // "No selected plan matches" message.
+        let response = execute(
+            TEST_YAML,
+            Some("sample"),
+            Some(99),
+            None,
+            VisualizationFormat::Standalone,
+            Some(10),
+            None,
+            false,
+        );
+        assert!(!response.success);
+        assert_eq!(response.requested_sample_index, Some(99));
+        let available = response
+            .available_samples
+            .expect("available_samples must be populated on out-of-range error");
+        assert!(available < 99);
+        let err = response.error.expect("error message must be populated");
+        assert!(
+            err.contains("sample_index=99"),
+            "error must echo the requested index: {err}"
+        );
+        assert!(
+            err.contains(&format!("({available})")),
+            "error must surface available_samples count: {err}"
+        );
     }
 
     #[test]

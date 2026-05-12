@@ -331,9 +331,10 @@ mod tests {
     fn test_cached_artifacts_returns_same_arc_on_repeated_lookup() {
         // Repeated `cached_artifacts` calls with the same inputs must return
         // the same Arc so downstream tools share work instead of re-running
-        // the analysis pipeline.
-        let yaml = crate::mcp::tools::samples::yaml_for_key("csu")
-            .expect("csu sample key must resolve to embedded YAML");
+        // the analysis pipeline. Use a YAML body unique to this test
+        // (suffix-marker in the comment) so concurrent tests can't evict
+        // the entry between the two calls in this thread.
+        let yaml = "degree:\n  id: t-cache-arc\n  institution: T\n  program: T\n  total_credits: 8\n  gpa_minimum: 2.0\n\nrequirements:\n  intro:\n    name: Intro\n    type: all\n    category: major\n    courses: [CS101, CS201]\n\ncourses:\n  CS101:\n    title: Intro\n    prefix: CS\n    number: \"101\"\n    credits: 4\n  CS201:\n    title: Adv\n    prefix: CS\n    number: \"201\"\n    credits: 4\n    prerequisites_raw: \"CS101\"\n# unique-marker: cached_artifacts arc-eq test\n";
         let first = cached_artifacts(yaml, Some(50), None, None).expect("first build");
         let second = cached_artifacts(yaml, Some(50), None, None).expect("cache hit");
         assert!(

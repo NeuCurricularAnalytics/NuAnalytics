@@ -112,6 +112,13 @@ pub struct DegreePipelineResponse {
     /// validate short-circuited on a parse error.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub analyze: Option<analyze::AnalysisResponse>,
+
+    /// Which sub-tool stage produced the failure when `success` is `false`.
+    /// `"validate"` for a parse error, `"audit"` if the audit pass reports
+    /// validation errors / missing prereqs / deep chains, `"analyze"` when
+    /// the analysis pipeline can't build artifacts. `None` on a clean run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_at_stage: Option<&'static str>,
 }
 
 // ============================================================================
@@ -147,6 +154,7 @@ pub fn execute(
             validate: validate_response,
             audit: None,
             analyze: None,
+            failed_at_stage: Some("validate"),
         };
     }
 
@@ -174,12 +182,28 @@ pub fn execute(
         ))
     };
 
+    // Determine which (if any) post-validate stage signalled failure.
+    // `validate.is_valid=false` after a clean parse means validation found
+    // hard errors (e.g. missing courses) — surface as a validate-stage
+    // failure so callers don't need to introspect every nested response.
+    let failed_at_stage = if !validate_response.is_valid {
+        Some("validate")
+    } else if audit_response.as_ref().is_some_and(|a| !a.passed) {
+        Some("audit")
+    } else if analyze_response.as_ref().is_some_and(|a| !a.success) {
+        Some("analyze")
+    } else {
+        None
+    };
+    let success = failed_at_stage.is_none();
+
     DegreePipelineResponse {
-        success: true,
+        success,
         parse_error: None,
         validate: validate_response,
         audit: audit_response,
         analyze: analyze_response,
+        failed_at_stage,
     }
 }
 
@@ -280,6 +304,18 @@ courses:
             response.analyze.is_none(),
             "analyze must be None when validate parse-errors"
         );
+        assert_eq!(
+            response.failed_at_stage,
+            Some("validate"),
+            "parse error must be tagged as a validate-stage failure"
+        );
+    }
+
+    #[test]
+    fn test_pipeline_failed_at_stage_none_on_clean_run() {
+        let response = execute(TEST_YAML, false, None, Some(10), None, false, false);
+        assert!(response.success);
+        assert!(response.failed_at_stage.is_none());
     }
 
     #[test]

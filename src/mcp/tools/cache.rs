@@ -9,6 +9,7 @@
 //! once and then refer to it via a short `cache:{hex}` handle on every
 //! subsequent call.
 
+use chrono::{DateTime, Utc};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +45,10 @@ pub struct CacheYamlResponse {
     /// TTL in seconds — how long this handle stays valid from insertion.
     /// Surfaced explicitly so callers can plan re-caching before expiry.
     pub ttl_seconds: u64,
+    /// Absolute expiry as an RFC 3339 / ISO 8601 timestamp in UTC
+    /// (e.g. `"2026-05-13T20:15:43Z"`). Lets callers schedule a re-cache
+    /// without recomputing `now + ttl_seconds` themselves.
+    pub expires_at: String,
     /// Human-readable hint about how to use the handle.
     pub note: &'static str,
 }
@@ -68,12 +73,19 @@ pub fn execute(yaml_content: String) -> CacheYamlResponse {
         let handle = cache.insert(yaml_content);
         (handle, cache.len())
     };
+    // `chrono::Duration::from_std` only fails for durations > i64::MAX; the
+    // 24 h TTL we ship is well inside that bound, so the conversion is
+    // infallible in practice. Falling back to `Utc::now()` on the unreachable
+    // overflow path keeps the signature panic-free.
+    let expires_at: DateTime<Utc> = Utc::now()
+        + chrono::Duration::from_std(YAML_CACHE_TTL).unwrap_or_else(|_| chrono::Duration::zero());
     CacheYamlResponse {
         success: true,
         handle,
         bytes,
         cache_entries,
         ttl_seconds: YAML_CACHE_TTL.as_secs(),
+        expires_at: expires_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         note: "Pass `handle` as `degree_id` to validate_degree / audit_degree / analyze_degree / generate_degree_report / get_course_detail / render_plan_graph / find_courses_matching / degree_pipeline. Subsequent responses surface cache_ttl_remaining_seconds so you can re-cache before expiry.",
     }
 }
@@ -113,6 +125,29 @@ mod tests {
         assert_eq!(
             r1.handle, r2.handle,
             "same body must produce the same handle on repeat insert"
+        );
+    }
+
+    #[test]
+    fn test_execute_response_includes_expires_at_iso8601() {
+        let body = "degree:\n  id: expires-at\n".to_string();
+        let response = execute(body);
+        // RFC 3339 / ISO 8601 in UTC with "Z" suffix, e.g. 2026-05-13T20:15:43Z.
+        let s = &response.expires_at;
+        assert!(s.ends_with('Z'), "expected UTC Z suffix; got {s:?}");
+        let parsed = DateTime::parse_from_rfc3339(s)
+            .unwrap_or_else(|e| panic!("expires_at must parse as RFC 3339: {s:?} ({e})"));
+        let now = Utc::now();
+        let delta = parsed.with_timezone(&Utc) - now;
+        // Should be within a few seconds of `now + TTL`. Allow 60s slack.
+        // The cast is safe: 24h in seconds (86400) is far below i64::MAX.
+        let expected_secs = i64::try_from(YAML_CACHE_TTL.as_secs())
+            .expect("TTL must fit in i64 (24 h ≪ i64::MAX seconds)");
+        assert!(
+            (delta.num_seconds() - expected_secs).abs() < 60,
+            "expires_at off by more than 60s: delta={}s expected≈{}s",
+            delta.num_seconds(),
+            expected_secs
         );
     }
 
