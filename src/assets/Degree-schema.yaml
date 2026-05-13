@@ -29,6 +29,110 @@
 # =============================================================================
 
 # =============================================================================
+# QUICKSTART
+# =============================================================================
+#
+# A complete, valid degree YAML in ~60 lines. Copy this and modify.
+# For full reference, request section="all" or one of the dedicated
+# sections: degree, requirements, courses, examples.
+
+# degree:
+#   id: example-bs-cs-2024
+#   institution: Example University
+#   program: B.S. Computer Science
+#   catalog_year: "2024-2025"
+#   total_credits: 120
+#   gpa_minimum: 2.0
+#   major_subjects: ["CS", "MATH"]
+#   allow_double_counting: false
+#
+# requirements:
+#
+#   # type: all — every listed course must be completed
+#   intro_sequence:
+#     name: Introductory CS
+#     type: all
+#     category: major
+#     courses: [CS1, CS2]
+#
+#   # type: select — choose N courses (or N credits) from a pool
+#   cs_electives:
+#     name: Upper-division CS electives
+#     type: select
+#     category: major
+#     count: 3
+#     from:
+#       pattern: "CS:3000+"           # match all CS courses numbered 3000+
+#       exclude: [CS5000]              # optional — exclude specific matches
+#
+#   # type: select with explicit course list
+#   quant_reasoning:
+#     name: Quantitative reasoning
+#     type: select
+#     category: gen_ed
+#     count: 1
+#     from:
+#       courses: [MATH1, STAT1]
+#
+#   # type: one_of with nested select requirements — model
+#   # "(intro pair A or intro pair B) + (data structures pair X or pair Y)"
+#   # i.e. pick one course from EACH of two pools as a single mutually
+#   # exclusive group. Each option's `requirements` block can hold any
+#   # mix of `all` and `select` requirements; the option is satisfied
+#   # only when all of them are.
+#   intro_track:
+#     name: Introductory track
+#     type: one_of
+#     category: major
+#     options:
+#       - id: track_a
+#         name: Track A (CS1 + CS2)
+#         requirements:
+#           - name: Intro pair
+#             type: select
+#             count: 1
+#             from:
+#               courses: [CS1, CS1_HONORS]
+#           - name: Data structures pair
+#             type: select
+#             count: 1
+#             from:
+#               courses: [CS2, CS2_FAST]
+#       - id: track_b
+#         name: Track B (alt sequence)
+#         requirements:
+#           - name: Alt intro
+#             type: all
+#             courses: [CS1_ALT, CS2_ALT]
+#
+# courses:
+#
+#   CS1:
+#     title: Introduction to Computing
+#     prefix: CS
+#     number: "1100"
+#     credits: 4
+#
+#   CS2:
+#     title: Data Structures
+#     prefix: CS
+#     number: "2100"
+#     credits: 4
+#     prerequisites_raw: "CS1"        # boolean expression: course IDs joined by & |
+#
+#   MATH1:
+#     title: Calculus I
+#     prefix: MATH
+#     number: "1100"
+#     credits: 4
+#
+#   STAT1:
+#     title: Probability and Statistics
+#     prefix: STAT
+#     number: "2100"
+#     credits: 3
+
+# =============================================================================
 # DEGREE METADATA
 # =============================================================================
 
@@ -54,6 +158,16 @@ degree:
 
   # Subjects that count toward major
   major_subjects: "[string] | null"     # e.g., ["CS", "CY", "DS", "IS"]
+  # Used by audit_degree to:
+  #   1. Restrict deep prerequisite-chain analysis to courses whose subject
+  #      prefix appears here (avoids flagging external supporting courses).
+  #   2. Classify missing-prereq findings as internal_missing_prereq when the
+  #      course's prefix is in this list, vs external_missing_prereq otherwise.
+  # Match is case-insensitive against the alphabetic prefix of each course key
+  # (e.g. "CS" matches "CS3000", "Cs3000", "cs3000"). Leave null when you don't
+  # want subject-based scoping; audit then falls back to "course is in scope iff
+  # it appears in some requirement", and missing-prereq tags become
+  # unknown_scope.
 
   # Double counting policy
   allow_double_counting: boolean      # Can courses satisfy multiple requirements?
@@ -328,6 +442,14 @@ courses:
 #   expr       := term (('&' | '|') term)*
 #   term       := course_req | '(' expr ')'
 #   course_req := COURSE_ID ('[' GRADE ']')?
+#
+# Notes:
+#   - Operator tokens are `&` and `|` only (no `AND`/`OR` keyword forms).
+#   - Parens nest arbitrarily: "((A & B) | (C & D))" is valid.
+#   - The expression accepts COURSE_IDs only — pattern syntax like "CS:300+"
+#     belongs in `from` blocks (selection pools), not in prerequisite
+#     expressions, which must enumerate individual courses.
+#   - Whitespace around operators is optional but recommended for readability.
 #
 # =============================================================================
 

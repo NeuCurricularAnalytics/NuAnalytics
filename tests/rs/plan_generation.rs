@@ -376,6 +376,7 @@ fn test_selected_plans_collection() {
             create_scored_plan(&["CS2000"]),
         ],
         total_plans_seen: 100,
+        calc_ready_suppressed: false,
     };
 
     assert_eq!(selected.special_plan_count(), 2);

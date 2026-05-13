@@ -1,11 +1,13 @@
 //! Validation framework for degree programs
 
+use super::audit::collect_from_requirement;
 use super::course_reference::CourseReference;
+use super::RequirementResolver;
 use crate::core::models::course::Course;
 use crate::core::models::dag::DAG;
 use crate::core::models::degree::{FromClause, Requirement, RequirementType};
 use crate::core::models::DegreeProgram;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 
 // ============================================================================
@@ -193,6 +195,73 @@ pub enum ValidationWarning {
         /// The required course that triggers this choice
         required_by: String,
     },
+
+    /// Pattern matched no enumerated courses, but the caller opted in to
+    /// `allow_unmatched_patterns` so it's surfaced as a warning instead of
+    /// an error. Common for external gen-ed pools (`*:100+`, `POLS:100+`)
+    /// that aren't enumerated locally.
+    PatternMatchesNoCoursesAllowed {
+        /// The pattern that didn't match any enumerated course
+        pattern: String,
+        /// Requirement ID containing the pattern
+        requirement_id: String,
+    },
+
+    /// An elective course requires another course that is itself only in an
+    /// optional pool — students who pick the elective implicitly consume an
+    /// additional pool slot. Could be intentional (a sequence within an
+    /// elective bundle) but worth surfacing for advising review.
+    ImpliedElectiveConstraint {
+        /// The elective course that triggers the constraint
+        elective: String,
+        /// The prerequisite course that is also optional
+        requires: String,
+    },
+
+    /// A course appears in two or more top-level requirements while the
+    /// program has `allow_double_counting: false`. The plan generator does
+    /// not currently enforce this flag, so it's a warning rather than an
+    /// error — but the dual membership is almost certainly unintentional
+    /// when the flag is set.
+    DuplicateRequirementMembership {
+        /// The duplicated course key
+        course_key: String,
+        /// IDs of the top-level requirements where the course appears
+        requirement_ids: Vec<String>,
+    },
+
+    /// The fixed (`all`-requirement) credits plus the minimum credits any
+    /// `select` requirement could contribute already exceed the program's
+    /// stated `total_credits`. The stated total is unreachable from the
+    /// requirements as written.
+    CreditTotalUnreachable {
+        /// `degree.total_credits` as written
+        stated_total: u32,
+        /// Sum of fixed (`all`) + minimum select-requirement credits
+        minimum_required: u32,
+    },
+
+    /// The fixed credits plus the maximum any `select` requirement could
+    /// contribute still falls below the stated `total_credits`. Students
+    /// would need ungoverned electives to hit the total — worth confirming.
+    CreditTotalImplausible {
+        /// `degree.total_credits` as written
+        stated_total: u32,
+        /// Sum of fixed (`all`) + maximum select-requirement credits
+        maximum_possible: u32,
+    },
+}
+
+/// Options that adjust validation behavior.
+///
+/// Defaults preserve the original strict behavior; callers opt in to looser
+/// modes when the YAML intentionally leaves some pools un-enumerated.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ValidationOptions {
+    /// Treat `PatternMatchesNoCourses` as a warning instead of an error.
+    /// Useful when a degree YAML references external pools (e.g. `*:100+`,
+    /// `POLS:100+`) that aren't enumerated in the local `courses:` block.
+    pub allow_unmatched_patterns: bool,
 }
 
 impl ValidationResult {
@@ -245,6 +314,10 @@ impl ValidationResult {
             let mut isolated = Vec::new();
             let mut hidden_req = Vec::new();
             let mut hidden_opts = Vec::new();
+            let mut unmatched_patterns = Vec::new();
+            let mut implied_elective = Vec::new();
+            let mut duplicate_membership = Vec::new();
+            let mut credit_total = Vec::new();
 
             for warning in &self.warnings {
                 match warning {
@@ -256,6 +329,19 @@ impl ValidationResult {
                     ValidationWarning::IsolatedCourse { .. } => isolated.push(warning),
                     ValidationWarning::HiddenRequirement { .. } => hidden_req.push(warning),
                     ValidationWarning::HiddenRequirementOption { .. } => hidden_opts.push(warning),
+                    ValidationWarning::PatternMatchesNoCoursesAllowed { .. } => {
+                        unmatched_patterns.push(warning);
+                    }
+                    ValidationWarning::ImpliedElectiveConstraint { .. } => {
+                        implied_elective.push(warning);
+                    }
+                    ValidationWarning::DuplicateRequirementMembership { .. } => {
+                        duplicate_membership.push(warning);
+                    }
+                    ValidationWarning::CreditTotalUnreachable { .. }
+                    | ValidationWarning::CreditTotalImplausible { .. } => {
+                        credit_total.push(warning);
+                    }
                 }
             }
 
@@ -275,6 +361,10 @@ impl ValidationResult {
             print_group("Missing Cross-Listed Courses", &missing_cross_listed);
             print_group("Broad Patterns", &broad_pattern);
             print_group("Isolated Courses", &isolated);
+            print_group("Unmatched Patterns (External Pools)", &unmatched_patterns);
+            print_group("Implied Elective Constraints", &implied_elective);
+            print_group("Duplicate Requirement Membership", &duplicate_membership);
+            print_group("Credit Total Plausibility", &credit_total);
         }
 
         report
@@ -287,7 +377,7 @@ impl Default for ValidationResult {
     }
 }
 
-/// Validate a complete degree program
+/// Validate a complete degree program with default options.
 ///
 /// Performs comprehensive validation including:
 /// - Circular prerequisite detection
@@ -295,10 +385,21 @@ impl Default for ValidationResult {
 /// - Pattern matching validation
 /// - Requirement configuration validation
 ///
-/// # Returns
-/// A `ValidationResult` containing all errors and warnings found
+/// Equivalent to `validate_degree_program_with_options(program,
+/// ValidationOptions::default())`. Use the `_with_options` variant to
+/// loosen specific checks (e.g. allow patterns that match no enumerated
+/// courses, for external gen-ed pools).
 #[must_use]
 pub fn validate_degree_program(program: &DegreeProgram) -> ValidationResult {
+    validate_degree_program_with_options(program, ValidationOptions::default())
+}
+
+/// Validate a complete degree program with caller-supplied options.
+#[must_use]
+pub fn validate_degree_program_with_options(
+    program: &DegreeProgram,
+    opts: ValidationOptions,
+) -> ValidationResult {
     let mut result = ValidationResult::new();
 
     // Build DAG for prerequisite validation (Strict only for cycle detection)
@@ -311,13 +412,21 @@ pub fn validate_degree_program(program: &DegreeProgram) -> ValidationResult {
     validate_course_prerequisites(&program.courses, &mut result);
 
     // 3. Validate requirements reference valid courses
-    validate_requirements(&program.requirements, &program.courses, &mut result);
+    validate_requirements(&program.requirements, &program.courses, opts, &mut result);
 
     // 4. Validate cross-listing relationships
     validate_cross_listing(&program.courses, &mut result);
 
     // 5. Check for unreferenced courses
     check_unreferenced_courses(&program.requirements, &program.courses, &mut result);
+
+    // 6. Catalog-correctness sweeps (Round 3): duplicate top-level
+    //    requirement membership when `allow_double_counting=false`, implied
+    //    elective constraints, and credit-total plausibility. Each is
+    //    skipped quietly when its preconditions don't apply.
+    check_duplicate_requirement_membership(program, &mut result);
+    check_implied_elective_constraints(program, &mut result);
+    check_credit_total_plausibility(program, &mut result);
 
     result
 }
@@ -604,6 +713,7 @@ fn validate_course_prerequisites(courses: &HashMap<String, Course>, result: &mut
 fn validate_requirements(
     requirements: &HashMap<String, Requirement>,
     courses: &HashMap<String, Course>,
+    opts: ValidationOptions,
     result: &mut ValidationResult,
 ) {
     for (req_id, req) in requirements {
@@ -614,10 +724,10 @@ fn validate_requirements(
                 }
             }
             RequirementType::Select => {
-                validate_select_requirement(req, req_id, courses, result);
+                validate_select_requirement(req, req_id, courses, opts, result);
             }
             RequirementType::OneOf => {
-                validate_oneof_requirement(req, req_id, courses, result);
+                validate_oneof_requirement(req, req_id, courses, opts, result);
             }
         }
     }
@@ -628,11 +738,12 @@ fn validate_select_requirement(
     req: &Requirement,
     req_id: &str,
     courses: &HashMap<String, Course>,
+    opts: ValidationOptions,
     result: &mut ValidationResult,
 ) {
     // Only validate if there's a 'from' clause present
     if let Some(from) = &req.from {
-        validate_from_clause(from, req_id, courses, result);
+        validate_from_clause(from, req_id, courses, opts, result);
 
         // Validate count, credits, or groups_required are specified when using 'from'
         let has_selection_spec = req.count.is_some()
@@ -658,6 +769,7 @@ fn validate_oneof_requirement(
     req: &Requirement,
     req_id: &str,
     courses: &HashMap<String, Course>,
+    opts: ValidationOptions,
     result: &mut ValidationResult,
 ) {
     if let Some(options) = &req.options {
@@ -669,7 +781,7 @@ fn validate_oneof_requirement(
                 .enumerate()
                 .map(|(i, r)| (format!("{req_id}:{}:{i}", option.id), r.clone()))
                 .collect();
-            validate_requirements(&nested_reqs, courses, result);
+            validate_requirements(&nested_reqs, courses, opts, result);
         }
     } else {
         result.add_error(ValidationError::InvalidRequirement {
@@ -684,6 +796,7 @@ fn validate_from_clause(
     from: &FromClause,
     req_id: &str,
     courses: &HashMap<String, Course>,
+    opts: ValidationOptions,
     result: &mut ValidationResult,
 ) {
     // Validate explicit course list
@@ -693,13 +806,13 @@ fn validate_from_clause(
 
     // Validate pattern
     if let Some(pattern) = &from.pattern {
-        validate_pattern(pattern, req_id, courses, result);
+        validate_pattern(pattern, req_id, courses, opts, result);
     }
 
     // Validate included patterns
     if let Some(patterns) = &from.include {
         for pattern in patterns {
-            validate_pattern(pattern, req_id, courses, result);
+            validate_pattern(pattern, req_id, courses, opts, result);
         }
     }
 
@@ -717,6 +830,7 @@ fn validate_pattern(
     pattern: &str,
     req_id: &str,
     courses: &HashMap<String, Course>,
+    opts: ValidationOptions,
     result: &mut ValidationResult,
 ) {
     // Parse pattern: "PREFIX:LEVEL" where LEVEL can be "*", "300+", "100-299", etc.
@@ -757,10 +871,17 @@ fn validate_pattern(
     let matches = match_pattern(pattern, courses);
 
     if matches.is_empty() {
-        result.add_error(ValidationError::PatternMatchesNoCourses {
-            pattern: pattern.to_string(),
-            requirement_id: req_id.to_string(),
-        });
+        if opts.allow_unmatched_patterns {
+            result.add_warning(ValidationWarning::PatternMatchesNoCoursesAllowed {
+                pattern: pattern.to_string(),
+                requirement_id: req_id.to_string(),
+            });
+        } else {
+            result.add_error(ValidationError::PatternMatchesNoCourses {
+                pattern: pattern.to_string(),
+                requirement_id: req_id.to_string(),
+            });
+        }
     } else if matches.len() > 50 {
         // Warn if pattern is too broad
         result.add_warning(ValidationWarning::BroadPattern {
@@ -1302,5 +1423,632 @@ fn format_warning(warning: &ValidationWarning) -> String {
                 required_by
             )
         }
+        ValidationWarning::PatternMatchesNoCoursesAllowed {
+            pattern,
+            requirement_id,
+        } => {
+            format!(
+                "Pattern '{pattern}' in requirement '{requirement_id}' matches no enumerated courses (allowed via allow_unmatched_patterns)"
+            )
+        }
+        ValidationWarning::ImpliedElectiveConstraint { elective, requires } => {
+            format!(
+                "Elective '{elective}' requires '{requires}'; both sit in optional pools, so selecting '{elective}' forces an additional pool slot for '{requires}'"
+            )
+        }
+        ValidationWarning::DuplicateRequirementMembership {
+            course_key,
+            requirement_ids,
+        } => {
+            format!(
+                "Course '{course_key}' appears in multiple top-level requirements [{}] with allow_double_counting=false",
+                requirement_ids.join(", ")
+            )
+        }
+        ValidationWarning::CreditTotalUnreachable {
+            stated_total,
+            minimum_required,
+        } => {
+            format!(
+                "Minimum required credits ({minimum_required}) already exceed degree.total_credits ({stated_total}); the stated total is unreachable"
+            )
+        }
+        ValidationWarning::CreditTotalImplausible {
+            stated_total,
+            maximum_possible,
+        } => {
+            format!(
+                "Maximum credits computable from declared requirements ({maximum_possible}) falls below degree.total_credits ({stated_total}); students would need ungoverned electives to reach the stated total"
+            )
+        }
+    }
+}
+
+// ============================================================================
+// Catalog-correctness checks (Round 3)
+// ============================================================================
+
+/// Tally every course that appears in each top-level requirement (walking
+/// `from.courses`, `from.groups`, `courses`, and nested `options[].requirements`
+/// — but **not** expanding `from.pattern`). When the program has
+/// `allow_double_counting=false` and a course shows up in two or more
+/// distinct top-level requirement IDs, emit a
+/// [`ValidationWarning::DuplicateRequirementMembership`].
+///
+/// Surfaced as a warning rather than an error because the plan generator
+/// does not currently honour `allow_double_counting` — flipping it to true
+/// or fixing the YAML is the author's call. Permissive when
+/// `allow_double_counting` is `None` or `Some(true)`.
+fn check_duplicate_requirement_membership(program: &DegreeProgram, result: &mut ValidationResult) {
+    if program.degree.allow_double_counting != Some(false) {
+        return;
+    }
+
+    // BTreeMap so the emitted-warning order is stable across runs.
+    let mut tallies: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (req_id, req) in &program.requirements {
+        let mut courses_here: HashSet<String> = HashSet::new();
+        collect_from_requirement(req, &mut courses_here);
+        for course in courses_here {
+            tallies.entry(course).or_default().insert(req_id.clone());
+        }
+    }
+    for (course_key, req_ids) in tallies {
+        if req_ids.len() >= 2 {
+            let requirement_ids: Vec<String> = req_ids.into_iter().collect();
+            result.add_warning(ValidationWarning::DuplicateRequirementMembership {
+                course_key,
+                requirement_ids,
+            });
+        }
+    }
+}
+
+/// Classify each course as `required` (in some `all` requirement, possibly
+/// nested under `one_of` options) or `optional` (in some `select`/`one_of`
+/// `from` pool). A course can land in both sets; the implied-elective check
+/// uses set membership to decide whether a prereq is satisfied unconditionally.
+fn classify_required_vs_optional(program: &DegreeProgram) -> (HashSet<String>, HashSet<String>) {
+    let mut required = HashSet::new();
+    let mut optional = HashSet::new();
+    let mut resolver = RequirementResolver::new(&program.courses);
+    for req in program.requirements.values() {
+        classify_walk(req, &mut resolver, &mut required, &mut optional);
+    }
+    (required, optional)
+}
+
+fn classify_walk(
+    req: &Requirement,
+    resolver: &mut RequirementResolver<'_>,
+    required: &mut HashSet<String>,
+    optional: &mut HashSet<String>,
+) {
+    match req.req_type {
+        RequirementType::All => {
+            if let Some(courses) = &req.courses {
+                for c in courses {
+                    required.insert(c.clone());
+                }
+            }
+        }
+        RequirementType::Select | RequirementType::OneOf => {
+            if let Some(courses) = &req.courses {
+                for c in courses {
+                    optional.insert(c.clone());
+                }
+            }
+            if let Some(from) = &req.from {
+                for c in resolver.resolve_pool(from) {
+                    optional.insert(c);
+                }
+            }
+        }
+    }
+    if let Some(options) = &req.options {
+        for option in options {
+            for nested in &option.requirements {
+                classify_walk(nested, resolver, required, optional);
+            }
+        }
+    }
+}
+
+/// Surface electives whose prerequisites are themselves only optional.
+/// Picking such an elective forces an additional optional-pool slot to be
+/// consumed by the prereq — could be intentional but worth flagging.
+fn check_implied_elective_constraints(program: &DegreeProgram, result: &mut ValidationResult) {
+    let (required, optional) = classify_required_vs_optional(program);
+    // Sort for deterministic warning order.
+    let mut keys: Vec<&String> = optional.iter().collect();
+    keys.sort();
+    for elective in keys {
+        if required.contains(elective) {
+            // A course that is both required and optional is satisfied by the
+            // `all` requirement — no implicit constraint to surface.
+            continue;
+        }
+        let Some(course) = program.courses.get(elective) else {
+            continue;
+        };
+        let mut prereqs = course.prerequisites.clone();
+        prereqs.sort();
+        prereqs.dedup();
+        for prereq in &prereqs {
+            if optional.contains(prereq) && !required.contains(prereq) {
+                result.add_warning(ValidationWarning::ImpliedElectiveConstraint {
+                    elective: elective.clone(),
+                    requires: prereq.clone(),
+                });
+            }
+        }
+    }
+}
+
+/// Compare `degree.total_credits` against the minimum / maximum credits the
+/// declared requirements could contribute. Emit
+/// [`ValidationWarning::CreditTotalUnreachable`] when the floor already
+/// exceeds the stated total, and
+/// [`ValidationWarning::CreditTotalImplausible`] when the ceiling falls below
+/// it.
+///
+/// Skipped quietly when:
+/// - `degree.total_credits` is `None`, or
+/// - any requirement is a `one_of` (the min/max under nested options needs
+///   its own walker — out of scope for this round), or
+/// - any `select` requirement lacks both `credits` and (`count` + `from`).
+fn check_credit_total_plausibility(program: &DegreeProgram, result: &mut ValidationResult) {
+    let Some(stated_total) = program.degree.total_credits else {
+        return;
+    };
+
+    let mut fixed = 0u32;
+    let mut min_select = 0u32;
+    let mut max_select = 0u32;
+    let mut resolver = RequirementResolver::new(&program.courses);
+
+    for req in program.requirements.values() {
+        match req.req_type {
+            RequirementType::All => {
+                if let Some(courses) = &req.courses {
+                    for c in courses {
+                        if let Some(course) = program.courses.get(c) {
+                            fixed = fixed.saturating_add(round_credits(course.credit_hours));
+                        }
+                    }
+                }
+            }
+            RequirementType::Select => {
+                if let Some(credits) = req.credits {
+                    min_select = min_select.saturating_add(credits);
+                    max_select = max_select.saturating_add(credits);
+                } else if let Some(count) = req.count {
+                    let Some(from) = &req.from else {
+                        return; // can't compute without a pool
+                    };
+                    let pool = resolver.resolve_pool(from);
+                    if pool.is_empty() {
+                        return;
+                    }
+                    let credits: Vec<u32> = pool
+                        .iter()
+                        .filter_map(|c| program.courses.get(c))
+                        .map(|crs| round_credits(crs.credit_hours))
+                        .collect();
+                    let Some(&pool_min) = credits.iter().min() else {
+                        return;
+                    };
+                    let Some(&pool_max) = credits.iter().max() else {
+                        return;
+                    };
+                    min_select = min_select.saturating_add(pool_min.saturating_mul(count));
+                    max_select = max_select.saturating_add(pool_max.saturating_mul(count));
+                } else {
+                    // Neither `credits` nor `count+from` — we don't know the
+                    // sizing of this requirement, so the plausibility math
+                    // can't be sound. Skip the whole check.
+                    return;
+                }
+            }
+            RequirementType::OneOf => {
+                // `one_of` ranges across option branches; their min/max needs
+                // a separate walker. Bail out of the entire check rather
+                // than emit half-truths.
+                return;
+            }
+        }
+    }
+
+    let minimum_required = fixed.saturating_add(min_select);
+    let maximum_possible = fixed.saturating_add(max_select);
+    if minimum_required > stated_total {
+        result.add_warning(ValidationWarning::CreditTotalUnreachable {
+            stated_total,
+            minimum_required,
+        });
+    } else if maximum_possible < stated_total {
+        result.add_warning(ValidationWarning::CreditTotalImplausible {
+            stated_total,
+            maximum_possible,
+        });
+    }
+}
+
+/// Round half-credits to the nearest whole number for the plausibility math.
+/// Courses with negative or NaN credit hours collapse to zero.
+fn round_credits(credit_hours: f32) -> u32 {
+    if !credit_hours.is_finite() || credit_hours <= 0.0 {
+        return 0;
+    }
+    // Credit hours are small integers (1-5 typical, 12 max for thesis-like
+    // entries); the cast won't truncate or sign-flip. Floor to a u32 after
+    // the explicit `> 0.0` check above guarantees the cast preserves value.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let rounded = credit_hours.round() as u32;
+    rounded
+}
+
+// ============================================================================
+// Tests for Round 3 catalog-correctness checks
+// ============================================================================
+
+#[cfg(test)]
+mod round3_tests {
+    use super::*;
+    use crate::core::degree::parse_degree_yaml;
+
+    #[test]
+    fn test_duplicate_requirement_membership_warns_when_double_counting_false() {
+        let yaml = r#"
+degree:
+  id: dup
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+  allow_double_counting: false
+
+requirements:
+  core_cs:
+    name: Core CS
+    type: all
+    category: major
+    courses: [CS101]
+  cs_electives:
+    name: CS Electives
+    type: all
+    category: major
+    courses: [CS101]
+
+courses:
+  CS101:
+    title: Intro
+    prefix: CS
+    number: "101"
+    credits: 4
+"#;
+        let program = parse_degree_yaml(yaml).unwrap();
+        let result = validate_degree_program(&program);
+        assert!(
+            result.warnings.iter().any(|w| matches!(
+                w,
+                ValidationWarning::DuplicateRequirementMembership { course_key, .. } if course_key == "CS101"
+            )),
+            "expected DuplicateRequirementMembership warning for CS101; got {:?}",
+            result.warnings
+        );
+        // Should NOT block validity — engine doesn't enforce double-counting.
+        assert!(
+            result.errors.is_empty(),
+            "duplicate-membership is a warning, not an error; errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_duplicate_requirement_membership_silent_when_double_counting_unspecified() {
+        let yaml = r#"
+degree:
+  id: dup-permissive
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+
+requirements:
+  core_cs:
+    name: Core CS
+    type: all
+    category: major
+    courses: [CS101]
+  cs_electives:
+    name: CS Electives
+    type: all
+    category: major
+    courses: [CS101]
+
+courses:
+  CS101:
+    title: Intro
+    prefix: CS
+    number: "101"
+    credits: 4
+"#;
+        let program = parse_degree_yaml(yaml).unwrap();
+        let result = validate_degree_program(&program);
+        assert!(
+            !result.warnings.iter().any(|w| matches!(
+                w,
+                ValidationWarning::DuplicateRequirementMembership { .. }
+            )),
+            "duplicate-membership check must skip when allow_double_counting is unset; warnings: {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_implied_elective_constraint_flags_same_pool_dependency() {
+        let yaml = r#"
+degree:
+  id: implied
+  institution: T
+  program: T
+  total_credits: 16
+  gpa_minimum: 2.0
+
+requirements:
+  core:
+    name: Core
+    type: all
+    category: major
+    courses: [CS101]
+  cs_400_electives:
+    name: 400 Electives
+    type: select
+    category: major
+    count: 2
+    from:
+      courses: [CS430, CS435]
+
+courses:
+  CS101:
+    title: Intro
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS430:
+    title: DB
+    prefix: CS
+    number: "430"
+    credits: 4
+    prerequisites_raw: "CS101"
+  CS435:
+    title: Big Data
+    prefix: CS
+    number: "435"
+    credits: 4
+    prerequisites_raw: "CS430"
+"#;
+        let program = parse_degree_yaml(yaml).unwrap();
+        let result = validate_degree_program(&program);
+        assert!(
+            result.warnings.iter().any(|w| matches!(
+                w,
+                ValidationWarning::ImpliedElectiveConstraint { elective, requires }
+                    if elective == "CS435" && requires == "CS430"
+            )),
+            "expected ImpliedElectiveConstraint(CS435 → CS430); got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_implied_elective_skips_when_prereq_is_required() {
+        let yaml = r#"
+degree:
+  id: implied-required
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+
+requirements:
+  core:
+    name: Core
+    type: all
+    category: major
+    courses: [CS101, CS430]
+  electives:
+    name: Electives
+    type: select
+    category: major
+    count: 1
+    from:
+      courses: [CS435]
+
+courses:
+  CS101:
+    title: Intro
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS430:
+    title: DB
+    prefix: CS
+    number: "430"
+    credits: 4
+    prerequisites_raw: "CS101"
+  CS435:
+    title: Big Data
+    prefix: CS
+    number: "435"
+    credits: 4
+    prerequisites_raw: "CS430"
+"#;
+        let program = parse_degree_yaml(yaml).unwrap();
+        let result = validate_degree_program(&program);
+        assert!(
+            !result
+                .warnings
+                .iter()
+                .any(|w| matches!(w, ValidationWarning::ImpliedElectiveConstraint { .. })),
+            "required prereqs must suppress implied-constraint warning; got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_credit_total_unreachable_when_minimum_exceeds_stated() {
+        // Min required = 12 (CS101 × 3 fixed) + 8 (2 × 4-credit electives) = 20.
+        // Stated total = 16 → unreachable.
+        let yaml = r#"
+degree:
+  id: unreachable
+  institution: T
+  program: T
+  total_credits: 16
+  gpa_minimum: 2.0
+
+requirements:
+  core:
+    name: Core
+    type: all
+    category: major
+    courses: [CS101, CS102, CS103]
+  electives:
+    name: Electives
+    type: select
+    category: major
+    count: 2
+    from:
+      courses: [CS200, CS201]
+
+courses:
+  CS101:
+    title: A
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS102:
+    title: B
+    prefix: CS
+    number: "102"
+    credits: 4
+  CS103:
+    title: C
+    prefix: CS
+    number: "103"
+    credits: 4
+  CS200:
+    title: D
+    prefix: CS
+    number: "200"
+    credits: 4
+    prerequisites_raw: "CS101"
+  CS201:
+    title: E
+    prefix: CS
+    number: "201"
+    credits: 4
+    prerequisites_raw: "CS101"
+"#;
+        let program = parse_degree_yaml(yaml).unwrap();
+        let result = validate_degree_program(&program);
+        assert!(
+            result.warnings.iter().any(|w| matches!(
+                w,
+                ValidationWarning::CreditTotalUnreachable {
+                    stated_total: 16,
+                    minimum_required: 20
+                }
+            )),
+            "expected CreditTotalUnreachable(16, 20); got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_credit_total_implausible_when_maximum_below_stated() {
+        // Max possible = 4 + 4 = 8, stated total = 120 → implausible.
+        let yaml = r#"
+degree:
+  id: implausible
+  institution: T
+  program: T
+  total_credits: 120
+  gpa_minimum: 2.0
+
+requirements:
+  core:
+    name: Core
+    type: all
+    category: major
+    courses: [CS101]
+  electives:
+    name: Electives
+    type: select
+    category: major
+    count: 1
+    from:
+      courses: [CS200]
+
+courses:
+  CS101:
+    title: A
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS200:
+    title: B
+    prefix: CS
+    number: "200"
+    credits: 4
+    prerequisites_raw: "CS101"
+"#;
+        let program = parse_degree_yaml(yaml).unwrap();
+        let result = validate_degree_program(&program);
+        assert!(
+            result.warnings.iter().any(|w| matches!(
+                w,
+                ValidationWarning::CreditTotalImplausible {
+                    stated_total: 120,
+                    maximum_possible: 8
+                }
+            )),
+            "expected CreditTotalImplausible(120, 8); got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_credit_total_silent_when_total_unset() {
+        let yaml = r#"
+degree:
+  id: notot
+  institution: T
+  program: T
+  gpa_minimum: 2.0
+
+requirements:
+  core:
+    name: Core
+    type: all
+    category: major
+    courses: [CS101]
+
+courses:
+  CS101:
+    title: A
+    prefix: CS
+    number: "101"
+    credits: 4
+"#;
+        let program = parse_degree_yaml(yaml).unwrap();
+        let result = validate_degree_program(&program);
+        assert!(!result.warnings.iter().any(|w| matches!(
+            w,
+            ValidationWarning::CreditTotalUnreachable { .. }
+                | ValidationWarning::CreditTotalImplausible { .. }
+        )));
     }
 }

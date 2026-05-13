@@ -178,7 +178,7 @@ fn write_to_file(_message: &str) {}
 
 #[cfg(feature = "file-logging")]
 fn is_file_logging_active() -> bool {
-    LOG_FILE.lock().map(|lf| lf.is_some()).unwrap_or(false)
+    LOG_FILE.lock().is_ok_and(|lf| lf.is_some())
 }
 #[cfg(not(feature = "file-logging"))]
 fn is_file_logging_active() -> bool {
@@ -238,16 +238,8 @@ fn emit(prefix: &str, msg: &str, to_stderr: bool) {
 
 fn should_log(level: Level) -> bool {
     match level {
-        Level::Info => {
-            if !cfg!(feature = "log-info") {
-                return false;
-            }
-        }
-        Level::Debug => {
-            if !cfg!(feature = "log-debug") {
-                return false;
-            }
-        }
+        Level::Info if !cfg!(feature = "log-info") => return false,
+        Level::Debug if !cfg!(feature = "log-debug") => return false,
         _ => {}
     }
     let current = LOG_LEVEL.load(Ordering::SeqCst);

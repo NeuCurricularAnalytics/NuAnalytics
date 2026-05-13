@@ -881,6 +881,7 @@ mod tests {
             calc_ready_shortest: None,
             random_samples: vec![],
             total_plans_seen: 10,
+            calc_ready_suppressed: false,
         }
     }
 

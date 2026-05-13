@@ -6,21 +6,45 @@
 use crate::core::models::DegreeProgram;
 use std::path::Path;
 
-/// Error type for degree YAML parsing
+/// Error type for degree YAML parsing.
 #[derive(Debug)]
 pub enum DegreeParseError {
-    /// File I/O error
+    /// File I/O error.
     IoError(String),
 
-    /// YAML parse error
-    YamlError(String),
+    /// YAML parse error. `line` and `column` carry the structured location
+    /// pulled from `serde_yaml::Error::location()` when available so callers
+    /// can render source-context windows without re-grepping the message.
+    /// Both are `None` for serialisation failures or whole-document errors
+    /// the parser couldn't pin to a position.
+    YamlError {
+        /// Human-readable error message from `serde_yaml`.
+        message: String,
+        /// 1-indexed source line where the error was detected, when known.
+        line: Option<usize>,
+        /// 1-indexed source column, when known.
+        column: Option<usize>,
+    },
+}
+
+impl DegreeParseError {
+    /// Construct a `YamlError` with no location info — used for serialise
+    /// failures and synthetic errors that don't carry a source position.
+    #[must_use]
+    pub fn yaml_message(message: impl Into<String>) -> Self {
+        Self::YamlError {
+            message: message.into(),
+            line: None,
+            column: None,
+        }
+    }
 }
 
 impl std::fmt::Display for DegreeParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::IoError(msg) => write!(f, "IO Error: {msg}"),
-            Self::YamlError(msg) => write!(f, "YAML Parse Error: {msg}"),
+            Self::YamlError { message, .. } => write!(f, "YAML Parse Error: {message}"),
         }
     }
 }
@@ -64,8 +88,16 @@ impl std::error::Error for DegreeParseError {}
 /// assert_eq!(program.degree.id.unwrap(), "test-degree");
 /// ```
 pub fn parse_degree_yaml(yaml_content: &str) -> Result<DegreeProgram, DegreeParseError> {
-    let mut program = serde_yaml::from_str::<DegreeProgram>(yaml_content)
-        .map_err(|e| DegreeParseError::YamlError(format!("Failed to parse YAML: {e}")))?;
+    let mut program = serde_yaml::from_str::<DegreeProgram>(yaml_content).map_err(|e| {
+        let location = e.location();
+        DegreeParseError::YamlError {
+            message: format!("Failed to parse YAML: {e}"),
+            // serde_yaml's Location reports 1-indexed positions; surface them
+            // unchanged so the caller-facing message matches what editors show.
+            line: location.as_ref().map(serde_yaml::Location::line),
+            column: location.as_ref().map(serde_yaml::Location::column),
+        }
+    })?;
 
     resolve_prerequisites(&mut program);
 
@@ -107,7 +139,7 @@ fn resolve_prerequisites(program: &mut DegreeProgram) {
 /// Returns an error if serialization fails
 pub fn serialize_degree_yaml(program: &DegreeProgram) -> Result<String, DegreeParseError> {
     serde_yaml::to_string(program)
-        .map_err(|e| DegreeParseError::YamlError(format!("Failed to serialize YAML: {e}")))
+        .map_err(|e| DegreeParseError::yaml_message(format!("Failed to serialize YAML: {e}")))
 }
 
 /// Load a degree program from a YAML file
@@ -191,6 +223,27 @@ courses: {}
             Some("Test University".to_string())
         );
         assert_eq!(program.degree.total_credits, Some(120));
+    }
+
+    #[test]
+    fn test_parse_degree_yaml_captures_line_column_from_serde_yaml() {
+        // Force a syntax error on a known line so we can assert the structured
+        // location survives the wrap into DegreeParseError. Line 3 has the
+        // broken mapping (`total_credits: [list, where, number, expected]`).
+        let yaml = "degree:\n  id: t\n  total_credits: [list, instead, of, number]\nrequirements: {}\ncourses: {}\n";
+        let err = parse_degree_yaml(yaml).expect_err("malformed YAML must error");
+        match err {
+            DegreeParseError::YamlError { line, column, .. } => {
+                assert!(
+                    line.is_some(),
+                    "line must be populated by serde_yaml::Error::location()"
+                );
+                // serde_yaml reports a positive column for in-line mapping errors;
+                // accept anything non-zero so the assertion isn't brittle.
+                assert!(column.is_some());
+            }
+            DegreeParseError::IoError(msg) => panic!("expected YamlError, got IoError({msg})"),
+        }
     }
 
     #[test]

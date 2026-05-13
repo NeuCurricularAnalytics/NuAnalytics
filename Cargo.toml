@@ -1,6 +1,6 @@
 [package]
 name = "nu-analytics"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 authors = ["Albert Lionelle <a.lionelle@northeastern.edu>"]
 description = "A CLI tool for computing Curricular Analytics metrics. Based off metrics from CurricularAnalytics.org. Currently, only basic metrics and additional reporting features."
@@ -32,20 +32,33 @@ chrono = "0.4"
 
 # MCP server dependencies (optional feature)
 rmcp = { version = "1.0.0-alpha", features = ["server", "transport-io"], optional = true }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "fs", "net", "io-util", "time"], optional = true }
+
+# Database dependencies (optional feature)
+supabase-client-sdk = { version = "0.2", features = ["auth"], optional = true }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
+csv = { version = "1.3", optional = true }
+zip = { version = "8", optional = true }
+form_urlencoded = { version = "1.2", optional = true }
 
 [dev-dependencies]
 tempfile = "3.10"
+criterion = "0.5"
+
+[[bench]]
+name = "render_perf"
+harness = false
 
 # No WASM target dependencies; CLI-only
 
 [features]
-default = ["log-info", "log-debug", "verbose", "file-logging", "mcp"]
+default = ["log-info", "log-debug", "verbose", "file-logging", "database", "mcp"]
 log-info = []
 log-debug = []
 verbose = []
 file-logging = []
-mcp = ["dep:rmcp", "dep:tokio"]
+database = ["dep:supabase-client-sdk", "dep:reqwest", "dep:csv", "dep:zip", "dep:tokio", "dep:form_urlencoded"]
+mcp = ["dep:rmcp", "dep:tokio", "database"]
 
 [profile.release]
 opt-level = "z"  # Optimize for size

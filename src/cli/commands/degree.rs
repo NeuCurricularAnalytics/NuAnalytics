@@ -22,7 +22,7 @@ use nu_analytics::core::report::term_scheduler::SchedulerConfig;
 use nu_analytics::core::statistics::aggregator::{AggregatorConfig, MetricsAggregator};
 use nu_analytics::core::validate_degree_program;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 
 /// Validate a degree program YAML file
@@ -396,24 +396,24 @@ fn print_deep_chains_section(
             deep_chains.len()
         );
         println!();
-        for (course, chain_lengths, chain_str) in &deep_chains {
-            println!("  • {course} (chains: {chain_lengths})");
+        for entry in &deep_chains {
+            println!("  • {} (chains: {})", entry.course, entry.branch_lengths);
             if verbose {
-                println!("    Chain: {chain_str}");
+                println!("    Chain: {}", entry.chain);
             }
         }
     }
     println!();
-    // Convert to expected format (use max chain length for sorting/summary)
     deep_chains
         .into_iter()
-        .map(|(c, lens, s)| {
-            let max_len = lens
+        .map(|entry| {
+            let max_len = entry
+                .branch_lengths
                 .split(", ")
                 .filter_map(|n| n.parse::<usize>().ok())
                 .max()
                 .unwrap_or(0);
-            (c, max_len, s)
+            (entry.course, max_len, entry.chain)
         })
         .collect()
 }
@@ -487,24 +487,26 @@ pub struct DegreeOptions {
     pub include_courses: Option<Vec<String>>,
 }
 
-/// Run the degree command
+/// Run the degree command for one or more YAML files.
 ///
-/// Dispatches to the appropriate handler based on the provided options.
+/// Each file is processed independently in order. Per-file failures are
+/// reported but do not abort the batch; the process exits non-zero if any
+/// file failed. Non-YAML paths (e.g., from a `samples/degrees/*` glob that
+/// matches `.md` or other files) are skipped with a warning.
 ///
 /// # Arguments
-/// * `file` - Optional path to degree YAML file
-/// * `options` - Degree command options
-/// * `config` - Application configuration
-pub fn run(file: Option<&Path>, options: &DegreeOptions, config: &Config) {
-    // Check if a file was provided
-    let Some(degree_path) = file else {
+/// * `files`   - Paths to degree YAML files (length 0 prints usage and exits)
+/// * `options` - Degree command options applied uniformly to every file
+/// * `config`  - Application configuration
+pub fn run(files: &[PathBuf], options: &DegreeOptions, config: &Config) {
+    if files.is_empty() {
         eprintln!("Error: No degree file specified.");
-        eprintln!("Usage: nuanalytics degree [OPTIONS] <FILE>");
+        eprintln!("Usage: nuanalytics degree [OPTIONS] <FILES>...");
         eprintln!("Run 'nuanalytics degree --help' for usage information.");
         process::exit(1);
-    };
+    }
 
-    // Default to analyze if no action specified
+    // Default to analyze if no action flag is set — applied once for the batch.
     let options = if !options.validate && !options.print_graph && !options.audit && !options.analyze
     {
         DegreeOptions {
@@ -515,70 +517,97 @@ pub fn run(file: Option<&Path>, options: &DegreeOptions, config: &Config) {
         options.clone()
     };
 
-    let mut has_error = false;
-    let mut actions_run = 0;
-
-    // Run validation if requested
-    if options.validate {
-        if actions_run > 0 {
-            print_separator();
-        }
-        match validate_degree(degree_path, options.verbose) {
-            Ok(()) => {}
-            Err(e) => {
-                eprintln!("Error: {e}");
-                has_error = true;
+    let yaml_files: Vec<&Path> = files
+        .iter()
+        .filter_map(|p| {
+            if is_yaml_path(p) {
+                Some(p.as_path())
+            } else {
+                eprintln!("Skipping non-YAML file: {}", p.display());
+                None
             }
-        }
-        actions_run += 1;
-    }
+        })
+        .collect();
 
-    // Print graph if requested
-    if options.print_graph {
-        if actions_run > 0 {
-            print_separator();
-        }
-        match print_graph(degree_path, options.verbose) {
-            Ok(()) => {}
-            Err(e) => {
-                eprintln!("Error: {e}");
-                has_error = true;
-            }
-        }
-        actions_run += 1;
-    }
-
-    // Run audit if requested
-    if options.audit {
-        if actions_run > 0 {
-            print_separator();
-        }
-        match audit_degree(degree_path, config, options.verbose) {
-            Ok(()) => {}
-            Err(e) => {
-                eprintln!("Error: {e}");
-                has_error = true;
-            }
-        }
-        actions_run += 1;
-    }
-
-    // Run full analysis if requested
-    if options.analyze {
-        if actions_run > 0 {
-            print_separator();
-        }
-        match analyze_degree(degree_path, &options, config) {
-            Ok(()) => {}
-            Err(e) => {
-                eprintln!("Error: {e}");
-                has_error = true;
-            }
-        }
-    }
-
-    if has_error {
+    if yaml_files.is_empty() {
+        eprintln!("Error: No YAML files to process after filtering.");
         process::exit(1);
+    }
+
+    let total = yaml_files.len();
+    let mut had_failure = false;
+
+    for (idx, path) in yaml_files.iter().enumerate() {
+        if total > 1 {
+            if idx > 0 {
+                print_separator();
+            }
+            println!("=== [{}/{}] {} ===", idx + 1, total, path.display());
+        }
+        if run_one(path, &options, config).is_err() {
+            had_failure = true;
+        }
+    }
+
+    if had_failure {
+        process::exit(1);
+    }
+}
+
+/// Returns `true` if the path has a `.yaml` or `.yml` extension (case-insensitive).
+fn is_yaml_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
+}
+
+/// Process a single degree YAML file, running every requested action.
+///
+/// Returns `Err(())` if any action failed for this file. Errors are written
+/// to stderr inline so the batch caller does not need to format them.
+fn run_one(degree_path: &Path, options: &DegreeOptions, config: &Config) -> Result<(), ()> {
+    let mut state = ActionRunState::default();
+
+    if options.validate {
+        state.run(|| validate_degree(degree_path, options.verbose));
+    }
+    if options.print_graph {
+        state.run(|| print_graph(degree_path, options.verbose));
+    }
+    if options.audit {
+        state.run(|| audit_degree(degree_path, config, options.verbose));
+    }
+    if options.analyze {
+        state.run(|| analyze_degree(degree_path, options, config));
+    }
+
+    if state.has_error {
+        Err(())
+    } else {
+        Ok(())
+    }
+}
+
+/// Tracks action sequencing within `run_one`: prints a separator between
+/// successive actions and records whether any action failed.
+#[derive(Default)]
+struct ActionRunState {
+    actions_run: usize,
+    has_error: bool,
+}
+
+impl ActionRunState {
+    /// Run one action, prefixing it with a separator if a prior action ran,
+    /// and capturing any error to stderr without aborting.
+    fn run<E: std::fmt::Display>(&mut self, action: impl FnOnce() -> Result<(), E>) {
+        if self.actions_run > 0 {
+            print_separator();
+        }
+        if let Err(e) = action() {
+            eprintln!("Error: {e}");
+            self.has_error = true;
+        }
+        self.actions_run += 1;
     }
 }
 
@@ -1606,7 +1635,7 @@ fn expand_courses_with_prerequisites(
             (c.clone(), depth)
         })
         .collect();
-    sorted_courses.sort_by(|a, b| b.1.cmp(&a.1)); // Descending by depth
+    sorted_courses.sort_by_key(|(_, depth)| std::cmp::Reverse(*depth));
 
     let mut expanded: HashSet<String> = courses.iter().cloned().collect();
     let mut to_process: Vec<String> = sorted_courses.into_iter().map(|(c, _)| c).collect();
@@ -1728,7 +1757,7 @@ fn find_redundant_prerequisites(
             for equiv in equivs {
                 if equiv != course && courses.contains(equiv) {
                     let usages = prereq_usage.get(course);
-                    if usages.is_none() || usages.is_some_and(std::vec::Vec::is_empty) {
+                    if usages.is_none_or(std::vec::Vec::is_empty) {
                         let equiv_satisfies_same = prereq_usage
                             .get(equiv)
                             .is_some_and(|equiv_usages| !equiv_usages.is_empty());
@@ -2064,4 +2093,41 @@ fn print_separator() {
     println!();
     println!("================================================================================");
     println!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_yaml_path_yaml_extension() {
+        assert!(is_yaml_path(Path::new("foo.yaml")));
+        assert!(is_yaml_path(Path::new("samples/degrees/foo.yaml")));
+    }
+
+    #[test]
+    fn test_is_yaml_path_yml_extension() {
+        assert!(is_yaml_path(Path::new("foo.yml")));
+    }
+
+    #[test]
+    fn test_is_yaml_path_case_insensitive() {
+        assert!(is_yaml_path(Path::new("foo.YAML")));
+        assert!(is_yaml_path(Path::new("foo.YML")));
+        assert!(is_yaml_path(Path::new("foo.Yaml")));
+    }
+
+    #[test]
+    fn test_is_yaml_path_other_extensions_rejected() {
+        assert!(!is_yaml_path(Path::new("foo.md")));
+        assert!(!is_yaml_path(Path::new("foo.json")));
+        assert!(!is_yaml_path(Path::new("foo.txt")));
+        assert!(!is_yaml_path(Path::new("foo")));
+    }
+
+    #[test]
+    fn test_is_yaml_path_no_extension() {
+        assert!(!is_yaml_path(Path::new("README")));
+        assert!(!is_yaml_path(Path::new("/path/to/dir/")));
+    }
 }

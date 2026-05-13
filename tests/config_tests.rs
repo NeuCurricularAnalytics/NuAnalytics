@@ -53,7 +53,7 @@ reports_dir = "./reports"
     assert_eq!(config.logging.level, "info");
     assert_eq!(config.logging.file, "/tmp/test.log");
     assert!(config.logging.verbose);
-    assert_eq!(config.database.token, "test_token");
+    assert_eq!(config.database.anon_key, "test_token");
     assert_eq!(config.database.endpoint, "https://example.com");
     assert_eq!(config.paths.metrics_dir, "./metrics");
     assert_eq!(config.paths.reports_dir, "./reports");
@@ -76,7 +76,7 @@ level = "error"
     assert_eq!(config.logging.level, "error");
     assert_eq!(config.logging.file, ""); // Default empty
     assert!(!config.logging.verbose); // Default false
-    assert_eq!(config.database.token, ""); // Default empty
+    assert_eq!(config.database.anon_key, ""); // Default empty
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn test_config_overrides_apply() {
         level: Some("error".to_string()),
         file: Some("/custom/path.log".to_string()),
         verbose: Some(true),
-        db_token: Some("override_token".to_string()),
+        db_anon_key: Some("override_token".to_string()),
         db_endpoint: Some("https://override.com".to_string()),
         metrics_dir: Some("./custom_metrics".to_string()),
         reports_dir: Some("./custom_reports".to_string()),
@@ -180,7 +180,7 @@ fn test_config_overrides_apply() {
     assert_eq!(config.logging.level, "error");
     assert_eq!(config.logging.file, "/custom/path.log");
     assert!(config.logging.verbose);
-    assert_eq!(config.database.token, "override_token");
+    assert_eq!(config.database.anon_key, "override_token");
     assert_eq!(config.database.endpoint, "https://override.com");
     assert_eq!(config.paths.metrics_dir, "./custom_metrics");
     assert_eq!(config.paths.reports_dir, "./custom_reports");
@@ -195,7 +195,7 @@ fn test_config_overrides_partial() {
         level: Some("debug".to_string()),
         file: None,
         verbose: None,
-        db_token: None,
+        db_anon_key: None,
         db_endpoint: None,
         metrics_dir: None,
         reports_dir: None,
@@ -299,4 +299,104 @@ fn test_get_config_file_path() {
     // Should end with config.toml or dconfig.toml
     let path_str = path.to_string_lossy();
     assert!(path_str.ends_with("config.toml") || path_str.ends_with("dconfig.toml"));
+}
+
+#[test]
+fn test_get_local_config_file_path() {
+    let path = Config::get_local_config_file_path();
+
+    // Should return Some path ending with nuanalytics.toml
+    assert!(path.is_some());
+    let path = path.unwrap();
+    assert!(path.ends_with("nuanalytics.toml"));
+}
+
+#[test]
+fn test_merge_from_all_fields() {
+    let mut base = Config::default();
+    base.logging.level = "info".to_string();
+    base.paths.metrics_dir = "/base/metrics".to_string();
+    base.degree_analysis.max_plans = 1000;
+
+    let mut local = Config::default();
+    local.logging.level = "debug".to_string();
+    local.degree_analysis.max_plans = 500; // non-default
+
+    base.merge_from(&local);
+
+    assert_eq!(base.logging.level, "debug"); // overwritten
+    assert_eq!(base.paths.metrics_dir, "/base/metrics"); // preserved (local empty)
+    assert_eq!(base.degree_analysis.max_plans, 500); // overwritten (non-default)
+}
+
+#[test]
+fn test_merge_from_verbose_only_sets_true() {
+    let mut base = Config::default();
+    base.logging.verbose = true;
+
+    let local = Config::default(); // verbose is false (default)
+
+    base.merge_from(&local);
+
+    // verbose should stay true - we only set to true, never to false
+    assert!(base.logging.verbose);
+}
+
+#[test]
+fn test_normalize_key_strips_database_prefix() {
+    let mut config = Config::from_defaults();
+    // Set with dotted key
+    config
+        .set("database.endpoint", "https://example.supabase.co")
+        .unwrap();
+    // Retrieve with bare key — should be identical
+    assert_eq!(config.get("endpoint"), config.get("database.endpoint"));
+    assert_eq!(
+        config.get("endpoint").unwrap(),
+        "https://example.supabase.co"
+    );
+}
+
+#[test]
+fn test_normalize_key_bare_key_unchanged() {
+    let mut config = Config::from_defaults();
+    config.set("endpoint", "https://bare.supabase.co").unwrap();
+    assert_eq!(config.get("endpoint").unwrap(), "https://bare.supabase.co");
+}
+
+#[test]
+fn test_normalize_key_all_section_prefixes() {
+    let mut config = Config::from_defaults();
+    config.set("logging.level", "info").unwrap();
+    assert_eq!(config.get("level"), config.get("logging.level"));
+
+    config.set("paths.metrics_dir", "/tmp/metrics").unwrap();
+    assert_eq!(config.get("metrics_dir"), config.get("paths.metrics_dir"));
+
+    config
+        .set("audit.prerequisite_chain_threshold", "5")
+        .unwrap();
+    assert_eq!(
+        config.get("prerequisite_chain_threshold"),
+        config.get("audit.prerequisite_chain_threshold")
+    );
+
+    config.set("degree_analysis.max_plans", "200").unwrap();
+    assert_eq!(
+        config.get("max_plans"),
+        config.get("degree_analysis.max_plans")
+    );
+}
+
+#[test]
+fn test_normalize_key_management_key() {
+    let mut config = Config::from_defaults();
+    config
+        .set("database.management_key", "sbp_test_token")
+        .unwrap();
+    assert_eq!(config.get("management_key").unwrap(), "sbp_test_token");
+    assert_eq!(
+        config.get("database.management_key"),
+        config.get("management_key")
+    );
 }

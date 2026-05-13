@@ -5,11 +5,17 @@
 //! prerequisite chain analysis.
 
 use crate::core::degree::audit::{
-    detect_lowest_course_level, find_deep_chains, find_upper_level_without_prereqs,
+    detect_lowest_course_level, find_deep_chains, find_missing_intermediate_prereqs,
+    find_upper_level_without_prereqs, MissingIntermediateFinding,
 };
 use crate::core::degree::{parse_degree_yaml, DegreeParseError};
 use crate::core::models::CourseGraph;
 use crate::core::validate_degree_program;
+use crate::core::DegreeProgram;
+use crate::mcp::tools::shared::{
+    ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_GET_COURSE_DETAIL, TOOL_RENDER_PLAN_GRAPH,
+    TOOL_VALIDATE_DEGREE,
+};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -18,15 +24,49 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Request parameters for the `audit_degree` tool
+///
+/// Provide exactly one YAML source: `yaml_content` (inline), `yaml_path`
+/// (workspace-relative file), or `degree_id` (stored in the database —
+/// requires the `database` feature).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct AuditDegreeRequest {
-    /// The complete degree YAML content as a string
-    #[schemars(description = "Complete degree program YAML content to audit")]
-    pub yaml_content: String,
+    /// Inline YAML content. Mutually exclusive with `yaml_path` / `degree_id`.
+    #[schemars(description = "Complete degree program YAML content (inline)")]
+    pub yaml_content: Option<String>,
+
+    /// Filesystem path the server will read. Mutually exclusive with the others.
+    #[schemars(
+        description = "Path to a YAML file on the MCP server's filesystem. Mutually exclusive with yaml_content/degree_id."
+    )]
+    pub yaml_path: Option<String>,
+
+    /// Stored `degree_id` (DB lookup). Mutually exclusive with the others.
+    #[schemars(
+        description = "Stored degree ID (DB lookup). Requires the database feature; mutually exclusive with yaml_content/yaml_path."
+    )]
+    pub degree_id: Option<String>,
 
     /// Prerequisite chain depth threshold (default: 3)
     #[schemars(description = "Minimum chain length to flag as deep (default: 3)")]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
+    )]
     pub chain_threshold: Option<usize>,
+
+    /// Surface `missing_intermediate_prereqs` findings — heuristic same-subject
+    /// "course C declares prereq A, but B (same subject, also prereqs A,
+    /// numerically between) may belong in C's chain" warnings. Defaults to
+    /// `true`. Turn off when you've vetted the catalog and want a quieter
+    /// audit response.
+    #[schemars(
+        description = "Include missing-intermediate prerequisite findings (default true). Heuristic: flags courses where a same-subject sibling sits numerically between a declared prereq and the consuming course and shares the same prereq."
+    )]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
+    )]
+    pub include_missing_intermediate_prereqs: Option<bool>,
 }
 
 /// A course missing expected prerequisites
@@ -36,6 +76,51 @@ pub struct MissingPrereqInfo {
     pub course: String,
     /// Detected course level (e.g., 2000, 300)
     pub level: u32,
+    /// Whether this course belongs to the degree's `major_subjects` set.
+    /// `"internal_missing_prereq"` for courses in the program's own subjects
+    /// (the actionable signal); `"external_missing_prereq"` for cross-listed
+    /// or supporting-department courses that legitimately don't have CS
+    /// prereqs (typically noise). `"unknown_scope"` when `major_subjects`
+    /// is not declared.
+    pub kind: &'static str,
+}
+
+/// One branch of a deep prerequisite chain. Lets callers consume the chain
+/// as structured data instead of parsing the legacy `chain` string.
+#[derive(Debug, Serialize)]
+pub struct DeepChainBranch {
+    /// Number of courses in this branch
+    pub length: usize,
+    /// Courses in this branch, in dependency order (leaf → immediate prereq)
+    pub path: Vec<String>,
+}
+
+/// One possible missing-intermediate prerequisite finding, surfaced as JSON.
+///
+/// Heuristic only — see [`find_missing_intermediate_prereqs`] for the
+/// matching rules and known limitations. Always a soft signal; never a hard
+/// error.
+#[derive(Debug, Serialize)]
+pub struct MissingIntermediateInfo {
+    /// Course that may be skipping an intermediary (e.g. `"CS165"`).
+    pub course_id: String,
+    /// Prereq the course declares directly (e.g. `"CS150B"`).
+    pub declared_prereq: String,
+    /// Same-subject candidate intermediate course (e.g. `"CS164"`).
+    pub suggested_intermediate: String,
+    /// Human-readable explanation, ready to surface to a caller.
+    pub rationale: String,
+}
+
+impl From<MissingIntermediateFinding> for MissingIntermediateInfo {
+    fn from(f: MissingIntermediateFinding) -> Self {
+        Self {
+            course_id: f.course_id,
+            declared_prereq: f.declared_prereq,
+            suggested_intermediate: f.suggested_intermediate,
+            rationale: f.rationale,
+        }
+    }
 }
 
 /// A course with a deep prerequisite chain
@@ -45,10 +130,15 @@ pub struct DeepChainInfo {
     pub course: String,
     /// Maximum chain branch length
     pub max_depth: usize,
-    /// Formatted branch lengths (e.g., "5, 3")
+    /// Formatted branch lengths (e.g., "5, 3"). Kept for display; for
+    /// programmatic use prefer `branches`.
     pub branch_lengths: String,
-    /// Formatted chain representation
+    /// Formatted chain representation. Kept for display; for programmatic
+    /// use prefer `branches`.
     pub chain: String,
+    /// Structured branches: each entry has `length` and the ordered course
+    /// `path`. Mirrors the data behind `chain` / `branch_lengths`.
+    pub branches: Vec<DeepChainBranch>,
 }
 
 /// Complete audit response
@@ -69,6 +159,14 @@ pub struct AuditResponse {
     /// Upper-level courses without prerequisites
     pub missing_prerequisites: Vec<MissingPrereqInfo>,
 
+    /// Possible missing intermediate prerequisites — heuristic findings
+    /// where a same-subject sibling course sits numerically between a
+    /// declared prereq and the consuming course. Empty (and skipped from
+    /// the JSON output) when nothing is detected or the caller passed
+    /// `include_missing_intermediate_prereqs=false`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub missing_intermediate_prereqs: Vec<MissingIntermediateInfo>,
+
     /// Courses with deep prerequisite chains
     pub deep_chains: Vec<DeepChainInfo>,
     /// Threshold used for deep chain detection
@@ -80,6 +178,9 @@ pub struct AuditResponse {
     pub institution: Option<String>,
     /// Total courses defined
     pub total_courses: usize,
+    /// Structured hints about the next MCP call worth making, based on the
+    /// audit outcome (deep chains → render the worst plan, etc.).
+    pub tool_followups: Vec<ToolFollowup>,
 }
 
 // ============================================================================
@@ -90,7 +191,11 @@ const DEFAULT_CHAIN_THRESHOLD: usize = 3;
 
 /// Execute the `audit_degree` tool
 #[must_use]
-pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditResponse {
+pub fn execute(
+    yaml_content: &str,
+    chain_threshold: Option<usize>,
+    include_missing_intermediate_prereqs: bool,
+) -> AuditResponse {
     let threshold = chain_threshold.unwrap_or(DEFAULT_CHAIN_THRESHOLD);
 
     // Try to parse the YAML
@@ -104,11 +209,17 @@ pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditRespo
                 validation_warnings: 0,
                 validation_report: String::new(),
                 missing_prerequisites: vec![],
+                missing_intermediate_prereqs: vec![],
                 deep_chains: vec![],
                 chain_threshold: threshold,
                 degree_name: None,
                 institution: None,
                 total_courses: 0,
+                tool_followups: vec![ToolFollowup {
+                    tool: TOOL_VALIDATE_DEGREE,
+                    reason: "audit_degree couldn't parse the YAML; validate_degree surfaces the parse error in a more structured form.".to_string(),
+                    suggested_args: serde_json::json!({}),
+                }],
             };
         }
     };
@@ -124,29 +235,52 @@ pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditRespo
     let missing_prereqs: Vec<MissingPrereqInfo> =
         find_upper_level_without_prereqs(&graph_result, lowest_level)
             .into_iter()
-            .map(|(course, level)| MissingPrereqInfo { course, level })
+            .map(|(course, level)| MissingPrereqInfo {
+                kind: classify_prereq_scope(&course, &program),
+                course,
+                level,
+            })
             .collect();
 
     // Find deep prerequisite chains
     let deep_chains: Vec<DeepChainInfo> = find_deep_chains(&program, &graph_result, threshold)
         .into_iter()
-        .map(|(course, branch_lengths, chain)| {
-            let max_depth = branch_lengths
-                .split(", ")
-                .filter_map(|n| n.parse::<usize>().ok())
-                .max()
-                .unwrap_or(0);
+        .map(|entry| {
+            let max_depth = entry.branches.iter().map(Vec::len).max().unwrap_or(0);
+            let branches = entry
+                .branches
+                .into_iter()
+                .map(|path| DeepChainBranch {
+                    length: path.len(),
+                    path,
+                })
+                .collect();
             DeepChainInfo {
-                course,
+                course: entry.course,
                 max_depth,
-                branch_lengths,
-                chain,
+                branch_lengths: entry.branch_lengths,
+                chain: entry.chain,
+                branches,
             }
         })
         .collect();
 
+    let missing_intermediate: Vec<MissingIntermediateInfo> = if include_missing_intermediate_prereqs
+    {
+        find_missing_intermediate_prereqs(&program)
+            .into_iter()
+            .map(MissingIntermediateInfo::from)
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    // `passed` reflects hard problems only — missing-intermediate findings
+    // are heuristic warnings, so they don't flip `passed` to false.
     let passed =
         validation.errors.is_empty() && missing_prereqs.is_empty() && deep_chains.is_empty();
+
+    let tool_followups = build_audit_followups(passed, &missing_prereqs, &deep_chains);
 
     AuditResponse {
         passed,
@@ -155,18 +289,68 @@ pub fn execute(yaml_content: &str, chain_threshold: Option<usize>) -> AuditRespo
         validation_warnings: validation.warnings.len(),
         validation_report: validation.format_report(),
         missing_prerequisites: missing_prereqs,
+        missing_intermediate_prereqs: missing_intermediate,
         deep_chains,
         chain_threshold: threshold,
         degree_name: Some(program.degree.name.clone()),
         institution: program.degree.institution.clone(),
         total_courses: program.courses.len(),
+        tool_followups,
     }
+}
+
+/// Build follow-up suggestions for an audit response.
+fn build_audit_followups(
+    passed: bool,
+    missing_prereqs: &[MissingPrereqInfo],
+    deep_chains: &[DeepChainInfo],
+) -> Vec<ToolFollowup> {
+    let mut followups = Vec::new();
+    if let Some(worst) = deep_chains.iter().max_by_key(|d| d.max_depth) {
+        followups.push(ToolFollowup {
+            tool: TOOL_RENDER_PLAN_GRAPH,
+            reason: format!(
+                "Deepest chain found on {} ({} steps); the longest path graph shows the chain in context.",
+                worst.course, worst.max_depth,
+            ),
+            suggested_args: serde_json::json!({ "plan_category": "longest" }),
+        });
+    }
+    let internal_missing = missing_prereqs
+        .iter()
+        .filter(|m| m.kind == "internal_missing_prereq")
+        .count();
+    if internal_missing > 0 {
+        followups.push(ToolFollowup {
+            tool: TOOL_GET_COURSE_DETAIL,
+            reason: format!(
+                "{internal_missing} internal upper-level course(s) lack prerequisites — get_course_detail returns each course's requirement references + dependents so you can decide whether to add them."
+            ),
+            suggested_args: serde_json::json!({}),
+        });
+    }
+    if passed {
+        followups.push(ToolFollowup {
+            tool: TOOL_ANALYZE_DEGREE,
+            reason: "Audit passed; analyze_degree computes plan-level metrics + selected plans for the report.".to_string(),
+            suggested_args: serde_json::json!({}),
+        });
+    }
+    followups
 }
 
 /// Execute and serialize the result as JSON
 #[must_use]
-pub fn execute_json(yaml_content: &str, chain_threshold: Option<usize>) -> String {
-    let response = execute(yaml_content, chain_threshold);
+pub fn execute_json(
+    yaml_content: &str,
+    chain_threshold: Option<usize>,
+    include_missing_intermediate_prereqs: bool,
+) -> String {
+    let response = execute(
+        yaml_content,
+        chain_threshold,
+        include_missing_intermediate_prereqs,
+    );
     serde_json::to_string_pretty(&response)
         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
 }
@@ -178,7 +362,28 @@ pub fn execute_json(yaml_content: &str, chain_threshold: Option<usize>) -> Strin
 fn format_parse_error(e: &DegreeParseError) -> String {
     match e {
         DegreeParseError::IoError(msg) => format!("File error: {msg}"),
-        DegreeParseError::YamlError(msg) => format!("YAML syntax error: {msg}"),
+        DegreeParseError::YamlError { message, .. } => format!("YAML syntax error: {message}"),
+    }
+}
+
+/// Tag a missing-prereq finding as internal (subject in `major_subjects`),
+/// external (subject not in `major_subjects`), or unknown when the program
+/// did not declare its `major_subjects`. Lets callers filter the noisy
+/// external-department findings (e.g. cross-listed JTC/MGT courses that
+/// legitimately don't carry CS prereqs) without losing internal coverage.
+fn classify_prereq_scope(course_key: &str, program: &DegreeProgram) -> &'static str {
+    let Some(subjects) = program.degree.major_subjects.as_ref() else {
+        return "unknown_scope";
+    };
+    let digit_pos = course_key.find(|c: char| c.is_ascii_digit()).unwrap_or(0);
+    if digit_pos == 0 {
+        return "unknown_scope";
+    }
+    let prefix = &course_key[..digit_pos];
+    if subjects.iter().any(|s| s.eq_ignore_ascii_case(prefix)) {
+        "internal_missing_prereq"
+    } else {
+        "external_missing_prereq"
     }
 }
 
@@ -220,7 +425,7 @@ courses:
 
     #[test]
     fn test_audit_valid_degree() {
-        let response = execute(VALID_YAML, None);
+        let response = execute(VALID_YAML, None, false);
         assert!(response.parse_error.is_none());
         assert_eq!(response.total_courses, 2);
         assert_eq!(response.degree_name, Some("Test Program".to_string()));
@@ -228,14 +433,14 @@ courses:
 
     #[test]
     fn test_audit_malformed_yaml() {
-        let response = execute("not: valid: yaml: {{", None);
+        let response = execute("not: valid: yaml: {{", None, false);
         assert!(!response.passed);
         assert!(response.parse_error.is_some());
     }
 
     #[test]
     fn test_audit_json_output() {
-        let json = execute_json(VALID_YAML, None);
+        let json = execute_json(VALID_YAML, None, false);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["total_courses"].as_u64().unwrap() > 0);
     }
@@ -251,10 +456,369 @@ courses:
 
     #[test]
     fn test_audit_with_custom_threshold() {
-        let response = execute(VALID_YAML, Some(1));
+        let response = execute(VALID_YAML, Some(1), false);
         // With threshold 1, even CS201 (1 prereq) might be flagged
         assert!(response.parse_error.is_none());
         assert_eq!(response.chain_threshold, 1);
+    }
+
+    #[test]
+    fn test_classify_prereq_scope_uses_major_subjects() {
+        // CS101 anchors the lowest level so CS300/MGT340 register as
+        // upper-level missing-prereq findings.
+        let yaml = r#"
+degree:
+  id: test
+  institution: T
+  program: T
+  total_credits: 120
+  gpa_minimum: 2.0
+  major_subjects: ["CS"]
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101, CS300, MGT340]
+
+courses:
+  CS101:
+    title: Intro CS
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS300:
+    title: Upper CS
+    prefix: CS
+    number: "300"
+    credits: 4
+  MGT340:
+    title: External
+    prefix: MGT
+    number: "340"
+    credits: 3
+"#;
+        let response = execute(yaml, None, false);
+        let cs = response
+            .missing_prerequisites
+            .iter()
+            .find(|m| m.course == "CS300")
+            .expect("CS300 should be in missing_prerequisites");
+        let mgt = response
+            .missing_prerequisites
+            .iter()
+            .find(|m| m.course == "MGT340")
+            .expect("MGT340 should be in missing_prerequisites");
+        assert_eq!(cs.kind, "internal_missing_prereq");
+        assert_eq!(mgt.kind, "external_missing_prereq");
+    }
+
+    #[test]
+    fn test_classify_prereq_scope_unknown_when_major_subjects_absent() {
+        let yaml = r#"
+degree:
+  id: test
+  institution: T
+  program: T
+  total_credits: 120
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101, CS300]
+
+courses:
+  CS101:
+    title: Intro CS
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS300:
+    title: Upper CS
+    prefix: CS
+    number: "300"
+    credits: 4
+"#;
+        let response = execute(yaml, None, false);
+        let cs = response
+            .missing_prerequisites
+            .iter()
+            .find(|m| m.course == "CS300")
+            .expect("CS300 should be in missing_prerequisites");
+        assert_eq!(cs.kind, "unknown_scope");
+    }
+
+    #[test]
+    fn test_deep_chain_branches_array_present() {
+        // A 4-deep chain should appear in deep_chains (threshold defaults to 3)
+        // with a structured branches array carrying the path.
+        let yaml = r#"
+degree:
+  id: test
+  institution: T
+  program: T
+  total_credits: 120
+  gpa_minimum: 2.0
+  major_subjects: ["CS"]
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS400]
+
+courses:
+  CS100:
+    title: A
+    prefix: CS
+    number: "100"
+    credits: 3
+  CS200:
+    title: B
+    prefix: CS
+    number: "200"
+    credits: 3
+    prerequisites_raw: "CS100"
+  CS300:
+    title: C
+    prefix: CS
+    number: "300"
+    credits: 3
+    prerequisites_raw: "CS200"
+  CS400:
+    title: D
+    prefix: CS
+    number: "400"
+    credits: 3
+    prerequisites_raw: "CS300"
+"#;
+        let response = execute(yaml, Some(3), false);
+        let cs400 = response
+            .deep_chains
+            .iter()
+            .find(|d| d.course == "CS400")
+            .expect("CS400 should be flagged as a deep chain");
+        assert!(
+            !cs400.branches.is_empty(),
+            "deep_chain entry must include a structured branches array"
+        );
+        let branch = &cs400.branches[0];
+        assert_eq!(branch.length, branch.path.len());
+        assert!(branch.length >= 3);
+        assert!(
+            branch.path.iter().any(|c| c == "CS100"),
+            "path should include CS100 leaf"
+        );
+    }
+
+    #[test]
+    fn test_tool_followups_suggest_render_plan_graph_on_deep_chains() {
+        // 4-deep chain CS100 → CS200 → CS300 → CS400 triggers the audit
+        // deep-chain finder; the response should propose visualising it.
+        let yaml = r#"
+degree:
+  id: t
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+  major_subjects: ["CS"]
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS400]
+
+courses:
+  CS100:
+    title: A
+    prefix: CS
+    number: "100"
+    credits: 3
+  CS200:
+    title: B
+    prefix: CS
+    number: "200"
+    credits: 3
+    prerequisites_raw: "CS100"
+  CS300:
+    title: C
+    prefix: CS
+    number: "300"
+    credits: 3
+    prerequisites_raw: "CS200"
+  CS400:
+    title: D
+    prefix: CS
+    number: "400"
+    credits: 3
+    prerequisites_raw: "CS300"
+"#;
+        let response = execute(yaml, Some(3), false);
+        assert!(!response.deep_chains.is_empty());
+        assert!(
+            response
+                .tool_followups
+                .iter()
+                .any(|f| f.tool == "render_plan_graph"),
+            "deep chains must trigger a render_plan_graph followup; got {:?}",
+            response.tool_followups
+        );
+    }
+
+    #[test]
+    fn test_tool_followups_suggest_course_detail_on_internal_missing_prereq() {
+        // CS300 is upper-level + in major_subjects but declares no prereqs.
+        // Audit tags it as internal_missing_prereq → followup should point at
+        // get_course_detail so the caller can inspect requirement references.
+        let yaml = r#"
+degree:
+  id: t
+  institution: T
+  program: T
+  total_credits: 8
+  gpa_minimum: 2.0
+  major_subjects: ["CS"]
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101, CS300]
+
+courses:
+  CS101:
+    title: Intro CS
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS300:
+    title: Upper CS
+    prefix: CS
+    number: "300"
+    credits: 4
+"#;
+        let response = execute(yaml, None, false);
+        assert!(response
+            .missing_prerequisites
+            .iter()
+            .any(|m| m.kind == "internal_missing_prereq"));
+        assert!(
+            response
+                .tool_followups
+                .iter()
+                .any(|f| f.tool == "get_course_detail"),
+            "internal missing prereqs must trigger get_course_detail; got {:?}",
+            response.tool_followups
+        );
+    }
+
+    #[test]
+    fn test_audit_surfaces_missing_intermediate_when_flag_is_on() {
+        // CSU-style chain gap: CS165 declares CS150B; CS164 belongs in
+        // between. Audit must surface the heuristic finding when the
+        // opt-in flag is set.
+        let yaml = r#"
+degree:
+  id: csu-style
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+  major_subjects: ["CS"]
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS150B, CS164, CS165]
+
+courses:
+  CS150B:
+    title: Intro CS
+    prefix: CS
+    number: "150"
+    credits: 4
+  CS164:
+    title: Data Structures
+    prefix: CS
+    number: "164"
+    credits: 4
+    prerequisites_raw: "CS150B"
+  CS165:
+    title: Algorithms
+    prefix: CS
+    number: "165"
+    credits: 4
+    prerequisites_raw: "CS150B"
+"#;
+        let response = execute(yaml, None, true);
+        assert!(
+            response
+                .missing_intermediate_prereqs
+                .iter()
+                .any(|f| f.course_id == "CS165"
+                    && f.declared_prereq == "CS150B"
+                    && f.suggested_intermediate == "CS164"),
+            "expected CS165 finding pointing at CS164; got {:?}",
+            response.missing_intermediate_prereqs
+        );
+    }
+
+    #[test]
+    fn test_audit_omits_missing_intermediate_when_flag_is_off() {
+        // Same YAML; flag off → field empty (and skipped from JSON).
+        let yaml = r#"
+degree:
+  id: csu-style-off
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+  major_subjects: ["CS"]
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS150B, CS164, CS165]
+
+courses:
+  CS150B:
+    title: Intro CS
+    prefix: CS
+    number: "150"
+    credits: 4
+  CS164:
+    title: Data Structures
+    prefix: CS
+    number: "164"
+    credits: 4
+    prerequisites_raw: "CS150B"
+  CS165:
+    title: Algorithms
+    prefix: CS
+    number: "165"
+    credits: 4
+    prerequisites_raw: "CS150B"
+"#;
+        let response = execute(yaml, None, false);
+        assert!(response.missing_intermediate_prereqs.is_empty());
+        let json = execute_json(yaml, None, false);
+        assert!(
+            !json.contains("missing_intermediate_prereqs"),
+            "field must be skipped from JSON when empty"
+        );
     }
 
     #[test]
@@ -283,7 +847,7 @@ courses:
     number: "101"
     credits: 4
 "#;
-        let response = execute(yaml, None);
+        let response = execute(yaml, None, false);
         assert!(!response.passed);
         assert!(response.validation_errors > 0);
     }

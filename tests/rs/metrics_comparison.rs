@@ -1,7 +1,7 @@
 //! Integration tests for metrics comparison against reference files
 //!
 //! These tests compare computed metrics against known-correct reference files
-//! in `samples/correct/` to ensure our metric calculations match expected values.
+//! in `samples/planner-output/correct/` to ensure our metric calculations match expected values.
 
 use nu_analytics::core::metrics::{self, CurriculumMetrics};
 use nu_analytics::core::planner::csv_parser::parse_curriculum_csv;
@@ -205,7 +205,7 @@ fn compute_total_complexity(metrics: &CurriculumMetrics) -> usize {
 /// Run a metrics comparison test for a given plan
 fn run_metrics_comparison_test(plan_name: &str) {
     let plan_path = format!("samples/plans/{plan_name}.csv");
-    let reference_path = format!("samples/correct/{plan_name}_w_metrics.csv");
+    let reference_path = format!("samples/planner-output/correct/{plan_name}_w_metrics.csv");
 
     // Parse the plan
     let school = parse_curriculum_csv(&plan_path)
@@ -336,7 +336,7 @@ fn aggregate_metrics_comparison() {
 
     for plan_name in &plans {
         let plan_path = format!("samples/plans/{plan_name}.csv");
-        let reference_path = format!("samples/correct/{plan_name}_w_metrics.csv");
+        let reference_path = format!("samples/planner-output/correct/{plan_name}_w_metrics.csv");
 
         // Skip if reference file doesn't exist
         if !Path::new(&reference_path).exists() {

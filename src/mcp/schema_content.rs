@@ -14,13 +14,14 @@ const SECTION_DELIMITER: &str =
 /// Get schema content for a given section
 ///
 /// # Arguments
-/// * `section` - One of: "all", "degree", "requirements", "courses", "examples"
+/// * `section` - One of: "quickstart", "all", "degree", "requirements", "courses", "examples"
 ///
 /// # Returns
 /// The relevant portion of the schema YAML (with comment-based documentation)
 #[must_use]
 pub fn get_schema_content(section: &str) -> String {
     match section.to_lowercase().as_str() {
+        "quickstart" => extract_sections(&["QUICKSTART"]),
         "degree" => extract_sections(&["DEGREE METADATA"]),
         "requirements" => {
             extract_sections(&["^REQUIREMENTS", "FROM BLOCK", "COURSE REFERENCE SYNTAX"])

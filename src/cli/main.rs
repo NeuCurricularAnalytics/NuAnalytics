@@ -58,7 +58,7 @@ fn main() {
             run_planner(&config, &opts);
         }
         Command::Degree {
-            file,
+            files,
             validate,
             print_graph,
             audit,
@@ -103,11 +103,15 @@ fn main() {
                 verbose,
                 include_courses: include,
             };
-            commands::degree::run(file.as_deref(), &options, &config);
+            commands::degree::run(&files, &options, &config);
+        }
+        #[cfg(feature = "database")]
+        Command::Db { subcommand } => {
+            commands::db::run(subcommand, &config);
         }
         #[cfg(feature = "mcp")]
         Command::Mcp => {
-            if let Err(e) = commands::mcp::run() {
+            if let Err(e) = commands::mcp::run(&config.database) {
                 eprintln!("✗ MCP server error: {e}");
                 std::process::exit(1);
             }

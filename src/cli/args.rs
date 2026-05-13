@@ -250,6 +250,9 @@ pub enum Command {
     /// # Run full degree analysis (default action)
     /// nuanalytics degree samples/degrees/csu-cs-bscs-general.yaml
     ///
+    /// # Batch mode — process every YAML in a directory
+    /// nuanalytics degree samples/degrees/*.yaml
+    ///
     /// # Validate a degree program only
     /// nuanalytics degree --validate samples/degrees/csu-cs-bscs-general.yaml
     ///
@@ -260,9 +263,11 @@ pub enum Command {
     /// nuanalytics degree --analyze --calc-strategy mean --sample-plans 10 degree.yaml
     /// ```
     Degree {
-        /// Path to the degree program YAML file
-        #[arg(value_name = "FILE")]
-        file: Option<PathBuf>,
+        /// Paths to one or more degree program YAML files. Each file is processed
+        /// independently in order; per-file failures are reported but do not
+        /// abort the batch.
+        #[arg(value_name = "FILES", num_args = 0..)]
+        files: Vec<PathBuf>,
 
         /// Validate the degree program YAML file
         #[arg(long)]
@@ -328,6 +333,13 @@ pub enum Command {
         #[arg(long, value_name = "COURSES", value_delimiter = ',')]
         include: Option<Vec<String>>,
     },
+    /// Manage the `NuAnalytics` database (IPEDS data, status, import).
+    #[cfg(feature = "database")]
+    Db {
+        /// Database subcommand to run
+        #[command(subcommand)]
+        subcommand: DbSubcommand,
+    },
     /// Run the MCP (Model Context Protocol) server.
     ///
     /// Starts a server that exposes `NuAnalytics` tools for AI model integration
@@ -348,6 +360,88 @@ pub enum Command {
             \x20 nuanalytics --log-level debug mcp\n\
             \x20 npx @modelcontextprotocol/inspector nuanalytics mcp")]
     Mcp,
+}
+
+/// Database management subcommands
+#[cfg(feature = "database")]
+#[derive(Debug, Subcommand)]
+pub enum DbSubcommand {
+    /// Sign in to Supabase via OAuth and save the session for database operations.
+    ///
+    /// Opens your browser to authenticate with the chosen OAuth provider (default: GitHub).
+    /// After authorising, the browser redirects back to a temporary local server and
+    /// the session token is saved automatically.
+    ///
+    /// Requires `database.endpoint` and `database.anon_key` to be set in config.
+    /// The provider must be enabled in your Supabase project under Authentication → Providers.
+    ///
+    /// Examples:
+    /// ```sh
+    /// nuanalytics db login                    # uses GitHub
+    /// nuanalytics db login --provider google
+    /// nuanalytics db login --provider gitlab
+    /// ```
+    Login {
+        /// OAuth provider to use (github, google, gitlab, discord, azure, ...)
+        #[arg(long, value_name = "PROVIDER", default_value = "github")]
+        provider: String,
+    },
+    /// Sign out and remove the saved session token.
+    Logout,
+    /// Show the currently signed-in user (if any).
+    Whoami,
+    /// Execute an SQL file against the database via the Supabase Management API.
+    ///
+    /// Requires `database.management_key` (a Supabase Personal Access Token) to be set:
+    ///
+    /// ```sh
+    /// nuanalytics config set database.management_key <pat>
+    /// ```
+    ///
+    /// Get a PAT at <https://app.supabase.com/account/tokens>. The PAT gives DDL
+    /// access (CREATE TABLE, INSERT, etc.) which the project anon key cannot do.
+    ///
+    /// Examples:
+    /// ```sh
+    /// nuanalytics db exec-sql docs/database/schema.sql
+    /// nuanalytics db exec-sql docs/database/cip-seed.sql
+    /// ```
+    ExecSql {
+        /// Path to the SQL file to execute
+        #[arg(value_name = "FILE")]
+        file: std::path::PathBuf,
+    },
+    /// Check database connectivity and display row counts
+    Status,
+    /// Import IPEDS data from locally downloaded CSV or ZIP files into Supabase.
+    ///
+    /// Only two files are needed — the completions file is used in a single pass to
+    /// populate both the `completions` table (CS CIP codes only) and the
+    /// `institution_completions` table (all-major totals used for representation ratios).
+    ///
+    /// Download from <https://nces.ed.gov/ipeds/use-the-data>:
+    /// - HD{year}.csv or HD{year}.zip  (institution directory)
+    /// - C{year}_A.csv or C{year}_A.zip  (completions by award level)
+    ///
+    /// Examples:
+    /// ```sh
+    /// nuanalytics db ipeds-import --year 2024 --dir ./ipeds_data/
+    /// nuanalytics db ipeds-import --year 2024 --institutions HD2024.zip --completions C2024_A.zip
+    /// ```
+    IpedsImport {
+        /// Directory containing IPEDS CSV/ZIP files (auto-detected by filename pattern)
+        #[arg(long, value_name = "DIR")]
+        dir: Option<std::path::PathBuf>,
+        /// Path to the HD (institutions) CSV or ZIP file
+        #[arg(long, value_name = "FILE")]
+        institutions: Option<std::path::PathBuf>,
+        /// Path to the `C_A` (completions) CSV or ZIP file
+        #[arg(long, value_name = "FILE")]
+        completions: Option<std::path::PathBuf>,
+        /// Academic year for the data (e.g. 2023 for 2023-2024 data)
+        #[arg(long, default_value = "2023")]
+        year: u16,
+    },
 }
 
 #[derive(Parser, Debug)]
@@ -386,13 +480,13 @@ pub struct Cli {
     #[arg(long = "config-verbose", value_parser = BoolishValueParser::new())]
     pub config_verbose: Option<bool>,
 
-    /// Override config database token
-    #[arg(long = "config-db-token", value_name = "TOKEN")]
-    pub config_db_token: Option<String>,
+    /// Override config database anon key (Supabase anonymous key for the project)
+    #[arg(long = "config-db-anon-key", value_name = "KEY")]
+    pub config_db_anon_key: Option<String>,
 
-    /// Override config database token (short form)
-    #[arg(long = "db-token", value_name = "TOKEN")]
-    pub db_token: Option<String>,
+    /// Override config database anon key (short form)
+    #[arg(long = "db-anon-key", value_name = "KEY")]
+    pub db_anon_key: Option<String>,
 
     /// Override config database endpoint
     #[arg(long = "config-db-endpoint", value_name = "URL")]
@@ -420,8 +514,8 @@ impl Cli {
     /// Convert CLI flags into config overrides
     ///
     /// Transforms CLI arguments into a `ConfigOverrides` struct that can be applied to
-    /// the loaded configuration. Short-form flags (e.g., `--db-token`) take precedence
-    /// over long-form flags (e.g., `--config-db-token`) when both are provided.
+    /// the loaded configuration. Short-form flags (e.g., `--db-anon-key`) take precedence
+    /// over long-form flags (e.g., `--config-db-anon-key`) when both are provided.
     ///
     /// # Returns
     /// A `ConfigOverrides` struct with values from CLI flags, where `None` means no override.
@@ -440,10 +534,10 @@ impl Cli {
                 .as_ref()
                 .map(|p| p.to_string_lossy().to_string()),
             verbose: self.config_verbose,
-            db_token: self
-                .db_token
+            db_anon_key: self
+                .db_anon_key
                 .clone()
-                .or_else(|| self.config_db_token.clone()),
+                .or_else(|| self.config_db_anon_key.clone()),
             db_endpoint: self
                 .db_endpoint
                 .clone()
@@ -473,6 +567,43 @@ mod tests {
     }
 
     #[test]
+    fn test_report_format_arg_extension_roundtrip() {
+        for fmt in [
+            ReportFormatArg::Html,
+            ReportFormatArg::Md,
+            ReportFormatArg::Pdf,
+        ] {
+            assert_eq!(ReportFormatArg::from_extension(fmt.extension()), Some(fmt));
+        }
+    }
+
+    #[test]
+    fn test_report_format_arg_from_extension_aliases() {
+        assert_eq!(
+            ReportFormatArg::from_extension("HTML"),
+            Some(ReportFormatArg::Html)
+        );
+        assert_eq!(
+            ReportFormatArg::from_extension("htm"),
+            Some(ReportFormatArg::Html)
+        );
+        assert_eq!(
+            ReportFormatArg::from_extension("markdown"),
+            Some(ReportFormatArg::Md)
+        );
+        assert_eq!(
+            ReportFormatArg::from_extension("PDF"),
+            Some(ReportFormatArg::Pdf)
+        );
+    }
+
+    #[test]
+    fn test_report_format_arg_from_extension_rejects_unknown() {
+        assert_eq!(ReportFormatArg::from_extension("xlsx"), None);
+        assert_eq!(ReportFormatArg::from_extension(""), None);
+    }
+
+    #[test]
     fn test_log_level_to_logger_level() {
         assert_eq!(Level::from(LogLevelArg::Error), Level::Error);
         assert_eq!(Level::from(LogLevelArg::Warn), Level::Warn);
@@ -490,8 +621,8 @@ mod tests {
             config_level: None,
             config_log_file: None,
             config_verbose: None,
-            config_db_token: None,
-            db_token: None,
+            config_db_anon_key: None,
+            db_anon_key: None,
             config_db_endpoint: None,
             db_endpoint: None,
             metrics_dir: None,
@@ -503,7 +634,7 @@ mod tests {
         assert!(overrides.level.is_none());
         assert!(overrides.file.is_none());
         assert!(overrides.verbose.is_none());
-        assert!(overrides.db_token.is_none());
+        assert!(overrides.db_anon_key.is_none());
         assert!(overrides.db_endpoint.is_none());
         assert!(overrides.metrics_dir.is_none());
         assert!(overrides.reports_dir.is_none());
@@ -519,8 +650,8 @@ mod tests {
             config_level: Some(LogLevelArg::Debug),
             config_log_file: Some(PathBuf::from("/tmp/test.log")),
             config_verbose: Some(true),
-            config_db_token: None,
-            db_token: Some("test-token".to_string()),
+            config_db_anon_key: None,
+            db_anon_key: Some("test-token".to_string()),
             config_db_endpoint: None,
             db_endpoint: Some("https://test.com".to_string()),
             metrics_dir: Some(PathBuf::from("/metrics")),
@@ -532,7 +663,7 @@ mod tests {
         assert_eq!(overrides.level, Some("debug".to_string()));
         assert_eq!(overrides.file, Some("/tmp/test.log".to_string()));
         assert_eq!(overrides.verbose, Some(true));
-        assert_eq!(overrides.db_token, Some("test-token".to_string()));
+        assert_eq!(overrides.db_anon_key, Some("test-token".to_string()));
         assert_eq!(overrides.db_endpoint, Some("https://test.com".to_string()));
         assert_eq!(overrides.metrics_dir, Some("/metrics".to_string()));
         assert_eq!(overrides.reports_dir, Some("/reports".to_string()));
@@ -549,8 +680,8 @@ mod tests {
             config_level: None,
             config_log_file: None,
             config_verbose: None,
-            config_db_token: Some("long-token".to_string()),
-            db_token: Some("short-token".to_string()),
+            config_db_anon_key: Some("long-token".to_string()),
+            db_anon_key: Some("short-token".to_string()),
             config_db_endpoint: Some("https://long.com".to_string()),
             db_endpoint: Some("https://short.com".to_string()),
             metrics_dir: Some(PathBuf::from("/metrics")),
@@ -559,7 +690,7 @@ mod tests {
         };
 
         let overrides = cli.to_config_overrides();
-        assert_eq!(overrides.db_token, Some("short-token".to_string()));
+        assert_eq!(overrides.db_anon_key, Some("short-token".to_string()));
         assert_eq!(overrides.db_endpoint, Some("https://short.com".to_string()));
         assert_eq!(overrides.metrics_dir, Some("/metrics".to_string()));
         assert_eq!(overrides.reports_dir, Some("/reports".to_string()));
@@ -576,8 +707,8 @@ mod tests {
             config_level: None,
             config_log_file: None,
             config_verbose: None,
-            config_db_token: Some("long-token".to_string()),
-            db_token: None,
+            config_db_anon_key: Some("long-token".to_string()),
+            db_anon_key: None,
             config_db_endpoint: Some("https://long.com".to_string()),
             db_endpoint: None,
             metrics_dir: None,
@@ -586,7 +717,7 @@ mod tests {
         };
 
         let overrides = cli.to_config_overrides();
-        assert_eq!(overrides.db_token, Some("long-token".to_string()));
+        assert_eq!(overrides.db_anon_key, Some("long-token".to_string()));
         assert_eq!(overrides.db_endpoint, Some("https://long.com".to_string()));
         assert!(overrides.metrics_dir.is_none());
         assert!(overrides.reports_dir.is_none());

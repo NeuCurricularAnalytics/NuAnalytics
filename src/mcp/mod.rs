@@ -40,9 +40,10 @@
 //! mcp::run()?;
 //! ```
 
+pub mod cache;
 pub mod schema_content;
 pub mod server;
 pub mod tools;
 
 // Re-export main entry points
-pub use server::{run, run_server};
+pub use server::run;

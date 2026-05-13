@@ -1,0 +1,49 @@
+Curriculum,Bachelor of Science in Computer Science - Computer Science Concentration - Random Sample
+Institution,Colorado State University
+Degree Type,"BS"
+System Type,semester
+CIP,""
+Total Structural Complexity,222.0
+Longest Delay,7
+Longest Delay Chain,"MATH120 → MATH160 → DSCI369 → CS320 → CS454"
+Terms Required,8
+Courses
+Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
+1,"Gen Ed Citizenship","AC","01","","","",3,"Colorado State University","",1.0,0,1,0
+2,"Advanced Writing","AW","01","","","",3,"Colorado State University","",1.0,0,1,0
+3,"Principles of Plant Biology","BZ","120","","","",4,"Colorado State University","BZ120",1.0,0,1,0
+4,"CS1---No Prior Programming Experience","CS","163","31","","",4,"Colorado State University","CS163",18.0,12,6,44
+5,"CS2--Data Structures","CS","165","4","","",4,"Colorado State University","CS165",15.0,9,6,36
+6,"Ethical Computing Systems","CS","201","","","",3,"Colorado State University","CS201",1.0,0,1,0
+7,"Discrete Structures and the Applications","CS","220","4;34","","",4,"Colorado State University","CS220",9.0,2,7,17
+8,"Software Development with C++","CS","253","5","","",4,"Colorado State University","CS253",13.0,7,6,31
+9,"Computer Organization","CS","270","4","","",4,"Colorado State University","CS270",3.0,0,3,0
+10,"Design Thinking Toolbox: Mixed Reality Design","CS","310H","8","","",3,"Colorado State University","CS310H",5.0,0,5,0
+11,"Software Engineering","CS","314","8","","",3,"Colorado State University","CS314",7.0,1,6,6
+12,"Algorithms--Theory and Practice","CS","320","7;5;34;18","","",3,"Colorado State University","CS320",8.0,1,7,44
+13,"Systems Security","CS","356","8","","",3,"Colorado State University","CS356",5.0,0,5,0
+14,"Introduction to Computer Graphics","CS","410","8;18","","",4,"Colorado State University","CS410",6.0,0,6,0
+15,"Database Systems","CS","430","11","","",4,"Colorado State University","CS430",6.0,0,6,0
+16,"Principles of Programming Languages","CS","454","8;12","","",4,"Colorado State University","CS454",7.0,0,7,0
+17,"Engaging in Virtual Worlds","CS","462","8;18","","",4,"Colorado State University","CS462",6.0,0,6,0
+18,"Linear Algebra for Data Science","DSCI","369","34","","",4,"Colorado State University","DSCI369",12.0,5,7,42
+19,"Free Elective","ELEC","001","","","",3,"Colorado State University","",1.0,0,1,0
+20,"Free Elective","ELEC","002","","","",3,"Colorado State University","",1.0,0,1,0
+21,"Free Elective","ELEC","003","","","",3,"Colorado State University","",1.0,0,1,0
+22,"Free Elective","ELEC","004","","","",3,"Colorado State University","",1.0,0,1,0
+23,"Free Elective","ELEC","005","","","",3,"Colorado State University","",1.0,0,1,0
+24,"Free Elective","ELEC","006S","","","",2,"Colorado State University","",0.0,0,0,0
+25,"Free Elective","FE","01","","","",3,"Colorado State University","",1.0,0,1,0
+26,"Free Elective","FE","02","","","",3,"Colorado State University","",1.0,0,1,0
+27,"Free Elective","FE","03S","","","",2,"Colorado State University","",1.0,0,1,0
+28,"Dynamic Earth","GEOL","150","","","",4,"Colorado State University","GEOL150",1.0,0,1,0
+29,"Historical Perspectives","HP","01","","","",3,"Colorado State University","",1.0,0,1,0
+30,"College Algebra in Context I","MATH","117","","","",1,"Colorado State University","MATH117",1.0,0,1,0
+31,"College Algebra","MATH","120","","","",3,"Colorado State University","MATH120",26.0,19,7,0
+32,"Numerical Trigonometry","MATH","125","31","","",1,"Colorado State University","MATH125",17.0,10,7,43
+33,"Analytic Trigonometry","MATH","126","32","","",1,"Colorado State University","MATH126",16.0,9,7,43
+34,"Calculus for Physical Scientists I","MATH","160","31;33","","",4,"Colorado State University","MATH160",15.0,8,7,72
+35,"Mathematics for Computational Science II","MATH","256","18","","",4,"Colorado State University","MATH256",6.0,0,6,0
+36,"Fundamentals of Entrepreneurship","MGT","340","","","",3,"Colorado State University","MGT340",1.0,0,1,0
+37,"Social/Behavioral Science","SB","01","","","",3,"Colorado State University","",1.0,0,1,0
+38,"Introduction to Applied Statistical Methods","STAT","301","30","","",3,"Colorado State University","STAT301",5.0,0,5,0

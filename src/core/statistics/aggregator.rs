@@ -170,17 +170,31 @@ impl MetricStats {
     }
 
     /// Create from Welford accumulator only (uses mean as median estimate)
+    ///
+    /// The `mean ± std_dev` quartile estimate is a normal-distribution
+    /// approximation: when `std_dev > mean` (sparse courses present in only
+    /// a few plans) the raw formula yields negative Q1 values for naturally
+    /// non-negative metrics. Clamp Q1 to `welford.min()` and Q3 to
+    /// `welford.max()` so the surfaced quartiles never escape the actual
+    /// observed range — accuracy is still degraded vs. the reservoir path
+    /// but at least the values are no longer impossible.
+    ///
+    /// TODO: investigate why centrality lands in the Welford-only path —
+    /// the reservoir path produces exact quartiles and would also fix this.
     #[must_use]
     fn from_welford_only(welford: &WelfordAccumulator) -> Self {
+        let mean = welford.mean();
+        let std_dev = welford.std_dev();
+        let min = welford.min();
+        let max = welford.max();
         Self {
-            min: welford.min(),
-            max: welford.max(),
-            mean: welford.mean(),
-            std_dev: welford.std_dev(),
-            // Without reservoir, use mean as rough median estimate
-            median: welford.mean(),
-            q1: welford.mean() - welford.std_dev(),
-            q3: welford.mean() + welford.std_dev(),
+            min,
+            max,
+            mean,
+            std_dev,
+            median: mean,
+            q1: (mean - std_dev).max(min),
+            q3: (mean + std_dev).min(max),
         }
     }
 }
@@ -570,5 +584,40 @@ mod tests {
         assert_eq!(ids.len(), 2);
         assert!(ids.contains(&"CS1000".to_string()));
         assert!(ids.contains(&"CS2000".to_string()));
+    }
+
+    #[test]
+    fn test_welford_only_q1_clamped_to_min_for_sparse_non_negative_metric() {
+        // Build a Welford accumulator with sparse non-negative samples whose
+        // std_dev exceeds the mean. Without the clamp Q1 would land below
+        // zero (the field report saw `-0.23` for CS314 centrality). Assert
+        // Q1 ≥ min and Q3 ≤ max so the displayed quartiles never escape the
+        // observed range.
+        let mut w = WelfordAccumulator::new();
+        // Mostly zeros with one big value — std_dev ≫ mean.
+        for _ in 0..9 {
+            w.push(0.0);
+        }
+        w.push(10.0);
+
+        let stats = MetricStats::from_welford_only(&w);
+        assert!(
+            stats.mean - stats.std_dev < 0.0,
+            "test fixture must produce a raw Q1 below zero; got mean={} std_dev={}",
+            stats.mean,
+            stats.std_dev
+        );
+        assert!(
+            stats.q1 >= stats.min,
+            "Q1 ({}) must not drop below min ({})",
+            stats.q1,
+            stats.min
+        );
+        assert!(
+            stats.q3 <= stats.max,
+            "Q3 ({}) must not exceed max ({})",
+            stats.q3,
+            stats.max
+        );
     }
 }

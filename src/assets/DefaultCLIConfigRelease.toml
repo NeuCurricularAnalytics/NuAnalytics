@@ -1,17 +1,83 @@
-# Default Config File - Ideally to use during release code
+# NuAnalytics — Default configuration (release builds)
+# This file is embedded in the binary and provides built-in defaults.
+# Override any value in ~/.config/nuanalytics/config.toml or ./nuanalytics.toml
 
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 [logging]
+# Log level: error | warn | info | debug
 level = "warn"
+
+# Log file path — $NU_ANALYTICS expands to ~/.config/nuanalytics (Linux/WSL),
+# ~/Library/Application Support/nuanalytics (macOS), or %APPDATA%\nuanalytics (Windows)
 file = "$NU_ANALYTICS/nuanalytics.log"
+
+# Print extra detail to stdout (useful for debugging without changing log level)
 verbose = false
 
+# ---------------------------------------------------------------------------
+# Database (Supabase)
+# ---------------------------------------------------------------------------
 [database]
-token = ""
-endpoint = ""
+# Supabase project URL
+endpoint = "https://oaaqxtzkfcjcosilpbwi.supabase.co"
 
+# Supabase anonymous (public) key — safe to share, used for public reads
+# and to initiate the OAuth login flow
+anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9hYXF4dHprZmNqY29zaWxwYndpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjQxNTQsImV4cCI6MjA5MDc0MDE1NH0.rJSEZV3-Wvq0uVnCVwduF3xPtnuc6J9ftbftLijiQZU"
+
+# Enable database features (MCP database tools, IPEDS import, db login)
+enabled = true
+
+# Path to the saved OAuth session file created by `nuanalytics db login`
+# Supports $NU_ANALYTICS expansion. Set per-project if you need separate sessions.
+auth_file = "$NU_ANALYTICS/auth.json"
+# Supabase Personal Access Token for exec-sql (DDL operations).
+# Generate at: https://app.supabase.com/account/tokens
+management_key = ""
+
+# ---------------------------------------------------------------------------
+# Output paths
+# ---------------------------------------------------------------------------
 [paths]
+# Directory for generated metrics CSV files
 metrics_dir = "./metrics"
+
+# Directory for generated reports (HTML, Markdown, PDF)
 reports_dir = "./reports"
 
+# ---------------------------------------------------------------------------
+# Audit settings
+# ---------------------------------------------------------------------------
 [audit]
+# Flag prerequisite chains at or longer than this depth.
+# Courses where students must take N or more courses in sequence before
+# reaching this one are highlighted in audit reports.
 prerequisite_chain_threshold = 4
+
+# ---------------------------------------------------------------------------
+# Degree analysis
+# ---------------------------------------------------------------------------
+[degree_analysis]
+# Aggregate metric strategy across generated plans: median | mean
+# "median" is more robust to outlier plans; "mean" weights all plans equally.
+calc_strategy = "median"
+
+# How many randomly sampled plans to export in full (term schedules, CSVs).
+# Only affects output detail — all plans are still used for aggregate stats.
+sample_plan_count = 5
+
+# Hard cap on plan generation. Programs with many elective choices can produce
+# combinatorial explosions — this prevents runaway generation.
+max_plans = 1000
+
+# Skip plans that are permutations of the same courses (e.g. identical course
+# sets taken in a different order). Strongly recommended — reduces noise.
+ignore_duplicates = true
+
+# Order in which plans are enumerated before sampling:
+#   sequential  — enumerate in natural order (may bias statistics toward early options)
+#   shuffled    — randomize order before sampling (recommended for unbiased stats)
+#   stratified  — ensure coverage across elective option space
+sampling_strategy = "shuffled"

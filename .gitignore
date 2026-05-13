@@ -27,3 +27,5 @@ server.log
 .vscode
 
 node_modules/
+
+ipeds_data/

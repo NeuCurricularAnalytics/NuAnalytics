@@ -5,7 +5,7 @@
 
 use crate::core::degree::plan_selector::{PlanCategory, ScoredPlan, SelectedPlans};
 use crate::core::models::{Degree, School, DAG};
-use crate::core::prerequisite_parser::parse_to_dnf;
+use crate::core::report::visualization::renderer::escape_html;
 use crate::core::statistics::aggregator::{AggregatedDegreeStats, MetricsAggregator};
 use crate::core::statistics::box_plot::{BoxPlotData, BoxPlotGenerator};
 use std::error::Error;
@@ -144,17 +144,9 @@ impl DegreeReportGenerator {
             &Self::render_course_stats_table(ctx),
         );
 
-        // Special plans section (shortest, longest, calc-ready with full details)
-        html = html.replace(
-            "{{special_plans_section}}",
-            &Self::render_special_plans(ctx),
-        );
-
-        // Random samples section (compact view)
-        html = html.replace(
-            "{{random_samples_section}}",
-            &Self::render_random_samples(ctx),
-        );
+        // Unified tabbed plans section — one tab per selected plan
+        // (named plans + each random sample).
+        html = html.replace("{{plan_tabs_section}}", &Self::render_plan_tabs(ctx));
 
         // Major subjects JSON for JavaScript sorting
         html = html.replace(
@@ -350,7 +342,7 @@ impl DegreeReportGenerator {
     <td>{:.1} / {:.1} / {:.1}</td>\n\
 </tr>",
                     course_id,
-                    Self::escape_html(course_name),
+                    escape_html(course_name),
                     stats.plan_count,
                     stats.complexity.median,
                     stats.complexity.min,
@@ -372,43 +364,71 @@ impl DegreeReportGenerator {
         html
     }
 
-    /// Render special plans section with full details (term schedule, critical path, curriculum graph)
-    fn render_special_plans(ctx: &DegreeReportContext) -> String {
-        let mut html = String::new();
-
-        let special_plans = [
-            (PlanCategory::Shortest, &ctx.selected_plans.shortest),
-            (PlanCategory::Longest, &ctx.selected_plans.longest),
-            (
-                PlanCategory::CalcReadyShortest,
-                &ctx.selected_plans.calc_ready_shortest,
-            ),
-        ];
-
-        for (category, plan_opt) in special_plans {
-            if let Some(plan) = plan_opt {
-                let _ = write!(
-                    html,
-                    "{}",
-                    Self::render_single_special_plan(ctx, plan, category)
-                );
-            }
+    /// Render the unified tabbed plans section.
+    ///
+    /// Emits a tab strip plus one panel per selected plan. The first plan's
+    /// curriculum graph carries the shared `GRAPH_VANILLA_JS` library inline;
+    /// subsequent panels re-use the already-loaded library via
+    /// `render_without_library`, which drops ~20 KB per fragment.
+    fn render_plan_tabs(ctx: &DegreeReportContext) -> String {
+        let tabbed = collect_tabbed_plans(ctx.selected_plans);
+        if tabbed.is_empty() {
+            return String::from(
+                "<p class=\"plan-tabs-empty\">No selected plans available for this degree.</p>",
+            );
         }
 
+        let mut html = String::new();
+        let _ = writeln!(html, "<div class=\"nu-plan-tabs\">");
+
+        // Tab strip — first button is the active default.
+        let _ = writeln!(html, "<div class=\"tab-strip\" role=\"tablist\">");
+        for (idx, entry) in tabbed.iter().enumerate() {
+            let active_class = if idx == 0 { " tab-btn--active" } else { "" };
+            let aria_selected = if idx == 0 { "true" } else { "false" };
+            let _ = writeln!(
+                html,
+                "<button type=\"button\" class=\"tab-btn{active_class}\" role=\"tab\" aria-selected=\"{aria_selected}\" data-tab-target=\"{}\">{}</button>",
+                entry.graph_id,
+                escape_html(&entry.tab_label)
+            );
+        }
+        let _ = writeln!(html, "</div>"); // end tab-strip
+
+        // Panels.
+        for (idx, entry) in tabbed.iter().enumerate() {
+            let active_class = if idx == 0 { " tab-panel--active" } else { "" };
+            let include_library = idx == 0;
+            let _ = writeln!(
+                html,
+                "<div class=\"tab-panel{active_class}\" role=\"tabpanel\" data-tab-id=\"{}\">",
+                entry.graph_id
+            );
+            let _ = write!(
+                html,
+                "{}",
+                Self::render_plan_panel_body(ctx, entry.plan, &entry.graph_id, include_library)
+            );
+            let _ = writeln!(html, "</div>"); // end tab-panel
+        }
+
+        let _ = writeln!(html, "</div>"); // end nu-plan-tabs
         html
     }
 
-    /// Render one special plan: overview stats, critical path, graph, and term schedule.
-    fn render_single_special_plan(
+    /// Render one plan's panel contents: overview stats, critical path,
+    /// curriculum graph, and term schedule.
+    ///
+    /// `include_library` controls whether the graph fragment inlines the
+    /// shared `GRAPH_VANILLA_JS` library — set true only for the first panel
+    /// on the page; subsequent panels reuse the already-loaded namespace.
+    fn render_plan_panel_body(
         ctx: &DegreeReportContext,
         plan: &ScoredPlan,
-        category: PlanCategory,
+        graph_id: &str,
+        include_library: bool,
     ) -> String {
         let mut html = String::new();
-        let plan_id = category.file_name().replace('-', "_");
-
-        let _ = writeln!(html, "<div class=\"special-plan\" id=\"plan-{plan_id}\">");
-        let _ = writeln!(html, "<h3>{}</h3>", category.display_name());
 
         // Overview stats
         let _ = writeln!(html, "<div class=\"plan-overview\">");
@@ -465,432 +485,172 @@ impl DegreeReportGenerator {
             );
         }
 
-        // Curriculum Graph with legend
-        let _ = write!(html, "{}", Self::render_graph_legend());
-        let graph_html = Self::render_curriculum_graph(ctx, plan, &plan_id);
-        let _ = write!(html, "{graph_html}");
+        // Curriculum graph
+        let _ = write!(
+            html,
+            "{}",
+            Self::render_curriculum_graph(ctx, plan, graph_id, include_library)
+        );
 
-        // Term schedule table
-        let _ = write!(html, "{}", Self::render_term_schedule_table(ctx, plan));
-        let _ = writeln!(html, "</div>"); // end special-plan
+        // Term schedule (grid of per-term cards)
+        let _ = write!(html, "{}", Self::render_term_schedule_cards(ctx, plan));
 
         html
     }
 
-    /// Render the graph legend for complexity levels and edge types.
-    fn render_graph_legend() -> String {
-        let mut html = String::new();
-        let _ = writeln!(html, "<h4>Curriculum Graph</h4>");
-        let _ = writeln!(html, "<div class=\"graph-legend\">");
-        let _ = writeln!(
-            html,
-            "<div class=\"legend-item\"><div class=\"legend-color complexity-low\"></div><span>Low (1-5)</span></div>"
-        );
-        let _ = writeln!(
-            html,
-            "<div class=\"legend-item\"><div class=\"legend-color complexity-medium\"></div><span>Med (6-15)</span></div>"
-        );
-        let _ = writeln!(
-            html,
-            "<div class=\"legend-item\"><div class=\"legend-color complexity-high\"></div><span>High (16+)</span></div>"
-        );
-        let _ = writeln!(
-            html,
-            "<div class=\"legend-item\"><div class=\"legend-line solid\"></div><span>Prereq</span></div>"
-        );
-        let _ = writeln!(
-            html,
-            "<div class=\"legend-item\"><div class=\"legend-line dashed\"></div><span>Coreq</span></div>"
-        );
-        let _ = writeln!(
-            html,
-            "<div class=\"legend-item\"><div class=\"legend-line critical\"></div><span>Critical</span></div>"
-        );
-        let _ = writeln!(html, "</div>");
-        html
-    }
-
-    /// Render the term schedule table for a plan.
-    fn render_term_schedule_table(ctx: &DegreeReportContext, plan: &ScoredPlan) -> String {
+    /// Render the term schedule as a grid of per-term cards.
+    ///
+    /// Each non-empty term becomes a card with a header (number + total
+    /// credits) and a list of its courses, color-coded by whether the
+    /// course belongs to one of the degree's `major_subjects`. The grid
+    /// wraps as the viewport narrows so the layout still scans easily in
+    /// print and on small screens.
+    fn render_term_schedule_cards(ctx: &DegreeReportContext, plan: &ScoredPlan) -> String {
         let mut html = String::new();
         let _ = writeln!(html, "<div class=\"term-schedule\">");
         let _ = writeln!(html, "<h4>Term Schedule</h4>");
-        let _ = writeln!(
-            html,
-            "<table>\n\
-<thead><tr><th>Term</th><th>Courses</th><th>Credits</th></tr></thead>\n\
-<tbody>"
-        );
 
+        // Show the legend only when the degree declares major subjects;
+        // without it every course gets the same (neutral) accent so the
+        // legend would be misleading.
+        let has_major_subjects = !ctx.major_subjects().is_empty();
+        if has_major_subjects {
+            let _ = writeln!(
+                html,
+                "<div class=\"term-courses-legend\">\n\
+<span><span class=\"legend-swatch legend-swatch--major\"></span>Major</span>\n\
+<span><span class=\"legend-swatch legend-swatch--other\"></span>Supporting / gen-ed / elective</span>\n\
+</div>"
+            );
+        }
+
+        let _ = writeln!(html, "<div class=\"term-grid\">");
         for term in &plan.schedule.terms {
             if term.courses.is_empty() {
                 continue;
             }
-
-            let courses_html: Vec<String> = term
-                .courses
-                .iter()
-                .map(|key| {
-                    let name = ctx.school.get_course(key).map_or(key.as_str(), |c| &c.name);
-                    format!(
-                        "<span class=\"course-badge\">{key}</span> {}",
-                        Self::escape_html(name)
-                    )
-                })
-                .collect();
-
+            let _ = writeln!(html, "<div class=\"term-card\">");
             let _ = writeln!(
                 html,
-                "<tr><td>{}</td><td>{}</td><td>{:.1}</td></tr>",
-                term.number,
-                courses_html.join("<br>"),
-                term.total_credits
+                "<div class=\"term-card-header\">\n\
+<span>Term {}</span>\n\
+<span class=\"term-credits\">{:.1} cr</span>\n\
+</div>",
+                term.number, term.total_credits
             );
+            let _ = writeln!(html, "<ul class=\"term-courses\">");
+            for key in &term.courses {
+                let name = ctx.school.get_course(key).map_or(key.as_str(), |c| &c.name);
+                let credits = ctx.school.get_course(key).map_or(0.0, |c| c.credit_hours);
+                let extra_class = if has_major_subjects && ctx.is_major_course(key) {
+                    " term-course--major"
+                } else {
+                    ""
+                };
+                let credits_cell = if credits > 0.0 {
+                    format!("<span class=\"course-credits\">{credits:.1}</span>")
+                } else {
+                    "<span class=\"course-credits\"></span>".to_string()
+                };
+                let _ = writeln!(
+                    html,
+                    "<li class=\"term-course{extra_class}\">\n\
+<span class=\"course-id\">{}</span>\n\
+<span class=\"course-name\" title=\"{}\">{}</span>\n\
+{credits_cell}\n\
+</li>",
+                    escape_html(key),
+                    escape_html(name),
+                    escape_html(name),
+                );
+            }
+            let _ = writeln!(html, "</ul>");
+            let _ = writeln!(html, "</div>"); // end term-card
         }
+        let _ = writeln!(html, "</div>"); // end term-grid
 
-        let _ = writeln!(html, "</tbody></table>");
         let _ = writeln!(html, "</div>"); // end term-schedule
         html
     }
 
-    /// Render the curriculum graph for a special plan.
+    /// Render the curriculum graph fragment for a plan.
     ///
-    /// Uses the DAG to get proper prerequisite/corequisite edges that are
-    /// resolved for the specific plan, rather than raw course prerequisites.
+    /// `include_library` controls whether the inline `<script>` block carries
+    /// the shared `GRAPH_VANILLA_JS` namespace — pass `true` for the first
+    /// graph on the page and `false` for the rest so the ~20 KB library is
+    /// loaded once.
     fn render_curriculum_graph(
         ctx: &DegreeReportContext,
         plan: &ScoredPlan,
         plan_id: &str,
+        include_library: bool,
     ) -> String {
-        let mut html = String::new();
-
-        let edges = Self::build_plan_edges(ctx, plan);
-
-        // Graph wrapper + term columns
-        let _ = writeln!(html, "<div class=\"curriculum-graph-wrapper\">");
-        let _ = writeln!(
-            html,
-            "<div class=\"curriculum-graph\" id=\"graph-{plan_id}\">"
+        use crate::core::report::visualization::{
+            spec_from_scored_plan, CurriculumGraphRenderer, VanillaJsRenderer,
+        };
+        let spec = spec_from_scored_plan(
+            ctx.school,
+            ctx.equivalences,
+            plan,
+            Some(ctx.aggregator),
+            plan_id,
         );
-        let _ = write!(
-            html,
-            "{}",
-            Self::render_graph_term_columns(ctx, plan, plan_id)
-        );
-        let _ = writeln!(html, "</div>"); // curriculum-graph
-
-        // SVG overlay for connections
-        let _ = writeln!(
-            html,
-            "<svg class=\"connections-svg\" id=\"svg-{plan_id}\"></svg>"
-        );
-        let _ = writeln!(html, "</div>"); // curriculum-graph-wrapper
-
-        // JavaScript data block
-        let _ = write!(
-            html,
-            "{}",
-            Self::render_graph_script_data(&edges, &plan.score.longest_delay_chain, plan_id)
-        );
-
-        html
-    }
-
-    /// Build prerequisite and corequisite edges for a plan's courses.
-    ///
-    /// When a prerequisite isn't directly in the plan but an equivalent course is,
-    /// adds an edge from the equivalent course to maintain proper visualization.
-    fn build_plan_edges(
-        ctx: &DegreeReportContext,
-        plan: &ScoredPlan,
-    ) -> Vec<(String, String, bool)> {
-        let plan_courses: std::collections::HashSet<&str> =
-            plan.variant.courses.iter().map(String::as_str).collect();
-
-        let mut edges: Vec<(String, String, bool)> = Vec::new(); // (from, to, is_coreq)
-
-        for course_key in &plan.variant.courses {
-            let course = ctx.school.get_course(course_key);
-            if let Some(c) = course {
-                let prereq_raw = c.prerequisites_raw.clone().unwrap_or_else(|| {
-                    if c.prerequisites.is_empty() {
-                        String::new()
-                    } else {
-                        c.prerequisites.join(" & ")
-                    }
-                });
-
-                if !prereq_raw.is_empty() {
-                    let dnf_paths = parse_to_dnf(&prereq_raw);
-
-                    // Find the first path where all prereqs are in the plan (directly or via equivalence)
-                    let mut selected_prereqs: Vec<String> = Vec::new();
-                    for path in &dnf_paths {
-                        let resolved: Vec<String> = path
-                            .iter()
-                            .filter_map(|p| {
-                                if plan_courses.contains(p.as_str()) {
-                                    Some(p.clone())
-                                } else {
-                                    // Check for equivalent course in plan
-                                    ctx.equivalences.get(p).and_then(|equivs| {
-                                        equivs
-                                            .iter()
-                                            .find(|eq| plan_courses.contains(eq.as_str()))
-                                            .cloned()
-                                    })
-                                }
-                            })
-                            .collect();
-
-                        // If all prereqs in path are satisfied (directly or via equivalence)
-                        if resolved.len() == path.len() {
-                            selected_prereqs = resolved;
-                            break;
-                        }
-                    }
-
-                    // If no complete path, find the best partial match
-                    if selected_prereqs.is_empty() {
-                        let mut best: Vec<String> = Vec::new();
-                        for path in &dnf_paths {
-                            let in_plan: Vec<String> = path
-                                .iter()
-                                .filter_map(|p| {
-                                    if plan_courses.contains(p.as_str()) {
-                                        Some(p.clone())
-                                    } else {
-                                        ctx.equivalences.get(p).and_then(|equivs| {
-                                            equivs
-                                                .iter()
-                                                .find(|eq| plan_courses.contains(eq.as_str()))
-                                                .cloned()
-                                        })
-                                    }
-                                })
-                                .collect();
-                            if in_plan.len() > best.len() {
-                                best = in_plan;
-                            }
-                        }
-                        selected_prereqs = best;
-                    }
-
-                    for prereq in selected_prereqs {
-                        edges.push((prereq, course_key.clone(), false));
-                    }
-                }
-
-                if !c.corequisites.is_empty() {
-                    for coreq in &c.corequisites {
-                        if plan_courses.contains(coreq.as_str()) {
-                            edges.push((coreq.clone(), course_key.clone(), true));
-                        }
-                    }
-                }
-            }
+        if include_library {
+            VanillaJsRenderer.render(&spec)
+        } else {
+            VanillaJsRenderer.render_without_library(&spec)
         }
-
-        edges
     }
+}
 
-    /// Render the term column divs for the curriculum graph.
-    fn render_graph_term_columns(
-        ctx: &DegreeReportContext,
-        plan: &ScoredPlan,
-        plan_id: &str,
-    ) -> String {
-        let mut html = String::new();
+/// One entry in the tabbed plans section: the tab label users see, the DOM
+/// id that ties the tab button to its panel, and the `ScoredPlan` whose
+/// graph + schedule populate the panel body.
+struct TabbedPlan<'a> {
+    /// Visible label shown on the tab button.
+    tab_label: String,
+    /// Filename-safe identifier used for `data-tab-target` / `data-tab-id` and
+    /// as the graph's DOM id.
+    graph_id: String,
+    /// The plan whose body fills the panel.
+    plan: &'a ScoredPlan,
+}
 
-        for term in &plan.schedule.terms {
-            if term.courses.is_empty() {
-                continue;
-            }
+/// Flatten [`SelectedPlans`] into the ordered list of tabbed entries the
+/// report renders. Named plans come first (Shortest, Longest,
+/// Calculus-Ready Shortest — each only if present) followed by the random
+/// samples labelled `"Sample 1"`, `"Sample 2"`, … in their vec order.
+fn collect_tabbed_plans(selected: &SelectedPlans) -> Vec<TabbedPlan<'_>> {
+    let mut entries: Vec<TabbedPlan<'_>> = Vec::new();
 
-            let _ = writeln!(html, "<div class=\"term-column\">");
-            let _ = writeln!(
-                html,
-                "<div class=\"term-header\">Term {}</div>",
-                term.number
-            );
-            let _ = writeln!(html, "<div class=\"term-courses\">");
-
-            for course_key in &term.courses {
-                let course = ctx.school.get_course(course_key);
-                let metrics = plan.course_metrics.get(course_key);
-
-                let name = course.map_or("", |c| &c.name);
-                let short_name = if name.len() > 20 { &name[..17] } else { name };
-                let complexity = metrics.map_or(0, |m| m.complexity);
-
-                let complexity_class = match complexity {
-                    0..=5 => "complexity-low",
-                    6..=15 => "complexity-medium",
-                    _ => "complexity-high",
-                };
-
-                let _ = writeln!(
-                    html,
-                    "<div class=\"course-node\" data-course-id=\"{course_key}\" data-plan=\"{plan_id}\">"
-                );
-                let _ = writeln!(
-                    html,
-                    "<span class=\"complexity-badge {complexity_class}\">{complexity}</span>"
-                );
-                let _ = writeln!(html, "<div class=\"course-id\">{course_key}</div>");
-                let _ = writeln!(
-                    html,
-                    "<div class=\"course-name\">{}</div>",
-                    Self::escape_html(short_name)
-                );
-                let _ = writeln!(html, "</div>");
-            }
-
-            let _ = writeln!(html, "</div>"); // term-courses
-            let _ = writeln!(html, "</div>"); // term-column
+    let named = [
+        (PlanCategory::Shortest, selected.shortest.as_ref()),
+        (PlanCategory::Longest, selected.longest.as_ref()),
+        (
+            PlanCategory::CalcReadyShortest,
+            selected.calc_ready_shortest.as_ref(),
+        ),
+    ];
+    for (category, plan_opt) in named {
+        if let Some(plan) = plan_opt {
+            entries.push(TabbedPlan {
+                tab_label: category.display_name().to_string(),
+                graph_id: category.file_name().to_string(),
+                plan,
+            });
         }
-
-        html
     }
 
-    /// Render the JavaScript data block for a plan's graph edges and critical path.
-    fn render_graph_script_data(
-        edges: &[(String, String, bool)],
-        critical_path: &[String],
-        plan_id: &str,
-    ) -> String {
-        let mut html = String::new();
-
-        let edges_json: Vec<String> = edges
-            .iter()
-            .map(|(from, to, is_coreq)| {
-                format!("{{ \"from\": \"{from}\", \"to\": \"{to}\", \"dashes\": {is_coreq} }}")
-            })
-            .collect();
-
-        let critical_ids: Vec<String> = critical_path.iter().map(|s| format!("\"{s}\"")).collect();
-
-        let _ = writeln!(
-            html,
-            "<script>\n\
-if (!window.planGraphs) window.planGraphs = {{}};\n\
-window.planGraphs['{plan_id}'] = {{\n\
-    edges: [{}],\n\
-    criticalPath: [{}]\n\
-}};\n\
-</script>",
-            edges_json.join(", "),
-            critical_ids.join(", ")
-        );
-
-        html
+    for (idx, plan) in selected.random_samples.iter().enumerate() {
+        let n = idx + 1;
+        entries.push(TabbedPlan {
+            tab_label: format!("Sample {n}"),
+            graph_id: format!("sample-{n}"),
+            plan,
+        });
     }
 
-    /// Render random samples section with compact course lists
-    fn render_random_samples(ctx: &DegreeReportContext) -> String {
-        let mut html = String::new();
-
-        for (idx, plan) in ctx.selected_plans.random_samples.iter().enumerate() {
-            let _ = writeln!(html, "<div class=\"plan-card\">");
-            let _ = writeln!(html, "<h3>Random Sample {}</h3>", idx + 1);
-
-            // Summary stats
-            let _ = writeln!(
-                html,
-                "<div class=\"plan-stats\">\n\
-    <div class=\"plan-stat\"><span class=\"label\">Terms:</span> <span class=\"value\">{}</span></div>\n\
-    <div class=\"plan-stat\"><span class=\"label\">Complexity:</span> <span class=\"value\">{}</span></div>\n\
-    <div class=\"plan-stat\"><span class=\"label\">Longest Delay:</span> <span class=\"value\">{}</span></div>\n\
-</div>",
-                plan.score.terms_required, plan.score.total_complexity, plan.score.longest_delay
-            );
-
-            // Collapsible course list
-            let _ = writeln!(html, "<details><summary>View Courses</summary><ul>");
-            for course in &plan.variant.courses {
-                let name = ctx
-                    .school
-                    .get_course(course)
-                    .map_or("", |c| c.name.as_str());
-                if name.is_empty() {
-                    let _ = writeln!(html, "<li>{course}</li>");
-                } else {
-                    let _ = writeln!(
-                        html,
-                        "<li><strong>{course}</strong> - {}</li>",
-                        Self::escape_html(name)
-                    );
-                }
-            }
-            let _ = writeln!(html, "</ul></details>");
-            let _ = writeln!(html, "</div>");
-        }
-
-        if ctx.selected_plans.random_samples.is_empty() {
-            let _ = writeln!(
-                html,
-                "<p style=\"color: #666; font-style: italic;\">No random samples collected</p>"
-            );
-        }
-
-        html
-    }
-
-    /// Render selected plans section (legacy - kept for compatibility)
-    #[allow(dead_code)]
-    fn render_selected_plans(ctx: &DegreeReportContext) -> String {
-        let mut html = String::new();
-
-        for (category, plan) in ctx.selected_plans.iter() {
-            let plan_details = Self::render_plan_details(plan, category);
-            let _ = writeln!(
-                html,
-                "<div class=\"plan-card\">\n\
-    <h3>{}</h3>\n\
-    {plan_details}\n\
-</div>",
-                category.display_name()
-            );
-        }
-
-        html
-    }
-
-    /// Render details for a single plan (legacy - kept for compatibility)
-    #[allow(dead_code)]
-    fn render_plan_details(plan: &ScoredPlan, category: PlanCategory) -> String {
-        let mut html = String::new();
-
-        // Summary stats
-        let _ = writeln!(
-            html,
-            "<div class=\"plan-stats\">\n\
-    <div class=\"plan-stat\"><span class=\"label\">Terms:</span> <span class=\"value\">{}</span></div>\n\
-    <div class=\"plan-stat\"><span class=\"label\">Complexity:</span> <span class=\"value\">{}</span></div>\n\
-    <div class=\"plan-stat\"><span class=\"label\">Longest Delay:</span> <span class=\"value\">{}</span></div>\n\
-</div>",
-            plan.score.terms_required, plan.score.total_complexity, plan.score.longest_delay
-        );
-
-        // Course list for non-random samples (keep random samples compact)
-        if category != PlanCategory::RandomSample {
-            let _ = writeln!(html, "<details><summary>View Courses</summary><ul>");
-            for course in &plan.variant.courses {
-                let _ = writeln!(html, "<li>{course}</li>");
-            }
-            let _ = writeln!(html, "</ul></details>");
-        }
-
-        html
-    }
-
-    /// Escape HTML special characters
-    fn escape_html(s: &str) -> String {
-        s.replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('"', "&quot;")
-    }
+    entries
 }
 
 impl Default for DegreeReportGenerator {
@@ -959,6 +719,7 @@ mod tests {
             calc_ready_shortest: None,
             random_samples: vec![],
             total_plans_seen: 10,
+            calc_ready_suppressed: false,
         }
     }
 
@@ -1003,12 +764,150 @@ mod tests {
         assert!(html.contains("Test University"));
     }
 
+    /// Build a `ScoredPlan` with one course and the given headline stats.
+    /// Helper for assembling test fixtures with multiple plans.
+    fn make_test_scored_plan(course: &str, terms: usize, complexity: usize) -> ScoredPlan {
+        ScoredPlan {
+            variant: PlanVariant::from_parts(vec![course.to_string()], HashMap::new(), 3.0),
+            score: PlanScore {
+                terms_required: terms,
+                total_complexity: complexity,
+                longest_delay: 1,
+                longest_delay_chain: Vec::new(),
+                is_calc_ready: false,
+            },
+            schedule: TermPlan::new(terms, false, 15.0),
+            course_metrics: HashMap::new(),
+        }
+    }
+
     #[test]
-    fn test_escape_html() {
+    fn test_collect_tabbed_plans_orders_named_then_samples() {
+        // Two named plans + two random samples = four entries in the order
+        // Shortest, Longest, Sample 1, Sample 2. Sample labels are 1-indexed.
+        let selected = SelectedPlans {
+            shortest: Some(make_test_scored_plan("CS1000", 8, 50)),
+            longest: Some(make_test_scored_plan("CS1000", 12, 80)),
+            calc_ready_shortest: None,
+            random_samples: vec![
+                make_test_scored_plan("CS1000", 9, 60),
+                make_test_scored_plan("CS1000", 10, 65),
+            ],
+            total_plans_seen: 100,
+            calc_ready_suppressed: false,
+        };
+        let entries = collect_tabbed_plans(&selected);
+        let labels: Vec<&str> = entries.iter().map(|e| e.tab_label.as_str()).collect();
         assert_eq!(
-            DegreeReportGenerator::escape_html("Test & <Data>"),
-            "Test &amp; &lt;Data&gt;"
+            labels,
+            vec!["Shortest Path", "Longest Path", "Sample 1", "Sample 2"]
         );
+        let ids: Vec<&str> = entries.iter().map(|e| e.graph_id.as_str()).collect();
+        assert_eq!(ids, vec!["shortest", "longest", "sample-1", "sample-2"]);
+    }
+
+    #[test]
+    fn test_collect_tabbed_plans_skips_absent_named_plans() {
+        let selected = SelectedPlans {
+            shortest: None,
+            longest: None,
+            calc_ready_shortest: Some(make_test_scored_plan("CS1000", 8, 50)),
+            random_samples: vec![make_test_scored_plan("CS1000", 9, 60)],
+            total_plans_seen: 1,
+            calc_ready_suppressed: false,
+        };
+        let entries = collect_tabbed_plans(&selected);
+        let labels: Vec<&str> = entries.iter().map(|e| e.tab_label.as_str()).collect();
+        assert_eq!(labels, vec!["Calculus-Ready Shortest", "Sample 1"]);
+    }
+
+    #[test]
+    fn test_report_emits_one_tab_per_selected_plan() {
+        // Two named plans + three random samples → 5 tab buttons + 5 panels.
+        let school = create_test_school();
+        let degree = create_test_degree();
+        let aggregator = create_test_aggregator();
+        let dag = create_test_dag();
+        let equivalences = std::collections::HashMap::new();
+        let selected = SelectedPlans {
+            shortest: Some(make_test_scored_plan("CS1000", 8, 50)),
+            longest: Some(make_test_scored_plan("CS1000", 12, 80)),
+            calc_ready_shortest: None,
+            random_samples: vec![
+                make_test_scored_plan("CS1000", 9, 60),
+                make_test_scored_plan("CS1000", 10, 65),
+                make_test_scored_plan("CS1000", 11, 70),
+            ],
+            total_plans_seen: 200,
+            calc_ready_suppressed: false,
+        };
+        let ctx = DegreeReportContext::new(
+            &school,
+            &degree,
+            &aggregator,
+            &selected,
+            &dag,
+            &equivalences,
+        );
+        let html = DegreeReportGenerator::new().render(&ctx).unwrap();
+
+        assert_eq!(
+            html.matches("class=\"tab-btn").count(),
+            5,
+            "expected 5 tab-btn occurrences (one per selected plan)"
+        );
+        assert_eq!(
+            html.matches("class=\"tab-panel").count(),
+            5,
+            "expected 5 tab-panel occurrences (one per selected plan)"
+        );
+        // Every label appears at least once (we don't count occurrences here
+        // because the labels may also leak into aria attributes or panel
+        // sub-content in future edits).
+        assert!(html.contains(">Shortest Path<"));
+        assert!(html.contains(">Longest Path<"));
+        assert!(html.contains(">Sample 1<"));
+        assert!(html.contains(">Sample 2<"));
+        assert!(html.contains(">Sample 3<"));
+        // First button + first panel must carry the active class.
+        assert!(html.contains("tab-btn tab-btn--active"));
+        assert!(html.contains("tab-panel tab-panel--active"));
+        // Library is included once (first panel) and dropped on later ones.
+        // The GRAPH_VANILLA_JS namespace literal `window.nuGraphs =` appears
+        // inside the library only — exactly once across the whole report.
+        assert_eq!(
+            html.matches("window.nuGraphs =").count(),
+            1,
+            "GRAPH_VANILLA_JS library must be inlined exactly once across all tabs"
+        );
+    }
+
+    #[test]
+    fn test_report_emits_empty_state_when_no_selected_plans() {
+        let school = create_test_school();
+        let degree = create_test_degree();
+        let aggregator = create_test_aggregator();
+        let dag = create_test_dag();
+        let equivalences = std::collections::HashMap::new();
+        let selected = SelectedPlans {
+            shortest: None,
+            longest: None,
+            calc_ready_shortest: None,
+            random_samples: vec![],
+            total_plans_seen: 0,
+            calc_ready_suppressed: false,
+        };
+        let ctx = DegreeReportContext::new(
+            &school,
+            &degree,
+            &aggregator,
+            &selected,
+            &dag,
+            &equivalences,
+        );
+        let html = DegreeReportGenerator::new().render(&ctx).unwrap();
+        assert!(html.contains("plan-tabs-empty"));
+        assert!(!html.contains("class=\"tab-btn"));
     }
 
     #[test]

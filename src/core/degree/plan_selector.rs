@@ -113,6 +113,26 @@ impl PlanCategory {
             Self::RandomSample => "random-sample",
         }
     }
+
+    /// Parse a user-supplied string into a [`PlanCategory`].
+    ///
+    /// Accepts the canonical `file_name` form (`"shortest"`,
+    /// `"calc-ready-shortest"`, …), the `display_name` lowercased + dashed
+    /// (`"shortest-path"`, `"calculus-ready-shortest"`), and the underscore
+    /// variants (`"calc_ready_shortest"`, `"random_sample"`). Matching is
+    /// case-insensitive. Returns `None` when the input matches no variant.
+    #[must_use]
+    pub fn from_user_input(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "shortest" | "shortest-path" => Some(Self::Shortest),
+            "longest" | "longest-path" => Some(Self::Longest),
+            "calc-ready-shortest" | "calculus-ready-shortest" | "calc_ready_shortest" => {
+                Some(Self::CalcReadyShortest)
+            }
+            "sample" | "random-sample" | "random_sample" => Some(Self::RandomSample),
+            _ => None,
+        }
+    }
 }
 
 /// Configuration for plan selection
@@ -132,6 +152,14 @@ pub struct PlanSelectorConfig {
 
     /// Patterns to detect calculus courses (regex-like: prefix contains these)
     pub calculus_patterns: Vec<String>,
+
+    /// Seed for the reservoir-sample RNG. When `None`, the selector picks
+    /// a non-deterministic seed from `fastrand`'s thread-local entropy (the
+    /// legacy behaviour). Callers that want deterministic samples — e.g.
+    /// `analyze_degree`'s default path — pass a seed derived from the input
+    /// YAML so the same `(yaml, max_plans, include_courses)` tuple always
+    /// produces the same Random Sample plan.
+    pub random_seed: Option<u64>,
 }
 
 impl Default for PlanSelectorConfig {
@@ -168,6 +196,10 @@ impl Default for PlanSelectorConfig {
             ],
             // Patterns that indicate a calculus course (used for fuzzy matching)
             calculus_patterns: vec!["Calculus".to_string(), "CALC".to_string()],
+            // Default to thread-local entropy so existing callers keep their
+            // historical behaviour. The MCP analyze path overrides this with
+            // a yaml-derived seed for deterministic reports.
+            random_seed: None,
         }
     }
 }
@@ -179,6 +211,10 @@ pub struct PlanSelector<'a> {
 
     /// Configuration
     config: PlanSelectorConfig,
+
+    /// Per-selector RNG. Seeded from `config.random_seed` when set,
+    /// otherwise from `fastrand`'s thread-local entropy.
+    rng: fastrand::Rng,
 
     /// Current best shortest plan
     shortest: Option<ScoredPlan>,
@@ -202,10 +238,14 @@ impl<'a> PlanSelector<'a> {
     /// Note: The DAG parameter is kept for API compatibility but is not used.
     /// Plan-specific DAGs are now passed to `process_plan` instead.
     #[must_use]
-    pub const fn new(school: &'a School, _dag: &'a DAG, config: PlanSelectorConfig) -> Self {
+    pub fn new(school: &'a School, _dag: &'a DAG, config: PlanSelectorConfig) -> Self {
+        let rng = config
+            .random_seed
+            .map_or_else(fastrand::Rng::new, fastrand::Rng::with_seed);
         Self {
             school,
             config,
+            rng,
             shortest: None,
             longest: None,
             calc_ready_shortest: None,
@@ -415,14 +455,19 @@ impl<'a> PlanSelector<'a> {
         })
     }
 
-    /// Reservoir sampling using Algorithm R
+    /// Reservoir sampling using Algorithm R.
+    ///
+    /// Uses the per-selector `rng` so a seeded config produces deterministic
+    /// samples across runs. Callers that want non-determinism leave
+    /// `config.random_seed = None` and the selector falls back to fastrand's
+    /// thread-local entropy.
     fn reservoir_sample(&mut self, scored: ScoredPlan) {
         if self.random_samples.len() < self.config.sample_count {
             // Reservoir not full, just add
             self.random_samples.push(scored);
         } else {
             // Reservoir full, replace with probability k/n
-            let j = fastrand::usize(0..self.plans_seen);
+            let j = self.rng.usize(0..self.plans_seen);
             if j < self.config.sample_count {
                 self.random_samples[j] = scored;
             }
@@ -483,17 +528,57 @@ impl<'a> PlanSelector<'a> {
         plans
     }
 
-    /// Consume selector and return owned plans
+    /// Consume selector and return owned plans.
+    ///
+    /// When the calc-ready shortest plan is structurally identical to the
+    /// shortest plan — same score, same course set, same term schedule —
+    /// drop the duplicate and record the fact in
+    /// [`SelectedPlans::calc_ready_suppressed`]. Without this dedup, the
+    /// MCP response surfaces "Shortest Path" and "Calculus-Ready Shortest"
+    /// as separate entries that confuse reports because they're really one
+    /// plan presented twice.
     #[must_use]
     pub fn into_selected_plans(self) -> SelectedPlans {
+        let calc_ready_suppressed = match (&self.shortest, &self.calc_ready_shortest) {
+            (Some(s), Some(c)) => plans_structurally_equal(s, c),
+            _ => false,
+        };
+        let calc_ready_shortest = if calc_ready_suppressed {
+            None
+        } else {
+            self.calc_ready_shortest
+        };
         SelectedPlans {
             shortest: self.shortest,
             longest: self.longest,
-            calc_ready_shortest: self.calc_ready_shortest,
+            calc_ready_shortest,
             random_samples: self.random_samples,
             total_plans_seen: self.plans_seen,
+            calc_ready_suppressed,
         }
     }
+}
+
+/// Two scored plans are "the same plan" for the dedup check when their
+/// score (terms, complexity, longest delay) matches, their term schedule
+/// is identical, and the course set is identical. The schedule check is
+/// the strict signal — score equality alone would over-suppress.
+fn plans_structurally_equal(a: &ScoredPlan, b: &ScoredPlan) -> bool {
+    if a.score.terms_required != b.score.terms_required
+        || a.score.total_complexity != b.score.total_complexity
+        || a.score.longest_delay != b.score.longest_delay
+    {
+        return false;
+    }
+    if a.schedule.terms.len() != b.schedule.terms.len() {
+        return false;
+    }
+    for (ta, tb) in a.schedule.terms.iter().zip(b.schedule.terms.iter()) {
+        if ta.number != tb.number || ta.courses != tb.courses {
+            return false;
+        }
+    }
+    true
 }
 
 /// Collection of selected plans after processing
@@ -505,7 +590,10 @@ pub struct SelectedPlans {
     /// Longest path plan
     pub longest: Option<ScoredPlan>,
 
-    /// Calculus-ready shortest plan
+    /// Calculus-ready shortest plan. `None` when no calculus path exists in
+    /// the program, or when it was structurally identical to the shortest
+    /// path and dropped to avoid duplicate reporting — check
+    /// `calc_ready_suppressed` to distinguish.
     pub calc_ready_shortest: Option<ScoredPlan>,
 
     /// Randomly sampled plans
@@ -513,6 +601,12 @@ pub struct SelectedPlans {
 
     /// Total number of plans processed
     pub total_plans_seen: usize,
+
+    /// `true` when a calc-ready candidate existed but matched the shortest
+    /// path entry term-for-term. Callers can surface a note ("calc-ready
+    /// suppressed as duplicate") instead of letting the duplicate confuse
+    /// reports.
+    pub calc_ready_suppressed: bool,
 }
 
 impl SelectedPlans {
@@ -673,6 +767,7 @@ mod tests {
             calc_ready_shortest: None,
             random_samples: vec![],
             total_plans_seen: 1,
+            calc_ready_suppressed: false,
         };
 
         assert_eq!(selected.special_plan_count(), 1);
@@ -688,5 +783,81 @@ mod tests {
         let config = PlanSelectorConfig::default();
         assert_eq!(config.sample_count, 5);
         assert!(!config.calculus_courses.is_empty());
+    }
+
+    #[test]
+    fn test_plans_structurally_equal_compares_scores_and_schedules() {
+        let make_plan = |terms: usize, complexity: usize, term_courses: &[&str]| ScoredPlan {
+            variant: create_test_variant(term_courses),
+            score: PlanScore {
+                terms_required: terms,
+                total_complexity: complexity,
+                longest_delay: 0,
+                longest_delay_chain: vec![],
+                is_calc_ready: false,
+            },
+            schedule: {
+                use crate::core::report::term_scheduler::Term;
+                TermPlan {
+                    terms: vec![Term {
+                        number: 1,
+                        courses: term_courses.iter().map(|s| (*s).to_string()).collect(),
+                        total_credits: 15.0,
+                    }],
+                    is_quarter_system: false,
+                    target_credits: 15.0,
+                    unscheduled: vec![],
+                }
+            },
+            course_metrics: HashMap::new(),
+        };
+
+        let shortest = make_plan(8, 50, &["CS1000", "CS2000"]);
+        let same = make_plan(8, 50, &["CS1000", "CS2000"]);
+        let diff_score = make_plan(8, 51, &["CS1000", "CS2000"]);
+        let diff_courses = make_plan(8, 50, &["CS1000", "CS3000"]);
+
+        assert!(plans_structurally_equal(&shortest, &same));
+        assert!(!plans_structurally_equal(&shortest, &diff_score));
+        assert!(!plans_structurally_equal(&shortest, &diff_courses));
+    }
+
+    #[test]
+    fn test_into_selected_plans_drops_duplicate_calc_ready() {
+        // Two identical plans (same score, same schedule, same courses) —
+        // calc-ready must be suppressed and the flag set.
+        use crate::core::report::term_scheduler::Term;
+        let make = |is_calc: bool| ScoredPlan {
+            variant: create_test_variant(&["CS1000", "CS2000"]),
+            score: PlanScore {
+                terms_required: 6,
+                total_complexity: 20,
+                longest_delay: 2,
+                longest_delay_chain: vec![],
+                is_calc_ready: is_calc,
+            },
+            schedule: TermPlan {
+                terms: vec![Term {
+                    number: 1,
+                    courses: vec!["CS1000".to_string(), "CS2000".to_string()],
+                    total_credits: 8.0,
+                }],
+                is_quarter_system: false,
+                target_credits: 8.0,
+                unscheduled: vec![],
+            },
+            course_metrics: HashMap::new(),
+        };
+
+        let school = create_test_school();
+        let dag = create_test_dag();
+        let config = PlanSelectorConfig::default();
+        let mut selector = PlanSelector::new(&school, &dag, config);
+        selector.shortest = Some(make(false));
+        selector.calc_ready_shortest = Some(make(true));
+        let selected = selector.into_selected_plans();
+        assert!(selected.calc_ready_suppressed);
+        assert!(selected.calc_ready_shortest.is_none());
+        assert!(selected.shortest.is_some());
     }
 }

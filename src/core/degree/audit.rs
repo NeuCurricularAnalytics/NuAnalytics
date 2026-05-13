@@ -79,18 +79,32 @@ pub fn find_upper_level_without_prereqs(
     missing
 }
 
+/// One entry returned by [`find_deep_chains`]: the course key plus both the
+/// pretty-printed forms (kept for CLI output) and the structured branch list
+/// (used by the MCP layer to surface per-branch arrays).
+#[derive(Debug, Clone)]
+pub struct DeepChainResult {
+    /// Course key whose prerequisite chain met the threshold
+    pub course: String,
+    /// Branch lengths formatted for display (e.g. `"5, 3"`)
+    pub branch_lengths: String,
+    /// Full chain formatted for display (e.g. `(A → B → C) & (D → E)`)
+    pub chain: String,
+    /// Structured branches; each branch is leaf-to-immediate-prereq order
+    pub branches: Vec<Vec<String>>,
+}
+
 /// Find courses with deep prerequisite chains (at or above `threshold`).
 ///
 /// Only courses that are "in scope" (matching major subjects or appearing in
-/// requirements) are considered. Returns a sorted list of
-/// `(course_key, formatted_branch_lengths, formatted_chain)` tuples, ordered
-/// by maximum chain length descending then course key alphabetically.
+/// requirements) are considered. Returns a list ordered by maximum chain
+/// length descending then course key alphabetically.
 #[must_use]
 pub fn find_deep_chains(
     program: &DegreeProgram,
     graph_result: &CourseGraphResult,
     threshold: usize,
-) -> Vec<(String, String, String)> {
+) -> Vec<DeepChainResult> {
     let major_subjects = program.degree.major_subjects.as_ref();
     let requirement_courses = collect_requirement_courses(program);
     let mut deep = Vec::new();
@@ -103,15 +117,20 @@ pub fn find_deep_chains(
         if let Some(chain) = graph_result.graph.structured_prerequisite_chain(key) {
             let max_branch_len = chain.branch_lengths().into_iter().max().unwrap_or(0);
             if max_branch_len >= threshold {
-                deep.push((key.to_string(), chain.format_lengths(), chain.format()));
+                deep.push(DeepChainResult {
+                    course: key.to_string(),
+                    branch_lengths: chain.format_lengths(),
+                    chain: chain.format(),
+                    branches: chain.branches.clone(),
+                });
             }
         }
     }
 
     deep.sort_by(|a, b| {
-        let a_max = parse_max_chain_length(&a.1);
-        let b_max = parse_max_chain_length(&b.1);
-        b_max.cmp(&a_max).then_with(|| a.0.cmp(&b.0))
+        let a_max = parse_max_chain_length(&a.branch_lengths);
+        let b_max = parse_max_chain_length(&b.branch_lengths);
+        b_max.cmp(&a_max).then_with(|| a.course.cmp(&b.course))
     });
     deep
 }
@@ -193,6 +212,148 @@ fn parse_max_chain_length(lengths_str: &str) -> usize {
         .filter_map(|n| n.parse::<usize>().ok())
         .max()
         .unwrap_or(0)
+}
+
+/// Split a course key like `"CS150B"` into `("CS", 150)`.
+///
+/// The prefix is the leading letter run; the number is the contiguous digit
+/// run that follows. Suffix characters past the digit block (`B` in
+/// `"CS150B"`) are ignored — they distinguish lab/lecture pairings but
+/// don't change the numeric ordering used by the intermediate-prereq
+/// heuristic. Returns `None` when either piece is missing.
+fn parse_subject_and_number(key: &str) -> Option<(&str, u32)> {
+    let digit_start = key.find(|c: char| c.is_ascii_digit())?;
+    if digit_start == 0 {
+        return None;
+    }
+    let prefix = &key[..digit_start];
+    let digit_end = key[digit_start..]
+        .find(|c: char| !c.is_ascii_digit())
+        .map_or(key.len(), |off| digit_start + off);
+    let number: u32 = key[digit_start..digit_end].parse().ok()?;
+    Some((prefix, number))
+}
+
+/// One missing-intermediate-prerequisite finding.
+///
+/// Reports that course `course_id` declares `declared_prereq` directly,
+/// while `suggested_intermediate` — a same-subject course numerically
+/// between them — also depends on `declared_prereq` and *might* belong
+/// in `course_id`'s prereq chain. Heuristic, never an error.
+#[derive(Debug, Clone)]
+pub struct MissingIntermediateFinding {
+    /// Course that may be skipping an intermediary (e.g. `"CS165"`).
+    pub course_id: String,
+    /// Prereq the course declares directly (e.g. `"CS150B"`).
+    pub declared_prereq: String,
+    /// Same-subject candidate course that sits numerically between
+    /// `declared_prereq` and `course_id`, and also has `declared_prereq`
+    /// among its prerequisites (e.g. `"CS164"`).
+    pub suggested_intermediate: String,
+    /// Human-readable summary suitable for surfacing in tool output.
+    pub rationale: String,
+}
+
+/// Detect courses that may be skipping a same-subject intermediate prereq.
+///
+/// **Heuristic, not a hard error.** A finding fires when:
+///
+/// 1. Course `C` declares `A` as a prerequisite (`C` and `A` parse cleanly and
+///    share the same subject prefix).
+/// 2. Some other course `B` in the program has the same subject as `C`,
+///    lists `A` among its own prerequisites, and `B.number` falls strictly
+///    between `A.number` and `C.number`.
+/// 3. `B` is **not** already among `C`'s prerequisites (i.e. there is an
+///    actual gap, not a redundant report).
+///
+/// Cross-subject prereqs (e.g. `CS165` requires `MATH121`) are skipped
+/// because the numeric ordering loses meaning across departments. The
+/// `suffix` portion of keys like `CS150A` / `CS150B` is ignored — these
+/// share `number=150` and won't slot one as a missing intermediate of the
+/// other.
+///
+/// Results are sorted by `(course_id, declared_prereq, suggested_intermediate)`
+/// so output is stable across runs.
+#[must_use]
+pub fn find_missing_intermediate_prereqs(
+    program: &DegreeProgram,
+) -> Vec<MissingIntermediateFinding> {
+    let mut findings = Vec::new();
+
+    // Sort the course iteration order so the finding list is deterministic.
+    let mut keys: Vec<&String> = program.courses.keys().collect();
+    keys.sort();
+
+    for c_key in &keys {
+        let c_key_str = c_key.as_str();
+        let Some((c_subject, c_number)) = parse_subject_and_number(c_key_str) else {
+            continue;
+        };
+        let Some(c_course) = program.courses.get(*c_key) else {
+            continue;
+        };
+        if c_course.prerequisites.is_empty() {
+            continue;
+        }
+
+        for a_key in &c_course.prerequisites {
+            let Some((a_subject, a_number)) = parse_subject_and_number(a_key) else {
+                continue;
+            };
+            // Heuristic only applies within a subject — comparing CS165's
+            // number against MATH1341's number tells us nothing useful.
+            if !c_subject.eq_ignore_ascii_case(a_subject) {
+                continue;
+            }
+            // `A` must be a real course in the program (otherwise validate's
+            // MissingPrerequisite check already flags it).
+            if !program.courses.contains_key(a_key) {
+                continue;
+            }
+
+            for b_key in &keys {
+                let b_key_str = b_key.as_str();
+                if b_key_str == c_key_str || b_key_str == a_key.as_str() {
+                    continue;
+                }
+                let Some((b_subject, b_number)) = parse_subject_and_number(b_key_str) else {
+                    continue;
+                };
+                if !b_subject.eq_ignore_ascii_case(c_subject) {
+                    continue;
+                }
+                if !(a_number < b_number && b_number < c_number) {
+                    continue;
+                }
+                let Some(b_course) = program.courses.get(*b_key) else {
+                    continue;
+                };
+                if !b_course.prerequisites.iter().any(|p| p == a_key) {
+                    continue;
+                }
+                // If C already lists B as a prereq, there's no gap to report.
+                if c_course.prerequisites.iter().any(|p| p == b_key_str) {
+                    continue;
+                }
+                findings.push(MissingIntermediateFinding {
+                    course_id: c_key_str.to_string(),
+                    declared_prereq: a_key.clone(),
+                    suggested_intermediate: b_key_str.to_string(),
+                    rationale: format!(
+                        "{c_key_str} declares {a_key} as a prerequisite, but {b_key_str} (same subject, also depends on {a_key}) sits numerically between them. Verify {b_key_str} is not a missing intermediate in {c_key_str}'s prereq chain."
+                    ),
+                });
+            }
+        }
+    }
+
+    findings.sort_by(|a, b| {
+        a.course_id
+            .cmp(&b.course_id)
+            .then_with(|| a.declared_prereq.cmp(&b.declared_prereq))
+            .then_with(|| a.suggested_intermediate.cmp(&b.suggested_intermediate))
+    });
+    findings
 }
 
 #[cfg(test)]
@@ -294,6 +455,204 @@ courses: {}
         assert!(is_course_in_scope("CS2500", None, &req_courses));
         assert!(is_course_in_scope("MATH1341", None, &req_courses));
         assert!(!is_course_in_scope("PHYS1000", None, &req_courses));
+    }
+
+    #[test]
+    fn test_parse_subject_and_number_handles_letter_suffix() {
+        assert_eq!(parse_subject_and_number("CS150B"), Some(("CS", 150)));
+        assert_eq!(parse_subject_and_number("CS165"), Some(("CS", 165)));
+        assert_eq!(parse_subject_and_number("MATH1341"), Some(("MATH", 1341)));
+        assert_eq!(parse_subject_and_number("CSci2200"), Some(("CSci", 2200)));
+        assert_eq!(parse_subject_and_number("123CS"), None);
+        assert_eq!(parse_subject_and_number("CS"), None);
+    }
+
+    #[test]
+    fn test_missing_intermediate_flags_csu_style_chain_gap() {
+        // CSU CS150B → CS164 → CS165 (where CS165 wrongly points at CS150B).
+        let yaml = r#"
+degree:
+  id: chain-gap
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS150B, CS164, CS165]
+
+courses:
+  CS150B:
+    title: Intro CS
+    prefix: CS
+    number: "150"
+    credits: 4
+  CS164:
+    title: Data Structures
+    prefix: CS
+    number: "164"
+    credits: 4
+    prerequisites_raw: "CS150B"
+  CS165:
+    title: Algorithms
+    prefix: CS
+    number: "165"
+    credits: 4
+    prerequisites_raw: "CS150B"
+"#;
+        let program = parse_degree_yaml(yaml).unwrap();
+        let findings = find_missing_intermediate_prereqs(&program);
+        assert_eq!(
+            findings.len(),
+            1,
+            "exactly one gap finding expected; got {findings:?}"
+        );
+        let f = &findings[0];
+        assert_eq!(f.course_id, "CS165");
+        assert_eq!(f.declared_prereq, "CS150B");
+        assert_eq!(f.suggested_intermediate, "CS164");
+    }
+
+    #[test]
+    fn test_missing_intermediate_silent_when_chain_is_correct() {
+        // CS165 already points at CS164 → no gap to report.
+        let yaml = r#"
+degree:
+  id: chain-ok
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS150B, CS164, CS165]
+
+courses:
+  CS150B:
+    title: Intro CS
+    prefix: CS
+    number: "150"
+    credits: 4
+  CS164:
+    title: Data Structures
+    prefix: CS
+    number: "164"
+    credits: 4
+    prerequisites_raw: "CS150B"
+  CS165:
+    title: Algorithms
+    prefix: CS
+    number: "165"
+    credits: 4
+    prerequisites_raw: "CS150B & CS164"
+"#;
+        let program = parse_degree_yaml(yaml).unwrap();
+        let findings = find_missing_intermediate_prereqs(&program);
+        assert!(
+            findings.is_empty(),
+            "well-formed chain must not produce findings; got {findings:?}"
+        );
+    }
+
+    #[test]
+    fn test_missing_intermediate_skips_cross_subject_prereqs() {
+        // CS165's prereq is MATH121 (cross-subject); MATH125 sits "between"
+        // numerically but the heuristic doesn't apply across subjects.
+        let yaml = r#"
+degree:
+  id: cross-subject
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [MATH121, MATH125, CS165]
+
+courses:
+  MATH121:
+    title: Calc
+    prefix: MATH
+    number: "121"
+    credits: 4
+  MATH125:
+    title: Calc II
+    prefix: MATH
+    number: "125"
+    credits: 4
+    prerequisites_raw: "MATH121"
+  CS165:
+    title: Algos
+    prefix: CS
+    number: "165"
+    credits: 4
+    prerequisites_raw: "MATH121"
+"#;
+        let program = parse_degree_yaml(yaml).unwrap();
+        let findings = find_missing_intermediate_prereqs(&program);
+        assert!(
+            findings.is_empty(),
+            "cross-subject prereq must not trigger same-subject heuristic; got {findings:?}"
+        );
+    }
+
+    #[test]
+    fn test_missing_intermediate_skips_equal_number_letter_variants() {
+        // CS150A and CS150B share number 150 — the strict `a < b < c`
+        // ordering rules out flagging one as a missing intermediate for the
+        // other. CS200 declares CS150A; sibling CS150B is not "between".
+        let yaml = r#"
+degree:
+  id: lab-pair
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS150A, CS150B, CS200]
+
+courses:
+  CS150A:
+    title: Lab
+    prefix: CS
+    number: "150"
+    credits: 1
+  CS150B:
+    title: Lecture
+    prefix: CS
+    number: "150"
+    credits: 3
+    prerequisites_raw: "CS150A"
+  CS200:
+    title: Followup
+    prefix: CS
+    number: "200"
+    credits: 4
+    prerequisites_raw: "CS150A"
+"#;
+        let program = parse_degree_yaml(yaml).unwrap();
+        let findings = find_missing_intermediate_prereqs(&program);
+        assert!(
+            findings.is_empty(),
+            "letter-suffix sibling courses must not slot as intermediates; got {findings:?}"
+        );
     }
 
     #[test]
