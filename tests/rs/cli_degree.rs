@@ -483,16 +483,12 @@ fn test_degree_analyze_no_output_flags() {
     );
 
     // Report directory should not exist or be empty
-    let report_exists = report_dir.exists()
-        && std::fs::read_dir(&report_dir)
-            .map(|mut d| d.next().is_some())
-            .unwrap_or(false);
+    let report_exists =
+        report_dir.exists() && std::fs::read_dir(&report_dir).is_ok_and(|mut d| d.next().is_some());
     assert!(!report_exists, "Should not have generated HTML report");
 
     // Metrics directory should not exist or be empty
     let metrics_exists = metrics_dir.exists()
-        && std::fs::read_dir(&metrics_dir)
-            .map(|mut d| d.next().is_some())
-            .unwrap_or(false);
+        && std::fs::read_dir(&metrics_dir).is_ok_and(|mut d| d.next().is_some());
     assert!(!metrics_exists, "Should not have generated CSV files");
 }

@@ -1022,7 +1022,7 @@ pub async fn execute_schools_json(
         req.min_completions,
     );
 
-    results.sort_by(|a, b| b.total_completions.cmp(&a.total_completions));
+    results.sort_by_key(|r| std::cmp::Reverse(r.total_completions));
     results.truncate(limit);
 
     to_json_pretty(&serde_json::json!({

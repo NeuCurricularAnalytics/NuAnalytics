@@ -1635,7 +1635,7 @@ fn expand_courses_with_prerequisites(
             (c.clone(), depth)
         })
         .collect();
-    sorted_courses.sort_by(|a, b| b.1.cmp(&a.1)); // Descending by depth
+    sorted_courses.sort_by_key(|(_, depth)| std::cmp::Reverse(*depth));
 
     let mut expanded: HashSet<String> = courses.iter().cloned().collect();
     let mut to_process: Vec<String> = sorted_courses.into_iter().map(|(c, _)| c).collect();
@@ -1757,7 +1757,7 @@ fn find_redundant_prerequisites(
             for equiv in equivs {
                 if equiv != course && courses.contains(equiv) {
                     let usages = prereq_usage.get(course);
-                    if usages.is_none() || usages.is_some_and(std::vec::Vec::is_empty) {
+                    if usages.is_none_or(std::vec::Vec::is_empty) {
                         let equiv_satisfies_same = prereq_usage
                             .get(equiv)
                             .is_some_and(|equiv_usages| !equiv_usages.is_empty());

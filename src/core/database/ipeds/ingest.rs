@@ -80,14 +80,11 @@ fn read_file_or_zip(path: &Path) -> DatabaseResult<String> {
             .map_err(|e| DatabaseError::IngestError(format!("Cannot open zip: {e}")))?;
         let csv_index = (0..archive.len())
             .find(|&i| {
-                archive
-                    .by_index(i)
-                    .map(|f| {
-                        std::path::Path::new(f.name())
-                            .extension()
-                            .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
-                    })
-                    .unwrap_or(false)
+                archive.by_index(i).is_ok_and(|f| {
+                    std::path::Path::new(f.name())
+                        .extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
+                })
             })
             .ok_or_else(|| {
                 DatabaseError::IngestError(format!("No CSV entry found inside {}", path.display()))

@@ -38,7 +38,7 @@ pub const YAML_CACHE_PREFIX: &str = "cache:";
 /// 24 h spans a typical multi-session investigation: validate → audit →
 /// analyze → iterate on recommendations → regenerate plans without
 /// re-pasting the YAML body each time.
-pub const YAML_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+pub const YAML_CACHE_TTL: Duration = Duration::from_hours(24);
 const ARTIFACT_CACHE_CAPACITY: usize = 4;
 
 // ============================================================================
@@ -304,7 +304,7 @@ mod tests {
         // Allow a small slack for the time elapsed between insert and get.
         assert!(remaining <= YAML_CACHE_TTL);
         let near_full = YAML_CACHE_TTL
-            .checked_sub(Duration::from_secs(60))
+            .checked_sub(Duration::from_mins(1))
             .expect("YAML_CACHE_TTL must exceed 60s");
         assert!(
             remaining > near_full,
@@ -317,7 +317,7 @@ mod tests {
         // Bumped from 1 h to 24 h so handles survive a multi-session
         // investigation; guard the constant directly so accidental edits
         // (or future "tighten the cache" refactors) get caught.
-        assert_eq!(YAML_CACHE_TTL, Duration::from_secs(24 * 60 * 60));
+        assert_eq!(YAML_CACHE_TTL, Duration::from_hours(24));
     }
 
     #[test]
