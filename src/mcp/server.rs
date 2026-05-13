@@ -128,7 +128,7 @@ impl NuAnalyticsMcpServer {
 
     /// Analyze a degree program YAML
     #[tool(
-        description = "Run full degree analysis: generate all possible course plans, compute aggregate metrics (complexity, delay, credits), and identify shortest/longest paths. Provide exactly ONE YAML source: yaml_content (inline), yaml_path (file path), or degree_id (DB lookup). Returns aggregate stats across the analyzed plans plus a curated selected_plans list (always shortest + longest + optional calc-ready-shortest + 3 random samples — 5-6 plans typical, independent of max_plans). The complexity/longest_delay/total_credits objects use the standard 5-number summary (min/q1/median/q3/max + mean/std_dev) — to plot as a boxplot in Chart.js, add the chartjs-chart-boxplot plugin. The response also includes is_full_population: when true, plans_analyzed is the entire population for this YAML; when false, it's a sample capped at max_plans. Set include_graph_spec=true (default false) when you need to render visualizations — each spec is ~30 KB so omitting them keeps the response compact. Set include_per_course_metrics=true to also receive a sorted per_course_metrics array (one entry per tracked course with complexity/centrality/delay/blocking medians) — use this when you want per-course numbers without rendering the graph HTML. Use after validate_degree confirms the YAML is valid. Optionally specify include_courses to constrain all plans to include specific courses."
+        description = "Run full degree analysis: generate all possible course plans, compute aggregate metrics (complexity, delay, credits), and identify shortest/longest paths. Provide exactly ONE YAML source: yaml_content (inline), yaml_path (file path), or degree_id (DB lookup). Returns aggregate stats across the analyzed plans plus a curated selected_plans list (always shortest + longest + optional calc-ready-shortest + 3 random samples — 5-6 plans typical, independent of max_plans). The complexity/longest_delay/total_credits objects use the standard 5-number summary (min/q1/median/q3/max + mean/std_dev) — to plot as a boxplot in Chart.js, add the chartjs-chart-boxplot plugin. The response also includes is_full_population: when true, plans_analyzed is the entire population for this YAML; when false, it's a sample capped at max_plans. Set include_graph_spec=true (default false) when you need to render visualizations — each spec is ~30 KB so omitting them keeps the response compact. Set include_per_course_metrics=true to also receive a sorted per_course_metrics array (one entry per tracked course with complexity/centrality/delay/blocking medians) — use this when you want per-course numbers without rendering the graph HTML. The plan-generation loop is wall-clock-bounded: when analysis_timeout_seconds (default 180) trips, the response sets time_limit_reached=true alongside was_truncated=true; reservoir sampling is still uniform across plans actually seen. For large degrees (140+ courses, 50K+ plan populations), prefer the CV-stable cutoff in tool_followups over bumping max_plans blindly — that's the same advice the followup will echo. Use after validate_degree confirms the YAML is valid. Optionally specify include_courses to constrain all plans to include specific courses."
     )]
     fn analyze_degree(&self, Parameters(req): Parameters<AnalyzeDegreeRequest>) -> String {
         let include_courses = req.include_courses.map(|s| shared::parse_comma_list(&s));
@@ -136,6 +136,7 @@ impl NuAnalyticsMcpServer {
         let include_per_course_metrics = req.include_per_course_metrics.unwrap_or(false);
         let include_placeholder_metrics = req.include_placeholder_metrics.unwrap_or(false);
         let random_seed = req.random_seed;
+        let analysis_timeout_seconds = req.analysis_timeout_seconds;
         let max_plans = req.max_plans;
         let plan_indices: Option<Vec<usize>> = req
             .plan_indices
@@ -156,6 +157,7 @@ impl NuAnalyticsMcpServer {
                 include_per_course_metrics,
                 include_placeholder_metrics,
                 random_seed,
+                analysis_timeout_seconds,
             )
         })
     }

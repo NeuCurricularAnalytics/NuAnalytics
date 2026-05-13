@@ -190,11 +190,16 @@ pub fn execute(
     write_index_csv: Option<bool>,
     return_html_inline: Option<bool>,
 ) -> GenerateDegreeReportResponse {
-    let artifacts =
-        match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, include_courses, None) {
-            Ok(a) => a,
-            Err(e) => return error_response(&e),
-        };
+    let artifacts = match crate::mcp::cache::cached_artifacts(
+        yaml_content,
+        max_plans,
+        include_courses,
+        None,
+        None,
+    ) {
+        Ok(a) => a,
+        Err(e) => return error_response(&e),
+    };
 
     let html = match render_html(&artifacts) {
         Ok(s) => s,

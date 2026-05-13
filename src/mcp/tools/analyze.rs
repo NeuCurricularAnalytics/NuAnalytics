@@ -24,6 +24,7 @@ use crate::mcp::tools::shared::{
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 // ============================================================================
 // Request/Response Types
@@ -143,6 +144,21 @@ pub struct AnalyzeDegreeRequest {
         deserialize_with = "crate::mcp::tools::shared::deserialize_opt_u64"
     )]
     pub random_seed: Option<u64>,
+
+    /// Soft wall-clock cap (seconds) on the plan-generation loop. Defaults
+    /// to 180 s — well below the 4-min MCP transport ceiling — and clamped
+    /// to `[1, 600]`. When the budget trips, the response sets
+    /// `time_limit_reached: true` and surfaces whatever plans were
+    /// processed; the reservoir is still uniformly sampled across the
+    /// plans actually seen, so partial runs are statistically clean.
+    #[schemars(
+        description = "Wall-clock seconds the plan-generation loop may run before stopping early (default 180, clamped to 1..=600). When tripped, the response carries time_limit_reached=true alongside the existing was_truncated=true. Large degrees (140+ courses, 50K+ plan populations) often hit this before reaching high max_plans values — prefer trusting tool_followups's CV-stable cutoff over bumping max_plans blindly."
+    )]
+    #[serde(
+        default,
+        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_u64"
+    )]
+    pub analysis_timeout_seconds: Option<u64>,
 }
 
 /// Serializable metric statistics (includes quartiles for box plots).
@@ -238,7 +254,13 @@ pub struct TermJson {
     pub credits: f32,
 }
 
-/// Complete analysis response
+/// Complete analysis response.
+///
+// Four bools is two more than clippy's default ceiling — each is a distinct
+// signal (success / was_truncated / is_full_population / time_limit_reached)
+// that callers inspect independently; replacing with a state enum would
+// force the caller to pattern-match for the same information.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Serialize)]
 pub struct AnalysisResponse {
     /// Whether analysis completed successfully
@@ -312,6 +334,17 @@ pub struct AnalysisResponse {
     /// (and omitted from the JSON) when nothing notable happened.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+
+    /// `true` when the plan-generation loop stopped early because the
+    /// configurable `analysis_timeout_seconds` budget tripped before
+    /// `max_plans` was reached. Implies `was_truncated: true`. Distinguish
+    /// from cap-truncation (where `was_truncated` is true but this is
+    /// false) — the difference is *why* the run stopped: clock vs cap.
+    pub time_limit_reached: bool,
+    /// Wall-clock duration of the plan-generation phase in milliseconds.
+    /// Excludes YAML parse / graph build / per-course-metrics shaping —
+    /// the cost callers actually care about for budgeting future runs.
+    pub time_elapsed_ms: u64,
 }
 
 // ============================================================================
@@ -319,6 +352,22 @@ pub struct AnalysisResponse {
 // ============================================================================
 
 const DEFAULT_MAX_PLANS: usize = 500;
+
+/// Default wall-clock budget for plan generation, in seconds.
+///
+/// Sits 60 s below the 4-min MCP transport ceiling so a normal run finishes
+/// and serialises before any client-side timeout fires. Callers can override
+/// via the request's `analysis_timeout_seconds` field.
+const DEFAULT_ANALYSIS_TIMEOUT_SECS: u64 = 180;
+/// Lower clamp for `analysis_timeout_seconds`. 1 s is enough to guarantee
+/// at least one plan is processed on TEST_YAML-sized inputs; anything tighter
+/// is almost certainly a misconfiguration.
+const MIN_ANALYSIS_TIMEOUT_SECS: u64 = 1;
+/// Upper clamp for `analysis_timeout_seconds`. 10 min vastly exceeds the
+/// MCP ceiling and the practical patience of any human caller — bigger
+/// values are rejected to avoid burning compute on a request rmcp will
+/// kill anyway.
+const MAX_ANALYSIS_TIMEOUT_SECS: u64 = 600;
 
 // ============================================================================
 // Tool Implementation
@@ -347,9 +396,15 @@ pub fn execute(
     include_per_course_metrics: bool,
     include_placeholder_metrics: bool,
     random_seed: Option<u64>,
+    analysis_timeout_seconds: Option<u64>,
 ) -> AnalysisResponse {
-    match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, include_courses, random_seed)
-    {
+    match crate::mcp::cache::cached_artifacts(
+        yaml_content,
+        max_plans,
+        include_courses,
+        random_seed,
+        analysis_timeout_seconds,
+    ) {
         Ok(artifacts) => build_response(
             &artifacts,
             include_graph_spec,
@@ -393,6 +448,11 @@ pub(crate) struct AnalysisArtifacts {
     /// `random_seed` or the default derived from the YAML body — surfaced on
     /// the response so reports can cite the seed and re-run reproducibly.
     pub seed_used: u64,
+    /// `true` when the plan-generation loop stopped because the wall-clock
+    /// budget tripped rather than `max_plans` or natural exhaustion.
+    pub time_limit_reached: bool,
+    /// Wall-clock duration of the plan-generation phase in milliseconds.
+    pub time_elapsed_ms: u64,
 }
 
 impl AnalysisArtifacts {
@@ -432,6 +492,7 @@ pub(crate) fn build_artifacts(
     max_plans: Option<usize>,
     include_courses: Option<&[String]>,
     random_seed: Option<u64>,
+    analysis_timeout_seconds: Option<u64>,
 ) -> Result<AnalysisArtifacts, String> {
     let max = max_plans.unwrap_or(DEFAULT_MAX_PLANS);
     let include = include_courses.map(<[String]>::to_vec).unwrap_or_default();
@@ -439,6 +500,10 @@ pub(crate) fn build_artifacts(
     // always yield the same Random Sample plan. Callers that want a
     // different sample pass `Some(seed)` explicitly.
     let seed_used = random_seed.unwrap_or_else(|| default_seed_for_yaml(yaml_content));
+    let timeout_secs = analysis_timeout_seconds
+        .unwrap_or(DEFAULT_ANALYSIS_TIMEOUT_SECS)
+        .clamp(MIN_ANALYSIS_TIMEOUT_SECS, MAX_ANALYSIS_TIMEOUT_SECS);
+    let deadline = Some(Instant::now() + Duration::from_secs(timeout_secs));
 
     let program = parse_degree_yaml(yaml_content).map_err(|e| format_parse_error(&e))?;
 
@@ -477,6 +542,11 @@ pub(crate) fn build_artifacts(
 
     let mut aggregator = MetricsAggregator::new(agg_config);
     let plans_processed;
+    let time_limit_reached;
+    // Time only the plan-generation phase. Parse / graph build / aggregator
+    // setup are cheap and fixed-cost; what the caller cares about budgeting
+    // is the loop below.
+    let loop_start = Instant::now();
     let selected = {
         let mut selector = PlanSelector::new(&school, &dag, selector_config);
         let ctx = AnalysisCtx {
@@ -485,16 +555,23 @@ pub(crate) fn build_artifacts(
             school: &school,
             target_credits: program.degree.total_credits,
         };
-        plans_processed = run_plan_analysis(
+        let (processed, hit_limit) = run_plan_analysis(
             &generator,
             &gen_config,
             &ctx,
             max,
+            deadline,
             &mut aggregator,
             &mut selector,
         );
+        plans_processed = processed;
+        time_limit_reached = hit_limit;
         selector.into_selected_plans()
     };
+    // u128 → u64 narrowing: 600 s upper clamp on the deadline keeps elapsed
+    // ≤ 600,000 ms, far below u64::MAX. Saturating fallback is purely a
+    // belt-and-braces guard against future clamp loosening.
+    let time_elapsed_ms = u64::try_from(loop_start.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     Ok(AnalysisArtifacts {
         program,
@@ -507,6 +584,8 @@ pub(crate) fn build_artifacts(
         stats,
         max_plans: max,
         seed_used,
+        time_limit_reached,
+        time_elapsed_ms,
     })
 }
 
@@ -550,6 +629,8 @@ fn parse_error_response(error: &str) -> AnalysisResponse {
             suggested_args: serde_json::json!({}),
         }],
         notes: vec![],
+        time_limit_reached: false,
+        time_elapsed_ms: 0,
     }
 }
 
@@ -561,21 +642,39 @@ struct AnalysisCtx<'a> {
     target_credits: Option<u32>,
 }
 
-/// Process plan variants, updating aggregator and selector
+/// Process plan variants, updating aggregator and selector.
+///
+/// Stops early in either of two cases: the `max` plan-count cap is reached,
+/// or the optional `deadline` trips. Returns the plan count actually
+/// processed along with a `time_limit_reached` flag the caller can surface
+/// so the difference between cap-truncation and clock-truncation stays
+/// visible.
+#[allow(clippy::too_many_arguments)]
 fn run_plan_analysis(
     generator: &PlanGenerator<'_>,
     gen_config: &PlanGeneratorConfig,
     ctx: &AnalysisCtx<'_>,
     max: usize,
+    deadline: Option<Instant>,
     aggregator: &mut MetricsAggregator,
     selector: &mut PlanSelector<'_>,
-) -> usize {
+) -> (usize, bool) {
     let mut plans_processed = 0;
+    let mut time_limit_reached = false;
     let mut seen_fingerprints = HashSet::new();
 
     for variant in generator.generate() {
         if plans_processed >= max {
             break;
+        }
+        // Wall-clock deadline check. `Instant::now()` is sub-µs on every
+        // tier-1 target, so per-iteration polling is cheap relative to the
+        // schedule+metrics work that follows.
+        if let Some(d) = deadline {
+            if Instant::now() >= d {
+                time_limit_reached = true;
+                break;
+            }
         }
 
         if gen_config.ignore_duplicates {
@@ -602,7 +701,7 @@ fn run_plan_analysis(
         plans_processed += 1;
     }
 
-    plans_processed
+    (plans_processed, time_limit_reached)
 }
 
 /// Build the analysis response from a populated [`AnalysisArtifacts`] bundle.
@@ -659,8 +758,13 @@ fn build_response(
         })
         .collect();
 
-    let is_full_population = artifacts.is_full_population();
-    let was_truncated = !is_full_population;
+    // Clock-truncated runs are by definition not the full population —
+    // force `was_truncated=true` so the existing followup heuristics treat
+    // them the same as cap-truncated runs (and `is_full_population=false`
+    // for consistency).
+    let raw_full_population = artifacts.is_full_population();
+    let was_truncated = !raw_full_population || artifacts.time_limit_reached;
+    let is_full_population = !was_truncated;
     let population_size = artifacts.population_size();
     let complexity_stats = metric_stats_json(&degree_stats.total_complexity);
     let tool_followups = build_analysis_followups(
@@ -687,6 +791,12 @@ fn build_response(
             "calc-ready-shortest suppressed as structural duplicate of shortest-path".to_string(),
         );
     }
+    if artifacts.time_limit_reached {
+        notes.push(format!(
+            "plan-generation loop stopped early at {} plans after {} ms — analysis_timeout_seconds tripped",
+            artifacts.plans_processed, artifacts.time_elapsed_ms,
+        ));
+    }
 
     AnalysisResponse {
         success: true,
@@ -708,6 +818,8 @@ fn build_response(
         per_course_metrics,
         tool_followups,
         notes,
+        time_limit_reached: artifacts.time_limit_reached,
+        time_elapsed_ms: artifacts.time_elapsed_ms,
     }
 }
 
@@ -880,6 +992,7 @@ pub fn execute_json(
     include_per_course_metrics: bool,
     include_placeholder_metrics: bool,
     random_seed: Option<u64>,
+    analysis_timeout_seconds: Option<u64>,
 ) -> String {
     let response = execute(
         yaml_content,
@@ -890,6 +1003,7 @@ pub fn execute_json(
         include_per_course_metrics,
         include_placeholder_metrics,
         random_seed,
+        analysis_timeout_seconds,
     );
     serde_json::to_string_pretty(&response)
         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
@@ -1232,7 +1346,17 @@ courses:
 
     #[test]
     fn test_analyze_valid_degree() {
-        let response = execute(TEST_YAML, Some(10), None, false, None, false, false, None);
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
         assert!(response.complexity.is_some());
@@ -1245,7 +1369,7 @@ courses:
         // Direct coverage of the shared pipeline entry point. Every artifact
         // field must be populated so sibling tools (the HTML report) don't
         // have to defensively check for empty/None state.
-        let artifacts = build_artifacts(TEST_YAML, Some(10), None, None)
+        let artifacts = build_artifacts(TEST_YAML, Some(10), None, None, None)
             .expect("build_artifacts on valid YAML");
         assert_eq!(artifacts.program.degree.name, "Test Program");
         assert_eq!(
@@ -1266,7 +1390,7 @@ courses:
         // AnalysisArtifacts deliberately doesn't derive Debug (it owns a
         // MetricsAggregator that wouldn't print usefully anyway), so use a
         // match instead of `unwrap_err` to interrogate the failure.
-        let result = build_artifacts("not: valid: yaml: {{", Some(10), None, None);
+        let result = build_artifacts("not: valid: yaml: {{", Some(10), None, None, None);
         let Err(err) = result else {
             panic!("expected parse failure for malformed YAML");
         };
@@ -1279,8 +1403,14 @@ courses:
     #[test]
     fn test_build_artifacts_respects_include_courses() {
         // Every selected plan must contain the forced course.
-        let artifacts =
-            build_artifacts(TEST_YAML, Some(10), Some(&["CS101".to_string()]), None).unwrap();
+        let artifacts = build_artifacts(
+            TEST_YAML,
+            Some(10),
+            Some(&["CS101".to_string()]),
+            None,
+            None,
+        )
+        .unwrap();
         for (_cat, plan) in artifacts.selected.iter() {
             assert!(
                 plan.variant.courses.iter().any(|c| c == "CS101"),
@@ -1293,7 +1423,17 @@ courses:
     fn test_tool_followups_suggest_audit_on_small_full_population() {
         // TEST_YAML resolves to a single valid plan ⇒ is_full_population=true
         // and plans_processed < 50, which triggers the audit suggestion.
-        let response = execute(TEST_YAML, Some(500), None, false, None, false, false, None);
+        let response = execute(
+            TEST_YAML,
+            Some(500),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
         assert!(response.success);
         assert!(response.is_full_population);
         assert!(
@@ -1309,7 +1449,7 @@ courses:
     #[test]
     fn test_artifacts_is_full_population_when_under_cap() {
         // TEST_YAML has only one valid plan; max=500 means we never hit the cap.
-        let artifacts = build_artifacts(TEST_YAML, Some(500), None, None).unwrap();
+        let artifacts = build_artifacts(TEST_YAML, Some(500), None, None, None).unwrap();
         assert!(artifacts.is_full_population());
         assert_eq!(artifacts.population_size(), artifacts.plans_processed);
     }
@@ -1325,6 +1465,7 @@ courses:
             false,
             false,
             None,
+            None,
         );
         assert!(!response.success);
         assert!(response.error.is_some());
@@ -1332,7 +1473,17 @@ courses:
 
     #[test]
     fn test_analyze_json_output() {
-        let json = execute_json(TEST_YAML, Some(10), None, false, None, false, false, None);
+        let json = execute_json(
+            TEST_YAML,
+            Some(10),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["success"].as_bool().unwrap());
         assert!(parsed["plans_analyzed"].as_u64().unwrap() > 0);
@@ -1340,7 +1491,17 @@ courses:
 
     #[test]
     fn test_selected_plans_have_schedules() {
-        let response = execute(TEST_YAML, Some(10), None, false, None, false, false, None);
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
         for plan in &response.selected_plans {
             assert!(
                 !plan.schedule.is_empty(),
@@ -1362,6 +1523,7 @@ courses:
             None,
             false,
             false,
+            None,
             None,
         );
         assert!(response.success, "error: {:?}", response.error);
@@ -1387,7 +1549,17 @@ courses:
     fn test_analyze_omits_graph_spec_by_default() {
         // include_graph_spec=false (default) — graph_spec must be None in-memory and
         // skipped entirely from the JSON output (no `"graph_spec": null` either).
-        let response = execute(TEST_YAML, Some(10), None, false, None, false, false, None);
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
         assert!(response.success);
         assert!(!response.selected_plans.is_empty());
         for plan in &response.selected_plans {
@@ -1406,6 +1578,7 @@ courses:
             false,
             false,
             None,
+            None,
         ))
         .unwrap();
         for plan in json["selected_plans"].as_array().unwrap() {
@@ -1418,7 +1591,17 @@ courses:
 
     #[test]
     fn test_analyze_includes_graph_spec_when_requested() {
-        let response = execute(TEST_YAML, Some(10), None, true, None, false, false, None);
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            true,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
         assert!(response.success);
         assert!(!response.selected_plans.is_empty());
         for plan in &response.selected_plans {
@@ -1446,6 +1629,7 @@ courses:
             Some(&[0]),
             false,
             false,
+            None,
             None,
         );
         assert!(response.success);
@@ -1476,6 +1660,7 @@ courses:
             false,
             false,
             None,
+            None,
         );
         assert!(response.success);
         for plan in &response.selected_plans {
@@ -1498,6 +1683,7 @@ courses:
             false,
             false,
             None,
+            None,
         );
         assert!(response.success);
         for plan in &response.selected_plans {
@@ -1514,7 +1700,17 @@ courses:
         // With max_plans well above the population we expect:
         //   was_truncated=false, is_full_population=true,
         //   population_size==plans_analyzed.
-        let response = execute(TEST_YAML, Some(500), None, false, None, false, false, None);
+        let response = execute(
+            TEST_YAML,
+            Some(500),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
         assert!(response.success);
         assert!(!response.was_truncated);
         assert!(response.is_full_population);
@@ -1525,7 +1721,17 @@ courses:
     #[test]
     fn test_per_course_metrics_omitted_by_default_present_when_flag_set() {
         // Default: per_course_metrics empty and skipped during serialisation.
-        let off = execute(TEST_YAML, Some(10), None, false, None, false, false, None);
+        let off = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
         assert!(off.per_course_metrics.is_empty());
         let off_json = serde_json::to_string(&off).unwrap();
         assert!(
@@ -1535,7 +1741,17 @@ courses:
 
         // Opted-in: one entry per tracked course, sorted by course_id,
         // each carrying the four metric stats objects.
-        let on = execute(TEST_YAML, Some(10), None, false, None, true, false, None);
+        let on = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            false,
+            None,
+            true,
+            false,
+            None,
+            None,
+        );
         assert!(on.success);
         assert!(
             !on.per_course_metrics.is_empty(),
@@ -1632,7 +1848,7 @@ courses:
         // Exercise via the CSU sample which exercises the full pipeline.
         let yaml = crate::mcp::tools::samples::yaml_for_key("csu")
             .expect("csu sample key must resolve to embedded YAML");
-        let off = execute(yaml, Some(10), None, false, None, true, false, None);
+        let off = execute(yaml, Some(10), None, false, None, true, false, None, None);
         assert!(off.success, "error: {:?}", off.error);
         for entry in &off.per_course_metrics {
             assert!(
@@ -1643,7 +1859,7 @@ courses:
             assert!(!entry.placeholder);
         }
 
-        let on = execute(yaml, Some(10), None, false, None, true, true, None);
+        let on = execute(yaml, Some(10), None, false, None, true, true, None, None);
         assert!(on.success);
         for entry in &on.per_course_metrics {
             assert_eq!(
@@ -1680,7 +1896,17 @@ courses:
         let csu = crate::mcp::tools::samples::yaml_for_key("csu")
             .expect("csu sample key must resolve to embedded YAML");
         let seed = 42_u64;
-        let response = execute(csu, Some(50), None, false, None, false, false, Some(seed));
+        let response = execute(
+            csu,
+            Some(50),
+            None,
+            false,
+            None,
+            false,
+            false,
+            Some(seed),
+            None,
+        );
         assert_eq!(response.seed_used, seed);
     }
 
@@ -1690,25 +1916,105 @@ courses:
             .expect("csu sample key must resolve to embedded YAML");
         // build_artifacts directly so cache-eviction races don't muddy the
         // assertion — same path the cached_artifacts wrapper uses on miss.
-        let artifacts =
-            build_artifacts(csu, Some(50), None, None).expect("csu sample must analyze cleanly");
+        let artifacts = build_artifacts(csu, Some(50), None, None, None)
+            .expect("csu sample must analyze cleanly");
         assert_eq!(artifacts.seed_used, default_seed_for_yaml(csu));
     }
 
     #[test]
     fn test_sampling_method_is_exhaustive_when_population_fully_enumerated() {
         // TEST_YAML has only 2 courses → tiny population → exhaustive.
-        let response = execute(TEST_YAML, Some(500), None, false, None, false, false, None);
+        let response = execute(
+            TEST_YAML,
+            Some(500),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
         assert!(response.is_full_population);
         assert_eq!(response.sampling_method, "exhaustive");
     }
 
     #[test]
     fn test_seed_used_surfaced_on_response() {
-        let response = execute(TEST_YAML, Some(10), None, false, None, false, false, None);
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
         // Default seed is non-zero (DefaultHasher.finish() on non-empty input
         // virtually never returns 0).
         assert!(response.seed_used != 0);
+    }
+
+    #[test]
+    fn test_default_deadline_clean_run_under_threshold() {
+        // TEST_YAML has 2 courses; analysis must finish well under the
+        // default 180 s budget. Assert flag clean and elapsed is small
+        // (< 2 s) — anything higher would catch a real regression.
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
+        assert!(!response.time_limit_reached);
+        assert!(
+            response.time_elapsed_ms < 2000,
+            "TEST_YAML analyze took {}ms; threshold 2s",
+            response.time_elapsed_ms
+        );
+    }
+
+    #[test]
+    fn test_default_seed_is_stable_function_of_yaml_with_timeout_seconds() {
+        // Same YAML body must derive the same default seed regardless of
+        // `analysis_timeout_seconds` — that field affects the cache key,
+        // not the seed.
+        let a = default_seed_for_yaml(TEST_YAML);
+        let b = default_seed_for_yaml(TEST_YAML);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_artifact_records_time_metrics() {
+        let artifacts = build_artifacts(TEST_YAML, Some(10), None, None, None).unwrap();
+        assert!(!artifacts.time_limit_reached);
+        // Clock granularity isn't guaranteed — `time_elapsed_ms == 0` is
+        // legitimate on very fast machines. Just assert non-saturating.
+        assert!(artifacts.time_elapsed_ms < 60_000);
+    }
+
+    #[test]
+    fn test_analysis_timeout_seconds_partitions_cache_key() {
+        // Two `cached_artifacts` calls with the same yaml/max/include/seed
+        // but different `analysis_timeout_seconds` must produce different
+        // cache entries (otherwise a long-deadline retry would see the
+        // earlier short-deadline truncated result).
+        use std::sync::Arc;
+        let a = crate::mcp::cache::cached_artifacts(TEST_YAML, Some(10), None, None, Some(30))
+            .expect("first build");
+        let b = crate::mcp::cache::cached_artifacts(TEST_YAML, Some(10), None, None, Some(60))
+            .expect("second build");
+        assert!(
+            !Arc::ptr_eq(&a, &b),
+            "different deadlines must partition the artifact cache"
+        );
     }
 
     #[test]

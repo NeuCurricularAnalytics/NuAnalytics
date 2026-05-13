@@ -171,7 +171,7 @@ pub fn execute(
         return error_response("Provide plan_category OR plan_index, not both.");
     }
 
-    let artifacts = match cached_artifacts(yaml_content, max_plans, include_courses, None) {
+    let artifacts = match cached_artifacts(yaml_content, max_plans, include_courses, None, None) {
         Ok(a) => a,
         Err(e) => return error_response(e),
     };
