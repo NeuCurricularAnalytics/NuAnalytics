@@ -3,7 +3,7 @@ Institution,University of Hawaiʻi at Mānoa
 Degree Type,"BS"
 System Type,semester
 CIP,""
-Total Structural Complexity,289.0
+Total Structural Complexity,286.0
 Longest Delay,6
 Longest Delay Chain,"MATH215 → MATH216 → MATH372 → ICS314 → ICS481 → ICS488"
 Terms Required,8
@@ -21,14 +21,14 @@ Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisit
 10,"GESS Elective","GESS","02","","","",3,"University of Hawaiʻi at Mānoa","",1.0,0,1,0
 11,"Introduction to Computer Science I","ICS","111","","","",4,"University of Hawaiʻi at Mānoa","ICS111",22.0,17,5,0
 12,"Discrete Mathematics for Computer Science I","ICS","141","33","","",3,"University of Hawaiʻi at Mānoa","ICS141",6.0,2,4,4
-13,"Introduction to Computer Science II","ICS","211","11","","",4,"University of Hawaiʻi at Mānoa","ICS211",21.0,16,5,108
+13,"Introduction to Computer Science II","ICS","211","11","","",4,"University of Hawaiʻi at Mānoa","ICS211",21.0,16,5,114
 14,"Program Structure","ICS","212","13","","",3,"University of Hawaiʻi at Mānoa","ICS212",9.0,5,4,20
 15,"Basic Concepts of Computer Science","ICS","222","12","","",3,"University of Hawaiʻi at Mānoa","ICS222",5.0,1,4,4
-16,"Algorithms","ICS","311","35;37","","",4,"University of Hawaiʻi at Mānoa","ICS311",19.0,13,6,103
+16,"Algorithms","ICS","311","35;37","","",4,"University of Hawaiʻi at Mānoa","ICS311",19.0,13,6,110
 17,"Machine-Level and Systems Programming","ICS","312","14;16;19","","",3,"University of Hawaiʻi at Mānoa","ICS312",5.0,0,5,0
 18,"Programming Language Theory","ICS","313","14;16;19","","",3,"University of Hawaiʻi at Mānoa","ICS313",5.0,0,5,0
-19,"Software Engineering I","ICS","314","13;35;37","","",3,"University of Hawaiʻi at Mānoa","ICS314",18.0,12,6,94
-20,"Database Systems I","ICS","321","16;19","","",3,"University of Hawaiʻi at Mānoa","ICS321",7.0,1,6,22
+19,"Software Engineering I","ICS","314","13;35;37","","",3,"University of Hawaiʻi at Mānoa","ICS314",18.0,12,6,101
+20,"Database Systems I","ICS","321","16;19","","",3,"University of Hawaiʻi at Mānoa","ICS321",5.0,0,5,0
 21,"Logic Design and Microprocessors","ICS","331","14;16;19","","",4,"University of Hawaiʻi at Mānoa","ICS331",5.0,0,5,0
 22,"Operating Systems","ICS","332","16;19","","",3,"University of Hawaiʻi at Mānoa","ICS332",5.0,0,5,0
 23,"Network Design and Management","ICS","351","16;19","","",3,"University of Hawaiʻi at Mānoa","ICS351",5.0,0,5,0
@@ -36,16 +36,16 @@ Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisit
 25,"Introduction to Artificial Intelligence Programming","ICS","361","14;16;19","","",3,"University of Hawaiʻi at Mānoa","ICS361",5.0,0,5,0
 26,"Data Processing","ICS","422","16","","",3,"University of Hawaiʻi at Mānoa","ICS422",5.0,0,5,0
 27,"Data Security and Cryptography I","ICS","423","15;24","","",3,"University of Hawaiʻi at Mānoa","ICS423",5.0,0,5,0
-28,"Big Data Analytics","ICS","438","20","","",3,"University of Hawaiʻi at Mānoa","ICS438",6.0,0,6,0
-29,"Data Networks","ICS","451","14;16;19","","",3,"University of Hawaiʻi at Mānoa","ICS451",5.0,0,5,0
+28,"Data Networks","ICS","451","14;16;19","","",3,"University of Hawaiʻi at Mānoa","ICS451",5.0,0,5,0
+29,"Design for Mobile Devices","ICS","466","16;19","","",3,"University of Hawaiʻi at Mānoa","ICS466",5.0,0,5,0
 30,"Introduction to Computer Graphics","ICS","481","16;19","","",3,"University of Hawaiʻi at Mānoa","ICS481",7.0,1,6,22
 31,"Digital Content Creation II (Advanced VFX)","ICS","488","30","","",3,"University of Hawaiʻi at Mānoa","ICS488",6.0,0,6,0
 32,"Capstone Project","ICS","496","16;19","","",3,"University of Hawaiʻi at Mānoa","ICS496",5.0,0,5,0
 33,"Applied Calculus I","MATH","215","","","",4,"University of Hawaiʻi at Mānoa","MATH215",31.0,25,6,0
-34,"Applied Calculus II","MATH","216","33","","",3,"University of Hawaiʻi at Mānoa","MATH216",25.0,19,6,117
+34,"Applied Calculus II","MATH","216","33","","",3,"University of Hawaiʻi at Mānoa","MATH216",25.0,19,6,125
 35,"Introduction to Discrete Mathematics","MATH","301","","","",3,"University of Hawaiʻi at Mānoa","MATH301",2.0,0,2,0
 36,"Linear Algebra and Differential Equations","MATH","307","","","",3,"University of Hawaiʻi at Mānoa","MATH307",3.0,0,3,0
-37,"Elementary Probability and Statistics","MATH","372","","","",3,"University of Hawaiʻi at Mānoa","MATH372",23.0,17,6,114
+37,"Elementary Probability and Statistics","MATH","372","","","",3,"University of Hawaiʻi at Mānoa","MATH372",23.0,17,6,122
 38,"General Physics I (Calculus)","PHYS","170","","39","",4,"University of Hawaiʻi at Mānoa","PHYS170",4.0,1,3,3
 39,"General Physics I Lab","PHYS","170L","","38","",1,"University of Hawaiʻi at Mānoa","PHYS170L",1.0,0,1,0
 40,"General Physics II (Calculus)","PHYS","272","38","41","",3,"University of Hawaiʻi at Mānoa","PHYS272",3.0,0,3,0

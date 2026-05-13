@@ -3,36 +3,36 @@ Institution,Colorado State University
 Degree Type,"BS"
 System Type,semester
 CIP,""
-Total Structural Complexity,431.0
+Total Structural Complexity,423.0
 Longest Delay,10
-Longest Delay Chain,"MATH120 → MATH160 → CS152 → CS162 → CS165 → CS214 → CS356 → CS456"
+Longest Delay Chain,"MATH120 → MATH160 → CS152 → CS162 → CS165 → CS214 → CS314 → CS458"
 Terms Required,10
 Courses
 Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
 1,"Gen Ed Citizenship","AC","01","","","",3,"Colorado State University","",1.0,0,1,0
 2,"Advanced Writing","AW","01","","","",3,"Colorado State University","",1.0,0,1,0
 3,"Principles of Plant Biology","BZ","120","","","",4,"Colorado State University","BZ120",1.0,0,1,0
-4,"Python for STEM","CS","152","32","","",2,"Colorado State University","CS152",28.0,18,10,224
-5,"CS1--Introduction to Java Programming","CS","162","4","","",2,"Colorado State University","CS162",27.0,17,10,224
-6,"CS2--Data Structures","CS","165","5","","",4,"Colorado State University","CS165",24.0,14,10,164
+4,"Python for STEM","CS","152","32","","",2,"Colorado State University","CS152",27.0,17,10,266
+5,"CS1--Introduction to Java Programming","CS","162","4","","",2,"Colorado State University","CS162",26.0,16,10,266
+6,"CS2--Data Structures","CS","165","5","","",4,"Colorado State University","CS165",23.0,13,10,172
 7,"Ethical Computing Systems","CS","201","","","",3,"Colorado State University","CS201",1.0,0,1,0
-8,"Software Development","CS","214","6","","",3,"Colorado State University","CS214",17.0,7,10,86
-9,"Discrete Structures and the Applications","CS","220","4;34","","",4,"Colorado State University","CS220",13.0,4,9,84
-10,"Computer Systems Foundations","CS","250","5","","",4,"Colorado State University","CS250",7.0,0,7,0
+8,"Software Development","CS","214","6","","",3,"Colorado State University","CS214",14.0,4,10,50
+9,"Discrete Structures and the Applications","CS","220","4;34","","",4,"Colorado State University","CS220",12.0,3,9,52
+10,"Computer Systems Foundations","CS","250","5","","",4,"Colorado State University","CS250",14.0,5,9,64
 11,"Design Thinking Toolbox: Mixed Reality Design","CS","310H","8","","",3,"Colorado State University","CS310H",9.0,0,9,0
-12,"Modern Web Applications","CS","312","6","","",3,"Colorado State University","CS312",8.0,0,8,0
-13,"Software Engineering","CS","314","8","","",3,"Colorado State University","CS314",12.0,2,10,36
-14,"Algorithms--Theory and Practice","CS","320","9;6;34;24","","",3,"Colorado State University","CS320",11.0,2,9,132
-15,"Machine Learning Foundations and Practice","CS","345","9;4;34;39","","",3,"Colorado State University","CS345",10.0,1,9,66
-16,"Systems Security","CS","356","8","","",3,"Colorado State University","CS356",11.0,1,10,18
-17,"Software Testing","CS","415","13","","",4,"Colorado State University","CS415",10.0,0,10,0
-18,"Automata, Logic, and Computation","CS","422","14","","",4,"Colorado State University","CS422",9.0,0,9,0
-19,"Database Systems","CS","430","13","","",4,"Colorado State University","CS430",10.0,0,10,0
-20,"Introduction to Artificial Intelligence","CS","440","14;15","","",4,"Colorado State University","CS440",9.0,0,9,0
-21,"Modern CyberSecurity","CS","456","16","","",4,"Colorado State University","CS456",10.0,0,10,0
-22,"Multimodal Interaction for 3D User Interfaces","CS","465","8;23","","",4,"Colorado State University","CS465",9.0,0,9,0
-23,"C++ Fundamentals","CT","301","6","","",1,"Colorado State University","CT301",10.0,1,9,16
-24,"Linear Algebra for Data Science","DSCI","369","34","","",4,"Colorado State University","DSCI369",10.0,3,7,24
+12,"Software Engineering","CS","314","8","","",3,"Colorado State University","CS314",11.0,1,10,18
+13,"Algorithms--Theory and Practice","CS","320","9;6;34;23","","",3,"Colorado State University","CS320",8.0,0,8,0
+14,"Machine Learning Foundations and Practice","CS","345","9;4;34;39","","",3,"Colorado State University","CS345",10.0,1,9,66
+15,"Systems Security","CS","356","8","","",3,"Colorado State University","CS356",9.0,0,9,0
+16,"Operating Systems","CS","370","6;10","","",3,"Colorado State University","CS370",13.0,4,9,128
+17,"Introduction to Machine Learning","CS","445","6;14;23","","",4,"Colorado State University","CS445",9.0,0,9,0
+18,"Introduction to Distributed Systems","CS","455","16","","",4,"Colorado State University","CS455",9.0,0,9,0
+19,"Computer Networks and the Internet","CS","457","8;16;39","","",4,"Colorado State University","CS457",9.0,0,9,0
+20,"Blockchain Principles and Applications","CS","458","12","","",4,"Colorado State University","CS458",10.0,0,10,0
+21,"Computer Architecture","CS","470","16","","",4,"Colorado State University","CS470",9.0,0,9,0
+22,"C++ Fundamentals","CT","301","6","","",1,"Colorado State University","CT301",8.0,0,8,0
+23,"Linear Algebra for Data Science","DSCI","369","34","","",4,"Colorado State University","DSCI369",8.0,2,6,20
+24,"Free Elective","ELEC","001S","","","",2,"Colorado State University","",0.0,0,0,0
 25,"Free Elective","FE","01","","","",3,"Colorado State University","",1.0,0,1,0
 26,"Free Elective","FE","02","","","",3,"Colorado State University","",1.0,0,1,0
 27,"Free Elective","FE","03S","","","",2,"Colorado State University","",1.0,0,1,0
@@ -40,11 +40,12 @@ Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisit
 29,"Historical Perspectives","HP","01","","","",3,"Colorado State University","",1.0,0,1,0
 30,"College Algebra in Context I","MATH","117","","","",1,"Colorado State University","MATH117",1.0,0,1,0
 31,"College Algebra","MATH","120","","","",3,"Colorado State University","MATH120",36.0,26,10,0
-32,"Numerical Trigonometry","MATH","125","31","","",1,"Colorado State University","MATH125",35.0,25,10,192
-33,"Analytic Trigonometry","MATH","126","32","","",1,"Colorado State University","MATH126",34.0,24,10,192
-34,"Calculus for Physical Scientists I","MATH","160","31;33","","",4,"Colorado State University","MATH160",33.0,23,10,336
+32,"Numerical Trigonometry","MATH","125","31","","",1,"Colorado State University","MATH125",35.0,25,10,211
+33,"Analytic Trigonometry","MATH","126","32","","",1,"Colorado State University","MATH126",34.0,24,10,211
+34,"Calculus for Physical Scientists I","MATH","160","31;33","","",4,"Colorado State University","MATH160",33.0,23,10,368
 35,"Calculus for Physical Scientists II","MATH","161","31;34","","",4,"Colorado State University","MATH161",7.0,1,6,13
 36,"Advanced Calculus of One Variable","MATH","317","35","","",3,"Colorado State University","MATH317",6.0,0,6,0
 37,"N Elective","N","201","","","",3,"Colorado State University","",1.0,0,1,0
 38,"Social/Behavioral Science","SB","01","","","",3,"Colorado State University","",1.0,0,1,0
-39,"Introduction to Applied Statistical Methods","STAT","301","30","","",3,"Colorado State University","STAT301",9.0,2,7,12
+39,"Introduction to Applied Statistical Methods","STAT","301","30","","",3,"Colorado State University","STAT301",11.0,4,7,32
+40,"Statistical Data Analysis I","STAT","341","39","","",3,"Colorado State University","STAT341",6.0,0,6,0

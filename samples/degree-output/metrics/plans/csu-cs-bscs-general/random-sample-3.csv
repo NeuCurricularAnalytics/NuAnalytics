@@ -3,46 +3,45 @@ Institution,Colorado State University
 Degree Type,"BS"
 System Type,semester
 CIP,""
-Total Structural Complexity,204.0
-Longest Delay,6
-Longest Delay Chain,"MATH127 → CS163 → CS165 → CS214 → CS314 → CS414"
+Total Structural Complexity,293.0
+Longest Delay,8
+Longest Delay Chain,"MATH127 → MATH156 → CS152 → CS164 → CS165 → CS253 → CS314 → CS453"
 Terms Required,8
 Courses
 Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
 1,"Gen Ed Citizenship","AC","01","","","",3,"Colorado State University","",1.0,0,1,0
 2,"Advanced Writing","AW","01","","","",3,"Colorado State University","",1.0,0,1,0
 3,"Principles of Plant Biology","BZ","120","","","",4,"Colorado State University","BZ120",1.0,0,1,0
-4,"CS1---No Prior Programming Experience","CS","163","34","","",4,"Colorado State University","CS163",22.0,16,6,63
-5,"CS2--Data Structures","CS","165","4","","",4,"Colorado State University","CS165",19.0,13,6,49
-6,"Ethical Computing Systems","CS","201","","","",3,"Colorado State University","CS201",1.0,0,1,0
-7,"Software Development","CS","214","5","","",3,"Colorado State University","CS214",12.0,6,6,26
-8,"Discrete Structures and the Applications","CS","220","4;35","","",4,"Colorado State University","CS220",8.0,3,5,20
-9,"Computer Organization","CS","270","4","","",4,"Colorado State University","CS270",5.0,1,4,4
-10,"Design Thinking Toolbox: Mixed Reality Design","CS","310H","7","","",3,"Colorado State University","CS310H",5.0,0,5,0
-11,"Modern Web Applications","CS","312","5","","",3,"Colorado State University","CS312",4.0,0,4,0
-12,"Software Engineering","CS","314","7","","",3,"Colorado State University","CS314",7.0,1,6,6
-13,"Algorithms--Theory and Practice","CS","320","8;5;35;22","","",3,"Colorado State University","CS320",6.0,1,5,24
-14,"Machine Learning Foundations and Practice","CS","345","8;5;35;37","","",3,"Colorado State University","CS345",6.0,1,5,23
-15,"Operating Systems","CS","370","5;9","","",3,"Colorado State University","CS370",4.0,0,4,0
-16,"Introduction to Computer Graphics","CS","410","7;22","","",4,"Colorado State University","CS410",5.0,0,5,0
-17,"Object-Oriented Design","CS","414","12","","",4,"Colorado State University","CS414",6.0,0,6,0
-18,"Introduction to Bioinformatics Algorithms","CS","425","13;14","","",4,"Colorado State University","CS425",5.0,0,5,0
-19,"Principles of Human-Computer Interaction","CS","464","7","","",4,"Colorado State University","CS464",5.0,0,5,0
-20,"Multimodal Interaction for 3D User Interfaces","CS","465","7;21","","",4,"Colorado State University","CS465",5.0,0,5,0
-21,"C++ Fundamentals","CT","301","5","","",1,"Colorado State University","CT301",6.0,1,5,5
-22,"Linear Algebra for Data Science","DSCI","369","35","","",4,"Colorado State University","DSCI369",9.0,4,5,13
-23,"Statistical Machine Learning","DSCI","445","22","","",3,"Colorado State University","DSCI445",4.0,0,4,0
-24,"Free Elective","ELEC","001","","","",3,"Colorado State University","",1.0,0,1,0
-25,"Free Elective","ELEC","002","","","",3,"Colorado State University","",1.0,0,1,0
-26,"Free Elective","ELEC","003","","","",3,"Colorado State University","",1.0,0,1,0
-27,"Free Elective","ELEC","004","","","",3,"Colorado State University","",1.0,0,1,0
-28,"Free Elective","ELEC","005S","","","",2,"Colorado State University","",0.0,0,0,0
-29,"Free Elective","FE","01","","","",3,"Colorado State University","",1.0,0,1,0
-30,"Free Elective","FE","02","","","",3,"Colorado State University","",1.0,0,1,0
-31,"Free Elective","FE","03S","","","",2,"Colorado State University","",1.0,0,1,0
-32,"Dynamic Earth","GEOL","150","","","",4,"Colorado State University","GEOL150",1.0,0,1,0
-33,"Historical Perspectives","HP","01","","","",3,"Colorado State University","",1.0,0,1,0
-34,"Precalculus","MATH","127","","","",4,"Colorado State University","MATH127",27.0,21,6,0
-35,"Mathematics for Computational Science I","MATH","156","34","","",4,"Colorado State University","MATH156",12.0,7,5,31
-36,"Social/Behavioral Science","SB","01","","","",3,"Colorado State University","",1.0,0,1,0
-37,"Introduction to Applied Statistical Methods","STAT","301","34","","",3,"Colorado State University","STAT301",6.0,2,4,4
+4,"Python for STEM","CS","152","32","","",2,"Colorado State University","CS152",26.0,18,8,104
+5,"CS1--Computational Thinking with Java","CS","164","4","","",4,"Colorado State University","CS164",25.0,17,8,104
+6,"CS2--Data Structures","CS","165","5","","",4,"Colorado State University","CS165",21.0,13,8,64
+7,"Ethical Computing Systems","CS","201","","","",3,"Colorado State University","CS201",1.0,0,1,0
+8,"Discrete Structures and the Applications","CS","220","4;33","","",4,"Colorado State University","CS220",11.0,4,7,36
+9,"Computer Systems Foundations","CS","250","5","","",4,"Colorado State University","CS250",11.0,4,7,19
+10,"Software Development with C++","CS","253","6","","",4,"Colorado State University","CS253",13.0,5,8,29
+11,"Software Engineering","CS","314","10","","",3,"Colorado State University","CS314",9.0,1,8,8
+12,"Algorithms--Theory and Practice","CS","320","8;6;33;23","","",3,"Colorado State University","CS320",9.0,2,7,56
+13,"Machine Learning Foundations and Practice","CS","345","8;4;33;36","","",3,"Colorado State University","CS345",8.0,1,7,27
+14,"Systems Security","CS","356","10","","",3,"Colorado State University","CS356",7.0,0,7,0
+15,"Operating Systems","CS","370","6;9","","",3,"Colorado State University","CS370",8.0,1,7,14
+16,"Introduction to Bioinformatics Algorithms","CS","425","12;13","","",4,"Colorado State University","CS425",7.0,0,7,0
+17,"Introduction to Compiler Construction","CS","453","11","","",4,"Colorado State University","CS453",8.0,0,8,0
+18,"Engaging in Virtual Worlds","CS","462","10;23","","",4,"Colorado State University","CS462",7.0,0,7,0
+19,"Principles of Human-Computer Interaction","CS","464","10","","",4,"Colorado State University","CS464",7.0,0,7,0
+20,"Computer Architecture","CS","470","15","","",4,"Colorado State University","CS470",7.0,0,7,0
+21,"Parallel Programming","CS","475","9;12;22","","",4,"Colorado State University","CS475",7.0,0,7,0
+22,"C++ Fundamentals","CT","301","6","","",1,"Colorado State University","CT301",8.0,1,7,7
+23,"Linear Algebra for Data Science","DSCI","369","33","","",4,"Colorado State University","DSCI369",9.0,4,5,14
+24,"Computer Organization and Architecture","ECE","452","9","","",3,"Colorado State University","ECE452",6.0,0,6,0
+25,"Free Elective","ELEC","001","","","",3,"Colorado State University","",1.0,0,1,0
+26,"Free Elective","ELEC","002","","","",3,"Colorado State University","",1.0,0,1,0
+27,"Free Elective","FE","01","","","",3,"Colorado State University","",1.0,0,1,0
+28,"Free Elective","FE","02","","","",3,"Colorado State University","",1.0,0,1,0
+29,"Free Elective","FE","03S","","","",2,"Colorado State University","",1.0,0,1,0
+30,"Dynamic Earth","GEOL","150","","","",4,"Colorado State University","GEOL150",1.0,0,1,0
+31,"Historical Perspectives","HP","01","","","",3,"Colorado State University","",1.0,0,1,0
+32,"Precalculus","MATH","127","","","",4,"Colorado State University","MATH127",30.0,22,8,0
+33,"Mathematics for Computational Science I","MATH","156","32","","",4,"Colorado State University","MATH156",28.0,20,8,145
+34,"N Elective","N","201","","","",3,"Colorado State University","",1.0,0,1,0
+35,"Social/Behavioral Science","SB","01","","","",3,"Colorado State University","",1.0,0,1,0
+36,"Introduction to Applied Statistical Methods","STAT","301","32","","",3,"Colorado State University","STAT301",6.0,2,4,4
