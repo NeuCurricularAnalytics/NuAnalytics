@@ -1,0 +1,1972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSU Fort Collins · B.S. Computer Science · Curriculum Analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@4.4.4/build/index.umd.min.js"></script>
+<style>
+:root {
+  --ink:           #16241B;
+  --ink-soft:      #2A3E32;
+  --paper:         #F5F1E8;
+  --paper-warm:    #EFE8D5;
+  --csu-green:     #1E4D2B;
+  --csu-green-dk:  #133019;
+  --csu-gold:      #C8B273;
+  --csu-gold-dk:   #A89255;
+  --rule:          rgba(22,36,27,.18);
+  --rule-soft:     rgba(22,36,27,.10);
+  --rust:          #B85C3F;
+  --rust-soft:     #D88A6B;
+  --sage:          #6E8A6F;
+  --sage-soft:     #9CB29C;
+  --cream:         #FAF5E8;
+  --shadow:        0 1px 0 rgba(22,36,27,.06), 0 4px 18px -8px rgba(22,36,27,.12);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 400;
+  color: var(--ink);
+  background: var(--paper);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.shell {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 32px 96px;
+}
+/* ─────────────────────────────────── HERO ─────────────────────────────────── */
+.hero {
+  position: relative;
+  padding: 56px 0 40px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 48px;
+}
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--csu-green);
+}
+.hero::after {
+  content: "";
+  position: absolute;
+  top: 3px; left: 0;
+  width: 38%;
+  height: 5px;
+  background: var(--csu-gold);
+}
+.eyebrow {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--csu-green);
+  font-weight: 500;
+  margin-bottom: 16px;
+}
+h1 {
+  font-family: "Fraunces", "Times New Roman", serif;
+  font-variation-settings: "opsz" 144, "SOFT" 0, "WONK" 0;
+  font-weight: 400;
+  font-size: clamp(48px, 6.4vw, 84px);
+  line-height: 0.95;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  margin: 0 0 24px;
+  max-width: 22ch;
+}
+h1 .accent {
+  font-style: italic;
+  font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+  color: var(--csu-green);
+}
+.subtitle {
+  font-family: "Fraunces", serif;
+  font-weight: 350;
+  font-size: 22px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  max-width: 60ch;
+  margin: 0 0 32px;
+}
+.meta-strip {
+  display: flex;
+  gap: 48px;
+  flex-wrap: wrap;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+  padding-top: 24px;
+  border-top: 1px dashed var(--rule);
+}
+.meta-strip span strong {
+  display: block;
+  font-family: "Inter Tight", sans-serif;
+  font-size: 11px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--csu-green);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+/* ─────────────────────────────── SECTION HEADERS ───────────────────────────── */
+.section { margin: 96px 0 0; }
+.section-head {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 32px;
+  align-items: baseline;
+  padding-bottom: 24px;
+  margin-bottom: 36px;
+  border-bottom: 1px solid var(--rule);
+}
+.section-num {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  color: var(--csu-gold-dk);
+  letter-spacing: .1em;
+  font-weight: 500;
+}
+.section h2 {
+  font-family: "Fraunces", serif;
+  font-variation-settings: "opsz" 72;
+  font-weight: 400;
+  font-size: clamp(32px, 3.8vw, 48px);
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  margin: 0;
+}
+.section h2 em {
+  font-variation-settings: "opsz" 72, "SOFT" 100, "WONK" 1;
+  color: var(--csu-green);
+  font-style: italic;
+}
+.section-intro {
+  font-family: "Fraunces", serif;
+  font-weight: 350;
+  font-size: 19px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  max-width: 68ch;
+  margin: 0 0 40px 112px;
+}
+/* ─────────────────────────────────── METRICS ───────────────────────────────── */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  margin-bottom: 40px;
+}
+.metric-cell {
+  background: var(--paper);
+  padding: 28px 24px;
+}
+.metric-cell .label {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--csu-green);
+  margin-bottom: 14px;
+  font-weight: 500;
+}
+.metric-cell .value {
+  font-family: "Fraunces", serif;
+  font-variation-settings: "opsz" 72;
+  font-weight: 400;
+  font-size: 44px;
+  line-height: 1;
+  color: var(--ink);
+  margin-bottom: 6px;
+  letter-spacing: -0.02em;
+}
+.metric-cell .value .unit {
+  font-size: 18px;
+  color: var(--ink-soft);
+  margin-left: 4px;
+  font-variation-settings: "opsz" 36;
+}
+.metric-cell .note {
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+/* ─────────────────────────────────── CHARTS ───────────────────────────────── */
+.chart-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin-bottom: 40px;
+}
+.chart-card {
+  background: var(--cream);
+  border: 1px solid var(--rule);
+  padding: 28px;
+}
+.chart-card h3 {
+  font-family: "Fraunces", serif;
+  font-weight: 500;
+  font-size: 18px;
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-variation-settings: "opsz" 36;
+}
+.chart-card .sub {
+  font-size: 12px;
+  font-family: "JetBrains Mono", monospace;
+  color: var(--ink-soft);
+  margin: 0 0 20px;
+}
+.chart-container { position: relative; height: 260px; }
+.chart-container.tall { height: 320px; }
+/* ────────────────────────────────── TABLE ─────────────────────────────────── */
+.table-wrap {
+  background: var(--cream);
+  border: 1px solid var(--rule);
+  overflow-x: auto;
+}
+.controls {
+  display: flex;
+  gap: 8px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--rule);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.controls .label {
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--csu-green);
+  margin-right: 4px;
+  font-weight: 500;
+}
+.pill {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 5px 12px;
+  font: inherit;
+  cursor: pointer;
+  color: var(--ink-soft);
+  letter-spacing: .04em;
+  transition: all .15s;
+  border-radius: 999px;
+}
+.pill:hover { border-color: var(--csu-green); color: var(--csu-green); }
+.pill.active { background: var(--csu-green); color: var(--cream); border-color: var(--csu-green); }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+th {
+  text-align: left;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--csu-green);
+  font-weight: 500;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  background: var(--paper-warm);
+}
+th:hover { color: var(--csu-green-dk); background: var(--csu-gold); }
+th .sort { opacity: .35; margin-left: 4px; font-size: 9px; }
+th.sorted .sort { opacity: 1; color: var(--csu-green); }
+td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: middle;
+}
+tr:hover td { background: rgba(200, 178, 115, 0.08); }
+.code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--csu-green);
+}
+.metric-cell-val {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+}
+.bar {
+  display: inline-block;
+  height: 8px;
+  vertical-align: middle;
+  margin-left: 8px;
+  border-radius: 2px;
+  background: var(--csu-green);
+  opacity: .55;
+}
+.tier-high { background: rgba(184, 92, 63, 0.18); color: var(--rust); }
+.tier-med { background: rgba(200, 178, 115, 0.25); color: var(--csu-gold-dk); }
+.tier-low { background: rgba(110, 138, 111, 0.15); color: var(--sage); }
+.tier-zero { color: var(--ink-soft); opacity: 0.55; }
+.tier-cell {
+  padding: 4px 9px;
+  border-radius: 3px;
+  display: inline-block;
+  min-width: 44px;
+  text-align: center;
+}
+/* ───────────────────────────── BOTTLENECK CARDS ───────────────────────────── */
+.bottleneck-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 24px 0 0;
+}
+.bot-card {
+  border: 1px solid var(--rule);
+  padding: 20px 22px;
+  background: linear-gradient(170deg, var(--cream) 0%, var(--paper-warm) 100%);
+  position: relative;
+  overflow: hidden;
+}
+.bot-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 4px;
+  background: var(--rust);
+}
+.bot-card .rank {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--ink-soft);
+  letter-spacing: .1em;
+  margin-bottom: 8px;
+}
+.bot-card .code { font-size: 18px; color: var(--ink); display: block; }
+.bot-card .name { font-size: 12px; color: var(--ink-soft); margin: 4px 0 12px; line-height: 1.35; }
+.bot-card .nums {
+  display: flex;
+  gap: 14px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--rule);
+}
+.bot-card .nums span strong {
+  display: block;
+  color: var(--rust);
+  font-size: 18px;
+  font-weight: 700;
+  font-family: "Fraunces", serif;
+}
+.bot-card .nums span small { color: var(--ink-soft); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+/* ───────────────────────────── PLAN GRAPHS ────────────────────────────────── */
+.plan-graph-block { margin-bottom: 64px; }
+.plan-graph-block h3 {
+  font-family: "Fraunces", serif;
+  font-variation-settings: "opsz" 72;
+  font-weight: 400;
+  font-size: 28px;
+  margin: 0 0 6px;
+  color: var(--ink);
+}
+.plan-graph-block h3 em {
+  font-variation-settings: "opsz" 72, "SOFT" 100, "WONK" 1;
+  color: var(--csu-green);
+}
+.plan-graph-block .pgm {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+.plan-graph-block .desc {
+  font-family: "Fraunces", serif;
+  font-weight: 350;
+  color: var(--ink-soft);
+  margin: 8px 0 24px;
+  max-width: 65ch;
+  font-size: 17px;
+  line-height: 1.5;
+}
+.crit-path {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  background: rgba(156, 39, 176, 0.06);
+  border: 1px solid rgba(156, 39, 176, 0.2);
+  padding: 8px 14px;
+  border-radius: 3px;
+  margin-bottom: 16px;
+}
+.crit-path code { color: #663399; font-weight: 500; }
+.crit-path .arr { color: rgba(156, 39, 176, 0.4); }
+/* ──────────────────────────── INSIGHTS ────────────────────────────────────── */
+.insights-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin: 0 0 36px;
+}
+.insight-card {
+  border: 1px solid var(--rule);
+  padding: 32px;
+  background: var(--cream);
+  position: relative;
+}
+.insight-card.strength { border-left: 4px solid var(--sage); }
+.insight-card.concern { border-left: 4px solid var(--rust); }
+.insight-card h3 {
+  font-family: "Fraunces", serif;
+  font-weight: 500;
+  font-size: 22px;
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-variation-settings: "opsz" 72;
+}
+.insight-card h3 em {
+  font-variation-settings: "opsz" 72, "SOFT" 100, "WONK" 1;
+  font-style: italic;
+}
+.insight-card .tag {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .15em;
+  color: var(--sage);
+  margin-bottom: 14px;
+}
+.insight-card.concern .tag { color: var(--rust); }
+.insight-card p { margin: 0 0 14px; color: var(--ink-soft); font-size: 15px; line-height: 1.6; }
+.insight-card p:last-child { margin-bottom: 0; }
+.cite {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--csu-gold-dk);
+  background: rgba(200, 178, 115, 0.12);
+  padding: 2px 6px;
+  border-radius: 2px;
+  text-decoration: none;
+  border-bottom: 1px dotted transparent;
+  transition: all .15s;
+}
+a.cite:hover {
+  color: var(--csu-green);
+  background: rgba(30, 77, 43, 0.10);
+  border-bottom-color: var(--csu-green);
+}
+/* References list */
+.references-list {
+  list-style: none;
+  counter-reset: ref;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border-top: 1px solid var(--rule);
+  border-left: 1px solid var(--rule);
+}
+.references-list li {
+  counter-increment: ref;
+  padding: 24px 28px;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  background: var(--cream);
+  position: relative;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.references-list li::before {
+  content: counter(ref, decimal-leading-zero);
+  display: block;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: .18em;
+  color: var(--csu-gold-dk);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.references-list li .authors {
+  font-family: "Fraunces", serif;
+  font-weight: 500;
+  color: var(--ink);
+  font-size: 15px;
+  font-variation-settings: "opsz" 36;
+}
+.references-list li .title {
+  font-family: "Fraunces", serif;
+  font-style: italic;
+  font-weight: 350;
+  color: var(--ink);
+  display: block;
+  margin: 4px 0 6px;
+  font-variation-settings: "opsz" 36, "SOFT" 50;
+}
+.references-list li .venue {
+  font-size: 12px;
+  color: var(--ink-soft);
+  display: block;
+  margin-bottom: 8px;
+}
+.references-list li a.ref-link {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--csu-green);
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(30, 77, 43, 0.4);
+  display: inline-block;
+  word-break: break-all;
+  margin-top: 4px;
+}
+.references-list li a.ref-link:hover {
+  color: var(--csu-green-dk);
+  border-bottom-style: solid;
+}
+.references-list li:target {
+  background: rgba(200, 178, 115, 0.20);
+  border-left: 4px solid var(--csu-gold);
+  padding-left: 24px;
+}
+@media (max-width: 880px) {
+  .references-list { grid-template-columns: 1fr; }
+}
+/* ────────────────────────────────── FOOTER ────────────────────────────────── */
+footer {
+  margin-top: 96px;
+  padding-top: 32px;
+  border-top: 1px solid var(--rule);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  letter-spacing: .05em;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+footer span strong { color: var(--csu-green); font-weight: 500; }
+/* Responsive */
+@media (max-width: 880px) {
+  .shell { padding: 0 20px 64px; }
+  .metric-grid { grid-template-columns: repeat(2, 1fr); }
+  .chart-row, .insights-grid { grid-template-columns: 1fr; gap: 20px; }
+  .section-head { grid-template-columns: 1fr; gap: 12px; }
+  .section-intro { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- HERO -->
+  <header class="hero">
+    <div class="eyebrow">Curriculum Analysis · Catalog 2025–2026</div>
+    <h1>Computer <span class="accent">Science</span> at Colorado State.</h1>
+    <p class="subtitle">An evidence-driven look at the curriculum graph, course bottlenecks, and demographic representation of the B.S. in Computer Science (CS Concentration) at Colorado State University Fort Collins.</p>
+    <div class="meta-strip">
+      <span><strong>Degree</strong>B.S. CS, CS Concentration</span>
+      <span><strong>Credits</strong>120 total · 42 upper-div</span>
+      <span><strong>Courses Modeled</strong>145 across 21 requirements</span>
+      <span><strong>Plans Possible</strong>95,760</span>
+      <span><strong>Plans Sampled</strong>25</span>
+      <span><strong>Data Source</strong>IPEDS 2022–2024</span>
+    </div>
+  </header>
+
+  <!-- AGGREGATE METRICS -->
+  <section class="section" id="overview">
+    <div class="section-head">
+      <div class="section-num">§ 01</div>
+      <h2>Aggregate <em>shape</em> of the degree.</h2>
+    </div>
+    <p class="section-intro">Across 95,760 valid completion plans constrained to begin with CS150B, CS164, and MATH156, the curriculum settles into a remarkably tight envelope: eight semesters, 120 credits, six-term critical path. Variation enters through elective choices, not structural alternatives.</p>
+
+    <div class="metric-grid">
+      <div class="metric-cell">
+        <div class="label">Median Complexity</div>
+        <div class="value">186<span class="unit">pts</span></div>
+        <div class="note">IQR 180–199. The Heileman–Slim complexity score sums delay + blocking across all courses.</div>
+      </div>
+      <div class="metric-cell">
+        <div class="label">Critical-Path Length</div>
+        <div class="value">6<span class="unit">terms</span></div>
+        <div class="note">Of 8 total semesters; CS150B → CS164 → CS165 → CS253 → CS314 → CS414.</div>
+      </div>
+      <div class="metric-cell">
+        <div class="label">Plan Population</div>
+        <div class="value">95,760</div>
+        <div class="note">Distinct valid course plans. CV across complexity = 0.06, indicating tight clustering.</div>
+      </div>
+      <div class="metric-cell">
+        <div class="label">Total Credits</div>
+        <div class="value">119.84<span class="unit">avg</span></div>
+        <div class="note">Hits 120 in 65 % of plans; 1–credit shortfall when accumulating gen-ed credits exactly.</div>
+      </div>
+    </div>
+
+    <div class="chart-row">
+      <div class="chart-card">
+        <h3>Plan Complexity</h3>
+        <p class="sub">Distribution across the 25-plan sample · IQR / whiskers / median</p>
+        <div class="chart-container"><canvas id="complexityBox"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Longest Delay (terms)</h3>
+        <p class="sub">Time from first course to last for the longest dependency chain</p>
+        <div class="chart-container"><canvas id="delayBox"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COURSE TABLE -->
+  <section class="section" id="courses">
+    <div class="section-head">
+      <div class="section-num">§ 02</div>
+      <h2>Course-level <em>metrics</em>.</h2>
+    </div>
+    <p class="section-intro">Median complexity, delay, and blocking factor per course across all sampled plans. <strong>Blocking</strong> counts how many downstream courses each course gates — the structural cost of failure. Sortable; click any column header.</p>
+
+    <div class="table-wrap">
+      <div class="controls">
+        <span class="label">Filter:</span>
+        <button class="pill active" data-filter="all">All (40)</button>
+        <button class="pill" data-filter="CS">CS</button>
+        <button class="pill" data-filter="MATH">MATH</button>
+        <button class="pill" data-filter="STAT">STAT</button>
+        <button class="pill" data-filter="DSCI">DSCI</button>
+        <button class="pill" data-filter="core">Core only</button>
+      </div>
+      <table id="courseTable">
+        <thead>
+          <tr>
+            <th data-key="id" data-type="str">Code<span class="sort">▲▼</span></th>
+            <th data-key="title" data-type="str">Title<span class="sort">▲▼</span></th>
+            <th data-key="credits" data-type="num">Cr<span class="sort">▲▼</span></th>
+            <th data-key="complexity" data-type="num">Complexity<span class="sort">▲▼</span></th>
+            <th data-key="delay" data-type="num">Delay<span class="sort">▲▼</span></th>
+            <th data-key="blocking" data-type="num">Blocking<span class="sort">▲▼</span></th>
+            <th data-key="plan_pct" data-type="num">In Plans<span class="sort">▲▼</span></th>
+          </tr>
+        </thead>
+        <tbody id="courseBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- BOTTLENECKS -->
+  <section class="section" id="bottlenecks">
+    <div class="section-head">
+      <div class="section-num">§ 03</div>
+      <h2>The <em>bottleneck</em> courses.</h2>
+    </div>
+    <p class="section-intro">Ten courses block at least one downstream course in the median plan. Five of them dominate the curriculum graph: failing any of these in their target semester pushes graduation by a full year.</p>
+
+    <div class="bottleneck-grid">
+      <div class="bot-card">
+        <div class="rank">RANK 01 · Highest blocking</div>
+        <span class="code">CS150B</span>
+        <div class="name">Culture and Coding: Python</div>
+        <div class="nums">
+          <span><small>Blocking</small><strong>14.0</strong></span>
+          <span><small>Complexity</small><strong>20.0</strong></span>
+          <span><small>Delay</small><strong>5.7</strong></span>
+        </div>
+      </div>
+      <div class="bot-card">
+        <div class="rank">RANK 02</div>
+        <span class="code">CS164</span>
+        <div class="name">CS1 — Computational Thinking</div>
+        <div class="nums">
+          <span><small>Blocking</small><strong>13.0</strong></span>
+          <span><small>Complexity</small><strong>19.0</strong></span>
+          <span><small>Delay</small><strong>5.7</strong></span>
+        </div>
+      </div>
+      <div class="bot-card">
+        <div class="rank">RANK 03</div>
+        <span class="code">CS165</span>
+        <div class="name">CS2 — Data Structures</div>
+        <div class="nums">
+          <span><small>Blocking</small><strong>10.0</strong></span>
+          <span><small>Complexity</small><strong>16.0</strong></span>
+          <span><small>Delay</small><strong>5.7</strong></span>
+        </div>
+      </div>
+      <div class="bot-card">
+        <div class="rank">RANK 04</div>
+        <span class="code">MATH127</span>
+        <div class="name">Precalculus</div>
+        <div class="nums">
+          <span><small>Blocking</small><strong>7.3</strong></span>
+          <span><small>Complexity</small><strong>12.0</strong></span>
+          <span><small>Delay</small><strong>4.8</strong></span>
+        </div>
+      </div>
+      <div class="bot-card">
+        <div class="rank">RANK 05</div>
+        <span class="code">MATH156</span>
+        <div class="name">Math for Computational Science I</div>
+        <div class="nums">
+          <span><small>Blocking</small><strong>5.2</strong></span>
+          <span><small>Complexity</small><strong>10.0</strong></span>
+          <span><small>Delay</small><strong>4.8</strong></span>
+        </div>
+      </div>
+      <div class="bot-card">
+        <div class="rank">RANK 06</div>
+        <span class="code">CS214</span>
+        <div class="name">Software Development</div>
+        <div class="nums">
+          <span><small>Blocking</small><strong>4.1</strong></span>
+          <span><small>Complexity</small><strong>10.0</strong></span>
+          <span><small>Delay</small><strong>5.8</strong></span>
+        </div>
+      </div>
+      <div class="bot-card">
+        <div class="rank">RANK 07</div>
+        <span class="code">CS253</span>
+        <div class="name">Software Dev. with C++</div>
+        <div class="nums">
+          <span><small>Blocking</small><strong>3.8</strong></span>
+          <span><small>Complexity</small><strong>10.0</strong></span>
+          <span><small>Delay</small><strong>5.7</strong></span>
+        </div>
+      </div>
+      <div class="bot-card">
+        <div class="rank">RANK 08</div>
+        <span class="code">CS220</span>
+        <div class="name">Discrete Structures</div>
+        <div class="nums">
+          <span><small>Blocking</small><strong>2.8</strong></span>
+          <span><small>Complexity</small><strong>8.0</strong></span>
+          <span><small>Delay</small><strong>4.8</strong></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PLAN GRAPHS -->
+  <section class="section" id="plans">
+    <div class="section-head">
+      <div class="section-num">§ 04</div>
+      <h2>Shortest vs longest <em>paths</em>.</h2>
+    </div>
+    <p class="section-intro">Both endpoints of the plan-complexity range satisfy all degree requirements, hit 120 credits, and finish in 8 terms — but their critical paths are entirely different. Hover any course to see its dependency chain.</p>
+
+    <div class="plan-graph-block">
+      <div class="pgm">PLAN · SHORTEST PATH · COMPLEXITY 166</div>
+      <h3>The <em>traditional</em> software engineering route.</h3>
+      <p class="desc">Critical path runs through CS253 → CS314 → CS414, choosing the C++ track and the OO-design capstone. Lower complexity comes from picking electives that sit at the end of dependency chains.</p>
+      <div class="crit-path">
+        <code>CS150B</code><span class="arr">→</span><code>CS164</code><span class="arr">→</span><code>CS165</code><span class="arr">→</span><code>CS253</code><span class="arr">→</span><code>CS314</code><span class="arr">→</span><code>CS414</code>
+      </div>
+      <style>
+.nu-graph {
+  --nu-primary:  #2c3e50;
+  --nu-secondary:#3498db;
+  --nu-success:  #4CAF50;
+  --nu-warning:  #FF9800;
+  --nu-danger:   #F44336;
+  --nu-critical: #9C27B0;
+  --nu-term-bg:  #e8e8e8;
+  --nu-node:     #37474f;
+}
+.nu-graph .curriculum-graph-wrapper {
+  overflow-x: auto; margin: 1rem 0; position: relative;
+}
+.nu-graph .curriculum-graph {
+  display: flex; gap: 0; width: 100%; position: relative;
+}
+.nu-graph .term-column {
+  display: flex; flex-direction: column; align-items: center;
+  flex: 1; min-width: 100px;
+  background: var(--nu-term-bg);
+  border-radius: 4px; margin: 0 16px; padding: 10px 6px;
+}
+.nu-graph .term-header {
+  font-weight: 600; font-size: 0.75rem; color: var(--nu-primary);
+  margin-bottom: 10px; padding: 4px 8px;
+  background: white; border-radius: 4px; width: 100%; text-align: center;
+  box-sizing: border-box;
+}
+.nu-graph .term-courses {
+  display: flex; flex-direction: column; gap: 16px; width: 100%;
+}
+.nu-graph .course-node {
+  position: relative; background: white; border-radius: 6px;
+  padding: 10px 8px 8px; text-align: center;
+  border: 2px solid var(--nu-node); cursor: pointer;
+  transition: transform .2s, box-shadow .2s, opacity .2s;
+  margin-top: 10px;
+}
+.nu-graph .course-node:hover {
+  transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,.15);
+}
+.nu-graph .course-node.faded { opacity: .25; }
+.nu-graph .course-node.highlighted {
+  border-color: var(--nu-secondary); border-width: 3px;
+  box-shadow: 0 0 8px rgba(52,152,219,.5);
+}
+.nu-graph .course-node.critical-highlight {
+  border-color: var(--nu-critical); border-width: 3px;
+  box-shadow: 0 0 8px rgba(156,39,176,.5);
+}
+.nu-graph .course-node .complexity-badge {
+  position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .65rem; font-weight: bold; color: white;
+  border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+.nu-graph .complexity-low  { background-color: var(--nu-success);  }
+.nu-graph .complexity-medium { background-color: var(--nu-warning); }
+.nu-graph .complexity-high { background-color: var(--nu-danger);   }
+.nu-graph .course-node .course-id {
+  font-weight: 600; font-size: .75rem; color: var(--nu-primary); margin-top: 6px;
+}
+.nu-graph .course-node .course-name {
+  font-size: .65rem; color: #666; line-height: 1.2; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis;
+}
+.nu-graph .connections-svg {
+  position: absolute; top: 0; left: 0;
+  pointer-events: none; width: 100%; height: 100%; min-height: 600px;
+}
+.nu-graph .prereq-line {
+  stroke: #666; stroke-width: 1.5; fill: none;
+  transition: stroke .2s, stroke-width .2s, opacity .2s;
+}
+.nu-graph .coreq-line {
+  stroke: var(--nu-secondary); stroke-width: 1.5; stroke-dasharray: 4,3; fill: none;
+  transition: stroke .2s, stroke-width .2s, opacity .2s;
+}
+.nu-graph .prereq-line.faded, .nu-graph .coreq-line.faded { opacity: .15; }
+.nu-graph .prereq-line.highlighted { stroke: var(--nu-secondary); stroke-width: 2.5; }
+.nu-graph .coreq-line.highlighted  { stroke: var(--nu-secondary); stroke-width: 2.5; }
+.nu-graph .prereq-line.critical, .nu-graph .coreq-line.critical {
+  stroke: var(--nu-critical); stroke-width: 3;
+}
+.nu-graph .graph-legend {
+  display: flex; gap: 1.5rem; margin: .75rem 0; flex-wrap: wrap; font-size: .8rem;
+}
+.nu-graph .legend-item { display: flex; align-items: center; gap: .4rem; }
+.nu-graph .legend-color { width: 16px; height: 16px; border-radius: 50%; }
+.nu-graph .legend-line  { width: 30px; height: 2px; }
+.nu-graph .legend-line.solid    { background: #666; }
+.nu-graph .legend-line.dashed   { background: repeating-linear-gradient(90deg,var(--nu-secondary),var(--nu-secondary) 4px,transparent 4px,transparent 7px); }
+.nu-graph .legend-line.critical { background: var(--nu-critical); height: 3px; }
+</style>
+<div class="nu-graph">
+<div class="graph-legend">
+  <div class="legend-item"><div class="legend-color complexity-low"></div><span>Low (1&#x2013;5)</span></div>
+  <div class="legend-item"><div class="legend-color complexity-medium"></div><span>Medium (6&#x2013;15)</span></div>
+  <div class="legend-item"><div class="legend-color complexity-high"></div><span>High (16+)</span></div>
+  <div class="legend-item"><div class="legend-line solid"></div><span>Prerequisite</span></div>
+  <div class="legend-item"><div class="legend-line dashed"></div><span>Corequisite</span></div>
+  <div class="legend-item"><div class="legend-line critical"></div><span>Critical path</span></div>
+</div>
+<div class="curriculum-graph-wrapper">
+<div class="curriculum-graph" id="graph-shortest">
+<div class="term-column">
+<div class="term-header">Semester 1</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="CS150B" data-graph-id="shortest">
+<span class="complexity-badge complexity-high">19</span>
+<div class="course-id">CS150B</div>
+<div class="course-name">Culture and Coding: Python</div>
+</div>
+<div class="course-node" data-course-id="MATH127" data-graph-id="shortest">
+<span class="complexity-badge complexity-medium">10</span>
+<div class="course-id">MATH127</div>
+<div class="course-name">Precalculus</div>
+</div>
+<div class="course-node" data-course-id="MATH117" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">3</span>
+<div class="course-id">MATH117</div>
+<div class="course-name">College Algebra in Context I</div>
+</div>
+<div class="course-node" data-course-id="ELEC_04" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_04</div>
+<div class="course-name">ELEC_04</div>
+</div>
+<div class="course-node" data-course-id="ELEC_08S" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_08S</div>
+<div class="course-name">ELEC_08S</div>
+</div>
+<div class="course-node" data-course-id="GEOL150" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">GEOL150</div>
+<div class="course-name">Dynamic Earth</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 2</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="CS164" data-graph-id="shortest">
+<span class="complexity-badge complexity-high">18</span>
+<div class="course-id">CS164</div>
+<div class="course-name">CS1--Computational Thinking with Java</div>
+</div>
+<div class="course-node" data-course-id="MATH156" data-graph-id="shortest">
+<span class="complexity-badge complexity-medium">8</span>
+<div class="course-id">MATH156</div>
+<div class="course-name">Mathematics for Computational Science I</div>
+</div>
+<div class="course-node" data-course-id="STAT301" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">2</span>
+<div class="course-id">STAT301</div>
+<div class="course-name">Introduction to Applied Statistical Methods</div>
+</div>
+<div class="course-node" data-course-id="FE01" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">FE01</div>
+<div class="course-name">FE01</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 3</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="CS165" data-graph-id="shortest">
+<span class="complexity-badge complexity-medium">15</span>
+<div class="course-id">CS165</div>
+<div class="course-name">CS2--Data Structures</div>
+</div>
+<div class="course-node" data-course-id="CS250" data-graph-id="shortest">
+<span class="complexity-badge complexity-medium">7</span>
+<div class="course-id">CS250</div>
+<div class="course-name">Computer Systems Foundations</div>
+</div>
+<div class="course-node" data-course-id="CS220" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">5</span>
+<div class="course-id">CS220</div>
+<div class="course-name">Discrete Structures and the Applications</div>
+</div>
+<div class="course-node" data-course-id="FE02" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">FE02</div>
+<div class="course-name">FE02</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 4</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="CS253" data-graph-id="shortest">
+<span class="complexity-badge complexity-medium">11</span>
+<div class="course-id">CS253</div>
+<div class="course-name">Software Development with C++</div>
+</div>
+<div class="course-node" data-course-id="CS370" data-graph-id="shortest">
+<span class="complexity-badge complexity-medium">6</span>
+<div class="course-id">CS370</div>
+<div class="course-name">Operating Systems</div>
+</div>
+<div class="course-node" data-course-id="DSCI369" data-graph-id="shortest">
+<span class="complexity-badge complexity-medium">6</span>
+<div class="course-id">DSCI369</div>
+<div class="course-name">Linear Algebra for Data Science</div>
+</div>
+<div class="course-node" data-course-id="CS312" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">4</span>
+<div class="course-id">CS312</div>
+<div class="course-name">Modern Web Applications</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 5</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="CS314" data-graph-id="shortest">
+<span class="complexity-badge complexity-medium">7</span>
+<div class="course-id">CS314</div>
+<div class="course-name">Software Engineering</div>
+</div>
+<div class="course-node" data-course-id="CS356" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">5</span>
+<div class="course-id">CS356</div>
+<div class="course-name">Systems Security</div>
+</div>
+<div class="course-node" data-course-id="CS410" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">5</span>
+<div class="course-id">CS410</div>
+<div class="course-name">Introduction to Computer Graphics</div>
+</div>
+<div class="course-node" data-course-id="CS464" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">5</span>
+<div class="course-id">CS464</div>
+<div class="course-name">Principles of Human-Computer Interaction</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 6</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="CS414" data-graph-id="shortest">
+<span class="complexity-badge complexity-medium">6</span>
+<div class="course-id">CS414</div>
+<div class="course-name">Object-Oriented Design</div>
+</div>
+<div class="course-node" data-course-id="CS320" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">4</span>
+<div class="course-id">CS320</div>
+<div class="course-name">Algorithms--Theory and Practice</div>
+</div>
+<div class="course-node" data-course-id="ELEC_02" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_02</div>
+<div class="course-name">ELEC_02</div>
+</div>
+<div class="course-node" data-course-id="ELEC_06" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_06</div>
+<div class="course-name">ELEC_06</div>
+</div>
+<div class="course-node" data-course-id="HP01" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">HP01</div>
+<div class="course-name">HP01</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 7</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="AC01" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">AC01</div>
+<div class="course-name">AC01</div>
+</div>
+<div class="course-node" data-course-id="BZ120" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">BZ120</div>
+<div class="course-name">Principles of Plant Biology</div>
+</div>
+<div class="course-node" data-course-id="ELEC_03" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_03</div>
+<div class="course-name">ELEC_03</div>
+</div>
+<div class="course-node" data-course-id="ELEC_07" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_07</div>
+<div class="course-name">ELEC_07</div>
+</div>
+<div class="course-node" data-course-id="SB01" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">SB01</div>
+<div class="course-name">SB01</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 8</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="AW01" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">AW01</div>
+<div class="course-name">AW01</div>
+</div>
+<div class="course-node" data-course-id="CS201" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">CS201</div>
+<div class="course-name">Ethical Computing Systems</div>
+</div>
+<div class="course-node" data-course-id="ELEC_01" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_01</div>
+<div class="course-name">ELEC_01</div>
+</div>
+<div class="course-node" data-course-id="ELEC_05" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_05</div>
+<div class="course-name">ELEC_05</div>
+</div>
+<div class="course-node" data-course-id="FE03S" data-graph-id="shortest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">FE03S</div>
+<div class="course-name">FE03S</div>
+</div>
+</div>
+</div>
+</div>
+<svg class="connections-svg" id="svg-shortest"></svg>
+</div>
+</div>
+<script>
+if (!window.nuGraphs) {
+    window.nuGraphs = (function () {
+        'use strict';
+        var _registry = {};
+        var _openModal = null;
+        function register(graphId, data) {
+            var nodes = data.nodes || [];
+            var nodeIndex = {};
+            nodes.forEach(function (n) { nodeIndex[n.id] = n; });
+            _registry[graphId] = {
+                edges: data.edges || [],
+                criticalPath: data.criticalPath || [],
+                nodes: nodes,
+                nodeIndex: nodeIndex,
+                adjacency: null
+            };
+        }
+        function buildAdjacency(graphId) {
+            var g = _registry[graphId];
+            if (!g || g.adjacency) return;
+            var forwardEdges = new Map();
+            var backwardEdges = new Map();
+            var corequisites = new Map();
+            g.edges.forEach(function (edge) {
+                if (!forwardEdges.has(edge.from))  forwardEdges.set(edge.from, []);
+                if (!backwardEdges.has(edge.to))   backwardEdges.set(edge.to, []);
+                forwardEdges.get(edge.from).push(edge.to);
+                backwardEdges.get(edge.to).push(edge.from);
+                if (edge.dashes) {
+                    if (!corequisites.has(edge.from)) corequisites.set(edge.from, new Set());
+                    if (!corequisites.has(edge.to))   corequisites.set(edge.to, new Set());
+                    corequisites.get(edge.from).add(edge.to);
+                    corequisites.get(edge.to).add(edge.from);
+                }
+            });
+            g.adjacency = { forwardEdges, backwardEdges, corequisites, criticalSet: new Set(g.criticalPath) };
+        }
+        function getChainsThrough(graphId, courseId) {
+            buildAdjacency(graphId);
+            var adj = _registry[graphId] && _registry[graphId].adjacency;
+            if (!adj) return { courses: new Set([courseId]), edges: new Set() };
+            var inChain = new Set([courseId]);
+            var edgesInChain = new Set();
+            function traceBackward(id) {
+                var prev = adj.backwardEdges.get(id) || [];
+                prev.forEach(function (prevId) {
+                    edgesInChain.add(prevId + '->' + id);
+                    if (!inChain.has(prevId)) { inChain.add(prevId); traceBackward(prevId); }
+                });
+            }
+            function traceForward(id) {
+                var next = adj.forwardEdges.get(id) || [];
+                next.forEach(function (nextId) {
+                    edgesInChain.add(id + '->' + nextId);
+                    if (!inChain.has(nextId)) { inChain.add(nextId); traceForward(nextId); }
+                });
+            }
+            traceBackward(courseId);
+            traceForward(courseId);
+            Array.from(inChain).forEach(function (course) {
+                var coreqs = adj.corequisites.get(course);
+                if (coreqs) coreqs.forEach(function (coreq) {
+                    inChain.add(coreq);
+                    edgesInChain.add(course + '->' + coreq);
+                    edgesInChain.add(coreq + '->' + course);
+                });
+            });
+            return { courses: inChain, edges: edgesInChain };
+        }
+        function draw(graphId) {
+            var g = _registry[graphId];
+            if (!g) return;
+            var graphEl = document.getElementById('graph-' + graphId);
+            var svgEl = document.getElementById('svg-' + graphId);
+            if (!graphEl || !svgEl) return;
+            var wrapper = svgEl.parentElement;
+            var wrapperRect = wrapper.getBoundingClientRect();
+            svgEl.style.width = wrapper.offsetWidth + 'px';
+            svgEl.style.height = wrapper.offsetHeight + 'px';
+            svgEl.setAttribute('width', wrapper.offsetWidth);
+            svgEl.setAttribute('height', wrapper.offsetHeight);
+            svgEl.innerHTML = '';
+            var svgNS = 'http://www.w3.org/2000/svg';
+            g.edges.forEach(function (edge) {
+                var fromEl = graphEl.querySelector('[data-course-id="' + edge.from + '"]');
+                var toEl = graphEl.querySelector('[data-course-id="' + edge.to + '"]');
+                if (!fromEl || !toEl) return;
+                var fromRect = fromEl.getBoundingClientRect();
+                var toRect = toEl.getBoundingClientRect();
+                var offsetX = wrapperRect.left;
+                var offsetY = wrapperRect.top;
+                var fromCX = fromRect.left + fromRect.width / 2;
+                var toCX = toRect.left + toRect.width / 2;
+                var sameColumn = Math.abs(fromCX - toCX) < 50;
+                var x1, y1, x2, y2, pathD;
+                if (sameColumn && edge.dashes) {
+                    var upper = (fromRect.top < toRect.top) ? fromRect : toRect;
+                    var lower = (fromRect.top < toRect.top) ? toRect : fromRect;
+                    x1 = upper.left + upper.width / 2 - offsetX;
+                    y1 = upper.bottom - offsetY;
+                    x2 = lower.left + lower.width / 2 - offsetX;
+                    y2 = lower.top - offsetY;
+                    var midY1 = (y1 + y2) / 2;
+                    pathD = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + midY1 + ', ' + x2 + ' ' + midY1 + ', ' + x2 + ' ' + y2;
+                } else if (sameColumn) {
+                    x1 = fromRect.left + fromRect.width / 2 - offsetX;
+                    y1 = fromRect.bottom - offsetY;
+                    x2 = toRect.left + toRect.width / 2 - offsetX;
+                    y2 = toRect.top - offsetY;
+                    var midY2 = (y1 + y2) / 2;
+                    pathD = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + midY2 + ', ' + x2 + ' ' + midY2 + ', ' + x2 + ' ' + y2;
+                } else {
+                    x1 = fromRect.right - offsetX;
+                    y1 = fromRect.top + fromRect.height / 2 - offsetY;
+                    x2 = toRect.left - offsetX;
+                    y2 = toRect.top + toRect.height / 2 - offsetY;
+                    var midX = (x1 + x2) / 2;
+                    pathD = 'M ' + x1 + ' ' + y1 + ' C ' + midX + ' ' + y1 + ', ' + midX + ' ' + y2 + ', ' + x2 + ' ' + y2;
+                }
+                var path = document.createElementNS(svgNS, 'path');
+                path.setAttribute('d', pathD);
+                path.dataset.from = edge.from;
+                path.dataset.to = edge.to;
+                path.setAttribute('class', edge.dashes ? 'coreq-line' : 'prereq-line');
+                svgEl.appendChild(path);
+            });
+        }
+        function drawAll() { Object.keys(_registry).forEach(draw); }
+        function handleHover(e) {
+            var node = e.currentTarget;
+            var courseId = node.dataset.courseId;
+            var graphId = node.dataset.graphId;
+            if (!courseId || !graphId) return;
+            buildAdjacency(graphId);
+            var adj = _registry[graphId] && _registry[graphId].adjacency;
+            if (!adj) return;
+            var graphEl = document.getElementById('graph-' + graphId);
+            var svgEl = document.getElementById('svg-' + graphId);
+            if (!graphEl || !svgEl) return;
+            var chain = getChainsThrough(graphId, courseId);
+            var onCrit = adj.criticalSet.has(courseId);
+            graphEl.querySelectorAll('.course-node').forEach(function (n) {
+                var id = n.dataset.courseId;
+                if (chain.courses.has(id)) {
+                    n.classList.remove('faded');
+                    if (onCrit && adj.criticalSet.has(id)) n.classList.add('critical-highlight');
+                    else n.classList.add('highlighted');
+                } else {
+                    n.classList.add('faded');
+                    n.classList.remove('highlighted', 'critical-highlight');
+                }
+            });
+            svgEl.querySelectorAll('path').forEach(function (path) {
+                var key = path.dataset.from + '->' + path.dataset.to;
+                if (chain.edges.has(key)) {
+                    path.classList.remove('faded');
+                    if (onCrit && adj.criticalSet.has(path.dataset.from) && adj.criticalSet.has(path.dataset.to)) path.classList.add('critical');
+                    else path.classList.add('highlighted');
+                } else {
+                    path.classList.add('faded');
+                    path.classList.remove('highlighted', 'critical');
+                }
+            });
+        }
+        function handleLeave(e) {
+            var graphId = e.currentTarget.dataset.graphId;
+            if (!graphId) return;
+            var graphEl = document.getElementById('graph-' + graphId);
+            var svgEl = document.getElementById('svg-' + graphId);
+            if (!graphEl || !svgEl) return;
+            graphEl.querySelectorAll('.course-node').forEach(function (n) { n.classList.remove('faded', 'highlighted', 'critical-highlight'); });
+            svgEl.querySelectorAll('path').forEach(function (p) { p.classList.remove('faded', 'highlighted', 'critical'); });
+        }
+        function attachHoverHandlers() {
+            document.querySelectorAll('.nu-graph .course-node').forEach(function (node) {
+                node.removeEventListener('mouseenter', handleHover);
+                node.removeEventListener('mouseleave', handleLeave);
+                node.addEventListener('mouseenter', handleHover);
+                node.addEventListener('mouseleave', handleLeave);
+            });
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+            requestAnimationFrame(function () {
+                requestAnimationFrame(function () {
+                    drawAll();
+                    attachHoverHandlers();
+                    setTimeout(drawAll, 200);
+                    setTimeout(drawAll, 500);
+                    setTimeout(drawAll, 1000);
+                });
+            });
+            window.addEventListener('resize', drawAll);
+        });
+        window.addEventListener('beforeprint', drawAll);
+        return { register, draw, drawAll, attachHoverHandlers };
+    }());
+}
+nuGraphs.register("shortest", { edges: [{"from":"CS164","to":"CS220","dashes":false},{"from":"MATH156","to":"CS220","dashes":false},{"from":"CS165","to":"CS312","dashes":false},{"from":"CS165","to":"CS370","dashes":false},{"from":"CS250","to":"CS370","dashes":false},{"from":"CS253","to":"CS314","dashes":false},{"from":"CS220","to":"CS320","dashes":false},{"from":"CS165","to":"CS320","dashes":false},{"from":"MATH156","to":"CS320","dashes":false},{"from":"DSCI369","to":"CS320","dashes":false},{"from":"CS253","to":"CS464","dashes":false},{"from":"MATH156","to":"DSCI369","dashes":false},{"from":"CS314","to":"CS414","dashes":false},{"from":"MATH127","to":"MATH156","dashes":false},{"from":"CS165","to":"CS253","dashes":false},{"from":"MATH117","to":"STAT301","dashes":false},{"from":"CS150B","to":"CS164","dashes":false},{"from":"CS253","to":"CS356","dashes":false},{"from":"CS164","to":"CS250","dashes":false},{"from":"CS253","to":"CS410","dashes":false},{"from":"DSCI369","to":"CS410","dashes":false},{"from":"CS164","to":"CS165","dashes":false}], criticalPath: ["CS150B","CS164","CS165","CS253","CS314","CS414"], nodes: [{"id":"CS150B","name":"Culture and Coding: Python","credits":3.0,"complexity":19},{"id":"MATH127","name":"Precalculus","credits":4.0,"complexity":10},{"id":"MATH117","name":"College Algebra in Context I","credits":1.0,"complexity":3},{"id":"ELEC_04","name":"ELEC_04","credits":3.0,"complexity":0},{"id":"ELEC_08S","name":"ELEC_08S","credits":2.0,"complexity":0},{"id":"GEOL150","name":"Dynamic Earth","credits":4.0,"complexity":1},{"id":"CS164","name":"CS1--Computational Thinking with Java","credits":4.0,"complexity":18},{"id":"MATH156","name":"Mathematics for Computational Science I","credits":4.0,"complexity":8},{"id":"STAT301","name":"Introduction to Applied Statistical Methods","credits":3.0,"complexity":2},{"id":"FE01","name":"FE01","credits":3.0,"complexity":1},{"id":"CS165","name":"CS2--Data Structures","credits":4.0,"complexity":15},{"id":"CS250","name":"Computer Systems Foundations","credits":4.0,"complexity":7},{"id":"CS220","name":"Discrete Structures and the Applications","credits":4.0,"complexity":5},{"id":"FE02","name":"FE02","credits":3.0,"complexity":1},{"id":"CS253","name":"Software Development with C++","credits":4.0,"complexity":11},{"id":"CS370","name":"Operating Systems","credits":3.0,"complexity":6},{"id":"DSCI369","name":"Linear Algebra for Data Science","credits":4.0,"complexity":6},{"id":"CS312","name":"Modern Web Applications","credits":3.0,"complexity":4},{"id":"CS314","name":"Software Engineering","credits":3.0,"complexity":7},{"id":"CS356","name":"Systems Security","credits":3.0,"complexity":5},{"id":"CS410","name":"Introduction to Computer Graphics","credits":4.0,"complexity":5},{"id":"CS464","name":"Principles of Human-Computer Interaction","credits":4.0,"complexity":5},{"id":"CS414","name":"Object-Oriented Design","credits":4.0,"complexity":6},{"id":"CS320","name":"Algorithms--Theory and Practice","credits":3.0,"complexity":4},{"id":"ELEC_02","name":"ELEC_02","credits":3.0,"complexity":0},{"id":"ELEC_06","name":"ELEC_06","credits":3.0,"complexity":0},{"id":"HP01","name":"HP01","credits":3.0,"complexity":1},{"id":"AC01","name":"AC01","credits":3.0,"complexity":1},{"id":"BZ120","name":"Principles of Plant Biology","credits":4.0,"complexity":1},{"id":"ELEC_03","name":"ELEC_03","credits":3.0,"complexity":0},{"id":"ELEC_07","name":"ELEC_07","credits":3.0,"complexity":0},{"id":"SB01","name":"SB01","credits":3.0,"complexity":1},{"id":"AW01","name":"AW01","credits":3.0,"complexity":1},{"id":"CS201","name":"Ethical Computing Systems","credits":3.0,"complexity":1},{"id":"ELEC_01","name":"ELEC_01","credits":3.0,"complexity":0},{"id":"ELEC_05","name":"ELEC_05","credits":3.0,"complexity":0},{"id":"FE03S","name":"FE03S","credits":2.0,"complexity":1}] });
+if (document.readyState !== 'loading') { nuGraphs.draw("shortest"); nuGraphs.attachHoverHandlers(); }
+</script>
+
+    </div>
+
+    <div class="plan-graph-block">
+      <div class="pgm">PLAN · LONGEST PATH · COMPLEXITY 204</div>
+      <h3>The <em>systems-heavy</em> cybersecurity route.</h3>
+      <p class="desc">Picks CS270 (Computer Organization) over CS250, then chains through CS370 → CS356 → CS456. Every choice maximises blocking factors of upstream courses — this is what the curriculum graph looks like when a student chooses the architectural depth path.</p>
+      <div class="crit-path">
+        <code>CS150B</code><span class="arr">→</span><code>CS164</code><span class="arr">→</span><code>CS270</code><span class="arr">→</span><code>CS370</code><span class="arr">→</span><code>CS356</code><span class="arr">→</span><code>CS456</code>
+      </div>
+      <div class="nu-graph">
+<div class="graph-legend">
+  <div class="legend-item"><div class="legend-color complexity-low"></div><span>Low (1&#x2013;5)</span></div>
+  <div class="legend-item"><div class="legend-color complexity-medium"></div><span>Medium (6&#x2013;15)</span></div>
+  <div class="legend-item"><div class="legend-color complexity-high"></div><span>High (16+)</span></div>
+  <div class="legend-item"><div class="legend-line solid"></div><span>Prerequisite</span></div>
+  <div class="legend-item"><div class="legend-line dashed"></div><span>Corequisite</span></div>
+  <div class="legend-item"><div class="legend-line critical"></div><span>Critical path</span></div>
+</div>
+<div class="curriculum-graph-wrapper">
+<div class="curriculum-graph" id="graph-longest">
+<div class="term-column">
+<div class="term-header">Semester 1</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="CS150B" data-graph-id="longest">
+<span class="complexity-badge complexity-high">20</span>
+<div class="course-id">CS150B</div>
+<div class="course-name">Culture and Coding: Python</div>
+</div>
+<div class="course-node" data-course-id="MATH127" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">13</span>
+<div class="course-id">MATH127</div>
+<div class="course-name">Precalculus</div>
+</div>
+<div class="course-node" data-course-id="MATH117" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">7</span>
+<div class="course-id">MATH117</div>
+<div class="course-name">College Algebra in Context I</div>
+</div>
+<div class="course-node" data-course-id="ELEC_03" data-graph-id="longest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_03</div>
+<div class="course-name">ELEC_03</div>
+</div>
+<div class="course-node" data-course-id="ELEC_06" data-graph-id="longest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_06</div>
+<div class="course-name">ELEC_06</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 2</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="CS164" data-graph-id="longest">
+<span class="complexity-badge complexity-high">19</span>
+<div class="course-id">CS164</div>
+<div class="course-name">CS1--Computational Thinking with Java</div>
+</div>
+<div class="course-node" data-course-id="MATH156" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">11</span>
+<div class="course-id">MATH156</div>
+<div class="course-name">Mathematics for Computational Science I</div>
+</div>
+<div class="course-node" data-course-id="STAT301" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">6</span>
+<div class="course-id">STAT301</div>
+<div class="course-name">Introduction to Applied Statistical Methods</div>
+</div>
+<div class="course-node" data-course-id="ELEC_07S" data-graph-id="longest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_07S</div>
+<div class="course-name">ELEC_07S</div>
+</div>
+<div class="course-node" data-course-id="HP01" data-graph-id="longest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">HP01</div>
+<div class="course-name">HP01</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 3</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="CS165" data-graph-id="longest">
+<span class="complexity-badge complexity-high">16</span>
+<div class="course-id">CS165</div>
+<div class="course-name">CS2--Data Structures</div>
+</div>
+<div class="course-node" data-course-id="CS270" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">10</span>
+<div class="course-id">CS270</div>
+<div class="course-name">Computer Organization</div>
+</div>
+<div class="course-node" data-course-id="CS220" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">9</span>
+<div class="course-id">CS220</div>
+<div class="course-name">Discrete Structures and the Applications</div>
+</div>
+<div class="course-node" data-course-id="FE01" data-graph-id="longest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">FE01</div>
+<div class="course-name">FE01</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 4</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="CS253" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">10</span>
+<div class="course-id">CS253</div>
+<div class="course-name">Software Development with C++</div>
+</div>
+<div class="course-node" data-course-id="CS370" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">9</span>
+<div class="course-id">CS370</div>
+<div class="course-name">Operating Systems</div>
+</div>
+<div class="course-node" data-course-id="DSCI369" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">8</span>
+<div class="course-id">DSCI369</div>
+<div class="course-name">Linear Algebra for Data Science</div>
+</div>
+<div class="course-node" data-course-id="CS345" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">6</span>
+<div class="course-id">CS345</div>
+<div class="course-name">Machine Learning Foundations and Practice</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 5</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="CS356" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">7</span>
+<div class="course-id">CS356</div>
+<div class="course-name">Systems Security</div>
+</div>
+<div class="course-node" data-course-id="CS320" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">7</span>
+<div class="course-id">CS320</div>
+<div class="course-name">Algorithms--Theory and Practice</div>
+</div>
+<div class="course-node" data-course-id="CS310H" data-graph-id="longest">
+<span class="complexity-badge complexity-low">5</span>
+<div class="course-id">CS310H</div>
+<div class="course-name">Design Thinking Toolbox: Mixed Reality Design</div>
+</div>
+<div class="course-node" data-course-id="CS314" data-graph-id="longest">
+<span class="complexity-badge complexity-low">5</span>
+<div class="course-id">CS314</div>
+<div class="course-name">Software Engineering</div>
+</div>
+<div class="course-node" data-course-id="FE02" data-graph-id="longest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">FE02</div>
+<div class="course-name">FE02</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 6</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="CS456" data-graph-id="longest">
+<span class="complexity-badge complexity-medium">6</span>
+<div class="course-id">CS456</div>
+<div class="course-name">Modern CyberSecurity</div>
+</div>
+<div class="course-node" data-course-id="CS435" data-graph-id="longest">
+<span class="complexity-badge complexity-low">5</span>
+<div class="course-id">CS435</div>
+<div class="course-name">Introduction to Big Data</div>
+</div>
+<div class="course-node" data-course-id="CS440" data-graph-id="longest">
+<span class="complexity-badge complexity-low">5</span>
+<div class="course-id">CS440</div>
+<div class="course-name">Introduction to Artificial Intelligence</div>
+</div>
+<div class="course-node" data-course-id="FE03S" data-graph-id="longest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">FE03S</div>
+<div class="course-name">FE03S</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 7</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="AC01" data-graph-id="longest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">AC01</div>
+<div class="course-name">AC01</div>
+</div>
+<div class="course-node" data-course-id="BZ120" data-graph-id="longest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">BZ120</div>
+<div class="course-name">Principles of Plant Biology</div>
+</div>
+<div class="course-node" data-course-id="ELEC_02" data-graph-id="longest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_02</div>
+<div class="course-name">ELEC_02</div>
+</div>
+<div class="course-node" data-course-id="ELEC_05" data-graph-id="longest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_05</div>
+<div class="course-name">ELEC_05</div>
+</div>
+<div class="course-node" data-course-id="SB01" data-graph-id="longest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">SB01</div>
+<div class="course-name">SB01</div>
+</div>
+</div>
+</div>
+<div class="term-column">
+<div class="term-header">Semester 8</div>
+<div class="term-courses">
+<div class="course-node" data-course-id="AW01" data-graph-id="longest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">AW01</div>
+<div class="course-name">AW01</div>
+</div>
+<div class="course-node" data-course-id="CS201" data-graph-id="longest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">CS201</div>
+<div class="course-name">Ethical Computing Systems</div>
+</div>
+<div class="course-node" data-course-id="ELEC_01" data-graph-id="longest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_01</div>
+<div class="course-name">ELEC_01</div>
+</div>
+<div class="course-node" data-course-id="ELEC_04" data-graph-id="longest">
+<span class="complexity-badge complexity-low">0</span>
+<div class="course-id">ELEC_04</div>
+<div class="course-name">ELEC_04</div>
+</div>
+<div class="course-node" data-course-id="GEOL150" data-graph-id="longest">
+<span class="complexity-badge complexity-low">1</span>
+<div class="course-id">GEOL150</div>
+<div class="course-name">Dynamic Earth</div>
+</div>
+</div>
+</div>
+</div>
+<svg class="connections-svg" id="svg-longest"></svg>
+</div>
+</div>
+<script>
+nuGraphs.register("longest", { edges: [{"from":"CS356","to":"CS456","dashes":false},{"from":"CS164","to":"CS165","dashes":false},{"from":"CS320","to":"CS435","dashes":false},{"from":"CS220","to":"CS345","dashes":false},{"from":"CS150B","to":"CS345","dashes":false},{"from":"MATH156","to":"CS345","dashes":false},{"from":"STAT301","to":"CS345","dashes":false},{"from":"CS150B","to":"CS164","dashes":false},{"from":"CS220","to":"CS320","dashes":false},{"from":"CS165","to":"CS320","dashes":false},{"from":"MATH156","to":"CS320","dashes":false},{"from":"DSCI369","to":"CS320","dashes":false},{"from":"CS320","to":"CS440","dashes":false},{"from":"CS345","to":"CS440","dashes":false},{"from":"CS164","to":"CS270","dashes":false},{"from":"MATH127","to":"MATH156","dashes":false},{"from":"CS253","to":"CS310H","dashes":false},{"from":"CS165","to":"CS253","dashes":false},{"from":"CS165","to":"CS370","dashes":false},{"from":"CS270","to":"CS370","dashes":false},{"from":"CS164","to":"CS220","dashes":false},{"from":"MATH156","to":"CS220","dashes":false},{"from":"CS253","to":"CS314","dashes":false},{"from":"CS253","to":"CS356","dashes":false},{"from":"MATH156","to":"DSCI369","dashes":false},{"from":"MATH117","to":"STAT301","dashes":false}], criticalPath: ["CS150B","CS164","CS270","CS370","CS356","CS456"], nodes: [{"id":"CS150B","name":"Culture and Coding: Python","credits":3.0,"complexity":20},{"id":"MATH127","name":"Precalculus","credits":4.0,"complexity":13},{"id":"MATH117","name":"College Algebra in Context I","credits":1.0,"complexity":7},{"id":"CS164","name":"CS1--Computational Thinking with Java","credits":4.0,"complexity":19},{"id":"MATH156","name":"Mathematics for Computational Science I","credits":4.0,"complexity":11},{"id":"STAT301","name":"Introduction to Applied Statistical Methods","credits":3.0,"complexity":6},{"id":"CS165","name":"CS2--Data Structures","credits":4.0,"complexity":16},{"id":"CS270","name":"Computer Organization","credits":4.0,"complexity":10},{"id":"CS220","name":"Discrete Structures and the Applications","credits":4.0,"complexity":9},{"id":"CS253","name":"Software Development with C++","credits":4.0,"complexity":10},{"id":"CS370","name":"Operating Systems","credits":3.0,"complexity":9},{"id":"DSCI369","name":"Linear Algebra for Data Science","credits":4.0,"complexity":8},{"id":"CS345","name":"Machine Learning Foundations and Practice","credits":3.0,"complexity":6},{"id":"CS356","name":"Systems Security","credits":3.0,"complexity":7},{"id":"CS320","name":"Algorithms--Theory and Practice","credits":3.0,"complexity":7},{"id":"CS310H","name":"Design Thinking Toolbox: Mixed Reality Design","credits":3.0,"complexity":5},{"id":"CS314","name":"Software Engineering","credits":3.0,"complexity":5},{"id":"CS456","name":"Modern CyberSecurity","credits":4.0,"complexity":6},{"id":"CS435","name":"Introduction to Big Data","credits":4.0,"complexity":5},{"id":"CS440","name":"Introduction to Artificial Intelligence","credits":4.0,"complexity":5}] });
+if (document.readyState !== 'loading') { nuGraphs.draw("longest"); nuGraphs.attachHoverHandlers(); }
+</script>
+
+    </div>
+  </section>
+
+  <!-- DEMOGRAPHICS -->
+  <section class="section" id="demographics">
+    <div class="section-head">
+      <div class="section-num">§ 05</div>
+      <h2>Who <em>finishes</em> this degree.</h2>
+    </div>
+    <p class="section-intro">IPEDS completion data for CIP 11.0101 (Computer & Information Sciences, General), bachelor's primary major, AY 2022–2024. Total completers grew from 184 to 215 (+17 %). The parity score is the group's share of CS completions divided by its share of all CSU completions: 1.0 is parity, above 1 is over-represented, below 1 is under-represented relative to the campus baseline.</p>
+
+    <div class="chart-row">
+      <div class="chart-card">
+        <h3>Completions by Gender</h3>
+        <p class="sub">CSU CS bachelor's · counts per academic year</p>
+        <div class="chart-container tall"><canvas id="genderBars"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Completions by Race / Ethnicity</h3>
+        <p class="sub">CSU CS bachelor's · 2024 distribution</p>
+        <div class="chart-container tall"><canvas id="raceBars"></canvas></div>
+      </div>
+    </div>
+
+    <div class="chart-row">
+      <div class="chart-card" style="grid-column: 1 / -1;">
+        <h3>Parity Scores · 3-Year Trend</h3>
+        <p class="sub">Each line is a group's representation ratio vs. campus baseline. 1.0 = parity (dashed).</p>
+        <div class="chart-container tall"><canvas id="parityLines"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSIGHTS -->
+  <section class="section" id="insights">
+    <div class="section-head">
+      <div class="section-num">§ 06</div>
+      <h2>Strengths, <em>concerns</em>, and what the literature says.</h2>
+    </div>
+    <p class="section-intro">Read the curriculum and the demographics against the published evidence on broadening participation in computing (BPC). Findings are framed through the lens of education research and equity.</p>
+
+    <div class="insights-grid">
+      <div class="insight-card strength">
+        <div class="tag">STRENGTH · PEDAGOGY</div>
+        <h3>The <em>"Culture &amp; Coding"</em> on-ramp.</h3>
+        <p>CS150B (Culture and Coding: Python) is a prior-experience–neutral on-ramp that explicitly contextualises programming through cultural and ethical themes. It carries an AUCC-3B humanities attribution and is sequenced before CS164. This design directly addresses the documented "lack of prior experience" barrier that disproportionately turns women and underrepresented minorities away from CS1 at large research universities <a class="cite" href="#ref-bv2020">[Babeş-Vroman &amp; Nguyen 2020]</a>.</p>
+        <p>Sequencing matters: research at large public R1s shows the gender gap widens immediately after CS1, in part because many women enrol in CS1 undecided about the major <a class="cite" href="#ref-bv2020">[Babeş-Vroman &amp; Nguyen 2020]</a>. A culturally responsive on-ramp before the gating CS1 is a literature-aligned intervention.</p>
+      </div>
+
+      <div class="insight-card concern">
+        <div class="tag">CONCERN · STRUCTURAL</div>
+        <h3>Twin <em>CS150B/CS164</em> blocking factors.</h3>
+        <p>CS150B and CS164 have median blocking factors of 14 and 13 — together they gate every downstream CS course. A single C-minus in either pushes graduation a full year, and the prerequisite specifically requires <code>CS150B [B]</code> for CS164 entry. The structural cost of failure is therefore very high precisely at the on-ramp.</p>
+        <p>The BPC literature is explicit on this: high-stakes early gates without robust safety nets disproportionately push out students with weaker prior preparation, and prior-preparation gaps correlate with under-represented identity in CS <a class="cite" href="#ref-sax2017">[Sax et al. 2017]</a>. CSU's curriculum design helps; the grade gate works against it.</p>
+      </div>
+
+      <div class="insight-card strength">
+        <div class="tag">STRENGTH · TRAJECTORY</div>
+        <h3>Women's parity is <em>rising fast</em>.</h3>
+        <p>Women's parity score climbed from 0.24 → 0.31 → 0.43 across 2022 → 2023 → 2024 — a 79 % improvement in three years. Absolute completions by women more than doubled (24 → 51) while men's completions stayed nearly flat. CSU is moving against the national trend: women's share of CS bachelor's has hovered around 20–22 % nationally for two decades <a class="cite" href="#ref-sax2017">[Sax et al. 2017]</a>.</p>
+        <p>The gap from 0.43 to 1.00 (campus parity) remains substantial, but the trajectory is the kind of signal that BPC research associates with deliberate departmental intervention rather than passive growth <a class="cite" href="#ref-nsfbpc">[NSF BPC]</a>.</p>
+      </div>
+
+      <div class="insight-card concern">
+        <div class="tag">CONCERN · INTERSECTIONAL</div>
+        <h3>Black students are <em>thinning</em>.</h3>
+        <p>Black completers fell from 3 in 2022 to 2 in 2024 — counts too low to draw firm conclusions, but the parity score dropped from 0.87 to 0.52 against a campus baseline that itself shows declining Black representation. Hispanic/Latino parity recovered from 0.53 (2023) to 0.83 (2024), but remains below 1.0.</p>
+        <p>Intersectional effects are visible: in 2024, Black women earned 1 CS degree out of CSU's 215; Hispanic women earned 11. The literature is unambiguous that programs which broaden participation address race and gender jointly — single-axis interventions repeatedly fail intersectionally marginalised students <a class="cite" href="#ref-williams2023">[Williams et al. 2023]</a>.</p>
+      </div>
+
+      <div class="insight-card strength">
+        <div class="tag">STRENGTH · CURRICULAR FLEXIBILITY</div>
+        <h3>Many <em>valid paths</em>.</h3>
+        <p>95,760 distinct valid completion plans is unusually high for a CS curriculum, driven by 19 capstone options, a generous Technology Focus pool, a minor/second-major alternative, and parallel Group A/B/C intro sequences. This flexibility is itself a retention lever: students who can find a personal narrative in the major persist at higher rates <a class="cite" href="#ref-sax2018">[Sax et al. 2018]</a>.</p>
+        <p>The breadth of capstone options (graphics, HCI, bioinformatics, ML, distributed systems, blockchain, OOD…) lets a student craft a track that matches their identity and interests instead of being routed through a single canonical fourth-year sequence.</p>
+      </div>
+
+      <div class="insight-card concern">
+        <div class="tag">CONCERN · ALGORITHMS CHOKEPOINT</div>
+        <h3>CS320 is <em>structurally fragile</em>.</h3>
+        <p>CS320 (Algorithms) requires four concurrent strands: CS220 + CS165 + a calculus course + a linear-algebra course. Any one delay cascades into CS320 and gates the 400-level CS400 capstones (CS420 / CS425 / CS440 / CS445 / CS454 / CS475 all depend on it).</p>
+        <p>This is the kind of "and-junction" prerequisite that BPC researchers flag as a equity hazard — students who arrive less prepared (in any one strand) compound delays that students with stronger preparation never see <a class="cite" href="#ref-sax2017">[Sax et al. 2017]</a>. Targeted advising and supplementary instruction at this exact node would have outsized retention impact.</p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- REFERENCES -->
+  <section class="section" id="references">
+    <div class="section-head">
+      <div class="section-num">§ 07</div>
+      <h2><em>References</em> &amp; sources.</h2>
+    </div>
+    <p class="section-intro">All peer-reviewed sources cited in §06 are listed below with direct links. Underlying degree data is from the CSU 2025–2026 general catalog; demographic data is from the U.S. Department of Education's IPEDS database (CIP code 11.0101, bachelor's primary major, AY 2022–2024).</p>
+
+    <ol class="references-list">
+      <li id="ref-bv2020">
+        <span class="authors">Babeş-Vroman, M. &amp; Nguyen, T. D.</span> (2020).
+        <span class="title">Gender Diversity in Computer Science at a Large Research University.</span>
+        <span class="venue">arXiv preprint arXiv:2004.13760. Published version in ACM Transactions on Computing Education (TOCE), Vol. 22, Issue 2 (2022).</span>
+        <a class="ref-link" href="https://arxiv.org/abs/2004.13760" target="_blank" rel="noopener">arxiv.org/abs/2004.13760</a><br>
+        <a class="ref-link" href="https://dl.acm.org/doi/full/10.1145/3471572" target="_blank" rel="noopener">dl.acm.org/doi/full/10.1145/3471572</a>
+      </li>
+      <li id="ref-sax2017">
+        <span class="authors">Sax, L. J., Blaney, J. M., Lehman, K. J., Rodriguez, S. L., George, K. L., &amp; Zavala, C.</span> (2017).
+        <span class="title">Sense of Belonging in Computing: The Role of Introductory Courses for Women and Underrepresented Minority Students — Department Chairs in Promoting Diversity.</span>
+        <span class="venue">Working paper, BRAID Research. Hosted via Johns Hopkins University CS reading seminar.</span>
+        <a class="ref-link" href="https://www.cs.jhu.edu/~misha/DIReadingSeminar/Papers/Sax17.pdf" target="_blank" rel="noopener">cs.jhu.edu/~misha/.../Sax17.pdf</a>
+      </li>
+      <li id="ref-sax2018">
+        <span class="authors">Sax, L. J., Lehman, K. J., Jacobs, J. A., Kanny, M. A., Lim, G., Monje-Paulson, L., &amp; Zimmerman, H. B.</span> (2018).
+        <span class="title">Sense of Belonging in Computing: The Role of Introductory Courses for Women and Underrepresented Minority Students.</span>
+        <span class="venue">Social Sciences, 7(8), 122.</span>
+        <a class="ref-link" href="https://www.mdpi.com/2076-0760/7/8/122" target="_blank" rel="noopener">mdpi.com/2076-0760/7/8/122</a>
+      </li>
+      <li id="ref-williams2023">
+        <span class="authors">Williams, K. L., Dillon, E., Carter, S., Jones, J., &amp; Melchior, S.</span> (2023).
+        <span class="title">CS=Me: Exploring Factors that Shape Black Women's CS Identity at the Intersections of Race and Gender.</span>
+        <span class="venue">ACM Transactions on Computing Education (just accepted, December 2023).</span>
+        <a class="ref-link" href="https://doi.org/10.1145/3631715" target="_blank" rel="noopener">doi.org/10.1145/3631715</a>
+      </li>
+      <li id="ref-nsfbpc">
+        <span class="authors">National Science Foundation</span> (ongoing).
+        <span class="title">Broadening Participation in Computing (BPC) program.</span>
+        <span class="venue">NSF Directorate for Computer and Information Science and Engineering (CISE).</span>
+        <a class="ref-link" href="https://new.nsf.gov/funding/initiatives/broadening-participation-computing" target="_blank" rel="noopener">nsf.gov/funding/initiatives/broadening-participation-computing</a>
+      </li>
+      <li>
+        <span class="authors">U.S. Department of Education</span> (2022–2024).
+        <span class="title">Integrated Postsecondary Education Data System (IPEDS) Completions Survey.</span>
+        <span class="venue">CIP code 11.0101 (Computer and Information Sciences, General), bachelor's degree completions, primary major. Colorado State University–Fort Collins (UNITID 126818).</span>
+        <a class="ref-link" href="https://nces.ed.gov/ipeds/use-the-data" target="_blank" rel="noopener">nces.ed.gov/ipeds/use-the-data</a>
+      </li>
+      <li>
+        <span class="authors">Colorado State University</span> (2025).
+        <span class="title">General Catalog 2025–2026: Computer Science Major, Computer Science Concentration.</span>
+        <span class="venue">College of Natural Sciences. Curriculum source for this analysis.</span>
+        <a class="ref-link" href="https://catalog.colostate.edu/general-catalog/colleges/natural-sciences/computer-science/computer-science-major/computer-science-concentration/" target="_blank" rel="noopener">catalog.colostate.edu/.../computer-science-concentration/</a>
+      </li>
+      <li>
+        <span class="authors">Heileman, G. L., Slim, A., Hickman, M., &amp; Abdallah, C. T.</span> (2018).
+        <span class="title">Curricular Analytics: A Framework for Quantifying the Impact of Curricular Reforms and Pedagogical Innovations.</span>
+        <span class="venue">Methodology behind the complexity, delay, and blocking metrics used in §02 and §03.</span>
+        <a class="ref-link" href="https://arxiv.org/abs/1811.09676" target="_blank" rel="noopener">arxiv.org/abs/1811.09676</a>
+      </li>
+    </ol>
+  </section>
+
+  <footer>
+    <span><strong>CSU Fort Collins · B.S. CS · Catalog 2025–2026</strong> Curriculum graph built from 145 courses, 21 requirements; 95,760 valid plans; 25-plan random sample.</span>
+    <span>Generated · 2026-05-13</span>
+  </footer>
+</div>
+
+<script>
+// ============================================================================
+// DATA
+// ============================================================================
+const COURSES = [{"id": "CS150B", "title": "Culture and Coding: Python", "credits": 3, "complexity": 20.0, "delay": 5.72, "blocking": 14.0, "plan_pct": 100, "subject": "CS", "level": 150}, {"id": "CS164", "title": "CS1 - Computational Thinking with Java", "credits": 4, "complexity": 19.0, "delay": 5.72, "blocking": 13.0, "plan_pct": 100, "subject": "CS", "level": 160}, {"id": "CS165", "title": "CS2 - Data Structures", "credits": 4, "complexity": 16.0, "delay": 5.72, "blocking": 10.0, "plan_pct": 100, "subject": "CS", "level": 160}, {"id": "CS214", "title": "Software Development", "credits": 3, "complexity": 10.0, "delay": 5.79, "blocking": 4.07, "plan_pct": 56, "subject": "CS", "level": 210}, {"id": "CS220", "title": "Discrete Structures", "credits": 4, "complexity": 8.0, "delay": 4.76, "blocking": 2.84, "plan_pct": 100, "subject": "CS", "level": 220}, {"id": "CS250", "title": "Computer Systems Foundations", "credits": 4, "complexity": 7.0, "delay": 4.86, "blocking": 2.29, "plan_pct": 56, "subject": "CS", "level": 250}, {"id": "CS253", "title": "Software Development with C++", "credits": 4, "complexity": 10.0, "delay": 5.67, "blocking": 3.75, "plan_pct": 48, "subject": "CS", "level": 250}, {"id": "CS270", "title": "Computer Organization", "credits": 4, "complexity": 8.0, "delay": 5.09, "blocking": 2.82, "plan_pct": 44, "subject": "CS", "level": 270}, {"id": "CS310H", "title": "Mixed Reality Design", "credits": 3, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 52, "subject": "CS", "level": 310}, {"id": "CS312", "title": "Modern Web Applications", "credits": 3, "complexity": 4.0, "delay": 4.0, "blocking": 0.0, "plan_pct": 40, "subject": "CS", "level": 310}, {"id": "CS314", "title": "Software Engineering", "credits": 3, "complexity": 7.0, "delay": 5.64, "blocking": 0.8, "plan_pct": 100, "subject": "CS", "level": 310}, {"id": "CS320", "title": "Algorithms - Theory & Practice", "credits": 3, "complexity": 6.0, "delay": 4.64, "blocking": 0.96, "plan_pct": 100, "subject": "CS", "level": 320}, {"id": "CS345", "title": "Machine Learning Foundations", "credits": 3, "complexity": 6.0, "delay": 4.68, "blocking": 0.68, "plan_pct": 76, "subject": "CS", "level": 340}, {"id": "CS356", "title": "Systems Security", "credits": 3, "complexity": 5.0, "delay": 5.2, "blocking": 0.2, "plan_pct": 60, "subject": "CS", "level": 350}, {"id": "CS370", "title": "Operating Systems", "credits": 3, "complexity": 6.0, "delay": 4.96, "blocking": 1.4, "plan_pct": 100, "subject": "CS", "level": 370}, {"id": "CS410", "title": "Computer Graphics", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 24, "subject": "CS", "level": 410}, {"id": "CS414", "title": "Object-Oriented Design", "credits": 4, "complexity": 6.0, "delay": 6.0, "blocking": 0.0, "plan_pct": 40, "subject": "CS", "level": 410}, {"id": "CS415", "title": "Software Testing", "credits": 4, "complexity": 6.0, "delay": 6.0, "blocking": 0.0, "plan_pct": 8, "subject": "CS", "level": 410}, {"id": "CS420", "title": "Analysis of Algorithms", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 8, "subject": "CS", "level": 420}, {"id": "CS425", "title": "Bioinformatics Algorithms", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 36, "subject": "CS", "level": 420}, {"id": "CS430", "title": "Database Systems", "credits": 4, "complexity": 6.0, "delay": 6.0, "blocking": 0.0, "plan_pct": 12, "subject": "CS", "level": 430}, {"id": "CS435", "title": "Introduction to Big Data", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 20, "subject": "CS", "level": 430}, {"id": "CS440", "title": "Artificial Intelligence", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 4, "subject": "CS", "level": 440}, {"id": "CS445", "title": "Machine Learning", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 12, "subject": "CS", "level": 440}, {"id": "CS453", "title": "Compiler Construction", "credits": 4, "complexity": 6.0, "delay": 6.0, "blocking": 0.0, "plan_pct": 8, "subject": "CS", "level": 450}, {"id": "CS454", "title": "Programming Languages", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 16, "subject": "CS", "level": 450}, {"id": "CS455", "title": "Distributed Systems", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 8, "subject": "CS", "level": 450}, {"id": "CS456", "title": "Modern CyberSecurity", "credits": 4, "complexity": 6.0, "delay": 6.0, "blocking": 0.0, "plan_pct": 12, "subject": "CS", "level": 450}, {"id": "CS457", "title": "Computer Networks", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 8, "subject": "CS", "level": 450}, {"id": "CS458", "title": "Blockchain Principles", "credits": 4, "complexity": 6.0, "delay": 6.0, "blocking": 0.0, "plan_pct": 12, "subject": "CS", "level": 450}, {"id": "CS462", "title": "Engaging in Virtual Worlds", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 16, "subject": "CS", "level": 460}, {"id": "CS464", "title": "Human-Computer Interaction", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 16, "subject": "CS", "level": 460}, {"id": "CS465", "title": "3D User Interfaces", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 8, "subject": "CS", "level": 460}, {"id": "CS470", "title": "Computer Architecture", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 20, "subject": "CS", "level": 470}, {"id": "CS475", "title": "Parallel Programming", "credits": 4, "complexity": 5.0, "delay": 5.0, "blocking": 0.0, "plan_pct": 12, "subject": "CS", "level": 470}, {"id": "MATH117", "title": "College Algebra I", "credits": 1, "complexity": 7.0, "delay": 3.28, "blocking": 2.36, "plan_pct": 100, "subject": "MATH", "level": 117}, {"id": "MATH127", "title": "Precalculus", "credits": 4, "complexity": 12.0, "delay": 4.76, "blocking": 7.32, "plan_pct": 100, "subject": "MATH", "level": 127}, {"id": "MATH156", "title": "Mathematics for Computational Science I", "credits": 4, "complexity": 10.0, "delay": 4.76, "blocking": 5.24, "plan_pct": 100, "subject": "MATH", "level": 156}, {"id": "STAT301", "title": "Applied Statistical Methods", "credits": 3, "complexity": 6.0, "delay": 3.28, "blocking": 1.36, "plan_pct": 100, "subject": "STAT", "level": 301}, {"id": "DSCI369", "title": "Linear Algebra for Data Science", "credits": 4, "complexity": 8.0, "delay": 4.64, "blocking": 2.48, "plan_pct": 100, "subject": "DSCI", "level": 369}];
+const IPEDS = {"2022": {"total": 184, "demographics": {"Women": 24, "Men": 160, "Hispanic/Latino": 21, "Black": 3, "Asian": 13, "White": 127, "AIAN": 0, "NHPI": 0, "Two+": 6, "Nonresident": 12, "Unknown": 1}, "parity": {"Women": 0.24, "Men": 1.92, "Hispanic/Latino": 0.84, "Black": 0.87, "Asian": 2.3, "White": 0.95, "AIAN": 0.0, "NHPI": 0.0, "Two+": 0.68, "Nonresident": 3.86}}, "2023": {"total": 192, "demographics": {"Women": 33, "Men": 159, "Hispanic/Latino": 15, "Black": 3, "Asian": 10, "White": 142, "AIAN": 0, "NHPI": 0, "Two+": 9, "Nonresident": 12, "Unknown": 1}, "parity": {"Women": 0.31, "Men": 1.89, "Hispanic/Latino": 0.53, "Black": 0.87, "Asian": 1.82, "White": 1.02, "AIAN": 0.0, "NHPI": 0.0, "Two+": 1.03, "Nonresident": 2.57}}, "2024": {"total": 215, "demographics": {"Women": 51, "Men": 164, "Hispanic/Latino": 27, "Black": 2, "Asian": 12, "White": 156, "AIAN": 0, "NHPI": 1, "Two+": 6, "Nonresident": 8, "Unknown": 3}, "parity": {"Women": 0.43, "Men": 1.71, "Hispanic/Latino": 0.83, "Black": 0.52, "Asian": 1.89, "White": 1.02, "AIAN": 0.0, "NHPI": 3.13, "Two+": 0.55, "Nonresident": 1.65}}};
+const AGG = {"complexity": {"min": 166, "q1": 180, "median": 186, "q3": 199, "max": 204, "mean": 187.72, "std": 10.96}, "delay": {"min": 5, "q1": 5, "median": 6, "q3": 6, "max": 6, "mean": 5.72, "std": 0.45}, "credits": {"min": 119, "q1": 119.47, "median": 119.84, "q3": 120, "max": 120, "mean": 119.84, "std": 0.37}, "plans_analyzed": 25, "population_size": 95760};
+
+// ============================================================================
+// COURSE TABLE
+// ============================================================================
+const tbody = document.getElementById('courseBody');
+let sortKey = 'blocking';
+let sortDir = -1; // -1 desc, 1 asc
+let filter = 'all';
+
+function tier(val, lowBound, highBound) {
+  if (val === 0 || val == null) return 'tier-zero';
+  if (val >= highBound) return 'tier-high';
+  if (val >= lowBound) return 'tier-med';
+  return 'tier-low';
+}
+
+function renderTable() {
+  let rows = COURSES.filter(c => {
+    if (filter === 'all') return true;
+    if (filter === 'core') return ['CS150B','CS164','CS165','CS214','CS220','CS253','CS250','CS270','CS314','CS320','CS370','MATH127','MATH156','STAT301','DSCI369'].includes(c.id);
+    return c.subject === filter;
+  });
+  rows.sort((a, b) => {
+    const av = a[sortKey], bv = b[sortKey];
+    if (typeof av === 'string') return sortDir * av.localeCompare(bv);
+    return sortDir * (av - bv);
+  });
+  tbody.innerHTML = rows.map(c => {
+    const compClass = tier(c.complexity, 5, 12);
+    const delClass = tier(c.delay, 3, 5);
+    const blockClass = tier(c.blocking, 1, 5);
+    const compWidth = Math.min(100, c.complexity * 4.5);
+    return `<tr>
+      <td><span class="code">${c.id}</span></td>
+      <td>${c.title}</td>
+      <td class="metric-cell-val">${c.credits}</td>
+      <td><span class="tier-cell ${compClass} metric-cell-val">${c.complexity.toFixed(1)}</span></td>
+      <td><span class="tier-cell ${delClass} metric-cell-val">${c.delay.toFixed(2)}</span></td>
+      <td><span class="tier-cell ${blockClass} metric-cell-val">${c.blocking.toFixed(2)}</span></td>
+      <td class="metric-cell-val">${c.plan_pct}%</td>
+    </tr>`;
+  }).join('');
+  // Mark sorted column
+  document.querySelectorAll('#courseTable th').forEach(th => {
+    th.classList.toggle('sorted', th.dataset.key === sortKey);
+  });
+}
+
+document.querySelectorAll('#courseTable th').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (sortKey === key) sortDir *= -1;
+    else { sortKey = key; sortDir = (th.dataset.type === 'str' ? 1 : -1); }
+    renderTable();
+  });
+});
+
+document.querySelectorAll('.pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    filter = btn.dataset.filter;
+    renderTable();
+  });
+});
+
+renderTable();
+
+// ============================================================================
+// CHARTS
+// ============================================================================
+Chart.defaults.font.family = '"JetBrains Mono", monospace';
+Chart.defaults.font.size = 11;
+Chart.defaults.color = '#2A3E32';
+Chart.defaults.borderColor = 'rgba(22,36,27,0.15)';
+
+// Boxplot — complexity
+const cmplx = AGG.complexity;
+new Chart(document.getElementById('complexityBox'), {
+  type: 'boxplot',
+  data: {
+    labels: ['Plan complexity'],
+    datasets: [{
+      label: 'Complexity',
+      data: [{
+        min: cmplx.min, q1: cmplx.q1, median: cmplx.median, q3: cmplx.q3, max: cmplx.max,
+        mean: cmplx.mean,
+        items: [cmplx.min, cmplx.q1, cmplx.median, cmplx.mean, cmplx.q3, cmplx.max]
+      }],
+      backgroundColor: 'rgba(30, 77, 43, 0.18)',
+      borderColor: '#1E4D2B',
+      borderWidth: 2,
+      itemRadius: 4,
+      itemBackgroundColor: '#C8B273',
+      medianColor: '#B85C3F',
+      outlierBackgroundColor: '#B85C3F'
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+    scales: { x: { beginAtZero: false, min: 160, max: 210, grid: { color: 'rgba(22,36,27,0.08)' } }, y: { grid: { display: false } } },
+    plugins: { legend: { display: false } }
+  }
+});
+
+const dly = AGG.delay;
+new Chart(document.getElementById('delayBox'), {
+  type: 'boxplot',
+  data: {
+    labels: ['Longest delay'],
+    datasets: [{
+      label: 'Delay (terms)',
+      data: [{
+        min: dly.min, q1: dly.q1, median: dly.median, q3: dly.q3, max: dly.max,
+        mean: dly.mean,
+        items: [dly.min, dly.q1, dly.median, dly.mean, dly.q3, dly.max]
+      }],
+      backgroundColor: 'rgba(184, 92, 63, 0.16)',
+      borderColor: '#B85C3F',
+      borderWidth: 2,
+      itemRadius: 4,
+      itemBackgroundColor: '#C8B273',
+      medianColor: '#1E4D2B',
+      outlierBackgroundColor: '#1E4D2B'
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+    scales: { x: { beginAtZero: false, min: 4, max: 7, grid: { color: 'rgba(22,36,27,0.08)' } }, y: { grid: { display: false } } },
+    plugins: { legend: { display: false } }
+  }
+});
+
+// Gender bars
+const years = [2022, 2023, 2024];
+new Chart(document.getElementById('genderBars'), {
+  type: 'bar',
+  data: {
+    labels: years.map(String),
+    datasets: [
+      { label: 'Men', data: years.map(y => IPEDS[y].demographics.Men), backgroundColor: '#1E4D2B', borderColor: '#133019', borderWidth: 1, stack: 'a' },
+      { label: 'Women', data: years.map(y => IPEDS[y].demographics.Women), backgroundColor: '#C8B273', borderColor: '#A89255', borderWidth: 1, stack: 'a' }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(22,36,27,0.08)' } } },
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 14 } } }
+  }
+});
+
+// Race/ethnicity bars (2024)
+const raceLabels = ['White','Hispanic/Latino','Asian','Two+','Nonresident','Unknown','Black','NHPI','AIAN'];
+new Chart(document.getElementById('raceBars'), {
+  type: 'bar',
+  data: {
+    labels: raceLabels,
+    datasets: [{
+      label: '2024 CS Completers',
+      data: raceLabels.map(l => IPEDS[2024].demographics[l] || 0),
+      backgroundColor: raceLabels.map(l => {
+        const p = IPEDS[2024].parity[l] || 0;
+        if (p === 0) return '#9CB29C';
+        if (p >= 1.5) return '#1E4D2B';
+        if (p >= 0.9) return '#6E8A6F';
+        if (p >= 0.5) return '#C8B273';
+        return '#B85C3F';
+      }),
+      borderColor: '#16241B', borderWidth: 1
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+    scales: { x: { beginAtZero: true, grid: { color: 'rgba(22,36,27,0.08)' } }, y: { grid: { display: false } } },
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { afterLabel: (ctx) => `Parity: ${IPEDS[2024].parity[ctx.label].toFixed(2)}` } }
+    }
+  }
+});
+
+// Parity lines
+const parityGroups = ['Women','Hispanic/Latino','Black','Asian','White','Two+','Nonresident'];
+const palette = { Women: '#B85C3F', 'Hispanic/Latino': '#1E4D2B', Black: '#16241B', Asian: '#A89255', White: '#9CB29C', 'Two+': '#C8B273', Nonresident: '#6E8A6F' };
+const styles = { Women: { borderWidth: 3, borderDash: [] }, 'Hispanic/Latino': { borderWidth: 2.5, borderDash: [] }, Black: { borderWidth: 2.5, borderDash: [6,3] }, Asian: { borderWidth: 2, borderDash: [] }, White: { borderWidth: 2, borderDash: [4,3] }, 'Two+': { borderWidth: 2, borderDash: [3,2] }, Nonresident: { borderWidth: 2, borderDash: [8,4] } };
+new Chart(document.getElementById('parityLines'), {
+  type: 'line',
+  data: {
+    labels: years.map(String),
+    datasets: parityGroups.map(g => ({
+      label: g,
+      data: years.map(y => IPEDS[y].parity[g]),
+      borderColor: palette[g],
+      backgroundColor: 'transparent',
+      ...styles[g],
+      tension: 0.25,
+      pointRadius: 4,
+      pointBackgroundColor: palette[g],
+      pointBorderColor: '#FAF5E8',
+      pointBorderWidth: 1.5
+    })).concat([{
+      label: 'Parity (= 1.0)',
+      data: years.map(() => 1),
+      borderColor: 'rgba(22,36,27,0.4)',
+      borderWidth: 1.5,
+      borderDash: [2, 4],
+      pointRadius: 0,
+      fill: false
+    }])
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    scales: {
+      x: { grid: { display: false } },
+      y: { beginAtZero: true, max: 4.2, grid: { color: 'rgba(22,36,27,0.08)' }, title: { display: true, text: 'Parity Score (1.0 = equal to campus baseline)', font: { size: 11 } } }
+    },
+    plugins: {
+      legend: { position: 'bottom', labels: { boxWidth: 14, padding: 12, font: { size: 11 } } },
+      tooltip: {
+        callbacks: {
+          afterLabel: (ctx) => {
+            if (ctx.dataset.label === 'Parity (= 1.0)') return '';
+            const year = years[ctx.dataIndex];
+            const count = IPEDS[year].demographics[ctx.dataset.label] ?? 0;
+            return `Count: ${count} of ${IPEDS[year].total}`;
+          }
+        }
+      }
+    }
+  }
+});
+</script>
+
+</body>
+</html>
