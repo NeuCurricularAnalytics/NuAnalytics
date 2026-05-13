@@ -228,7 +228,8 @@ pub fn spec_from_report_context(ctx: &ReportContext, graph_id: &str) -> Curricul
     )
 }
 
-/// Build a [`CurriculumGraphSpec`] from a [`ScoredPlan`].
+/// Build a [`CurriculumGraphSpec`] from a `ScoredPlan`
+/// (`crate::core::degree::plan_selector::ScoredPlan`).
 ///
 /// Used by the degree-report HTML generator and the `analyze_degree` MCP tool.
 /// The `ScoredPlan` already carries its own `schedule`, `course_metrics`, and

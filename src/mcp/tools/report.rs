@@ -4,8 +4,8 @@
 //! artifacts as the CLI `degree --analyze` command: the HTML report and
 //! optional per-plan CSVs, JSONL summary, and index CSV. The pipeline is
 //! shared with `analyze_degree` through
-//! [`crate::mcp::tools::analyze::build_artifacts`]; this tool then feeds the
-//! resulting artifacts into [`DegreeReportGenerator`].
+//! `crate::mcp::tools::analyze::build_artifacts` (a `pub(crate)` helper);
+//! this tool then feeds the resulting artifacts into [`DegreeReportGenerator`].
 //!
 //! Two output modes:
 //!

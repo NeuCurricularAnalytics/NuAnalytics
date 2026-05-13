@@ -19,7 +19,8 @@
 //! `"."`, `"-2"`, and `"99"` are treated as missing/inapplicable and mapped to `None`.
 //!
 //! ## Column name variants
-//! IPEDS column names change across survey years. [`find_col`] accepts multiple
+//! IPEDS column names change across survey years. `find_col` (an internal
+//! helper) accepts multiple
 //! candidate names and matches case-insensitively, e.g. Carnegie class uses
 //! `C18BASIC`, `C21BASIC`, or `C15BASIC` depending on the year.
 

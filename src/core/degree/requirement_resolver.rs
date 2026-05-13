@@ -434,7 +434,7 @@ impl<'a> RequirementResolver<'a> {
     /// For count-based requirements, bundles are expanded into individual courses.
     /// Resolve the courses that satisfy a [`FromClause`].
     ///
-    /// Public wrapper around [`Self::get_selection_pool`] so validate-time
+    /// Public wrapper around `Self::get_selection_pool` so validate-time
     /// tooling can surface pool sizes without rebuilding pattern matching.
     /// Mutates the internal pattern cache, which is why `&mut self` is needed.
     pub fn resolve_pool(&mut self, from: &FromClause) -> Vec<String> {

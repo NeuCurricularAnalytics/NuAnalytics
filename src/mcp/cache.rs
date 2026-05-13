@@ -8,7 +8,7 @@
 //!   per-call repaste tax for hosted MCP clients whose filesystem isn't
 //!   reachable by the server (`yaml_path` returns ENOENT).
 //!
-//! - [`ARTIFACT_CACHE`] — small LRU of [`AnalysisArtifacts`] keyed by the
+//! - [`ARTIFACT_CACHE`] — small LRU of `AnalysisArtifacts` keyed by the
 //!   (yaml-hash, `max_plans`, `include_courses`) tuple. Three sequential
 //!   `render_plan_graph` calls on the same YAML now run the plan-generation
 //!   pipeline once instead of three times.
@@ -169,7 +169,7 @@ struct ArtifactEntry {
 
 /// Small LRU of analysis artifacts.
 ///
-/// Bounded at [`ARTIFACT_CACHE_CAPACITY`] to keep memory usage predictable —
+/// Bounded at `ARTIFACT_CACHE_CAPACITY` to keep memory usage predictable —
 /// each entry retains the full `MetricsAggregator`, `School`, `DAG`, and
 /// `SelectedPlans` for the run.
 #[derive(Default)]

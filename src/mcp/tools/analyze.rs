@@ -4,9 +4,9 @@
 //! generates plans, computes aggregate metrics, and returns structured results.
 //!
 //! The pipeline (parse → graph → plan generation → aggregation) is factored
-//! into [`build_artifacts`] / [`AnalysisArtifacts`] so sibling tools (e.g.
-//! `generate_degree_report`) can reuse the same flow without duplicating
-//! ~50 lines of orchestration.
+//! into `build_artifacts` / `AnalysisArtifacts` (`pub(crate)` items) so
+//! sibling tools (e.g. `generate_degree_report`) can reuse the same flow
+//! without duplicating ~50 lines of orchestration.
 
 use crate::core::degree::{
     parse_degree_yaml, DegreeParseError, PlanGenerationStats, PlanGenerator, PlanGeneratorConfig,
@@ -1998,6 +1998,87 @@ courses:
         // Clock granularity isn't guaranteed — `time_elapsed_ms == 0` is
         // legitimate on very fast machines. Just assert non-saturating.
         assert!(artifacts.time_elapsed_ms < 60_000);
+    }
+
+    #[test]
+    fn test_analysis_timeout_trips_on_csu_sample_with_tight_budget() {
+        // CSU is the largest bundled sample (65+ courses, deep prereq chains).
+        // A 1 s budget against max_plans=500 reliably trips the deadline on
+        // any machine where each plan's schedule+metrics work exceeds ~2 ms
+        // (essentially every target). One test exercises five separate
+        // signals — deadline trip path, was_truncated forced, is_full_population
+        // forced, notes entry, and time_elapsed_ms ceiling — so we don't pay
+        // the 1 s wall-clock cost five separate times.
+        let csu = crate::mcp::tools::samples::yaml_for_key("csu")
+            .expect("csu sample key must resolve to embedded YAML");
+        let response = execute(
+            csu,
+            Some(500),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            Some(1),
+        );
+        assert!(response.success, "error: {:?}", response.error);
+        assert!(
+            response.time_limit_reached,
+            "1 s budget on CSU/500 plans must trip the deadline"
+        );
+        assert!(
+            response.was_truncated,
+            "time_limit_reached=true must force was_truncated=true"
+        );
+        assert!(
+            !response.is_full_population,
+            "time-truncated runs are never the full population"
+        );
+        assert!(
+            response.plans_analyzed > 0 && response.plans_analyzed < 500,
+            "expected partial run; got plans_analyzed={}",
+            response.plans_analyzed
+        );
+        // 1 s budget + 1 s slack for the in-flight iteration to finish.
+        assert!(
+            response.time_elapsed_ms <= 2000,
+            "elapsed {} ms exceeded budget+slack; deadline polling is broken or budget didn't trip cleanly",
+            response.time_elapsed_ms
+        );
+        // Notes vec must surface the timeout — caller-facing breadcrumb.
+        assert!(
+            response.notes.iter().any(|n| {
+                n.contains("plan-generation loop stopped early")
+                    && n.contains("analysis_timeout_seconds tripped")
+            }),
+            "expected timeout note in response.notes; got {:?}",
+            response.notes
+        );
+    }
+
+    #[test]
+    fn test_analysis_timeout_seconds_is_clamped_to_min_max_bounds() {
+        // `0` clamps up to MIN_ANALYSIS_TIMEOUT_SECS (1 s) — would otherwise
+        // build a deadline equal to `Instant::now()` and trip on iteration 0.
+        // Just confirm we get artifacts back (i.e. no panic from `Duration`).
+        let artifacts_zero = build_artifacts(TEST_YAML, Some(10), None, None, Some(0))
+            .expect("0 must clamp up to 1 s and analyze cleanly");
+        assert!(
+            artifacts_zero.time_elapsed_ms < 2_000,
+            "TEST_YAML with clamped 1 s budget should finish well under 2 s"
+        );
+
+        // 100 000 clamps down to MAX_ANALYSIS_TIMEOUT_SECS (600 s). Since
+        // TEST_YAML completes in milliseconds, the budget is irrelevant —
+        // we just need the call to succeed without overflow on the deadline
+        // construction.
+        let artifacts_huge = build_artifacts(TEST_YAML, Some(10), None, None, Some(100_000))
+            .expect("100_000 must clamp down to 600 s and analyze cleanly");
+        assert!(
+            !artifacts_huge.time_limit_reached,
+            "TEST_YAML inside a 600 s budget cannot time-truncate"
+        );
     }
 
     #[test]
