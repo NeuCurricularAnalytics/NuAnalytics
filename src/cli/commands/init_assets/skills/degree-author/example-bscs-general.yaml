@@ -1,0 +1,697 @@
+# =============================================================================
+# EXAMPLE: University BS in Computer Science (General Track)
+# Schema v5.1 | Catalog 2024-2025
+# =============================================================================
+# This is a TEMPLATE/EXAMPLE showing correct structure and patterns.
+# Actual values should be verified against the source catalog.
+# =============================================================================
+
+degree:
+  id: example-cs-bscs-general
+  institution: Example State University
+  program: Bachelor of Science in Computer Science - General Track
+  catalog_year: "2024-2025"
+  source_url: https://catalog.example.edu/cs/bscs
+  total_credits: 120
+  upper_division_credits: 45
+  in_major_credits: 57
+  gpa_minimum: 2.0
+  gpa_major: 2.0
+  grade_minimum: "C"
+  grade_minimum_note: "C means C (2.0), not C- (1.7). B required in introductory courses."
+  major_subjects: [CS, CY]
+  allow_double_counting: false
+
+# =============================================================================
+# REQUIREMENTS
+# =============================================================================
+
+requirements:
+
+  # ---------------------------------------------------------------------------
+  # Example: Introductory Sequence with Higher Grade Requirement
+  # Shows: type: all with grade constraint
+  # ---------------------------------------------------------------------------
+  intro_sequence:
+    name: Introductory Computer Science Sequence
+    type: all
+    category: major
+    courses:
+      - CS111
+      - CS211
+    constraints:
+      grade_minimum: "B"  # Stricter than degree default
+
+  # ---------------------------------------------------------------------------
+  # Example: Discrete Math with Substitution Path
+  # Shows: type: one_of for mutually exclusive options
+  # ---------------------------------------------------------------------------
+  discrete_math:
+    name: Discrete Mathematics Requirement
+    type: one_of
+    category: major
+    options:
+      - id: cs_path
+        name: CS Discrete Math Sequence
+        requirements:
+          - type: all
+            courses: [CS141, CS241]
+      - id: math_substitution
+        name: Math Department Substitution
+        requirements:
+          - type: all
+            courses: [MATH301, MATH372]
+            # Note: This path also requires MATH307 per catalog
+
+  # ---------------------------------------------------------------------------
+  # Example: Core Courses (All Required)
+  # Shows: type: all for fixed requirements
+  # ---------------------------------------------------------------------------
+  core_courses:
+    name: Computer Science Core
+    type: all
+    category: major
+    courses:
+      - CS212       # Program Structure
+      - CS311       # Algorithms
+      - CS314       # Software Engineering
+      - CS321       # Database Systems
+      - CS332       # Operating Systems
+      - CS355       # Security and Trust
+
+  # ---------------------------------------------------------------------------
+  # Example: Breadth Requirement (Pick from Groups)
+  # Shows: type: select with from.groups for "2 of 3 pairs" pattern
+  # ---------------------------------------------------------------------------
+  breadth_requirements:
+    name: Breadth Requirements (Two of Three Areas)
+    type: select
+    category: major
+    from:
+      groups:
+        - id: systems_hardware
+          name: Systems and Hardware
+          courses: [CS312, CS331]  # Pick one from this pair
+        - id: languages_ai
+          name: Languages and AI
+          courses: [CS313, CS361]  # Pick one from this pair
+        - id: networking
+          name: Networking
+          courses: [CS351, CS451]  # Pick one from this pair
+      groups_required: 2  # Must pick from 2 of the 3 groups
+      per_group: 1        # Take 1 course from each selected group
+
+  # ---------------------------------------------------------------------------
+  # Example: Capstone
+  # Shows: Simple single-course requirement
+  # ---------------------------------------------------------------------------
+  capstone:
+    name: Capstone Project
+    type: all
+    category: major
+    courses: [CS496]
+
+  # ---------------------------------------------------------------------------
+  # Example: Upper-Division Electives (Pattern-Based)
+  # Shows: type: select with from.pattern
+  # ---------------------------------------------------------------------------
+  upper_electives:
+    name: 400-Level Electives
+    type: select
+    category: major
+    from:
+      pattern: "CS:400+"
+      exclude: [CS496, CS499]  # Already required or special
+    count: 4
+    constraints:
+      exclude_used: true  # Can't double-count courses used elsewhere
+
+  # ---------------------------------------------------------------------------
+  # Example: Calculus with Equivalent Options
+  # Shows: Choice syntax {A, B, C} for interchangeable courses
+  # ---------------------------------------------------------------------------
+  calculus:
+    name: Calculus Sequence
+    type: all
+    category: supporting
+    courses:
+      - "{MATH215, MATH241, MATH251A}"  # Calc I - any one of these
+      - "{MATH216, MATH242, MATH252A}"  # Calc II - any one of these
+
+  # ---------------------------------------------------------------------------
+  # Example: Math/Statistics Elective
+  # Shows: type: select with count: 1
+  # ---------------------------------------------------------------------------
+  math_statistics:
+    name: Mathematics or Statistics
+    type: select
+    category: supporting
+    from:
+      courses: [MATH307, MATH372, STAT301]
+    count: 1
+
+  # ---------------------------------------------------------------------------
+  # Example: Science Sequence with Labs (Bundled)
+  # Shows: Bundle syntax [LECTURE, LAB] and one_of for sequence options
+  # ---------------------------------------------------------------------------
+  science_sequence:
+    name: Natural Science Sequence with Labs
+    type: one_of
+    category: supporting
+    options:
+      - id: physics_calc
+        name: Physics (Calculus-Based)
+        requirements:
+          - type: all
+            courses:
+              - "[PHYS170, PHYS170L]"   # Physics I + Lab bundle
+              - "[PHYS272, PHYS272L]"   # Physics II + Lab bundle
+      - id: physics_algebra
+        name: Physics (Algebra-Based)
+        requirements:
+          - type: all
+            courses:
+              - "[PHYS151, PHYS151L]"
+              - "[PHYS152, PHYS152L]"
+      - id: chemistry
+        name: Chemistry
+        requirements:
+          - type: all
+            courses:
+              - "[CHEM161, CHEM161L]"
+              - "[CHEM162, CHEM162L]"
+      - id: biology
+        name: Biology
+        requirements:
+          - type: all
+            courses:
+              - "[BIOL171, BIOL171L]"
+              - "[BIOL172, BIOL172L]"
+
+  # ---------------------------------------------------------------------------
+  # Example: Writing Requirement
+  # Shows: Mixed required and choice
+  # ---------------------------------------------------------------------------
+  writing:
+    name: Writing Requirement
+    type: all
+    category: gen_ed
+    courses:
+      - ENGL101                      # First-year writing (required)
+      - "{ENGL301, ENGL302, ENGL310}" # Advanced writing (pick one)
+
+  # ---------------------------------------------------------------------------
+  # Example: Ethics/Social Issues
+  # Shows: type: select from explicit list
+  # ---------------------------------------------------------------------------
+  ethics:
+    name: Ethics and Social Issues in Computing
+    type: select
+    category: gen_ed
+    from:
+      courses:
+        - CS301   # Ethics in Computing
+        - PHIL220 # Technology Ethics
+        - PHIL301 # Professional Ethics
+        - SOC250  # Technology and Society
+        - COMM310 # Digital Communication Ethics
+    count: 1
+
+  # ---------------------------------------------------------------------------
+  # Example: Free Electives
+  # Shows: Credit-based requirement
+  # ---------------------------------------------------------------------------
+  free_electives:
+    name: Free Electives
+    type: select
+    category: elective
+    from:
+      pattern: "*:*"  # Any course
+    credits: 15       # Fills remaining credits to reach 120
+
+# =============================================================================
+# COURSES
+# =============================================================================
+# Every course referenced above must be defined here.
+# This is a representative sample - actual files will have 50-150+ courses.
+# =============================================================================
+
+courses:
+
+  # --- Introductory Sequence ---
+  CS111:
+    subject: CS
+    number: "111"
+    title: Introduction to Computer Science I
+    credits: 4
+    prerequisites: null
+    typically_offered: [fall, spring]
+    grade_minimum: "B"
+
+  CS211:
+    subject: CS
+    number: "211"
+    title: Introduction to Computer Science II
+    credits: 4
+    prerequisites: "CS111[B]"  # Requires B in CS111
+    typically_offered: [fall, spring]
+    grade_minimum: "B"
+
+  # --- Discrete Math (CS Path) ---
+  CS141:
+    subject: CS
+    number: "141"
+    title: Discrete Mathematics for CS I
+    credits: 3
+    prerequisites: null
+    typically_offered: [fall, spring]
+
+  CS241:
+    subject: CS
+    number: "241"
+    title: Discrete Mathematics for CS II
+    credits: 3
+    prerequisites: "CS141"
+    typically_offered: [fall, spring]
+
+  # --- Core Courses ---
+  CS212:
+    subject: CS
+    number: "212"
+    title: Program Structure
+    credits: 3
+    prerequisites: "CS211"
+    typically_offered: [fall, spring]
+
+  CS311:
+    subject: CS
+    number: "311"
+    title: Algorithms
+    credits: 4
+    prerequisites: "(CS211 & CS241) | (MATH301 & MATH372)"
+    typically_offered: [fall, spring]
+
+  CS314:
+    subject: CS
+    number: "314"
+    title: Software Engineering I
+    credits: 4
+    prerequisites: "CS211"
+    typically_offered: [fall, spring]
+
+  CS321:
+    subject: CS
+    number: "321"
+    title: Database Systems I
+    credits: 3
+    prerequisites: "CS211"
+    typically_offered: [fall, spring]
+
+  CS332:
+    subject: CS
+    number: "332"
+    title: Operating Systems
+    credits: 3
+    prerequisites: "CS212"
+    typically_offered: [fall, spring]
+
+  CS355:
+    subject: CS
+    number: "355"
+    title: Security and Trust I
+    credits: 3
+    prerequisites: "CS211"
+    typically_offered: [fall, spring]
+
+  # --- Breadth Courses ---
+  CS312:
+    subject: CS
+    number: "312"
+    title: Machine-Level and Systems Programming
+    credits: 3
+    prerequisites: "CS212"
+    typically_offered: [fall, spring]
+
+  CS313:
+    subject: CS
+    number: "313"
+    title: Programming Language Theory
+    credits: 3
+    prerequisites: "CS212"
+    typically_offered: [fall, spring]
+
+  CS331:
+    subject: CS
+    number: "331"
+    title: Logic Design and Microprocessors
+    credits: 3
+    prerequisites: "CS212"
+    typically_offered: [fall, spring]
+
+  CS351:
+    subject: CS
+    number: "351"
+    title: Network Design and Management
+    credits: 3
+    prerequisites: "CS211"
+    typically_offered: [fall, spring]
+
+  CS361:
+    subject: CS
+    number: "361"
+    title: Introduction to Artificial Intelligence
+    credits: 3
+    prerequisites: "CS212 & CS241"
+    typically_offered: [fall, spring]
+
+  CS451:
+    subject: CS
+    number: "451"
+    title: Data Networks
+    credits: 3
+    prerequisites: "CS212"
+    typically_offered: [fall, spring]
+
+  # --- Capstone ---
+  CS496:
+    subject: CS
+    number: "496"
+    title: Capstone Project
+    credits: 3
+    prerequisites: "CS311 & CS314"
+    typically_offered: [fall, spring]
+
+  # --- 400-Level Electives (Sample) ---
+  CS414:
+    subject: CS
+    number: "414"
+    title: Software Engineering II
+    credits: 3
+    prerequisites: "CS314"
+
+  CS421:
+    subject: CS
+    number: "421"
+    title: Database Systems II
+    credits: 3
+    prerequisites: "CS321"
+
+  CS423:
+    subject: CS
+    number: "423"
+    title: Data Security and Cryptography
+    credits: 3
+    prerequisites: "CS311"
+
+  CS432:
+    subject: CS
+    number: "432"
+    title: Concurrent and High-Performance Programming
+    credits: 3
+    prerequisites: "CS332"
+
+  CS435:
+    subject: CS
+    number: "435"
+    title: Machine Learning Fundamentals
+    credits: 3
+    prerequisites: "CS311"
+
+  CS461:
+    subject: CS
+    number: "461"
+    title: Artificial Intelligence
+    credits: 3
+    prerequisites: "CS311"
+
+  CS481:
+    subject: CS
+    number: "481"
+    title: Introduction to Computer Graphics
+    credits: 3
+    prerequisites: "CS311 & MATH307"
+
+  CS499:
+    subject: CS
+    number: "499"
+    title: Directed Reading/Research
+    credit_range:
+      min: 1
+      max: 3
+    prerequisites: null
+    repeatable: true
+    max_repeat_credits: 6
+
+  # --- Math Courses ---
+  MATH215:
+    subject: MATH
+    number: "215"
+    title: Applied Calculus I
+    credits: 4
+    prerequisites: null
+
+  MATH216:
+    subject: MATH
+    number: "216"
+    title: Applied Calculus II
+    credits: 4
+    prerequisites: "MATH215"
+
+  MATH241:
+    subject: MATH
+    number: "241"
+    title: Calculus I
+    credits: 4
+    prerequisites: null
+
+  MATH242:
+    subject: MATH
+    number: "242"
+    title: Calculus II
+    credits: 4
+    prerequisites: "MATH241"
+
+  MATH251A:
+    subject: MATH
+    number: "251A"
+    title: Calculus I
+    credits: 3
+    prerequisites: null
+
+  MATH252A:
+    subject: MATH
+    number: "252A"
+    title: Calculus II
+    credits: 3
+    prerequisites: "MATH251A"
+
+  MATH301:
+    subject: MATH
+    number: "301"
+    title: Introduction to Discrete Mathematics
+    credits: 3
+    prerequisites: "MATH241"
+
+  MATH307:
+    subject: MATH
+    number: "307"
+    title: Linear Algebra
+    credits: 3
+    prerequisites: "MATH242"
+
+  MATH372:
+    subject: MATH
+    number: "372"
+    title: Elementary Probability and Statistics
+    credits: 3
+    prerequisites: "MATH242"
+
+  STAT301:
+    subject: STAT
+    number: "301"
+    title: Introduction to Statistics
+    credits: 3
+    prerequisites: "MATH241"
+
+  # --- Science Courses (with Labs) ---
+  PHYS170:
+    subject: PHYS
+    number: "170"
+    title: General Physics I (Calculus)
+    credits: 4
+    prerequisites: "MATH241"
+    corequisites: [PHYS170L]
+
+  PHYS170L:
+    subject: PHYS
+    number: "170L"
+    title: General Physics I Lab
+    credits: 1
+    corequisites: [PHYS170]
+
+  PHYS272:
+    subject: PHYS
+    number: "272"
+    title: General Physics II (Calculus)
+    credits: 3
+    prerequisites: "PHYS170"
+    corequisites: [PHYS272L]
+
+  PHYS272L:
+    subject: PHYS
+    number: "272L"
+    title: General Physics II Lab
+    credits: 1
+    corequisites: [PHYS272]
+
+  PHYS151:
+    subject: PHYS
+    number: "151"
+    title: College Physics I
+    credits: 3
+    corequisites: [PHYS151L]
+
+  PHYS151L:
+    subject: PHYS
+    number: "151L"
+    title: College Physics I Lab
+    credits: 1
+    corequisites: [PHYS151]
+
+  PHYS152:
+    subject: PHYS
+    number: "152"
+    title: College Physics II
+    credits: 3
+    prerequisites: "PHYS151"
+    corequisites: [PHYS152L]
+
+  PHYS152L:
+    subject: PHYS
+    number: "152L"
+    title: College Physics II Lab
+    credits: 1
+    corequisites: [PHYS152]
+
+  CHEM161:
+    subject: CHEM
+    number: "161"
+    title: General Chemistry I
+    credits: 3
+    corequisites: [CHEM161L]
+
+  CHEM161L:
+    subject: CHEM
+    number: "161L"
+    title: General Chemistry I Lab
+    credits: 1
+    corequisites: [CHEM161]
+
+  CHEM162:
+    subject: CHEM
+    number: "162"
+    title: General Chemistry II
+    credits: 3
+    prerequisites: "CHEM161"
+    corequisites: [CHEM162L]
+
+  CHEM162L:
+    subject: CHEM
+    number: "162L"
+    title: General Chemistry II Lab
+    credits: 1
+    corequisites: [CHEM162]
+
+  BIOL171:
+    subject: BIOL
+    number: "171"
+    title: Introduction to Biology I
+    credits: 3
+    corequisites: [BIOL171L]
+
+  BIOL171L:
+    subject: BIOL
+    number: "171L"
+    title: Introduction to Biology I Lab
+    credits: 1
+    corequisites: [BIOL171]
+
+  BIOL172:
+    subject: BIOL
+    number: "172"
+    title: Introduction to Biology II
+    credits: 3
+    prerequisites: "BIOL171"
+    corequisites: [BIOL172L]
+
+  BIOL172L:
+    subject: BIOL
+    number: "172L"
+    title: Introduction to Biology II Lab
+    credits: 1
+    corequisites: [BIOL172]
+
+  # --- Writing Courses ---
+  ENGL101:
+    subject: ENGL
+    number: "101"
+    title: First-Year Writing
+    credits: 3
+    prerequisites: null
+
+  ENGL301:
+    subject: ENGL
+    number: "301"
+    title: Advanced Writing in the Disciplines
+    credits: 3
+    prerequisites: "ENGL101"
+
+  ENGL302:
+    subject: ENGL
+    number: "302"
+    title: Technical Writing
+    credits: 3
+    prerequisites: "ENGL101"
+
+  ENGL310:
+    subject: ENGL
+    number: "310"
+    title: Writing for the Sciences
+    credits: 3
+    prerequisites: "ENGL101"
+
+  # --- Ethics Courses ---
+  CS301:
+    subject: CS
+    number: "301"
+    title: Ethics in Computing
+    credits: 3
+    prerequisites: "CS211"
+
+  PHIL220:
+    subject: PHIL
+    number: "220"
+    title: Technology and Ethics
+    credits: 3
+    prerequisites: null
+
+  PHIL301:
+    subject: PHIL
+    number: "301"
+    title: Professional Ethics
+    credits: 3
+    prerequisites: null
+
+  SOC250:
+    subject: SOC
+    number: "250"
+    title: Technology and Society
+    credits: 3
+    prerequisites: null
+
+  COMM310:
+    subject: COMM
+    number: "310"
+    title: Digital Communication Ethics
+    credits: 3
+    prerequisites: null
