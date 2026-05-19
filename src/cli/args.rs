@@ -390,8 +390,8 @@ pub enum Command {
         #[arg(value_name = "DIR")]
         dir: std::path::PathBuf,
 
-        /// Overwrite existing files in <DIR>. Without this, init aborts if any
-        /// target file already exists.
+        /// Overwrite existing files in `<DIR>`. Without this, init aborts if
+        /// any target file already exists.
         #[arg(long)]
         force: bool,
     },
