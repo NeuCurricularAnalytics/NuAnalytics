@@ -360,6 +360,41 @@ pub enum Command {
             \x20 nuanalytics --log-level debug mcp\n\
             \x20 npx @modelcontextprotocol/inspector nuanalytics mcp")]
     Mcp,
+    /// Initialize a new `NuAnalytics` research project directory.
+    ///
+    /// Scaffolds a directory with a `.claude/` folder pre-wired to the
+    /// `NuAnalytics` MCP server and SKILL.md skills for degree authoring,
+    /// review, and curriculum-plan analysis.
+    ///
+    /// # Examples
+    /// ```sh
+    /// nuanalytics init my-cs-study
+    /// nuanalytics init ./projects/curriculum-2026 --force
+    /// ```
+    #[command(
+        long_about = "Initialize a new NuAnalytics research project directory.\n\n\
+            Creates <DIR> if it does not exist and scaffolds:\n\
+            \x20 .claude/settings.json       MCP wiring (auto-detected binary path)\n\
+            \x20 .claude/skills/             SKILL.md skills for Claude Code\n\
+            \x20 degrees/                    workspace for degree YAML files\n\
+            \x20 plans/                      workspace for curriculum CSV plans\n\
+            \x20 nuanalytics.toml            local config (overrides global)\n\
+            \x20 README.md                   one-page orientation\n\n\
+            If any target file already exists, init aborts unless --force is set.\n\n\
+            Examples:\n\
+            \x20 nuanalytics init my-cs-study\n\
+            \x20 nuanalytics init ./projects/curriculum-2026 --force"
+    )]
+    Init {
+        /// Target directory to scaffold (created if it does not exist).
+        #[arg(value_name = "DIR")]
+        dir: std::path::PathBuf,
+
+        /// Overwrite existing files in `<DIR>`. Without this, init aborts if
+        /// any target file already exists.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 /// Database management subcommands

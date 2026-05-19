@@ -1,0 +1,25 @@
+# Local config for this NuAnalytics research project.
+# Settings here override the user/global config; see `nuanalytics config --help`.
+
+[paths]
+metrics_dir = "./metrics"
+reports_dir = "./reports"
+
+# [logging]
+# level = "info"          # trace | debug | info | warn | error
+# verbose = false
+
+# [audit]
+# prerequisite_chain_threshold = 4
+
+# [degree_analysis]
+# calc_strategy = "median"        # mean | median
+# sample_plan_count = 5
+# max_plans = 1000
+# ignore_duplicates = true
+# sampling_strategy = "shuffled"  # shuffled | sequential
+
+# [database]
+# enabled = false
+# endpoint = "https://your-project.supabase.co"
+# anon_key = "..."

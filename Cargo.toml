@@ -1,6 +1,6 @@
 [package]
 name = "nu-analytics"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 authors = ["Albert Lionelle <a.lionelle@northeastern.edu>"]
 description = "A CLI tool for computing Curricular Analytics metrics. Based off metrics from CurricularAnalytics.org. Currently, only basic metrics and additional reporting features."
@@ -75,5 +75,11 @@ pedantic = "warn"
 nursery = "warn"
 correctness = "deny"
 perf = "deny"
+
+# Match CI's `cargo doc` strictness so doc-only failures surface locally.
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+invalid_html_tags = "deny"
+unescaped_backticks = "warn"
 
 # Note: logger is now an internal module; no workspace members required.

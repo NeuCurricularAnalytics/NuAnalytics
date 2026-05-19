@@ -116,6 +116,12 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Command::Init { dir, force } => {
+            if let Err(e) = commands::init::run(&dir, force) {
+                eprintln!("✗ init failed: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 

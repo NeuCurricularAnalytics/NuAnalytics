@@ -5,6 +5,7 @@
 //! ## Command Handlers
 //! - [`config`] - Configuration management
 //! - [`degree`] - Degree program validation
+//! - [`init`] - Scaffold a research project directory
 //! - [`planner`] - Curriculum planning and CSV export
 //! - [`mcp`] - MCP server for AI model integration (feature-gated)
 //!
@@ -13,6 +14,7 @@
 
 pub mod config;
 pub mod degree;
+pub mod init;
 pub mod planner;
 pub mod report;
 

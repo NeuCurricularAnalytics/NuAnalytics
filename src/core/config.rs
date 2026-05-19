@@ -190,6 +190,7 @@ impl Default for DegreeAnalysisConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     /// Logging settings
+    #[serde(default)]
     pub logging: LoggingConfig,
     /// Database settings
     #[serde(default)]
@@ -1234,5 +1235,25 @@ mod tests {
         assert!(s.contains("[paths]"));
         assert!(s.contains("[audit]"));
         assert!(s.contains("[degree_analysis]"));
+    }
+
+    #[test]
+    fn test_from_toml_with_missing_logging_section_uses_defaults() {
+        // Regression guard for `#[serde(default)]` on `Config.logging`: a
+        // project-local `nuanalytics.toml` that omits `[logging]` must still
+        // deserialize, otherwise `Config::load` silently drops the local
+        // overrides — see the `nuanalytics init` template.
+        let toml_str = r#"
+[paths]
+metrics_dir = "./metrics"
+reports_dir = "./reports"
+"#;
+        let cfg = Config::from_toml(toml_str)
+            .expect("missing [logging] must fall back to LoggingConfig::default()");
+        let default_logging = LoggingConfig::default();
+        assert_eq!(cfg.logging.level, default_logging.level);
+        assert_eq!(cfg.logging.file, default_logging.file);
+        assert_eq!(cfg.logging.verbose, default_logging.verbose);
+        assert_eq!(cfg.paths.metrics_dir, "./metrics");
     }
 }
