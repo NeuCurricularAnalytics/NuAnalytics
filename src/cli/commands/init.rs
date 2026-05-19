@@ -15,23 +15,27 @@ use std::path::{Path, PathBuf};
 /// path.
 const STD_PATH_DIRS: &[&str] = &["/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"];
 
-// Embedded asset contents — kept next to this module under `init_assets/`.
-// Updating any of these files requires a rebuild because `include_str!`
-// resolves at compile time.
+/// Binary name used in the generated MCP config when on a standard PATH dir.
+const BIN_NAME: &str = "nuanalytics";
 
-const SETTINGS_TEMPLATE: &str = include_str!("init_assets/settings.json.tmpl");
-const NUANALYTICS_TOML: &str = include_str!("init_assets/nuanalytics.toml");
-const PROJECT_README: &str = include_str!("init_assets/README.md");
+/// Subcommand argument passed to the binary in the generated MCP config.
+const MCP_SUBCOMMAND: &str = "mcp";
 
-const SKILL_DEGREE_AUTHOR: &str = include_str!("init_assets/skills/degree-author/SKILL.md");
-const SKILL_DEGREE_REVIEW: &str = include_str!("init_assets/skills/degree-review/SKILL.md");
-const SKILL_PLAN_ANALYZE: &str = include_str!("init_assets/skills/plan-analyze/SKILL.md");
+const SETTINGS_TEMPLATE: &str = include_str!("../../assets/init/settings.json.tmpl");
+const NUANALYTICS_TOML: &str = include_str!("../../assets/init/nuanalytics.toml");
+const PROJECT_README: &str = include_str!("../../assets/init/README.md");
 
-const REF_SCHEMA: &str = include_str!("init_assets/skills/degree-author/schema-v5.2.yaml");
-const REF_GUIDE: &str = include_str!("init_assets/skills/degree-author/generation-guide.md");
-const REF_QUICK: &str = include_str!("init_assets/skills/degree-author/quick-reference.md");
+const SKILL_DEGREE_AUTHOR: &str = include_str!("../../assets/init/skills/degree-author/SKILL.md");
+const SKILL_DEGREE_REVIEW: &str = include_str!("../../assets/init/skills/degree-review/SKILL.md");
+const SKILL_PLAN_ANALYZE: &str = include_str!("../../assets/init/skills/plan-analyze/SKILL.md");
+
+// Schema reference is shared with the MCP server's `get_degree_schema` tool —
+// embed the canonical file rather than maintain a second copy.
+const REF_SCHEMA: &str = include_str!("../../assets/Degree-schema.yaml");
+const REF_GUIDE: &str = include_str!("../../assets/init/skills/degree-author/generation-guide.md");
+const REF_QUICK: &str = include_str!("../../assets/init/skills/degree-author/quick-reference.md");
 const REF_EXAMPLE: &str =
-    include_str!("init_assets/skills/degree-author/example-bscs-general.yaml");
+    include_str!("../../assets/init/skills/degree-author/example-bscs-general.yaml");
 
 /// Files written verbatim from embedded assets, keyed by their path relative
 /// to the target directory.
@@ -135,10 +139,10 @@ fn render_settings(command: &str, args: &[String]) -> Result<String, serde_json:
 /// machines); otherwise embed the absolute path so the project works
 /// without any further setup.
 fn detect_mcp_command() -> (String, Vec<String>) {
-    let args = vec!["mcp".to_string()];
+    let args = vec![MCP_SUBCOMMAND.to_string()];
 
     let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) else {
-        return ("nuanalytics".to_string(), args);
+        return (BIN_NAME.to_string(), args);
     };
 
     let cargo_bin = std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cargo/bin"));
@@ -149,7 +153,7 @@ fn detect_mcp_command() -> (String, Vec<String>) {
     });
 
     if in_std_dir {
-        ("nuanalytics".to_string(), args)
+        (BIN_NAME.to_string(), args)
     } else {
         (exe.to_string_lossy().into_owned(), args)
     }
@@ -229,7 +233,6 @@ mod tests {
             "should name the conflict: {msg}"
         );
 
-        // Pre-existing file should be untouched.
         let body = fs::read_to_string(target.join(".claude/settings.json")).expect("read");
         assert_eq!(body, "pre-existing\n");
     }
@@ -246,5 +249,53 @@ mod tests {
         let body = fs::read_to_string(target.join(".claude/settings.json")).expect("read");
         let v: Value = serde_json::from_str(&body).expect("settings.json parses");
         assert!(v["mcpServers"]["nuanalytics"]["command"].is_string());
+    }
+
+    #[test]
+    fn force_succeeds_with_no_existing_files() {
+        let tmp = TempDir::new().expect("tempdir");
+        let target = tmp.path().join("proj");
+
+        run(&target, true).expect("init --force on a clean dir should still succeed");
+
+        for rel in EXPECTED_FILES {
+            let p = target.join(rel);
+            assert!(p.exists(), "missing scaffolded file: {}", p.display());
+        }
+    }
+
+    #[test]
+    fn render_settings_escapes_quotes_and_backslashes_in_command() {
+        // A Windows-style path with backslashes plus a literal double quote
+        // would corrupt the JSON if `render_settings` used naive interpolation
+        // instead of `serde_json::to_string`.
+        let weird = r#"C:\Program Files\Nu"Analytics\nuanalytics.exe"#;
+        let rendered =
+            render_settings(weird, &[MCP_SUBCOMMAND.to_string()]).expect("render_settings");
+
+        let v: Value = serde_json::from_str(&rendered)
+            .expect("rendered settings must be valid JSON even for odd command paths");
+        assert_eq!(
+            v["mcpServers"]["nuanalytics"]["command"].as_str(),
+            Some(weird),
+            "command round-trips through JSON unchanged"
+        );
+    }
+
+    #[test]
+    fn generated_nuanalytics_toml_parses_as_config() {
+        use nu_analytics::config::Config;
+
+        let tmp = TempDir::new().expect("tempdir");
+        let target = tmp.path().join("proj");
+        run(&target, false).expect("init succeeds");
+
+        let body =
+            fs::read_to_string(target.join("nuanalytics.toml")).expect("read nuanalytics.toml");
+        let cfg: Config =
+            toml::from_str(&body).expect("embedded nuanalytics.toml must deserialize into Config");
+
+        assert_eq!(cfg.paths.metrics_dir, "./metrics");
+        assert_eq!(cfg.paths.reports_dir, "./reports");
     }
 }
