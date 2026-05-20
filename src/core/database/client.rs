@@ -13,9 +13,9 @@
 //! user JWT — there is no anon-only read path. Row-level security on
 //! every table requires `auth.role() = 'authenticated'`, so the client
 //! refuses to build without a valid session. The session is loaded via
-//! [`auth::load_and_refresh`], which exchanges the saved refresh token
-//! for a fresh access token whenever the current one is within the
-//! [`AuthState::is_expired`] 60s safety buffer.
+//! [`super::auth::load_and_refresh`], which exchanges the saved refresh
+//! token for a fresh access token whenever the current one is within
+//! the [`AuthState::is_expired`] 60s safety buffer.
 
 use super::auth::{auth_file_path, load_and_refresh, load_auth_state, save_auth_state, AuthState};
 use super::error::{DatabaseError, DatabaseResult};
