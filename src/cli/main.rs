@@ -6,7 +6,7 @@
 mod args;
 mod commands;
 
-use args::{Cli, Command, ReportFormatArg};
+use args::{Cli, Command, DegreeSubcommand, ReportFormatArg};
 use clap::Parser;
 use nu_analytics::config::Config;
 use nu_analytics::logger::{enable_debug, enable_verbose, init_file_logging, set_level, Level};
@@ -57,53 +57,8 @@ fn main() {
             };
             run_planner(&config, &opts);
         }
-        Command::Degree {
-            files,
-            validate,
-            print_graph,
-            audit,
-            analyze,
-            calc_strategy,
-            sampling_strategy,
-            sample_plans,
-            max_plans,
-            full_run,
-            report_dir,
-            metrics_dir,
-            no_csv,
-            no_report,
-            include,
-        } => {
-            let options = commands::degree::DegreeOptions {
-                validate,
-                print_graph,
-                audit,
-                analyze,
-                calc_strategy: calc_strategy.map(|s| s.to_string()),
-                sampling_strategy: sampling_strategy.map(|s| s.to_string()),
-                sample_plans,
-                max_plans,
-                full_run,
-                report_dir: report_dir.or_else(|| {
-                    if config.paths.reports_dir.is_empty() {
-                        None
-                    } else {
-                        Some(PathBuf::from(&config.paths.reports_dir))
-                    }
-                }),
-                metrics_dir: metrics_dir.or_else(|| {
-                    if config.paths.metrics_dir.is_empty() {
-                        None
-                    } else {
-                        Some(PathBuf::from(&config.paths.metrics_dir))
-                    }
-                }),
-                no_csv,
-                no_report,
-                verbose,
-                include_courses: include,
-            };
-            commands::degree::run(&files, &options, &config);
+        Command::Degree { subcommand } => {
+            run_degree(subcommand, &config, verbose);
         }
         #[cfg(feature = "database")]
         Command::Db { subcommand } => {
@@ -122,6 +77,73 @@ fn main() {
                 std::process::exit(1);
             }
         }
+    }
+}
+
+/// Dispatch the `degree` subcommand tree.
+fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
+    match subcommand {
+        DegreeSubcommand::Validate { files } => {
+            commands::degree::run_validate(&files, verbose);
+        }
+        DegreeSubcommand::PrintGraph { files } => {
+            commands::degree::run_print_graph(&files, verbose);
+        }
+        DegreeSubcommand::Audit { files } => {
+            commands::degree::run_audit(&files, config, verbose);
+        }
+        DegreeSubcommand::Analyze {
+            files,
+            calc_strategy,
+            sampling_strategy,
+            sample_plans,
+            max_plans,
+            full_run,
+            report_dir,
+            metrics_dir,
+            no_csv,
+            no_report,
+            include,
+        } => {
+            let options = commands::degree::AnalyzeOptions {
+                calc_strategy: calc_strategy.map(|s| s.to_string()),
+                sampling_strategy: sampling_strategy.map(|s| s.to_string()),
+                sample_plans,
+                max_plans,
+                full_run,
+                report_dir: report_dir.or_else(|| dir_override(&config.paths.reports_dir)),
+                metrics_dir: metrics_dir.or_else(|| dir_override(&config.paths.metrics_dir)),
+                no_csv,
+                no_report,
+                verbose,
+                include_courses: include,
+            };
+            commands::degree::run_analyze(&files, &options, config);
+        }
+        DegreeSubcommand::Trim {
+            file,
+            out,
+            keep_all,
+            include,
+        } => {
+            commands::degree::run_trim(
+                &file,
+                out.as_deref(),
+                &keep_all,
+                include.as_deref(),
+                verbose,
+            );
+        }
+    }
+}
+
+/// Resolve a config-supplied directory into an `Option<PathBuf>`, treating
+/// an empty string as "no override configured."
+fn dir_override(configured: &str) -> Option<PathBuf> {
+    if configured.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(configured))
     }
 }
 
