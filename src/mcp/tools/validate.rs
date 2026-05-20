@@ -12,8 +12,8 @@ use crate::core::{
     ValidationResult, ValidationWarning,
 };
 use crate::mcp::tools::shared::{
-    format_yaml_context, ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_AUDIT_DEGREE,
-    TOOL_GET_DEGREE_SCHEMA,
+    format_degree_parse_error, format_yaml_context, ToolFollowup, TOOL_ANALYZE_DEGREE,
+    TOOL_AUDIT_DEGREE, TOOL_GET_DEGREE_SCHEMA,
 };
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
@@ -202,7 +202,7 @@ pub fn execute(
             };
             return ValidationResponse {
                 is_valid: false,
-                parse_error: Some(format_parse_error(&e)),
+                parse_error: Some(format_degree_parse_error(&e)),
                 parse_error_line: line,
                 parse_error_column: column,
                 parse_error_context: context,
@@ -330,27 +330,6 @@ pub fn execute_json(
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-fn format_parse_error(e: &DegreeParseError) -> String {
-    match e {
-        DegreeParseError::IoError(msg) => format!("File error: {msg}"),
-        DegreeParseError::YamlError {
-            message,
-            line,
-            column,
-        } => {
-            // Prefix the structured location ahead of the raw message so the
-            // human-readable string still carries the position info — handy
-            // for log scraping and for clients that don't parse the JSON.
-            match (line, column) {
-                (Some(l), Some(c)) => {
-                    format!("YAML syntax error at line {l} column {c}: {message}")
-                }
-                _ => format!("YAML syntax error: {message}"),
-            }
-        }
-    }
-}
 
 fn convert_validation_errors(result: &ValidationResult) -> Vec<ValidationErrorInfo> {
     result
