@@ -60,7 +60,7 @@ nuanalytics config get
 # Display a specific configuration value
 nuanalytics config get level
 nuanalytics config get file
-nuanalytics config get out_dir
+nuanalytics config get metrics_dir
 ```
 
 **Example Output:**
@@ -74,8 +74,10 @@ nuanalytics config get out_dir
   verbose = false
 
 [database]
-  token = ""
   endpoint = ""
+  anon_key = ""
+  enabled = false
+  auth_file = "~/.config/nuanalytics/auth.json"
 
 [paths]
   metrics_dir = "metrics"
@@ -90,8 +92,8 @@ Set a configuration value that persists in the config file.
 
 ```bash
 nuanalytics config set level debug
-nuanalytics config set out_dir /path/to/output
-nuanalytics config set token your-api-token
+nuanalytics config set metrics_dir /path/to/metrics
+nuanalytics config set database.anon_key eyJhbGc...
 ```
 
 **Supported Configuration Keys:**
@@ -101,8 +103,15 @@ nuanalytics config set token your-api-token
 - `file` - Path to log file
 - `metrics_dir` - Default output directory for CSV metrics files
 - `reports_dir` - Default output directory for report files (HTML, PDF, Markdown)
-- `token` - API token for database integration  (Does nothing at this point - future update)
-- `endpoint` - Database API endpoint URL        (Does nothing at this point - future update)
+- `database.endpoint` - Supabase project URL (e.g. `https://abcdefgh.supabase.co`)
+- `database.anon_key` - Supabase anonymous (public) key, JWT format starting with `eyJhbGc...` (legacy alias: `database.token`)
+- `database.enabled` - Whether to enable database tools (true/false)
+- `database.auth_file` - Path to the auth session file populated by `nuanalytics db login`
+
+> Setting `endpoint` and `anon_key` enables the database tools but
+> does not authorise access on its own. After configuring, run
+> `nuanalytics db login` once to save your OAuth session; the client
+> refreshes the JWT automatically near expiry.
 
 ### `config unset <KEY>`
 
@@ -112,7 +121,7 @@ Reset a configuration value to its default.
 
 ```bash
 nuanalytics config unset level
-nuanalytics config unset token
+nuanalytics config unset database.anon_key
 ```
 
 ### `config reset`
@@ -160,10 +169,11 @@ In addition to `config` subcommands, you can control config at runtime:
 - `--config-level <LEVEL>` - Set logging level and save to config file
 - `--config-verbose` - Set verbose flag and save to config file
 - `--config-log-file <PATH>` - Set log file path and save to config file
-- `--config-out-dir <DIR>` - Set output directory and save to config file
-- `--db-token <TOKEN>` - Override database token at runtime (short form)
+- `--metrics-dir <DIR>` - Override metrics output directory for this run
+- `--reports-dir <DIR>` - Override reports output directory for this run
+- `--db-anon-key <KEY>` - Override database anon key at runtime (short form)
 - `--db-endpoint <URL>` - Override database endpoint at runtime (short form)
-- `--config-db-token <TOKEN>` - Set database token and save to config file
+- `--config-db-anon-key <KEY>` - Set database anon key and save to config file
 - `--config-db-endpoint <URL>` - Set database endpoint and save to config file
 
 
@@ -204,74 +214,113 @@ nuanalytics config get
 
 ## Default Configuration
 
-When you first run NuAnalytics, it uses these defaults (which depend on build mode):
+NuAnalytics embeds two default config files in the binary — one for
+release builds, one for debug — and falls back to them when neither the
+home nor the local config file overrides a given key. The defaults
+below are the actual contents of `src/assets/DefaultCLIConfigRelease.toml`
+and `DefaultCLIConfigDebug.toml`.
 
-**Release Mode:**
+**Release Mode** (used by the installed `nuanalytics` binary):
 ```toml
 [logging]
 level = "warn"
-verbose = false
 file = "$NU_ANALYTICS/nuanalytics.log"
+verbose = false
 
 [database]
-token = ""
-endpoint = ""
+endpoint = "https://oaaqxtzkfcjcosilpbwi.supabase.co"
+anon_key = "eyJhbGciOiJIUzI1NiI..."   # JWT-format anon key — see below
+enabled = true
+auth_file = "$NU_ANALYTICS/auth.json"
+management_key = ""                    # set this only if you run `db exec-sql`
 
 [paths]
 metrics_dir = "./metrics"
 reports_dir = "./reports"
 
+[audit]
+prerequisite_chain_threshold = 4
+
 [degree_analysis]
-max_plans = 1000
+calc_strategy = "median"
 sample_plan_count = 5
-sampling_strategy = "shuffled"
+max_plans = 1000
 ignore_duplicates = true
+sampling_strategy = "shuffled"
 ```
 
-**Debug Mode:**
+**Debug Mode** (used by `cargo run` and other debug builds — output goes
+under `.debug/` to avoid mixing with release output):
 ```toml
 [logging]
 level = "debug"
-verbose = true
 file = ".debug/nuanalytics.debug.log"
+verbose = true
 
 [database]
-token = ""
-endpoint = ""
+endpoint = "https://oaaqxtzkfcjcosilpbwi.supabase.co"
+anon_key = "eyJhbGciOiJIUzI1NiI..."
+enabled = true
+auth_file = ".debug/dauth.json"        # separate from any active release session
+management_key = ""
 
 [paths]
 metrics_dir = ".debug/metrics"
 reports_dir = ".debug/reports"
 
+[audit]
+prerequisite_chain_threshold = 4
+
 [degree_analysis]
+calc_strategy = "median"
+sample_plan_count = 3                  # smaller for faster debug iteration
 max_plans = 1000
-sample_plan_count = 5
-sampling_strategy = "shuffled"
 ignore_duplicates = true
+sampling_strategy = "shuffled"
 ```
 
-## Degree Analysis Configuration
+> The shipped `anon_key` and `endpoint` point at the project's shared
+> development database. They identify the project but do not grant access
+> — you still need `nuanalytics db login` to obtain a user JWT before any
+> database tool will work (see [Database setup](database/setup.md) for
+> the full flow). `management_key` is a separate Supabase Personal Access
+> Token used by `db exec-sql` for DDL; generate one at
+> <https://app.supabase.com/account/tokens> only if you need it.
 
-The `degree_analysis` section controls behavior of the `degree --analyze` command:
+## Audit Configuration
+
+The `[audit]` section controls the `degree audit` command:
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `max_plans` | Maximum number of plans to generate | 1000 |
-| `sample_plan_count` | Number of random plans to export | 5 |
-| `sampling_strategy` | Plan enumeration strategy | "shuffled" |
-| `ignore_duplicates` | Skip duplicate plan combinations | true |
+| `prerequisite_chain_threshold` | Minimum chain depth to flag as "deep". Courses whose longest prereq chain is at least this many steps long are highlighted in audit reports. | 4 |
+
+## Degree Analysis Configuration
+
+The `[degree_analysis]` section controls the `degree analyze` command:
+
+| Key | Description | Default (release) |
+|-----|-------------|-------------------|
+| `calc_strategy` | Aggregate metric strategy across generated plans: `"median"` or `"mean"`. Median is more robust to outlier plans. | `"median"` |
+| `max_plans` | Hard cap on plan generation. Programs with many electives explode combinatorially; this stops runaway generation. | 1000 |
+| `sample_plan_count` | How many random plans to export in full (term schedules + CSVs). Does not affect aggregate stats — those use every analysed plan. | 5 (release) / 3 (debug) |
+| `sampling_strategy` | Plan enumeration order before sampling: `"sequential"`, `"shuffled"`, or `"stratified"`. | `"shuffled"` |
+| `ignore_duplicates` | Skip plans that are permutations of the same course set. Strongly recommended — reduces noise. | true |
 
 **Sampling Strategies:**
 
-- `sequential` - Enumerate plans in order (may bias toward early options)
-- `shuffled` - Randomize enumeration order for unbiased sampling
-- `stratified` - Ensure coverage across the option space
+- `sequential` - Enumerate plans in natural order (may bias statistics toward early options)
+- `shuffled` - Randomize order before sampling (recommended for unbiased stats)
+- `stratified` - Ensure coverage across elective option space
 
 **Examples:**
 
 ```bash
 # Set maximum plans to generate
 nuanalytics config set degree_analysis.max_plans 5000
+
+# Use mean instead of median for aggregate metrics
+nuanalytics config set degree_analysis.calc_strategy mean
 
 # Use stratified sampling for better coverage
 nuanalytics config set degree_analysis.sampling_strategy stratified
@@ -305,8 +354,12 @@ nuanalytics config set reports_dir /home/user/analysis/reports
 ### Set Database Credentials
 
 ```bash
-nuanalytics config set endpoint https://your-api.example.com
-nuanalytics config set token your-secret-token
+nuanalytics config set database.endpoint https://abcdefgh.supabase.co
+nuanalytics config set database.anon_key eyJhbGc...
+nuanalytics config set database.enabled true
+
+# Then obtain a user session (saved to auth_file):
+nuanalytics db login
 ```
 
 ### Debug a Problem

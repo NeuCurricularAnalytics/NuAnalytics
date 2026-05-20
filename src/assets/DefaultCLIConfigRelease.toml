@@ -23,8 +23,9 @@ verbose = false
 # Supabase project URL
 endpoint = "https://oaaqxtzkfcjcosilpbwi.supabase.co"
 
-# Supabase anonymous (public) key — safe to share, used for public reads
-# and to initiate the OAuth login flow
+# Supabase anonymous (public) key — identifies the project on every
+# request and bootstraps the OAuth login flow. Does not authorise access
+# on its own; run `nuanalytics db login` once to obtain a user session.
 anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9hYXF4dHprZmNqY29zaWxwYndpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjQxNTQsImV4cCI6MjA5MDc0MDE1NH0.rJSEZV3-Wvq0uVnCVwduF3xPtnuc6J9ftbftLijiQZU"
 
 # Enable database features (MCP database tools, IPEDS import, db login)

@@ -2,11 +2,34 @@
 
 
 ## Commands
-The command line program will have different command options, they will be
+The command line program has the following top-level commands:
 
-* config - options to update the configuration for the client, often modifying a file in ~/.nuanalytics
-* plan   - handles a single plan, and outputs the tradition CSV seen in the original curricular analytics
-* degree - takes in a degree, can generate the new numbers /plans based on the degree - generates states files in addition to requests curricular sheets.
+* `config`   — manage persistent settings stored in `~/.config/nuanalytics/`
+* `init`     — scaffold a new research project (degrees/, plans/, MCP wiring, skills)
+* `planner`  — handle a single CSV plan, output the traditional curricular-analytics report
+* `degree`   — operate on degree YAML files via nested subcommands (see below)
+* `db`       — manage Supabase access: `login`, `logout`, `whoami`, `status`, `ipeds-import`, `exec-sql`
+* `mcp`      — run the Model Context Protocol server over stdio
+
+### `db` subcommands
+* `db login`        — OAuth sign-in, saves a session JWT under `auth_file`
+* `db logout`       — clear the saved session
+* `db whoami`       — show the signed-in user (no DB round-trip)
+* `db status`       — diagnostic: endpoint / anon key / auth file / probe
+* `db ipeds-import` — bulk import IPEDS HD + completions CSVs into Supabase
+* `db exec-sql`     — run arbitrary SQL via the Supabase Management API (admin)
+
+### `degree` subcommands
+* `degree validate    <FILES>...`         — structural validation (schema, prereq cycles, cross-listings)
+* `degree audit       <FILES>...`         — validation + missing prereqs + deep-chain detection
+* `degree print-graph <FILES>...`         — print the prerequisite graph as an association list
+* `degree analyze     <FILES>...`         — full plan enumeration, metrics, HTML report, CSV exports
+* `degree trim        <FILE> [-o <PATH>]` — collapse alternatives to one walkable path per course;
+  `-o` accepts a file or a directory (auto-creates `<stem>_trimmed.<ext>` for batches)
+
+> **Breaking change (v0.4.0):** `degree` was previously a flat command with
+> action flags (`degree --validate`, `degree --analyze`, …). It is now a
+> subcommand dispatcher; the flag form no longer works.
 
 
 ### Future Additions
@@ -17,8 +40,12 @@ The command line program will have different command options, they will be
 
 ## Config
 
-The `config` command manages persistent settings stored in `~/.nuanalytics/config.toml` (or similar). Any common command line argument can be persisted to config to ensure it's always included in a run. Also holds options such as:
-- Token for access to online database (Firebase, etc.)
+The `config` command manages persistent settings stored in
+`~/.config/nuanalytics/config.toml` (Linux/macOS) or
+`%APPDATA%\nuanalytics\config.toml` (Windows). Any common command-line
+argument can be persisted to config to ensure it's always included in a
+run. Also holds options such as:
+- Supabase project credentials (`endpoint` + `anon_key`) for database tools
 - Default paths and directories
 - Logging preferences
 - Other program-wide settings
@@ -39,7 +66,8 @@ $ nuanalytics config
 # verbose = false
 #
 # [database]
-# token = "..."
+# endpoint = "https://abcd.supabase.co"
+# anon_key = "eyJhbGc..."
 ```
 
 #### `config <key>`
@@ -49,7 +77,7 @@ Prints the value of a single configuration key.
 $ nuanalytics config log-level
 warn
 
-$ nuanalytics config database.token
+$ nuanalytics config database.anon_key
 (prints value or "not set")
 ```
 
@@ -60,8 +88,8 @@ Sets a configuration key to a new value and persists it to disk.
 $ nuanalytics config set log-level debug
 ✓ Updated log-level to "debug"
 
-$ nuanalytics config set database.token "secret_xyz"
-✓ Updated database.token
+$ nuanalytics config set database.anon_key "eyJhbGc..."
+✓ Updated database.anon_key
 
 $ nuanalytics config set verbose true
 ✓ Updated verbose to true
@@ -87,23 +115,38 @@ y
 
 ### Configuration File
 
-Location: `~/.nuanalytics/config.toml`  or for windows  `%APPDATA%\nuanalytics\config.toml`
+Location: `~/.config/nuanalytics/config.toml` (Linux/macOS) or
+`%APPDATA%\nuanalytics\config.toml` (Windows). Debug builds use
+`~/.config/nuanalytics/dconfig.toml` instead so dev and release configs
+don't collide.
 
 Example structure:
 ```toml
 [logging]
 level = "warn"
-file = null
+file = ""
 verbose = false
 
 [database]
-token = ""
-endpoint = "https://firebasedb.example.com"
+endpoint = "https://abcdefgh.supabase.co"
+anon_key = "eyJhbGc..."
+enabled = true
+# `auth_file` defaults to ~/.config/nuanalytics/auth.json (release)
+# or .debug/dauth.json (debug). Set explicitly to override.
 
 [paths]
-plans_dir = "./plans"
-output_dir = "./output"
+metrics_dir = "./metrics"
+reports_dir = "./reports"
+
+[degree_analysis]
+max_plans = 1000
+sample_plans = 5
 ```
+
+> Setting `endpoint` and `anon_key` enables the database tools but does
+> not authorise access on its own. Run `nuanalytics db login` once to
+> obtain a user session; the client refreshes the JWT automatically
+> when it's near expiry.
 
 ### CLI Flag Precedence
 

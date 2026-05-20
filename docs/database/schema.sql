@@ -191,27 +191,43 @@ CREATE INDEX idx_degrees_cip_code          ON degrees (cip_code);
 
 -- =============================================================================
 -- Row-Level Security
--- Allows the anon key to read all IPEDS data and stored degrees without
--- requiring a login, while restricting writes to authenticated users.
---
--- Lookup tables (carnegie_class, award_levels, etc.) are left without RLS —
--- they're read-only reference data and Supabase grants SELECT to anon by default.
+-- Every database access requires a signed-in user (`nuanalytics db login`).
+-- The anon key alone is treated as identification, not authorisation —
+-- both reads and writes need `auth.role() = 'authenticated'`.
 -- =============================================================================
 
+-- Data tables
 ALTER TABLE institutions                   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cip_codes                      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE completions                    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE institution_completion_totals  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE degrees                        ENABLE ROW LEVEL SECURITY;
 
--- Anyone can read IPEDS data (public dataset)
-CREATE POLICY "public read institutions"                  ON institutions                  FOR SELECT USING (true);
-CREATE POLICY "public read cip_codes"                     ON cip_codes                     FOR SELECT USING (true);
-CREATE POLICY "public read completions"                   ON completions                   FOR SELECT USING (true);
-CREATE POLICY "public read institution_completion_totals" ON institution_completion_totals  FOR SELECT USING (true);
-CREATE POLICY "public read degrees"                       ON degrees                       FOR SELECT USING (true);
+-- Lookup tables — small, static reference rows but still gated so the
+-- database surface is uniformly auth-only.
+ALTER TABLE award_levels         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE institution_control  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE institution_level    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE institution_sector   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE carnegie_class       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE institution_locale   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE institution_size     ENABLE ROW LEVEL SECURITY;
 
--- Authenticated users can insert, update, and delete.
+-- Authenticated users can read every table.
+CREATE POLICY "auth read institutions"                  ON institutions                  FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "auth read cip_codes"                     ON cip_codes                     FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "auth read completions"                   ON completions                   FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "auth read institution_completion_totals" ON institution_completion_totals  FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "auth read degrees"                       ON degrees                       FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "auth read award_levels"                  ON award_levels                  FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "auth read institution_control"           ON institution_control           FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "auth read institution_level"             ON institution_level             FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "auth read institution_sector"            ON institution_sector            FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "auth read carnegie_class"                ON carnegie_class                FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "auth read institution_locale"            ON institution_locale            FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "auth read institution_size"              ON institution_size              FOR SELECT USING (auth.role() = 'authenticated');
+
+-- Authenticated users can insert, update, and delete on writable tables.
 -- FOR ALL is required because ipeds-import uses ON CONFLICT DO UPDATE,
 -- which needs UPDATE permission in addition to INSERT.
 CREATE POLICY "auth write institutions"                  ON institutions                  FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');

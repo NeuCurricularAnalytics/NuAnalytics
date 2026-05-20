@@ -1,6 +1,6 @@
 [package]
 name = "nu-analytics"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 authors = ["Albert Lionelle <a.lionelle@northeastern.edu>"]
 description = "A CLI tool for computing Curricular Analytics metrics. Based off metrics from CurricularAnalytics.org. Currently, only basic metrics and additional reporting features."

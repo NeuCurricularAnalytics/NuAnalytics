@@ -42,9 +42,11 @@ pub struct DatabaseConfig {
     /// Supabase project URL (e.g. `https://abcdefgh.supabase.co`)
     #[serde(default)]
     pub endpoint: String,
-    /// Supabase anonymous (public) key — used for unauthenticated reads and to
-    /// initiate the OAuth login flow. Not the user's personal session token, which
-    /// is stored separately in the `auth_file` after `nuanalytics db login`.
+    /// Supabase anonymous (public) key — identifies the project to Supabase
+    /// in the `apikey` header on every request, and is also used to bootstrap
+    /// the OAuth login flow. Does **not** authorise database access on its own;
+    /// every read and write also needs the user JWT stored in `auth_file`
+    /// after `nuanalytics db login`.
     ///
     /// Accepts the legacy TOML key `token` for backward compatibility.
     #[serde(default, alias = "token")]

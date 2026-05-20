@@ -86,9 +86,9 @@ nuanalytics --help
 
 The CLI is built with Rust using a modular architecture:
 - `src/cli/main.rs` - Entry point and startup logic
-- `src/cli/args.rs` - CLI argument definitions using clap
-- `src/cli/commands/` - Command handlers (config, plan, degree, mcp)
-- `src/core/` - Core library functionality
+- `src/cli/args.rs` - CLI argument definitions using clap (top-level commands + nested subcommands for `degree` and `db`)
+- `src/cli/commands/` - Command handlers (`config`, `init`, `planner`, `degree`, `db`, `mcp`)
+- `src/core/` - Core library functionality, including the trim transform (`src/core/degree/trim.rs`) and the Supabase client (`src/core/database/`)
 - `src/mcp/` - MCP server module (feature-gated)
 
 **Build the CLI in debug mode:**
@@ -108,13 +108,33 @@ MCP support is enabled by default. The server is organized as a separate module:
 ```
 src/mcp/
 ├── mod.rs              # Module exports
-├── server.rs           # MCP server handler
-├── schema_content.rs   # Schema documentation
+├── server.rs           # MCP server handler — registers every tool via #[tool]
+├── schema_content.rs   # Embedded degree-schema documentation
+├── cache.rs            # YAML_CACHE + ARTIFACT_CACHE singletons
 └── tools/
-    ├── mod.rs          # Tool exports
-    ├── schema.rs       # get_degree_schema tool
-    └── validate.rs     # validate_degree tool
+    ├── mod.rs                  # Tool re-exports
+    ├── shared.rs               # YamlSource, format_degree_parse_error, ToolFollowup, …
+    ├── schema.rs               # get_degree_schema
+    ├── validate.rs             # validate_degree
+    ├── audit.rs                # audit_degree
+    ├── analyze.rs              # analyze_degree
+    ├── trim.rs                 # trim_degree (v0.4.0)
+    ├── pipeline.rs             # degree_pipeline (validate+audit+analyze in one)
+    ├── report.rs               # generate_degree_report
+    ├── plan_graph.rs           # render_plan_graph
+    ├── course_detail.rs        # get_course_detail
+    ├── match_courses.rs        # find_courses_matching
+    ├── visualize.rs            # get_curriculum_visualization
+    ├── samples.rs              # list_sample_degrees
+    ├── cache.rs                # cache_yaml
+    └── *.rs                    # database-feature-gated: institutions, degrees, completions,
+                                #   cip_codes, lookup, scaffold (all require `db login`)
 ```
+
+Database-backed tools (everything under `src/mcp/tools/*.rs` gated by
+`#[cfg(feature = "database")]`) require a valid user JWT — the server
+skips registering them at startup when `nuanalytics db login` hasn't
+been run.
 
 **Run the MCP server:**
 ```bash

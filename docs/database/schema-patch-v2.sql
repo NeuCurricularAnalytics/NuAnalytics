@@ -56,8 +56,9 @@ CREATE INDEX IF NOT EXISTS idx_inst_totals_year   ON institution_completion_tota
 ALTER TABLE institution_completion_totals ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "public read institution_completion_totals" ON institution_completion_totals;
-CREATE POLICY "public read institution_completion_totals"
-    ON institution_completion_totals FOR SELECT USING (true);
+DROP POLICY IF EXISTS "auth read institution_completion_totals"   ON institution_completion_totals;
+CREATE POLICY "auth read institution_completion_totals"
+    ON institution_completion_totals FOR SELECT USING (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "auth write institution_completion_totals" ON institution_completion_totals;
 CREATE POLICY "auth write institution_completion_totals"

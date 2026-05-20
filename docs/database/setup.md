@@ -24,10 +24,18 @@ The session token is managed automatically by `nuanalytics db login` / `logout`.
 
 ### Access levels
 
-| State | Reads | Writes |
-|-------|-------|--------|
-| Not signed in (anon key only) | ✓ Public IPEDS data | ✗ |
+| State              | Reads | Writes |
+|--------------------|-------|--------|
+| Not signed in      | ✗     | ✗      |
 | Signed in (`db login`) | ✓ | ✓ IPEDS import, degree storage |
+
+Every database access — read or write — requires a logged-in user. The anon
+key identifies the project to Supabase but does **not** authorise access on
+its own; row-level security gates every table on
+`auth.role() = 'authenticated'`. The client refreshes the access token
+automatically when it's within 60s of expiry, so a single `db login` per
+machine keeps long-running sessions (CLI batches, MCP servers) usable
+without manual re-auth.
 
 ---
 
@@ -94,7 +102,7 @@ The schema is stored in `docs/database/schema.sql`. Open the Supabase **SQL Edit
 The schema creates:
 - **7 lookup tables** — `award_levels`, `institution_control`, `institution_level`, `institution_sector`, `carnegie_class`, `institution_locale`, `institution_size`
 - **5 data/cache tables** — `cip_codes`, `institutions`, `completions`, `institution_completion_totals`, `degrees`
-- **Row-Level Security** — all data tables have RLS enabled with public read + authenticated write policies included
+- **Row-Level Security** — RLS is enabled on every table (lookup + data) with `auth.role() = 'authenticated'` read policies and matching write policies on the four writable tables. `cip_codes` and the lookup tables have no write policy — they're seeded via SQL.
 
 > **Key design decision — no cross-table foreign keys on IPEDS data:** IPEDS surveys
 > don't guarantee that every UNITID in completions exists in the HD directory, and CIP
@@ -127,12 +135,20 @@ To verify policies are in place:
 ```sql
 SELECT tablename, policyname, cmd
 FROM pg_policies
-WHERE tablename IN ('institutions', 'completions', 'institution_completion_totals', 'cip_codes', 'degrees')
+WHERE tablename IN (
+    'institutions', 'completions', 'institution_completion_totals',
+    'cip_codes', 'degrees',
+    'award_levels', 'institution_control', 'institution_level',
+    'institution_sector', 'carnegie_class', 'institution_locale',
+    'institution_size'
+)
 ORDER BY tablename, cmd;
 ```
 
-Each data table should have a `SELECT` (public read) and most should also have an `ALL`
-(auth write) entry. `cip_codes` is seeded via SQL so it has no write policy.
+Every table should have a `SELECT` (auth read) policy. The four writable
+tables (`institutions`, `completions`, `institution_completion_totals`,
+`degrees`) should also have an `ALL` (auth write) entry. `cip_codes` and
+the seven lookup tables are seeded via SQL and have no write policy.
 
 ---
 
@@ -142,16 +158,21 @@ Each data table should have a `SELECT` (public read) and most should also have a
 nuanalytics db status
 ```
 
-Expected output when **not signed in** (read-only):
+Expected output when **not signed in**:
 ```
-Auth: read-only   (not signed in — run `nuanalytics db login` for write access)
-✓ Database connection successful
+endpoint:      https://abcdefgh.supabase.co ✓
+anon key:      set ✓
+auth file:     /home/you/.config/nuanalytics/auth.json ✗ (missing)
+ping:          ✗ Not signed in (no auth file at /home/you/.config/nuanalytics/auth.json). Run `nuanalytics db login` first.
+→ run `nuanalytics db login`
 ```
 
-Expected output when **signed in** (read-write):
+Expected output when **signed in**:
 ```
-Auth: read-write  (signed in as you@northeastern.edu)
-✓ Database connection successful
+endpoint:      https://abcdefgh.supabase.co ✓
+anon key:      set ✓
+auth file:     /home/you/.config/nuanalytics/auth.json ✓ (expires in 47 min as you@northeastern.edu)
+ping:          ✓ authenticated read succeeded
 ```
 
 If you see `401 Invalid API key`, your anon key is the wrong format — see the key format

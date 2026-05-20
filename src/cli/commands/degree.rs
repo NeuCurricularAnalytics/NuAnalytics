@@ -681,9 +681,11 @@ fn resolve_trim_output(input: &Path, out: Option<&Path>, dir_mode: bool) -> Path
     }
 }
 
-/// Load `input`, apply [`trim_program`] with the given options, and write
-/// the result to `out_path`. Prints a success banner; emits the
-/// protected-subject set and orphan-course list when `verbose` is set.
+/// Load `input`, apply
+/// [`trim_program`](nu_analytics::core::degree::trim_program) with the
+/// given options, and write the result to `out_path`. Prints a success
+/// banner; emits the protected-subject set and orphan-course list when
+/// `verbose` is set.
 fn trim_one(
     input: &Path,
     out_path: &Path,

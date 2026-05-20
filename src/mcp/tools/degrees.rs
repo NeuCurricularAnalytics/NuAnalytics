@@ -467,19 +467,11 @@ fn compute_compare_metrics(yaml: &str, max_plans: Option<usize>) -> serde_json::
     })
 }
 
-/// Execute `store_degree` and return JSON. Requires authentication.
+/// Execute `store_degree` and return JSON. The client is always
+/// authenticated by construction (`DbClient::from_config` refuses to
+/// build without a valid session), so this function just performs the
+/// write.
 pub async fn execute_store_json(client: &Arc<DbClient>, req: StoreDegreeRequest) -> String {
-    if !client.is_authenticated() {
-        // `error_code` is the stable programmatic key callers should branch on;
-        // `error` and `solution` remain the human-readable surface.
-        return serde_json::json!({
-            "error_code": "auth_required",
-            "error": "Write operations require authentication",
-            "solution": "Run `nuanalytics db login` to sign in, then retry"
-        })
-        .to_string();
-    }
-
     let degree = StoredDegree {
         id: None,
         degree_id: req.degree_id.clone(),

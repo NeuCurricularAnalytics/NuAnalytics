@@ -170,9 +170,23 @@ set from the most-referenced subject prefix in the requirements.
 **Mixed disjuncts** (some protected, some not) trim to the protected
 options only. Example: `CS163 | MATH156` on a CS degree → `CS163`.
 
-**Shared shortest path:** delay is a global property of the prereq
-graph, so two courses that both list `MATH156 | MATH160` will
-independently pick the same alternative — no joint optimization needed.
+**Shared shortest path:** the depth metric is upstream-only (each
+candidate's own prereq tree). It's a global property of the graph, so
+two courses that both list `MATH156 | MATH160` independently pick the
+same alternative — no joint optimization needed. Downstream
+"blocking" (how many other courses depend on a candidate) deliberately
+does *not* influence the choice.
+
+**Equivalents propagation:** when an equivalents group `{A, B, C}`
+inside a `type: all` requirement collapses, dropped equivalents are
+substituted into every downstream prereq expression that named them.
+The dropped courses then have nothing referencing them and get pruned
+in the orphan-pruning pass.
+
+**Pattern pools survive pruning:** courses matched by a Select
+requirement's `from.pattern` (or `from.include` patterns) — e.g. the
+`ICS:400+` electives — are never orphan-pruned, even when no
+requirement lists them by name.
 
 **`--keep-all <SUBJ>`** protects an additional subject prefix.
 Repeatable, also accepts comma-separated values:
@@ -192,9 +206,16 @@ repurposed for trim:
 nuanalytics degree trim degree.yaml --include MATH2331
 ```
 
-**Output:** defaults to `<input-stem>_trimmed.<ext>` next to the input
-file; `-o`/`--out` overrides. The command refuses to overwrite the input
-file.
+**Output:** defaults to `<input-stem>_trimmed.<ext>` next to each input
+file; `-o`/`--out` overrides:
+
+- `-o <FILE>` writes the single trimmed output to that file
+  (only valid when exactly one input file is given).
+- `-o <DIR>` (an existing directory, or any path ending with `/`) places
+  each trimmed output as `<DIR>/<input-stem>_trimmed.<ext>`. The
+  directory is created on demand if it doesn't exist. Required when
+  multiple inputs are given (shell wildcards expand to many files).
+- The command refuses to overwrite the input file, regardless of mode.
 
 **Side effects:** courses no longer referenced anywhere (alternatives
 dropped, with no other path leading to them) are pruned from the
@@ -622,43 +643,40 @@ MATH156 → MATH127 | (MATH124 & MATH126)
 
 ```bash
 # Validate a degree file
-nuanalytics degree degrees/cs_2024.yaml
+nuanalytics degree validate degrees/cs_2024.yaml
 
 # Validate with verbose output
-nuanalytics degree degrees/cs_2024.yaml --verbose
+nuanalytics --verbose degree validate degrees/cs_2024.yaml
 ```
 
 ### Comprehensive Analysis
 
 ```bash
 # Full audit report
-nuanalytics degree --audit degrees/cs_2024.yaml
+nuanalytics degree audit degrees/cs_2024.yaml
 
 # Audit with custom threshold for prerequisite chains
 nuanalytics config set prerequisite_chain_threshold 5
-nuanalytics degree --audit degrees/cs_2024.yaml
+nuanalytics degree audit degrees/cs_2024.yaml
 ```
 
 ### Graph Visualization
 
 ```bash
 # View prerequisite structure
-nuanalytics degree --print-graph degrees/cs_2024.yaml
-
-# Combine audit and graph
-nuanalytics degree --audit --print-graph degrees/cs_2024.yaml
+nuanalytics degree print-graph degrees/cs_2024.yaml
 ```
 
 ### Batch Analysis
 
 ```bash
 # Validate multiple degree files
-nuanalytics degree degrees/*.yaml
+nuanalytics degree validate degrees/*.yaml
 
 # Audit all degree files in directory
 for file in degrees/*.yaml; do
   echo "Auditing $file"
-  nuanalytics degree --audit "$file"
+  nuanalytics degree audit "$file"
 done
 ```
 
@@ -666,10 +684,10 @@ done
 
 ```bash
 # Enable debug logging
-nuanalytics degree --audit degrees/cs_2024.yaml --debug
+nuanalytics --debug degree audit degrees/cs_2024.yaml
 
 # Log to file
-nuanalytics degree --audit degrees/cs_2024.yaml --log-file degree_audit.log
+nuanalytics --log-file degree_audit.log degree audit degrees/cs_2024.yaml
 ```
 
 ## Workflow: Creating a New Degree Program
@@ -678,14 +696,14 @@ nuanalytics degree --audit degrees/cs_2024.yaml --log-file degree_audit.log
 
 2. **Validate structure**:
    ```bash
-   nuanalytics degree my_degree.yaml
+   nuanalytics degree validate my_degree.yaml
    ```
 
 3. **Review validation results** and fix any errors
 
 4. **Run comprehensive audit**:
    ```bash
-   nuanalytics degree --audit my_degree.yaml
+   nuanalytics degree audit my_degree.yaml
    ```
 
 5. **Analyze audit findings**:
@@ -695,10 +713,18 @@ nuanalytics degree --audit degrees/cs_2024.yaml --log-file degree_audit.log
 
 6. **Visualize structure**:
    ```bash
-   nuanalytics degree --print-graph my_degree.yaml
+   nuanalytics degree print-graph my_degree.yaml
    ```
 
 7. **Iterate**: Refine the degree structure based on findings and rerun audit
+
+8. *(Optional)* **Produce a single-path view** for visualization or
+   downstream tools that don't reason about alternatives:
+   ```bash
+   nuanalytics degree trim my_degree.yaml
+   ```
+   See the **Trim** section above for `--keep-all` / `--include` /
+   directory-output semantics.
 
 ## Troubleshooting
 
