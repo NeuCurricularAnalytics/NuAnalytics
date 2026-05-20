@@ -21,5 +21,5 @@ Run NuAnalytics on a curriculum file and surface the results.
 
 ## Tips
 
-- Batch mode: `nuanalytics degree degrees/*.yaml` processes every YAML in one pass.
+- Batch mode: `nuanalytics degree analyze degrees/*.yaml` processes every YAML in one pass.
 - For comparative work, keep two files side-by-side and diff their metrics CSVs.

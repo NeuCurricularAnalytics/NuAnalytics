@@ -23,6 +23,137 @@
 
 use std::collections::HashSet;
 
+/// AND/OR tree form of a prerequisite expression.
+///
+/// Mirrors the original expression structure (unlike [`parse_to_dnf`], which
+/// loses the AND-of-OR shape). Used by `degree trim` to rewrite each
+/// disjunct independently while keeping the rest of the expression intact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrereqExpr {
+    /// A single course reference (e.g. "CS2510").
+    Course(String),
+    /// Conjunction — every child must be satisfied.
+    All(Vec<Self>),
+    /// Disjunction — at least one child must be satisfied.
+    Any(Vec<Self>),
+}
+
+impl PrereqExpr {
+    /// Render this AST back into the same boolean-expression syntax that
+    /// [`parse_to_ast`] accepts (`A`, `A & B`, `A | B`, with parens where
+    /// precedence requires).
+    #[must_use]
+    pub fn to_expression_string(&self) -> String {
+        match self {
+            Self::Course(c) => c.clone(),
+            Self::All(xs) => {
+                if xs.is_empty() {
+                    return String::new();
+                }
+                if xs.len() == 1 {
+                    return xs[0].to_expression_string();
+                }
+                xs.iter()
+                    .map(|child| match child {
+                        // `&` binds tighter than `|`, so an `Any` inside an
+                        // `All` needs parens to preserve meaning.
+                        Self::Any(inner) if inner.len() > 1 => {
+                            format!("({})", child.to_expression_string())
+                        }
+                        _ => child.to_expression_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" & ")
+            }
+            Self::Any(xs) => {
+                if xs.is_empty() {
+                    return String::new();
+                }
+                if xs.len() == 1 {
+                    return xs[0].to_expression_string();
+                }
+                // Children of `Any` never need parens: `All` is higher
+                // precedence and a nested `Any` flattens trivially since
+                // OR is associative.
+                xs.iter()
+                    .map(Self::to_expression_string)
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            }
+        }
+    }
+
+    /// Returns true if this expression is empty (no courses referenced).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Course(c) => c.is_empty(),
+            Self::All(xs) | Self::Any(xs) => xs.iter().all(Self::is_empty),
+        }
+    }
+}
+
+/// Parse a prerequisite expression into a structural AND/OR tree.
+///
+/// Returns `None` for empty input. Operator precedence matches
+/// [`parse_to_dnf`]: `&` binds tighter than `|`, parens override.
+///
+/// # Examples
+/// ```
+/// use nu_analytics::core::prerequisite_parser::{parse_to_ast, PrereqExpr};
+///
+/// let ast = parse_to_ast("(CS101 & CS102) | CS103").unwrap();
+/// match ast {
+///     PrereqExpr::Any(branches) => assert_eq!(branches.len(), 2),
+///     _ => panic!("expected top-level OR"),
+/// }
+/// ```
+#[must_use]
+pub fn parse_to_ast(raw: &str) -> Option<PrereqExpr> {
+    let cleaned = remove_grade_requirements(raw);
+    parse_ast_recursive(&cleaned)
+}
+
+fn parse_ast_recursive(s: &str) -> Option<PrereqExpr> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let unwrapped = unwrap_parens(trimmed);
+
+    if contains_at_level(unwrapped, '|') {
+        let parts: Vec<PrereqExpr> = split_at_level(unwrapped, '|')
+            .into_iter()
+            .filter_map(|p| parse_ast_recursive(&p))
+            .collect();
+        return match parts.len() {
+            0 => None,
+            1 => parts.into_iter().next(),
+            _ => Some(PrereqExpr::Any(parts)),
+        };
+    }
+
+    if contains_at_level(unwrapped, '&') {
+        let parts: Vec<PrereqExpr> = split_at_level(unwrapped, '&')
+            .into_iter()
+            .filter_map(|p| parse_ast_recursive(&p))
+            .collect();
+        return match parts.len() {
+            0 => None,
+            1 => parts.into_iter().next(),
+            _ => Some(PrereqExpr::All(parts)),
+        };
+    }
+
+    let course = clean_course_key(unwrapped);
+    if course.is_empty() {
+        None
+    } else {
+        Some(PrereqExpr::Course(course))
+    }
+}
+
 /// Parse a prerequisite expression into DNF form (OR of ANDs)
 ///
 /// Each inner `Vec` represents a valid path (all courses must be taken).
@@ -495,6 +626,123 @@ mod tests {
     fn test_grade_requirements_with_plus_minus() {
         let result = parse_to_dnf("CS101[A+] & CS102[B-]");
         assert_eq!(result, vec![vec!["CS101".to_string(), "CS102".to_string()]]);
+    }
+
+    // -----------------------------------------------------------------
+    // AST tests
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn test_ast_single_course() {
+        let ast = parse_to_ast("CS101").unwrap();
+        assert_eq!(ast, PrereqExpr::Course("CS101".to_string()));
+        assert_eq!(ast.to_expression_string(), "CS101");
+    }
+
+    #[test]
+    fn test_ast_and() {
+        let ast = parse_to_ast("CS101 & CS102").unwrap();
+        assert_eq!(
+            ast,
+            PrereqExpr::All(vec![
+                PrereqExpr::Course("CS101".to_string()),
+                PrereqExpr::Course("CS102".to_string()),
+            ])
+        );
+        assert_eq!(ast.to_expression_string(), "CS101 & CS102");
+    }
+
+    #[test]
+    fn test_ast_or() {
+        let ast = parse_to_ast("CS101 | CS102").unwrap();
+        assert_eq!(
+            ast,
+            PrereqExpr::Any(vec![
+                PrereqExpr::Course("CS101".to_string()),
+                PrereqExpr::Course("CS102".to_string()),
+            ])
+        );
+        assert_eq!(ast.to_expression_string(), "CS101 | CS102");
+    }
+
+    #[test]
+    fn test_ast_and_of_or_keeps_parens() {
+        // AND of OR needs parens to preserve precedence on emit.
+        let ast = parse_to_ast("CS101 & (CS102 | CS103)").unwrap();
+        let s = ast.to_expression_string();
+        let reparsed = parse_to_ast(&s).unwrap();
+        assert_eq!(reparsed, ast, "round-trip mismatch: {s}");
+        assert!(
+            s.contains('('),
+            "expected parens around OR child of AND, got {s}"
+        );
+    }
+
+    #[test]
+    fn test_ast_or_of_and_no_parens_needed() {
+        let ast = parse_to_ast("(CS101 & CS102) | CS103").unwrap();
+        let s = ast.to_expression_string();
+        // OR is the lower-precedence operator, so its AND children don't
+        // need parens. Round-trip must still preserve the structure.
+        let reparsed = parse_to_ast(&s).unwrap();
+        assert_eq!(reparsed, ast, "round-trip mismatch: {s}");
+    }
+
+    #[test]
+    fn test_ast_round_trip_real_world_examples() {
+        // Drawn from samples/degrees/neu-khoury-bscs-boston.yaml.
+        for expr in [
+            "CS2000",
+            "CS2100 | DS2500",
+            "CS3100 & CS3520",
+            "(CS2100 | DS2500) & CS1800",
+            "(CS1800 | MATH1365) & CS2100",
+            "CS3100 & (DS3000 | MATH2331)",
+        ] {
+            let ast = parse_to_ast(expr).expect("parse failed");
+            let emitted = ast.to_expression_string();
+            let reparsed = parse_to_ast(&emitted).expect("re-parse failed");
+            assert_eq!(reparsed, ast, "round-trip mismatch for {expr}: {emitted}");
+        }
+    }
+
+    #[test]
+    fn test_ast_strips_grade_requirements() {
+        let ast = parse_to_ast("CS101[B-] & CS102[A]").unwrap();
+        assert_eq!(ast.to_expression_string(), "CS101 & CS102");
+    }
+
+    #[test]
+    fn test_ast_empty_returns_none() {
+        assert!(parse_to_ast("").is_none());
+        assert!(parse_to_ast("   ").is_none());
+    }
+
+    #[test]
+    fn test_ast_is_empty_recurses_through_aggregates() {
+        // Course with empty string is "empty" (no course referenced).
+        assert!(PrereqExpr::Course(String::new()).is_empty());
+        assert!(!PrereqExpr::Course("CS101".to_string()).is_empty());
+
+        // All/Any with only empty children are themselves empty.
+        let all_empty = PrereqExpr::All(vec![
+            PrereqExpr::Course(String::new()),
+            PrereqExpr::Course(String::new()),
+        ]);
+        assert!(all_empty.is_empty());
+
+        // A single non-empty leaf is enough to make the aggregate non-empty.
+        let any_one_real = PrereqExpr::Any(vec![
+            PrereqExpr::Course(String::new()),
+            PrereqExpr::Course("CS101".to_string()),
+        ]);
+        assert!(!any_one_real.is_empty());
+
+        // Recursion through nested aggregates.
+        let nested_empty = PrereqExpr::All(vec![PrereqExpr::Any(vec![PrereqExpr::Course(
+            String::new(),
+        )])]);
+        assert!(nested_empty.is_empty());
     }
 
     #[test]

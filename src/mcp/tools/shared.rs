@@ -5,8 +5,33 @@ use serde::{de, Deserialize, Deserializer, Serialize};
 #[cfg(feature = "database")]
 use std::sync::Arc;
 
+use crate::core::degree::DegreeParseError;
+
 #[cfg(feature = "database")]
 use crate::core::database::{tables, DbClient, QueryFilters};
+
+// ─── DegreeParseError formatting ─────────────────────────────────────────────
+
+/// Render a [`DegreeParseError`] into a human-readable `parse_error` string.
+///
+/// Shared between `validate_degree` and `trim_degree` so the wording stays
+/// consistent and a single edit propagates to both.
+#[must_use]
+pub fn format_degree_parse_error(e: &DegreeParseError) -> String {
+    match e {
+        DegreeParseError::IoError(msg) => format!("File error: {msg}"),
+        DegreeParseError::YamlError {
+            message,
+            line,
+            column,
+        } => match (line, column) {
+            // Prefix the structured location so log scrapers and JSON-blind
+            // clients can still see the position.
+            (Some(l), Some(c)) => format!("YAML syntax error at line {l} column {c}: {message}"),
+            _ => format!("YAML syntax error: {message}"),
+        },
+    }
+}
 
 // ─── Tool-name constants ─────────────────────────────────────────────────────
 // Used by the `tool_followups` builders so a rename of the actual MCP handler

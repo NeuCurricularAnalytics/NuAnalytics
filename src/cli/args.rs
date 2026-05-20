@@ -158,6 +158,150 @@ pub enum ConfigSubcommand {
     Reset,
 }
 
+/// Subcommands of `nuanalytics degree`.
+///
+/// `degree` used to be a flat command driven by action flags
+/// (`--validate`, `--analyze`, …). It is now a subcommand dispatcher;
+/// each action takes its own file list and per-action flags.
+#[derive(Debug, Subcommand)]
+pub enum DegreeSubcommand {
+    /// Validate a degree program YAML file's structure, requirements, and
+    /// cross-listings.
+    Validate {
+        /// Degree YAML file(s) to validate. Per-file failures are reported
+        /// inline but do not abort the batch.
+        #[arg(value_name = "FILES", num_args = 1..)]
+        files: Vec<PathBuf>,
+    },
+
+    /// Print the course prerequisite graph for a degree program.
+    PrintGraph {
+        /// Degree YAML file(s) to print.
+        #[arg(value_name = "FILES", num_args = 1..)]
+        files: Vec<PathBuf>,
+    },
+
+    /// Run an audit report on a degree program.
+    ///
+    /// Includes validation, missing prerequisites analysis, and deep
+    /// prerequisite chain detection.
+    Audit {
+        /// Degree YAML file(s) to audit.
+        #[arg(value_name = "FILES", num_args = 1..)]
+        files: Vec<PathBuf>,
+    },
+
+    /// Run full degree analysis: generate plans, compute metrics, produce
+    /// HTML reports with statistics, and export CSV plan files.
+    Analyze {
+        /// Degree YAML file(s) to analyze.
+        #[arg(value_name = "FILES", num_args = 1..)]
+        files: Vec<PathBuf>,
+
+        /// Calculation strategy for aggregate metrics (median or mean)
+        #[arg(long, value_enum, value_name = "STRATEGY")]
+        calc_strategy: Option<CalcStrategyArg>,
+
+        /// Sampling strategy for plan enumeration (sequential, shuffled, stratified)
+        #[arg(long, value_enum, value_name = "STRATEGY")]
+        sampling_strategy: Option<SamplingStrategyArg>,
+
+        /// Number of random plans to sample and export (default: 5)
+        #[arg(long, value_name = "COUNT")]
+        sample_plans: Option<usize>,
+
+        /// Maximum number of plans to generate (safety cap)
+        #[arg(long, value_name = "COUNT")]
+        max_plans: Option<usize>,
+
+        /// Generate all plan combinations without deduplication (overrides default)
+        #[arg(long)]
+        full_run: bool,
+
+        /// Override reports output directory (from config)
+        #[arg(long, value_name = "DIR")]
+        report_dir: Option<PathBuf>,
+
+        /// Override metrics output directory (from config)
+        #[arg(long, value_name = "DIR")]
+        metrics_dir: Option<PathBuf>,
+
+        /// Skip CSV plan export
+        #[arg(long)]
+        no_csv: bool,
+
+        /// Skip HTML report generation
+        #[arg(long)]
+        no_report: bool,
+
+        /// Courses to always include in all generated plans (comma-separated).
+        ///
+        /// These courses are pinned into every plan including the shortest path.
+        /// If an included course satisfies a picklist requirement, other options
+        /// for that requirement are not considered.
+        ///
+        /// Example: --include "CS3500,MATH2331,PHIL1145"
+        #[arg(long, value_name = "COURSES", value_delimiter = ',')]
+        include: Option<Vec<String>>,
+    },
+
+    /// Trim a degree program to a single entry path per course.
+    ///
+    /// Prerequisite alternatives and `Select` option lists are collapsed to
+    /// the shortest shared entry path, except where every alternative belongs
+    /// to a protected subject (the degree's `major_subjects`, plus any extra
+    /// subjects passed via `--keep-all`).
+    ///
+    /// Note: comments in the source YAML are not preserved (serializer
+    /// limitation).
+    ///
+    /// # Examples
+    /// ```sh
+    /// # Default: protect major subjects only, write next to the input
+    /// nuanalytics degree trim samples/degrees/neu-khoury-bscs-boston.yaml
+    ///
+    /// # Also protect MATH alternatives, write to a chosen file
+    /// nuanalytics degree trim degree.yaml --keep-all MATH -o degree.trim.yaml
+    ///
+    /// # Batch with shell wildcards, all outputs into one directory
+    /// nuanalytics degree trim samples/degrees/*.yaml -o trimmed/
+    ///
+    /// # Pin specific picks (overrides shortest-path metric)
+    /// nuanalytics degree trim degree.yaml --include "MATH2331,PHIL1145"
+    /// ```
+    Trim {
+        /// Source degree YAML file(s) to trim. Shell wildcards are expanded
+        /// by the shell, so `samples/degrees/*.yaml` works.
+        #[arg(value_name = "FILES", num_args = 1..)]
+        files: Vec<PathBuf>,
+
+        /// Output destination. Without `-o`, each trimmed file is written
+        /// next to its input as `<input-stem>_trimmed.<ext>`. With `-o`,
+        /// the value can be either:
+        ///
+        /// * a **file** path — only valid with a single input; written verbatim.
+        /// * a **directory** (existing, or ending with a path separator) —
+        ///   each input becomes `<dir>/<input-stem>_trimmed.<ext>`;
+        ///   created on demand. Required when multiple inputs are passed.
+        ///
+        /// The command refuses to overwrite any input file.
+        #[arg(short, long, value_name = "PATH")]
+        out: Option<PathBuf>,
+
+        /// Subject prefixes to protect in addition to the degree's
+        /// `major_subjects`. Repeatable; also accepts comma-separated values
+        /// (e.g. `--keep-all MATH,PHIL`).
+        #[arg(long, value_name = "SUBJECT", value_delimiter = ',')]
+        keep_all: Vec<String>,
+
+        /// Course keys to pin as winners at any choice point that lists
+        /// them. Comma-separated. Same semantics as the `analyze --include`
+        /// flag, repurposed for trim.
+        #[arg(long, value_name = "COURSES", value_delimiter = ',')]
+        include: Option<Vec<String>>,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Manage configuration.
@@ -235,103 +379,29 @@ pub enum Command {
         #[arg(long)]
         no_report: bool,
     },
-    /// Validate and analyze degree program YAML files.
+    /// Validate, analyze, audit, or trim a degree program YAML file.
     ///
-    /// Load a degree program YAML file and validate its structure, requirements,
-    /// prerequisites, and cross-listing relationships. By default (no flags),
-    /// runs full degree analysis (--analyze). Use specific flags to run only
-    /// validation, graph printing, or audit.
-    ///
-    /// Circular prerequisites are automatically broken by removing optional edges
+    /// Dispatches to one of several actions via subcommand. Circular
+    /// prerequisites are automatically broken by removing optional edges
     /// to create a valid DAG for analysis.
     ///
     /// # Examples
     /// ```sh
-    /// # Run full degree analysis (default action)
-    /// nuanalytics degree samples/degrees/csu-cs-bscs-general.yaml
+    /// # Validate one or more files
+    /// nuanalytics degree validate samples/degrees/neu-khoury-bscs-boston.yaml
     ///
-    /// # Batch mode — process every YAML in a directory
-    /// nuanalytics degree samples/degrees/*.yaml
+    /// # Print the prerequisite graph
+    /// nuanalytics degree print-graph samples/degrees/csu-cs-bscs-general.yaml
     ///
-    /// # Validate a degree program only
-    /// nuanalytics degree --validate samples/degrees/csu-cs-bscs-general.yaml
+    /// # Run full plan-enumeration analysis
+    /// nuanalytics degree analyze samples/degrees/csu-cs-bscs-general.yaml
     ///
-    /// # Print prerequisite graph
-    /// nuanalytics degree --print-graph samples/degrees/csu-cs-bscs-general.yaml
-    ///
-    /// # Analyze with custom settings
-    /// nuanalytics degree --analyze --calc-strategy mean --sample-plans 10 degree.yaml
+    /// # Trim alternatives down to a single shared shortest path
+    /// nuanalytics degree trim samples/degrees/neu-khoury-bscs-boston.yaml
     /// ```
     Degree {
-        /// Paths to one or more degree program YAML files. Each file is processed
-        /// independently in order; per-file failures are reported but do not
-        /// abort the batch.
-        #[arg(value_name = "FILES", num_args = 0..)]
-        files: Vec<PathBuf>,
-
-        /// Validate the degree program YAML file
-        #[arg(long)]
-        validate: bool,
-
-        /// Print the course prerequisite graph
-        #[arg(long)]
-        print_graph: bool,
-
-        /// Run an audit report on the degree program
-        /// Includes validation, missing prerequisites analysis, and deep chain detection
-        #[arg(long)]
-        audit: bool,
-
-        /// Run full degree analysis: generate all plans and produce HTML report with statistics.
-        /// This is the default action when no other flags are specified.
-        #[arg(long)]
-        analyze: bool,
-
-        /// Calculation strategy for aggregate metrics (median or mean)
-        #[arg(long, value_enum, value_name = "STRATEGY")]
-        calc_strategy: Option<CalcStrategyArg>,
-
-        /// Sampling strategy for plan enumeration (sequential, shuffled, stratified)
-        #[arg(long, value_enum, value_name = "STRATEGY")]
-        sampling_strategy: Option<SamplingStrategyArg>,
-
-        /// Number of random plans to sample and export (default: 5)
-        #[arg(long, value_name = "COUNT")]
-        sample_plans: Option<usize>,
-
-        /// Maximum number of plans to generate (safety cap)
-        #[arg(long, value_name = "COUNT")]
-        max_plans: Option<usize>,
-
-        /// Generate all plan combinations without deduplication (overrides default)
-        #[arg(long)]
-        full_run: bool,
-
-        /// Override reports output directory (from config)
-        #[arg(long, value_name = "DIR")]
-        report_dir: Option<PathBuf>,
-
-        /// Override metrics output directory (from config)
-        #[arg(long, value_name = "DIR")]
-        metrics_dir: Option<PathBuf>,
-
-        /// Skip CSV plan export
-        #[arg(long)]
-        no_csv: bool,
-
-        /// Skip HTML report generation
-        #[arg(long)]
-        no_report: bool,
-
-        /// Courses to always include in all plans (comma-separated course codes)
-        ///
-        /// These courses will be included in every generated plan, including the shortest path.
-        /// If an included course satisfies a requirement (e.g., a picklist), other options
-        /// for that requirement will not be considered.
-        ///
-        /// Example: --include "CS3500,MATH2331,PHIL1145"
-        #[arg(long, value_name = "COURSES", value_delimiter = ',')]
-        include: Option<Vec<String>>,
+        #[command(subcommand)]
+        subcommand: DegreeSubcommand,
     },
     /// Manage the `NuAnalytics` database (IPEDS data, status, import).
     #[cfg(feature = "database")]

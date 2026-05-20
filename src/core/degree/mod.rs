@@ -30,6 +30,7 @@ pub mod plan_selector;
 pub mod plan_validation;
 pub mod plan_variant;
 pub mod requirement_resolver;
+pub mod trim;
 pub mod validation;
 pub mod yaml_parser;
 
@@ -73,6 +74,9 @@ pub use requirement_resolver::{RequirementResolver, ResolvedRequirement};
 pub use plan_selector::{
     PlanCategory, PlanScore, PlanSelector, PlanSelectorConfig, ScoredPlan, SelectedPlans,
 };
+
+// Re-export trim types
+pub use trim::{trim_program, TrimOptions, TrimReport};
 
 // Re-export plan validation types
 pub use plan_validation::{

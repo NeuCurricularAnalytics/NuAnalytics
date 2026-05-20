@@ -450,18 +450,10 @@ fn print_audit_summary(
     }
 }
 
-/// Options for the degree command
+/// Options for `degree analyze`.
 #[derive(Debug, Default, Clone)]
 #[allow(clippy::struct_excessive_bools)]
-pub struct DegreeOptions {
-    /// Whether to validate the degree program
-    pub validate: bool,
-    /// Whether to print the prerequisite graph
-    pub print_graph: bool,
-    /// Whether to run an audit report
-    pub audit: bool,
-    /// Whether to run full degree analysis
-    pub analyze: bool,
+pub struct AnalyzeOptions {
     /// Calculation strategy override ("median" or "mean") - reserved for future use
     #[allow(dead_code)]
     pub calc_strategy: Option<String>,
@@ -487,48 +479,112 @@ pub struct DegreeOptions {
     pub include_courses: Option<Vec<String>>,
 }
 
-/// Run the degree command for one or more YAML files.
+/// Run `degree validate` over one or more files.
+pub fn run_validate(files: &[PathBuf], verbose: bool) {
+    run_batch(files, |path| validate_degree(path, verbose));
+}
+
+/// Run `degree print-graph` over one or more files.
+pub fn run_print_graph(files: &[PathBuf], verbose: bool) {
+    run_batch(files, |path| print_graph(path, verbose));
+}
+
+/// Run `degree audit` over one or more files.
+pub fn run_audit(files: &[PathBuf], config: &Config, verbose: bool) {
+    run_batch(files, |path| audit_degree(path, config, verbose));
+}
+
+/// Run `degree analyze` over one or more files.
+pub fn run_analyze(files: &[PathBuf], options: &AnalyzeOptions, config: &Config) {
+    run_batch(files, |path| analyze_degree(path, options, config));
+}
+
+/// Run `degree trim` over one or more input files.
 ///
-/// Each file is processed independently in order. Per-file failures are
-/// reported but do not abort the batch; the process exits non-zero if any
-/// file failed. Non-YAML paths (e.g., from a `samples/degrees/*` glob that
-/// matches `.md` or other files) are skipped with a warning.
+/// `out` resolution rules:
 ///
-/// # Arguments
-/// * `files`   - Paths to degree YAML files (length 0 prints usage and exits)
-/// * `options` - Degree command options applied uniformly to every file
-/// * `config`  - Application configuration
-pub fn run(files: &[PathBuf], options: &DegreeOptions, config: &Config) {
-    if files.is_empty() {
+/// - `None` → each trimmed file is written next to its input as
+///   `<input-stem>_trimmed.<ext>`.
+/// - `Some(dir)` (existing directory, or a path ending in a separator) →
+///   each input becomes `<dir>/<input-stem>_trimmed.<ext>`. Directory is
+///   created on demand.
+/// - `Some(file)` → only valid with a single input; written verbatim.
+///   Multiple inputs with a file-mode `-o` is rejected.
+pub fn run_trim(
+    inputs: &[PathBuf],
+    out: Option<&Path>,
+    keep_all: &[String],
+    include: Option<&[String]>,
+    verbose: bool,
+) {
+    if inputs.is_empty() {
         eprintln!("Error: No degree file specified.");
-        eprintln!("Usage: nuanalytics degree [OPTIONS] <FILES>...");
-        eprintln!("Run 'nuanalytics degree --help' for usage information.");
         process::exit(1);
     }
 
-    // Default to analyze if no action flag is set — applied once for the batch.
-    let options = if !options.validate && !options.print_graph && !options.audit && !options.analyze
-    {
-        DegreeOptions {
-            analyze: true,
-            ..options.clone()
+    let yaml_inputs = filter_yaml_inputs(inputs);
+    if yaml_inputs.is_empty() {
+        eprintln!("Error: No YAML files to process after filtering.");
+        process::exit(1);
+    }
+
+    let dir_mode = out.is_some_and(looks_like_directory);
+
+    if let Some(file_out) = out.filter(|_| yaml_inputs.len() > 1 && !dir_mode) {
+        eprintln!(
+            "Error: -o {} is a file path, but {} input files were given; pass a directory (or end the path with '/') instead",
+            file_out.display(),
+            yaml_inputs.len()
+        );
+        process::exit(1);
+    }
+
+    if let Some(dir) = out.filter(|_| dir_mode) {
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            eprintln!(
+                "Error: failed to create output directory {}: {e}",
+                dir.display()
+            );
+            process::exit(1);
         }
-    } else {
-        options.clone()
-    };
+    }
 
-    let yaml_files: Vec<&Path> = files
-        .iter()
-        .filter_map(|p| {
-            if is_yaml_path(p) {
-                Some(p.as_path())
-            } else {
-                eprintln!("Skipping non-YAML file: {}", p.display());
-                None
+    let total = yaml_inputs.len();
+    let mut had_failure = false;
+    for (idx, input) in yaml_inputs.iter().enumerate() {
+        if total > 1 {
+            if idx > 0 {
+                print_separator();
             }
-        })
-        .collect();
+            println!("=== [{}/{}] {} ===", idx + 1, total, input.display());
+        }
+        let out_path = resolve_trim_output(input, out, dir_mode);
+        if let Err(e) = trim_one(input, &out_path, keep_all, include, verbose) {
+            eprintln!("Error: {e}");
+            had_failure = true;
+        }
+    }
 
+    if had_failure {
+        process::exit(1);
+    }
+}
+
+/// Shared batch driver for the multi-file `degree` subcommands.
+///
+/// Filters out non-YAML paths with a warning, processes each file in order,
+/// prints a per-file header when there's more than one input, and exits
+/// non-zero if any file failed.
+fn run_batch<F>(files: &[PathBuf], mut action: F)
+where
+    F: FnMut(&Path) -> Result<(), String>,
+{
+    if files.is_empty() {
+        eprintln!("Error: No degree file specified.");
+        process::exit(1);
+    }
+
+    let yaml_files = filter_yaml_inputs(files);
     if yaml_files.is_empty() {
         eprintln!("Error: No YAML files to process after filtering.");
         process::exit(1);
@@ -544,7 +600,8 @@ pub fn run(files: &[PathBuf], options: &DegreeOptions, config: &Config) {
             }
             println!("=== [{}/{}] {} ===", idx + 1, total, path.display());
         }
-        if run_one(path, &options, config).is_err() {
+        if let Err(e) = action(path) {
+            eprintln!("Error: {e}");
             had_failure = true;
         }
     }
@@ -554,6 +611,22 @@ pub fn run(files: &[PathBuf], options: &DegreeOptions, config: &Config) {
     }
 }
 
+/// Pick out the YAML inputs from a mixed list of paths, warning to stderr
+/// about anything skipped. Shared between [`run_trim`] and [`run_batch`].
+fn filter_yaml_inputs(files: &[PathBuf]) -> Vec<&Path> {
+    files
+        .iter()
+        .filter_map(|p| {
+            if is_yaml_path(p) {
+                Some(p.as_path())
+            } else {
+                eprintln!("Skipping non-YAML file: {}", p.display());
+                None
+            }
+        })
+        .collect()
+}
+
 /// Returns `true` if the path has a `.yaml` or `.yml` extension (case-insensitive).
 fn is_yaml_path(path: &Path) -> bool {
     path.extension()
@@ -561,54 +634,112 @@ fn is_yaml_path(path: &Path) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
 }
 
-/// Process a single degree YAML file, running every requested action.
-///
-/// Returns `Err(())` if any action failed for this file. Errors are written
-/// to stderr inline so the batch caller does not need to format them.
-fn run_one(degree_path: &Path, options: &DegreeOptions, config: &Config) -> Result<(), ()> {
-    let mut state = ActionRunState::default();
+/// Filename suffix appended to the input stem when `degree trim` runs
+/// without an explicit `-o`/`--out` path.
+const TRIM_OUTPUT_SUFFIX: &str = "_trimmed";
 
-    if options.validate {
-        state.run(|| validate_degree(degree_path, options.verbose));
-    }
-    if options.print_graph {
-        state.run(|| print_graph(degree_path, options.verbose));
-    }
-    if options.audit {
-        state.run(|| audit_degree(degree_path, config, options.verbose));
-    }
-    if options.analyze {
-        state.run(|| analyze_degree(degree_path, options, config));
-    }
+/// Extract `(file_stem, extension)` from a path with degree-YAML-friendly
+/// fallbacks when either piece is missing or non-UTF-8. Centralised so
+/// [`default_trim_output`] and [`resolve_trim_output`] stay in sync.
+fn trim_output_stem_ext(input: &Path) -> (&str, &str) {
+    let stem = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("degree");
+    let ext = input.extension().and_then(|e| e.to_str()).unwrap_or("yaml");
+    (stem, ext)
+}
 
-    if state.has_error {
-        Err(())
-    } else {
-        Ok(())
+/// Default output path for `degree trim` when `-o` is not given:
+/// `<input-stem>_trimmed.<ext>` next to the input file.
+fn default_trim_output(input: &Path) -> PathBuf {
+    let (stem, ext) = trim_output_stem_ext(input);
+    input.with_file_name(format!("{stem}{TRIM_OUTPUT_SUFFIX}.{ext}"))
+}
+
+/// True if `p` should be treated as a directory destination for
+/// `degree trim -o`. An existing directory always wins; otherwise we
+/// honour the user's intent if they typed a trailing path separator.
+fn looks_like_directory(p: &Path) -> bool {
+    if p.is_dir() {
+        return true;
+    }
+    let s = p.to_string_lossy();
+    s.ends_with('/') || s.ends_with(std::path::MAIN_SEPARATOR)
+}
+
+/// Resolve the on-disk output path for `input` given the user's `-o`
+/// argument and whether we determined it to be a directory destination.
+fn resolve_trim_output(input: &Path, out: Option<&Path>, dir_mode: bool) -> PathBuf {
+    match out {
+        None => default_trim_output(input),
+        Some(dir) if dir_mode => {
+            let (stem, ext) = trim_output_stem_ext(input);
+            dir.join(format!("{stem}{TRIM_OUTPUT_SUFFIX}.{ext}"))
+        }
+        Some(file) => file.to_path_buf(),
     }
 }
 
-/// Tracks action sequencing within `run_one`: prints a separator between
-/// successive actions and records whether any action failed.
-#[derive(Default)]
-struct ActionRunState {
-    actions_run: usize,
-    has_error: bool,
-}
+/// Load `input`, apply [`trim_program`] with the given options, and write
+/// the result to `out_path`. Prints a success banner; emits the
+/// protected-subject set and orphan-course list when `verbose` is set.
+fn trim_one(
+    input: &Path,
+    out_path: &Path,
+    keep_all: &[String],
+    include: Option<&[String]>,
+    verbose: bool,
+) -> Result<(), String> {
+    use nu_analytics::core::degree::{save_degree_to_yaml, trim_program, TrimOptions};
 
-impl ActionRunState {
-    /// Run one action, prefixing it with a separator if a prior action ran,
-    /// and capturing any error to stderr without aborting.
-    fn run<E: std::fmt::Display>(&mut self, action: impl FnOnce() -> Result<(), E>) {
-        if self.actions_run > 0 {
-            print_separator();
-        }
-        if let Err(e) = action() {
-            eprintln!("Error: {e}");
-            self.has_error = true;
-        }
-        self.actions_run += 1;
+    let program = load_degree_from_yaml(input)
+        .map_err(|e| format!("Failed to load {}: {}", input.display(), e))?;
+
+    let opts = TrimOptions {
+        keep_all_subjects: keep_all.iter().map(|s| s.to_uppercase()).collect(),
+        include_courses: include
+            .map(|v| v.iter().cloned().collect())
+            .unwrap_or_default(),
+    };
+
+    let (trimmed, report) = trim_program(&program, &opts);
+
+    if out_path == input {
+        return Err(format!(
+            "refusing to overwrite input file {}; pass an explicit -o path or rely on the default _trimmed suffix",
+            input.display()
+        ));
     }
+
+    save_degree_to_yaml(&trimmed, out_path)
+        .map_err(|e| format!("Failed to write {}: {}", out_path.display(), e))?;
+
+    println!("✓ Trimmed degree written to: {}", out_path.display());
+    if verbose {
+        let scope = if report.protected_subjects_derived {
+            "derived"
+        } else {
+            "from major_subjects"
+        };
+        println!(
+            "  Protected subjects ({scope}): {}",
+            report.protected_subjects.join(", ")
+        );
+        if !report.orphan_courses_removed.is_empty() {
+            println!(
+                "  Removed {} orphan course(s): {}",
+                report.orphan_courses_removed.len(),
+                report.orphan_courses_removed.join(", ")
+            );
+        }
+    } else if !report.orphan_courses_removed.is_empty() {
+        println!(
+            "  Removed {} orphan course(s)",
+            report.orphan_courses_removed.len()
+        );
+    }
+    Ok(())
 }
 
 /// Analysis context holding all data needed for degree analysis
@@ -978,7 +1109,7 @@ fn parse_equivalent_courses(course_ref: &str) -> Option<HashSet<String>> {
 /// 6. Exports CSV files for selected plans
 fn analyze_degree(
     degree_path: &Path,
-    options: &DegreeOptions,
+    options: &AnalyzeOptions,
     config: &Config,
 ) -> Result<(), String> {
     let verbose = options.verbose;
@@ -1277,7 +1408,7 @@ fn print_selection_summary(
 /// Generate HTML report and CSV exports
 fn generate_analysis_outputs(
     ctx: &AnalysisContext<'_>,
-    options: &DegreeOptions,
+    options: &AnalyzeOptions,
     aggregator: &MetricsAggregator,
     selected: &nu_analytics::core::degree::SelectedPlans,
 ) -> Result<Vec<String>, String> {
@@ -1349,7 +1480,7 @@ fn generate_analysis_outputs(
 /// Generate HTML report
 fn generate_html_report(
     ctx: &AnalysisContext<'_>,
-    options: &DegreeOptions,
+    options: &AnalyzeOptions,
     aggregator: &MetricsAggregator,
     selected: &nu_analytics::core::degree::SelectedPlans,
 ) -> Result<std::path::PathBuf, String> {
@@ -1394,7 +1525,7 @@ fn generate_html_report(
 /// Export CSV files for selected plans
 fn export_csv_files(
     ctx: &AnalysisContext<'_>,
-    options: &DegreeOptions,
+    options: &AnalyzeOptions,
     selected: &nu_analytics::core::degree::SelectedPlans,
 ) -> Result<Vec<String>, String> {
     let metrics_dir = options.metrics_dir.as_ref().map_or_else(
@@ -2129,5 +2260,83 @@ mod tests {
     fn test_is_yaml_path_no_extension() {
         assert!(!is_yaml_path(Path::new("README")));
         assert!(!is_yaml_path(Path::new("/path/to/dir/")));
+    }
+
+    #[test]
+    fn default_trim_output_appends_suffix_preserving_extension() {
+        assert_eq!(
+            default_trim_output(Path::new("degree.yaml")),
+            PathBuf::from("degree_trimmed.yaml")
+        );
+        assert_eq!(
+            default_trim_output(Path::new("my-degree.yml")),
+            PathBuf::from("my-degree_trimmed.yml")
+        );
+        assert_eq!(
+            default_trim_output(Path::new("samples/degrees/neu.yaml")),
+            PathBuf::from("samples/degrees/neu_trimmed.yaml")
+        );
+    }
+
+    #[test]
+    fn default_trim_output_falls_back_for_missing_extension() {
+        assert_eq!(
+            default_trim_output(Path::new("degree")),
+            PathBuf::from("degree_trimmed.yaml")
+        );
+    }
+
+    #[test]
+    fn looks_like_directory_honours_trailing_separator() {
+        assert!(looks_like_directory(Path::new("out/")));
+        // A path without a trailing separator and without an existing
+        // directory on disk is treated as a file. (We use a name that
+        // definitely doesn't exist.)
+        assert!(!looks_like_directory(Path::new(
+            "/tmp/__nuanalytics_test_definitely_missing_xyz"
+        )));
+    }
+
+    #[test]
+    fn looks_like_directory_detects_existing_dir() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        assert!(looks_like_directory(tmp.path()));
+    }
+
+    #[test]
+    fn looks_like_directory_rejects_existing_file() {
+        // An actual file on disk must not be misclassified as a directory,
+        // even if some future caller bypasses the trailing-separator hint.
+        let f = tempfile::NamedTempFile::new().expect("tempfile");
+        assert!(!looks_like_directory(f.path()));
+    }
+
+    #[test]
+    fn resolve_trim_output_none_falls_back_to_default() {
+        let input = Path::new("samples/degrees/neu.yaml");
+        assert_eq!(
+            resolve_trim_output(input, None, false),
+            PathBuf::from("samples/degrees/neu_trimmed.yaml")
+        );
+    }
+
+    #[test]
+    fn resolve_trim_output_dir_mode_joins_under_out() {
+        let input = Path::new("samples/degrees/neu.yaml");
+        let out = Path::new("trimmed");
+        assert_eq!(
+            resolve_trim_output(input, Some(out), true),
+            PathBuf::from("trimmed/neu_trimmed.yaml")
+        );
+    }
+
+    #[test]
+    fn resolve_trim_output_file_mode_returns_out_verbatim() {
+        let input = Path::new("samples/degrees/neu.yaml");
+        let out = Path::new("out/explicit.yaml");
+        assert_eq!(
+            resolve_trim_output(input, Some(out), false),
+            PathBuf::from("out/explicit.yaml")
+        );
     }
 }

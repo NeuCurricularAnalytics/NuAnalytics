@@ -13,26 +13,37 @@ The `degree` command provides several modes of operation:
 
 ## Quick Start
 
+The `degree` command is a subcommand dispatcher. Each action is its own
+subcommand:
+
 ```bash
-# Run full degree analysis (default action)
-nuanalytics degree samples/degrees/csu-cs-bscs-general.yaml
+# Run full degree analysis
+nuanalytics degree analyze samples/degrees/csu-cs-bscs-general.yaml
 
-# Validate a degree program only
-nuanalytics degree --validate samples/degrees/csu-cs-bscs-general.yaml
+# Validate a degree program
+nuanalytics degree validate samples/degrees/csu-cs-bscs-general.yaml
 
-# Run audit report
-nuanalytics degree --audit samples/degrees/csu-cs-bscs-general.yaml
+# Run an audit report
+nuanalytics degree audit samples/degrees/csu-cs-bscs-general.yaml
+
+# Print the prerequisite graph
+nuanalytics degree print-graph samples/degrees/csu-cs-bscs-general.yaml
+
+# Trim alternatives down to a single shared shortest path
+nuanalytics degree trim samples/degrees/csu-cs-bscs-general.yaml
 ```
+
+> **Migration note:** prior versions exposed these as flags
+> (`degree --validate`, `degree --analyze`, etc.). Every flag has moved
+> to a subcommand of the same name. There is no implicit default action;
+> pick one explicitly.
 
 ## Commands and Options
 
-### Full Analysis (Default)
-
-When no flags are specified, or with `--analyze`, the command runs full degree analysis:
+### Full Analysis (`analyze`)
 
 ```bash
-nuanalytics degree path/to/degree.yaml
-nuanalytics degree --analyze path/to/degree.yaml
+nuanalytics degree analyze path/to/degree.yaml
 ```
 
 This generates:
@@ -60,22 +71,22 @@ This generates:
 
 ```bash
 # Analyze with more samples
-nuanalytics degree --sample-plans 20 degree.yaml
+nuanalytics degree analyze --sample-plans 20 degree.yaml
 
 # Use mean instead of median for aggregation
-nuanalytics degree --calc-strategy mean degree.yaml
+nuanalytics degree analyze --calc-strategy mean degree.yaml
 
 # Generate up to 5000 plans
-nuanalytics degree --max-plans 5000 degree.yaml
+nuanalytics degree analyze --max-plans 5000 degree.yaml
 
 # Skip report generation, only export CSVs
-nuanalytics degree --no-report degree.yaml
+nuanalytics degree analyze --no-report degree.yaml
 
 # Use stratified sampling for better coverage
-nuanalytics degree --sampling-strategy stratified degree.yaml
+nuanalytics degree analyze --sampling-strategy stratified degree.yaml
 
 # Always include specific courses in all plans
-nuanalytics degree --include "CS3500,MATH2331" degree.yaml
+nuanalytics degree analyze --include "CS3500,MATH2331" degree.yaml
 ```
 
 ### Include Courses
@@ -90,7 +101,7 @@ When an included course satisfies a requirement (e.g., it's one option in a pick
 
 ```bash
 # Example: Include two specific courses
-nuanalytics degree --include "CS3500,STAT301" samples/degrees/csu-cs-bscs-general.yaml
+nuanalytics degree analyze --include "CS3500,STAT301" samples/degrees/csu-cs-bscs-general.yaml
 
 # The output will show:
 # Plan Generation:
@@ -99,10 +110,12 @@ nuanalytics degree --include "CS3500,STAT301" samples/degrees/csu-cs-bscs-genera
 #   Variable requirements: 6  (reduced from 7)
 ```
 
-### Validation
+`degree trim` reuses the same flag — see the **Trim** section below for trim-specific semantics.
+
+### Validation (`validate`)
 
 ```bash
-nuanalytics degree --validate path/to/degree.yaml
+nuanalytics degree validate path/to/degree.yaml
 ```
 
 Validates:
@@ -112,10 +125,10 @@ Validates:
 - Requirement structure validation
 - Cross-listing bidirectionality
 
-### Audit
+### Audit (`audit`)
 
 ```bash
-nuanalytics degree --audit path/to/degree.yaml
+nuanalytics degree audit path/to/degree.yaml
 ```
 
 Includes validation plus:
@@ -124,16 +137,78 @@ Includes validation plus:
 - Hidden requirements detection (courses required by prerequisites but not in requirements)
 - Subject-area filtering for degree-relevant courses
 
-### Print Graph
+### Print Graph (`print-graph`)
 
 ```bash
-nuanalytics degree --print-graph path/to/degree.yaml
+nuanalytics degree print-graph path/to/degree.yaml
 ```
 
 Displays the prerequisite graph showing:
 - All courses in the degree
 - Prerequisite relationships (AND/OR)
 - Expanded prerequisite options
+
+### Trim (`trim`)
+
+```bash
+nuanalytics degree trim path/to/degree.yaml [-o <out>] [--keep-all <SUBJ>]... [--include <COURSE,...>]
+```
+
+Produces a reduced copy of the input where prerequisite alternatives and
+`type: select` option lists are collapsed to a single shared shortest
+entry path per course. Useful for visualization and for downstream tools
+that don't enumerate alternatives.
+
+**Default protection:** every course whose subject appears in the
+degree's `major_subjects` list keeps its full set of alternatives. So on
+a CS degree (`major_subjects: [CS, CY, DS, IS]`), a prereq disjunct like
+`CS163 | CS164` survives unchanged, while `MATH156 | MATH160` collapses
+to whichever course has the smaller graph-delay metric. If
+`major_subjects` is missing from the YAML, the trim derives a protected
+set from the most-referenced subject prefix in the requirements.
+
+**Mixed disjuncts** (some protected, some not) trim to the protected
+options only. Example: `CS163 | MATH156` on a CS degree → `CS163`.
+
+**Shared shortest path:** delay is a global property of the prereq
+graph, so two courses that both list `MATH156 | MATH160` will
+independently pick the same alternative — no joint optimization needed.
+
+**`--keep-all <SUBJ>`** protects an additional subject prefix.
+Repeatable, also accepts comma-separated values:
+
+```bash
+nuanalytics degree trim degree.yaml --keep-all MATH --keep-all PHIL
+nuanalytics degree trim degree.yaml --keep-all MATH,PHIL
+```
+
+**`--include <COURSE,...>`** pins specific picks at any choice point
+that lists them — overrides the shortest-path metric and the
+prefer-protected rule. Same semantics as the `analyze --include` flag,
+repurposed for trim:
+
+```bash
+# Force MATH2331 to win wherever it's offered as an alternative
+nuanalytics degree trim degree.yaml --include MATH2331
+```
+
+**Output:** defaults to `<input-stem>_trimmed.<ext>` next to the input
+file; `-o`/`--out` overrides. The command refuses to overwrite the input
+file.
+
+**Side effects:** courses no longer referenced anywhere (alternatives
+dropped, with no other path leading to them) are pruned from the
+`courses:` map. The verbose flag (`--verbose` at the global level)
+prints the protected-subject set and the list of removed orphans.
+
+**Caveats:**
+
+- Comments in the source YAML are not preserved (serializer limitation).
+- `type: select` requirements that use a `pattern:` or `groups:`
+  (rather than an explicit `courses:` list) are left untouched, since
+  v1 doesn't enumerate patterns.
+- `type: one_of` concentrations are preserved as a whole; trim recurses
+  into each concentration's nested requirements.
 
 ## Analysis Output
 

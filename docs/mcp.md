@@ -123,9 +123,9 @@ For development, point to a local checkout:
 }
 ```
 
-After saving the config, restart Claude Code. The `get_degree_schema`, `validate_degree`,
-and `audit_degree` tools will be available in your session. You can verify with `/mcp` to
-list connected servers.
+After saving the config, restart Claude Code. The `nuanalytics` tools (see
+[Available Tools](#available-tools) below) will appear in your session. You
+can verify with `/mcp` to list connected servers.
 
 ### Other MCP Clients
 
@@ -232,6 +232,52 @@ structural analysis: missing prerequisites on upper-level courses and deep prere
 - "Audit this degree for issues" → calls `audit_degree`
 - "Find courses with long prerequisite chains" → calls with `chain_threshold: 2`
 - "Are there any upper-level courses missing prerequisites?" → calls `audit_degree`
+
+### `trim_degree`
+
+Collapse prerequisite alternatives and `Select` option lists down to a single
+shared shortest entry path per course, except inside protected subjects.
+Equivalents groups (`{A, B, C}`) record substitutions so downstream prereq
+references to dropped courses get rewritten, and the dropped courses are then
+orphan-pruned. Pattern-pool members (e.g. `ICS:400+` electives) survive the
+prune even when no requirement names them explicitly.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `yaml_content` / `yaml_path` / `degree_id` | string | Yes (exactly one) | YAML source. `degree_id` accepts `cache:<hash>` handles from prior tool calls. |
+| `keep_all` | array of strings | No | Subject prefixes to protect in addition to the degree's declared `major_subjects`. Case-insensitive. |
+| `include` | array of strings | No | Course keys to pin as winners at any choice point that lists them. Overrides the shortest-path metric. |
+| `output_path` | string | No | Optional disk write target. The trimmed content is also returned inline. Refuses to overwrite a `yaml_path` input. |
+
+**Response Format:**
+```json
+{
+  "success": true,
+  "trimmed_yaml": "degree:\n  ...",
+  "trimmed_cache_id": "cache:7f3a...",
+  "output_path": null,
+  "report": {
+    "protected_subjects": ["CS"],
+    "protected_subjects_derived": false,
+    "orphan_courses_removed": ["MATH241", "MATH242"]
+  },
+  "tool_followups": [
+    { "tool": "validate_degree", "reason": "...", "suggested_args": { "degree_id": "cache:7f3a..." } },
+    { "tool": "audit_degree",    "reason": "...", "suggested_args": { "degree_id": "cache:7f3a..." } }
+  ]
+}
+```
+
+**Notes:**
+- Comments in the source YAML are not preserved on serialisation.
+- `trimmed_cache_id` is a fresh handle into the YAML cache; pipe it straight
+  into `validate_degree`, `audit_degree`, etc. as a `degree_id`.
+
+**Example Prompts:**
+- "Trim this degree to a single path through alternatives" → calls `trim_degree`
+- "Also keep all MATH alternatives" → calls with `keep_all: ["MATH"]`
+- "Force MATH241 wherever possible" → calls with `include: ["MATH241"]`
 
 ### `analyze_degree`
 

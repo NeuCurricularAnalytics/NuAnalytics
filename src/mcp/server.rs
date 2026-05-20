@@ -7,10 +7,11 @@ use std::sync::Arc;
 use crate::core::config::DatabaseConfig;
 use crate::mcp::tools::{
     analyze, audit, cache, course_detail, match_courses, pipeline, plan_graph, report, samples,
-    schema, shared, validate, visualize, AnalyzeDegreeRequest, AuditDegreeRequest,
+    schema, shared, trim, validate, visualize, AnalyzeDegreeRequest, AuditDegreeRequest,
     CacheYamlRequest, DegreePipelineRequest, FindCoursesMatchingRequest,
     GenerateDegreeReportRequest, GetCourseDetailRequest, GetCurriculumVisualizationRequest,
-    GetSchemaRequest, ListSampleDegreesRequest, RenderPlanGraphRequest, ValidateDegreeRequest,
+    GetSchemaRequest, ListSampleDegreesRequest, RenderPlanGraphRequest, TrimDegreeRequest,
+    ValidateDegreeRequest,
 };
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -207,6 +208,45 @@ impl NuAnalyticsMcpServer {
                 skip_analyze,
             )
         })
+    }
+
+    /// Trim a degree program YAML to a single shortest-entry-path variant
+    #[tool(
+        description = "Collapse a degree YAML's prerequisite alternatives and `Select` option lists down to a single shared shortest entry path per course, except inside protected subjects (the degree's declared `major_subjects` plus anything you pass via `keep_all`). Equivalents groups (`{A, B, C}`) record substitutions so downstream prerequisite references to dropped courses get rewritten and the dropped courses are then orphan-pruned. Pattern-pool members (e.g. `ICS:400+` electives) survive the prune even when no requirement names them. Provide exactly ONE YAML source: yaml_content (inline), yaml_path (file path), or degree_id (cache:<hash> handle or DB row). Returns the trimmed YAML inline plus a fresh `cache:<hash>` handle (`trimmed_cache_id`) so you can chain validate_degree / audit_degree against the result without re-pasting. Optionally set `output_path` to also write the file to disk; the call refuses to overwrite a `yaml_path` input. Comments in the source YAML are not preserved on serialisation."
+    )]
+    fn trim_degree(&self, Parameters(req): Parameters<TrimDegreeRequest>) -> String {
+        let source = match shared::parse_yaml_source(req.yaml_content, req.yaml_path, req.degree_id)
+        {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        // We need the original on-disk path (when supplied) so we can refuse
+        // overwriting the input — `run_yaml_tool` discards that information,
+        // so do the resolve inline here.
+        let (yaml, source_path, cache_meta) = match source {
+            shared::YamlSource::Content(y) => (y, None, None),
+            shared::YamlSource::Path(p) => match shared::read_yaml_file(&p) {
+                Ok(y) => (y, Some(p), None),
+                Err(e) => return e,
+            },
+            shared::YamlSource::DegreeId(id) => match self.resolve_degree_id("trim_degree", &id) {
+                Ok((y, meta)) => (y, None, meta),
+                Err(e) => return e,
+            },
+        };
+        let keep_all = req.keep_all.unwrap_or_default();
+        let include = req.include.unwrap_or_default();
+        let output_path = req.output_path;
+        let raw = guard_panics("trim_degree", || {
+            trim::execute_json(
+                &yaml,
+                &keep_all,
+                &include,
+                output_path.as_deref(),
+                source_path.as_deref(),
+            )
+        });
+        inject_cache_meta(&raw, cache_meta)
     }
 
     /// Generate the full HTML degree report (plus optional CSV / JSONL / index artifacts)

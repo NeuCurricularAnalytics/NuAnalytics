@@ -13,6 +13,7 @@ pub mod report;
 pub mod samples;
 pub mod schema;
 pub mod shared;
+pub mod trim;
 pub mod validate;
 pub mod visualize;
 
@@ -41,6 +42,7 @@ pub use plan_graph::RenderPlanGraphRequest;
 pub use report::GenerateDegreeReportRequest;
 pub use samples::ListSampleDegreesRequest;
 pub use schema::GetSchemaRequest;
+pub use trim::{TrimDegreeRequest, TrimReportInfo, TrimResponse};
 pub use validate::{
     DegreeContext, ValidateDegreeRequest, ValidationErrorInfo, ValidationResponse,
     ValidationWarningInfo,

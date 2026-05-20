@@ -16,7 +16,7 @@ fn test_degree_print_graph_command() {
             "run",
             "--",
             "degree",
-            "--print-graph",
+            "print-graph",
             "samples/degrees/neu-khoury-bscs-boston.yaml",
         ])
         .output()
@@ -47,7 +47,7 @@ fn test_degree_validate_command() {
             "run",
             "--",
             "degree",
-            "--validate",
+            "validate",
             "samples/degrees/neu-khoury-bscs-boston.yaml",
         ])
         .output()
@@ -62,31 +62,26 @@ fn test_degree_validate_command() {
     );
 }
 
-/// Test degree command with both --validate and --print-graph
+/// Each `degree` subcommand runs a single action. Mixing them (the old
+/// flag-based double-action) must now fail at parse or load time rather
+/// than silently doing both.
 #[test]
-fn test_degree_validate_and_print_graph() {
+fn test_degree_rejects_stacked_subcommands() {
     let output = Command::new("cargo")
         .args([
             "run",
             "--",
             "degree",
-            "--validate",
+            "validate",
             "--print-graph",
             "samples/degrees/neu-khoury-bscs-boston.yaml",
         ])
         .output()
         .expect("Failed to execute command");
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Should contain both validation and graph output
     assert!(
-        stdout.contains("validation") || stdout.contains("valid"),
-        "Output should include validation"
-    );
-    assert!(
-        stdout.contains("Course Prerequisite Graph") || stdout.contains("Graph"),
-        "Output should include graph"
+        !output.status.success(),
+        "stacking the old --print-graph flag onto `degree validate` must not succeed"
     );
 }
 
@@ -94,7 +89,7 @@ fn test_degree_validate_and_print_graph() {
 #[test]
 fn test_degree_missing_file() {
     let output = Command::new("cargo")
-        .args(["run", "--", "degree", "--validate", "nonexistent-file.yaml"])
+        .args(["run", "--", "degree", "validate", "nonexistent-file.yaml"])
         .output()
         .expect("Failed to execute command");
 
@@ -112,7 +107,7 @@ fn test_degree_missing_file() {
 #[test]
 fn test_degree_requires_file_argument() {
     let output = Command::new("cargo")
-        .args(["run", "--", "degree", "--validate"])
+        .args(["run", "--", "degree", "validate"])
         .output()
         .expect("Failed to execute command");
 
@@ -139,7 +134,7 @@ fn test_graph_output_contains_courses() {
             "run",
             "--",
             "degree",
-            "--print-graph",
+            "print-graph",
             "samples/degrees/neu-khoury-bscs-boston.yaml",
         ])
         .output()
@@ -160,7 +155,7 @@ fn test_graph_output_prerequisite_format() {
             "run",
             "--",
             "degree",
-            "--print-graph",
+            "print-graph",
             "samples/degrees/neu-khoury-bscs-boston.yaml",
         ])
         .output()
@@ -190,7 +185,7 @@ fn test_graph_output_reports_cycles() {
             "run",
             "--",
             "degree",
-            "--print-graph",
+            "print-graph",
             "samples/degrees/csu-cs-bscs-general.yaml",
         ])
         .output()
@@ -221,7 +216,7 @@ fn test_graph_output_statistics() {
             "run",
             "--",
             "degree",
-            "--print-graph",
+            "print-graph",
             "samples/degrees/neu-khoury-bscs-boston.yaml",
         ])
         .output()
@@ -250,7 +245,7 @@ fn test_degree_malformed_yaml() {
             "run",
             "--",
             "degree",
-            "--validate",
+            "validate",
             temp_file.path().to_str().unwrap(),
         ])
         .output()
@@ -275,7 +270,7 @@ fn test_graph_programmatic_vs_cli_consistency() {
             "run",
             "--",
             "degree",
-            "--print-graph",
+            "print-graph",
             "samples/degrees/neu-khoury-bscs-boston.yaml",
         ])
         .output()
@@ -300,7 +295,7 @@ fn test_degree_audit_command() {
             "run",
             "--",
             "degree",
-            "--audit",
+            "audit",
             "samples/degrees/neu-khoury-bscs-boston.yaml",
         ])
         .output()
@@ -339,7 +334,7 @@ fn test_degree_audit_finds_missing_prereqs() {
             "run",
             "--",
             "degree",
-            "--audit",
+            "audit",
             "samples/degrees/neu-khoury-bscs-boston.yaml",
         ])
         .output()
@@ -364,7 +359,7 @@ fn test_degree_audit_finds_deep_chains() {
             "run",
             "--",
             "degree",
-            "--audit",
+            "audit",
             "samples/degrees/neu-khoury-bscs-boston.yaml",
         ])
         .output()
@@ -397,7 +392,7 @@ fn test_degree_analyze_command() {
             "run",
             "--",
             "degree",
-            "--analyze",
+            "analyze",
             "--max-plans",
             "50",
             "--sample-plans",
@@ -462,7 +457,7 @@ fn test_degree_analyze_no_output_flags() {
             "run",
             "--",
             "degree",
-            "--analyze",
+            "analyze",
             "--no-report",
             "--no-csv",
             "--max-plans",
@@ -491,4 +486,317 @@ fn test_degree_analyze_no_output_flags() {
     let metrics_exists = metrics_dir.exists()
         && std::fs::read_dir(&metrics_dir).is_ok_and(|mut d| d.next().is_some());
     assert!(!metrics_exists, "Should not have generated CSV files");
+}
+
+// ---------------------------------------------------------------------------
+// degree trim
+// ---------------------------------------------------------------------------
+
+/// Round-trip: trim a real sample, then validate the output through the
+/// normal parser. The trimmed file must parse cleanly and the success
+/// banner must show up on stdout.
+#[test]
+fn test_degree_trim_round_trip_validates() {
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let out_path = temp_dir.path().join("neu-trimmed.yaml");
+
+    let trim_output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "degree",
+            "trim",
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+            "-o",
+            out_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute trim");
+
+    assert!(
+        trim_output.status.success(),
+        "trim should succeed. stderr: {}",
+        String::from_utf8_lossy(&trim_output.stderr)
+    );
+    assert!(out_path.exists(), "trim must write the output file");
+    let stdout = String::from_utf8_lossy(&trim_output.stdout);
+    assert!(
+        stdout.contains("Trimmed degree written to"),
+        "trim should print a success banner; got: {stdout}"
+    );
+
+    // The trimmed file must still parse through `degree validate`.
+    let validate_output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "degree",
+            "validate",
+            out_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute validate");
+    assert!(
+        validate_output.status.success(),
+        "validate on trimmed file should succeed. stderr: {}",
+        String::from_utf8_lossy(&validate_output.stderr)
+    );
+}
+
+/// `degree trim` refuses to overwrite its input even when -o points at it.
+#[test]
+fn test_degree_trim_refuses_to_overwrite_input() {
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "degree",
+            "trim",
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+            "-o",
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+        ])
+        .output()
+        .expect("Failed to execute trim");
+
+    assert!(
+        !output.status.success(),
+        "trim must refuse to overwrite the input file"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("refusing to overwrite"),
+        "stderr should explain the refusal; got: {stderr}"
+    );
+}
+
+/// Wildcards: trim multiple inputs, all outputs land under a single `-o`
+/// directory and the trimmed filenames carry the `_trimmed` suffix.
+#[test]
+fn test_degree_trim_writes_each_input_to_out_dir() {
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "degree",
+            "trim",
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+            "samples/degrees/csu-cs-bscs-general.yaml",
+            "-o",
+            temp_dir.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute trim");
+
+    assert!(
+        output.status.success(),
+        "trim must succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    for expected in [
+        "neu-khoury-bscs-boston_trimmed.yaml",
+        "csu-cs-bscs-general_trimmed.yaml",
+    ] {
+        let path = temp_dir.path().join(expected);
+        assert!(
+            path.exists(),
+            "expected {} to be created in the -o directory",
+            path.display()
+        );
+    }
+}
+
+/// Passing multiple inputs with a file-style `-o` is ambiguous (we can't
+/// write N files to one path) and must fail with a clear message.
+#[test]
+fn test_degree_trim_rejects_file_out_with_multiple_inputs() {
+    use tempfile::TempDir;
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let file_out = temp_dir.path().join("collision.yaml");
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "degree",
+            "trim",
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+            "samples/degrees/csu-cs-bscs-general.yaml",
+            "-o",
+            file_out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute trim");
+
+    assert!(
+        !output.status.success(),
+        "multiple inputs + file -o must not silently succeed"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("is a file path") || stderr.contains("pass a directory"),
+        "stderr should explain the ambiguity; got: {stderr}"
+    );
+}
+
+/// Mixed input list: non-YAML files are skipped with a warning, YAML
+/// files still get trimmed. The overall command succeeds.
+#[test]
+fn test_degree_trim_skips_non_yaml_and_proceeds() {
+    use tempfile::TempDir;
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "degree",
+            "trim",
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+            "Readme.md",
+            "-o",
+            temp_dir.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute trim");
+
+    assert!(
+        output.status.success(),
+        "trim should succeed when at least one input is YAML. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Skipping non-YAML file") && stderr.contains("Readme.md"),
+        "stderr should warn about the non-YAML input; got: {stderr}"
+    );
+    assert!(
+        temp_dir
+            .path()
+            .join("neu-khoury-bscs-boston_trimmed.yaml")
+            .exists(),
+        "the YAML input must still be processed"
+    );
+}
+
+/// All-invalid input list: every file is filtered out, command fails with
+/// the dedicated "no YAML files to process" error.
+#[test]
+fn test_degree_trim_rejects_all_non_yaml_inputs() {
+    let output = Command::new("cargo")
+        .args(["run", "--", "degree", "trim", "Readme.md", "Cargo.toml"])
+        .output()
+        .expect("Failed to execute trim");
+
+    assert!(
+        !output.status.success(),
+        "trim must fail when no YAML inputs survive filtering"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("No YAML files to process after filtering"),
+        "stderr should explain the empty-after-filter state; got: {stderr}"
+    );
+}
+
+/// Trailing-slash `-o` should auto-create the destination directory and
+/// drop the trimmed file inside it.
+#[test]
+fn test_degree_trim_trailing_slash_creates_directory() {
+    use tempfile::TempDir;
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    // Use a *non-existent* nested path with a trailing separator so we
+    // exercise the `looks_like_directory` + `create_dir_all` code path.
+    let nested = temp_dir.path().join("fresh/");
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "degree",
+            "trim",
+            "samples/degrees/uhm-ics-bscs-general.yaml",
+            "-o",
+            nested.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute trim");
+
+    assert!(
+        output.status.success(),
+        "trim with trailing-slash dir must succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let expected = nested.join("uhm-ics-bscs-general_trimmed.yaml");
+    assert!(
+        expected.exists(),
+        "expected {} to be created",
+        expected.display()
+    );
+}
+
+/// `--keep-all MATH` must protect MATH alternatives from being trimmed on a
+/// degree where MATH is not in `major_subjects`. We verify this by checking
+/// that more MATH-prefixed courses survive in the keep-all output than in
+/// the default run.
+#[test]
+fn test_degree_trim_keep_all_preserves_extra_subject() {
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let default_out = temp_dir.path().join("default.yaml");
+    let keep_math_out = temp_dir.path().join("keep_math.yaml");
+
+    let run_trim = |out: &std::path::Path, extra_args: &[&str]| {
+        let mut args = vec![
+            "run",
+            "--",
+            "degree",
+            "trim",
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+            "-o",
+            out.to_str().unwrap(),
+        ];
+        args.extend_from_slice(extra_args);
+        let output = Command::new("cargo")
+            .args(&args)
+            .output()
+            .expect("Failed to execute trim");
+        assert!(
+            output.status.success(),
+            "trim must succeed. stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+
+    run_trim(&default_out, &[]);
+    run_trim(&keep_math_out, &["--keep-all", "MATH"]);
+
+    let count_math = |path: &std::path::Path| {
+        let text = std::fs::read_to_string(path).expect("read trim output");
+        // Count occurrences of `MATH` followed by a digit — course keys
+        // like MATH1341, MATH2331, etc. Avoids matching unrelated words.
+        text.match_indices("MATH")
+            .filter(|(idx, _)| {
+                text[idx + 4..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_digit())
+            })
+            .count()
+    };
+
+    let default_count = count_math(&default_out);
+    let keep_math_count = count_math(&keep_math_out);
+    assert!(
+        keep_math_count > default_count,
+        "--keep-all MATH should preserve more MATH references (got default={default_count}, keep-math={keep_math_count})"
+    );
 }
