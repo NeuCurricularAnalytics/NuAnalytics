@@ -778,6 +778,24 @@ fn prune_orphan_courses(program: &mut DegreeProgram) -> Vec<String> {
             referenced.insert(k.to_string());
         });
     }
+
+    // Patterns like `ICS:400+` aren't enumerated by the walker, but every
+    // course matching them is part of the requirement's selection pool.
+    // Expand each pattern against the program's courses and pull the
+    // matches into the referenced set, otherwise the pool's contents get
+    // orphan-pruned even though the pattern still requires them.
+    let mut patterns: Vec<String> = Vec::new();
+    for req in program.requirements.values() {
+        collect_patterns(req, &mut patterns);
+    }
+    for pattern in &patterns {
+        for key in program.courses.keys() {
+            if pattern_matches_key(pattern, key) {
+                referenced.insert(key.clone());
+            }
+        }
+    }
+
     // Transitively include every prereq still mentioned by a retained
     // course, so the trimmed file remains internally consistent.
     let mut frontier: Vec<String> = referenced.iter().cloned().collect();
@@ -810,6 +828,64 @@ fn prune_orphan_courses(program: &mut DegreeProgram) -> Vec<String> {
     let mut sorted = removed;
     sorted.sort();
     sorted
+}
+
+/// Walk `req` recursively and append every `from.pattern` and
+/// `from.include` pattern string into `out`.
+fn collect_patterns(req: &Requirement, out: &mut Vec<String>) {
+    if let Some(from) = &req.from {
+        if let Some(p) = &from.pattern {
+            out.push(p.clone());
+        }
+        if let Some(includes) = &from.include {
+            for p in includes {
+                out.push(p.clone());
+            }
+        }
+    }
+    if let Some(options) = &req.options {
+        for opt in options {
+            for nested in &opt.requirements {
+                collect_patterns(nested, out);
+            }
+        }
+    }
+}
+
+/// Returns true if `key` (e.g. `"ICS451"`) matches `pattern`
+/// (e.g. `"ICS:400+"`, `"MATH:100-299"`, `"CS:*"`).
+fn pattern_matches_key(pattern: &str, key: &str) -> bool {
+    let Some((prefix, level_spec)) = pattern.split_once(':') else {
+        return false;
+    };
+    let key_prefix: String = key.chars().take_while(|c| c.is_alphabetic()).collect();
+    if key_prefix != prefix {
+        return false;
+    }
+    if level_spec == "*" {
+        return true;
+    }
+    let course_num: u32 = key
+        .chars()
+        .skip(key_prefix.len())
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .unwrap_or(0);
+    if let Some(stripped) = level_spec.strip_suffix('+') {
+        if let Ok(min) = stripped.parse::<u32>() {
+            return course_num >= min;
+        }
+    }
+    if let Some((lo, hi)) = level_spec.split_once('-') {
+        if let (Ok(lo), Ok(hi)) = (lo.parse::<u32>(), hi.parse::<u32>()) {
+            return course_num >= lo && course_num <= hi;
+        }
+    }
+    if let Ok(exact) = level_spec.parse::<u32>() {
+        return course_num == exact;
+    }
+    false
 }
 
 fn unique_courses(raw: &str) -> Vec<String> {
@@ -1403,6 +1479,109 @@ mod tests {
             assert!(out.courses.contains_key(k), "{k} must survive");
         }
         assert!(report.orphan_courses_removed.is_empty());
+    }
+
+    #[test]
+    fn pattern_matches_key_supports_wildcard_range_and_plus() {
+        assert!(pattern_matches_key("ICS:400+", "ICS451"));
+        assert!(pattern_matches_key("ICS:400+", "ICS400"));
+        assert!(!pattern_matches_key("ICS:400+", "ICS311"));
+        assert!(pattern_matches_key("MATH:100-299", "MATH215"));
+        assert!(!pattern_matches_key("MATH:100-299", "MATH301"));
+        assert!(pattern_matches_key("CS:*", "CS101"));
+        assert!(!pattern_matches_key("CS:*", "MATH101"));
+        assert!(pattern_matches_key("ICS:215", "ICS215"));
+        assert!(!pattern_matches_key("ICS:215", "ICS214"));
+    }
+
+    #[test]
+    fn pattern_keeps_matching_courses_from_orphan_pruning() {
+        // Regression for UHM: a `from.pattern: "ICS:400+"` Select must
+        // preserve every ICS 400+ course from orphan-pruning even when no
+        // other requirement names them.
+        let req = Requirement {
+            name: None,
+            req_type: RequirementType::Select,
+            category: None,
+            courses: None,
+            from: Some(FromClause {
+                courses: None,
+                pattern: Some("ICS:400+".to_string()),
+                include: None,
+                exclude: None,
+                groups: None,
+                groups_required: None,
+                per_group: None,
+            }),
+            count: Some(2),
+            credits: None,
+            credit_range: None,
+            constraints: None,
+            options: None,
+        };
+        let courses = vec![
+            // Pattern pool — only referenced via `pattern:`, never by name.
+            ("ICS411", course("ICS", "411", 3.0, None)),
+            ("ICS422", course("ICS", "422", 3.0, None)),
+            ("ICS433", course("ICS", "433", 3.0, None)),
+            // Below the pattern's level — not preserved by the pattern.
+            ("ICS311", course("ICS", "311", 3.0, None)),
+        ];
+        let program = program_with(Some(vec!["ICS"]), courses, vec![("electives", req)]);
+        let (out, report) = trim_program(&program, &TrimOptions::default());
+        for k in ["ICS411", "ICS422", "ICS433"] {
+            assert!(
+                out.courses.contains_key(k),
+                "{k} matches ICS:400+ and must survive orphan pruning"
+            );
+        }
+        assert!(
+            !out.courses.contains_key("ICS311"),
+            "ICS311 doesn't match ICS:400+ and isn't named anywhere — must be pruned"
+        );
+        assert!(report
+            .orphan_courses_removed
+            .contains(&"ICS311".to_string()));
+    }
+
+    #[test]
+    fn pattern_in_from_include_also_preserves_matches() {
+        // `from.include` carries additional patterns alongside `from.pattern`
+        // — both must be honoured by orphan-pruning.
+        let req = Requirement {
+            name: None,
+            req_type: RequirementType::Select,
+            category: None,
+            courses: None,
+            from: Some(FromClause {
+                courses: Some(vec!["ICS300".to_string()]),
+                pattern: None,
+                include: Some(vec!["MATH:300+".to_string()]),
+                exclude: None,
+                groups: None,
+                groups_required: None,
+                per_group: None,
+            }),
+            count: Some(1),
+            credits: None,
+            credit_range: None,
+            constraints: None,
+            options: None,
+        };
+        let courses = vec![
+            ("ICS300", course("ICS", "300", 3.0, None)),
+            ("MATH301", course("MATH", "301", 3.0, None)),
+            ("MATH305", course("MATH", "305", 3.0, None)),
+            ("MATH101", course("MATH", "101", 3.0, None)),
+        ];
+        let program = program_with(Some(vec!["ICS"]), courses, vec![("req", req)]);
+        let (out, _report) = trim_program(&program, &TrimOptions::default());
+        assert!(out.courses.contains_key("MATH301"));
+        assert!(out.courses.contains_key("MATH305"));
+        assert!(
+            !out.courses.contains_key("MATH101"),
+            "MATH101 falls below the 300 threshold and must be pruned"
+        );
     }
 
     #[test]
