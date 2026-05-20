@@ -41,6 +41,11 @@ pub struct TrimReport {
 
 /// Trim a degree program down to a single entry path per course.
 ///
+/// Two-pass: requirements are trimmed first to record equivalents-group
+/// collapses (`MATH241 → MATH215`), then every course's prerequisite
+/// expression is substituted with those mappings before its own
+/// structural trim. Dropped equivalents end up as orphans and get pruned.
+///
 /// See module docs and the user-facing `degree trim --help` text for the
 /// full ruleset.
 #[must_use]
@@ -51,6 +56,24 @@ pub fn trim_program(program: &DegreeProgram, opts: &TrimOptions) -> (DegreeProgr
 
     let mut out = program.clone();
 
+    // Requirements come first so equivalents-group collapses (e.g.
+    // `{MATH215, MATH241}` → `MATH215`) record `MATH241 → MATH215`
+    // substitutions. Downstream prereq references to MATH241 get
+    // rewritten to MATH215 in the second pass, so the dropped course is
+    // truly gone after orphan pruning.
+    let credit_lookup = build_credit_lookup(&out);
+    let mut substitutions: HashMap<String, String> = HashMap::new();
+    for req in out.requirements.values_mut() {
+        trim_requirement_in_place(
+            req,
+            &protected,
+            &depths,
+            include,
+            &credit_lookup,
+            &mut substitutions,
+        );
+    }
+
     for course in out.courses.values_mut() {
         let Some(raw) = course.prerequisites_raw.as_ref() else {
             continue;
@@ -58,20 +81,17 @@ pub fn trim_program(program: &DegreeProgram, opts: &TrimOptions) -> (DegreeProgr
         let Some(ast) = parse_to_ast(raw) else {
             continue;
         };
-        let trimmed = trim_ast(ast, &protected, &depths, include);
-        if trimmed.is_empty() {
+        let substituted = substitute_in_ast(ast, &substitutions);
+        let trimmed = trim_ast(substituted, &protected, &depths, include);
+        let cleaned = dedup_ast(trimmed);
+        if cleaned.is_empty() {
             course.prerequisites_raw = None;
             course.prerequisites.clear();
         } else {
-            let new_raw = trimmed.to_expression_string();
+            let new_raw = cleaned.to_expression_string();
             course.prerequisites = unique_courses(&new_raw);
             course.prerequisites_raw = Some(new_raw);
         }
-    }
-
-    let credit_lookup = build_credit_lookup(&out);
-    for req in out.requirements.values_mut() {
-        trim_requirement_in_place(req, &protected, &depths, include, &credit_lookup);
     }
 
     let orphan_courses_removed = prune_orphan_courses(&mut out);
@@ -86,6 +106,54 @@ pub fn trim_program(program: &DegreeProgram, opts: &TrimOptions) -> (DegreeProgr
             orphan_courses_removed,
         },
     )
+}
+
+/// Rewrite every `Course` leaf in `ast` whose key appears in `subs` to
+/// the substitute key. Used to propagate equivalents-group collapses
+/// (e.g. `MATH241 → MATH215`) into downstream prerequisite expressions.
+fn substitute_in_ast(ast: PrereqExpr, subs: &HashMap<String, String>) -> PrereqExpr {
+    if subs.is_empty() {
+        return ast;
+    }
+    match ast {
+        PrereqExpr::Course(c) => PrereqExpr::Course(subs.get(&c).cloned().unwrap_or(c)),
+        PrereqExpr::All(xs) => {
+            PrereqExpr::All(xs.into_iter().map(|x| substitute_in_ast(x, subs)).collect())
+        }
+        PrereqExpr::Any(xs) => {
+            PrereqExpr::Any(xs.into_iter().map(|x| substitute_in_ast(x, subs)).collect())
+        }
+    }
+}
+
+/// After substitution, an Any or All can end up with repeated `Course`
+/// leaves (e.g. `MATH215 | MATH215 | MATH215`). Collapse those to a
+/// single occurrence in-order, then unwrap single-child wrappers.
+fn dedup_ast(ast: PrereqExpr) -> PrereqExpr {
+    match ast {
+        PrereqExpr::Course(_) => ast,
+        PrereqExpr::All(xs) => {
+            let cleaned: Vec<PrereqExpr> = xs.into_iter().map(dedup_ast).collect();
+            collapse(PrereqExpr::All(dedup_course_children(cleaned)))
+        }
+        PrereqExpr::Any(xs) => {
+            let cleaned: Vec<PrereqExpr> = xs.into_iter().map(dedup_ast).collect();
+            collapse(PrereqExpr::Any(dedup_course_children(cleaned)))
+        }
+    }
+}
+
+fn dedup_course_children(children: Vec<PrereqExpr>) -> Vec<PrereqExpr> {
+    let mut seen: HashSet<String> = HashSet::new();
+    children
+        .into_iter()
+        .filter(|child| match child {
+            PrereqExpr::Course(c) => seen.insert(c.clone()),
+            // Non-leaf children stay as-is — repeating identical compound
+            // subexpressions is rare and not worth structural compare.
+            _ => true,
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -157,11 +225,26 @@ fn walk_requirement_courses<F: FnMut(&str)>(req: &Requirement, visit: &mut F) {
                 }
             }
         }
+        if let Some(groups) = &from.groups {
+            visit_group_courses(groups, visit);
+        }
     }
     if let Some(options) = &req.options {
         for opt in options {
             for nested in &opt.requirements {
                 walk_requirement_courses(nested, visit);
+            }
+        }
+    }
+}
+
+/// Visit every course key reachable from a list of `from.groups` entries.
+/// Extracted so the parent walker stays at three nesting levels.
+fn visit_group_courses<F: FnMut(&str)>(groups: &[crate::core::degree::CourseGroup], visit: &mut F) {
+    for group in groups {
+        for entry in &group.courses {
+            for c in expand_course_entry(entry) {
+                visit(&c);
             }
         }
     }
@@ -441,13 +524,14 @@ fn trim_requirement_in_place(
     depths: &HashMap<String, usize>,
     include: &HashSet<String>,
     credits: &HashMap<String, f32>,
+    substitutions: &mut HashMap<String, String>,
 ) {
     match req.req_type {
         RequirementType::All => {
             if let Some(courses) = req.courses.as_mut() {
                 let new_courses: Vec<String> = courses
                     .iter()
-                    .map(|entry| trim_all_entry(entry, protected, depths, include))
+                    .map(|entry| trim_all_entry(entry, protected, depths, include, substitutions))
                     .filter(|entry| !entry.is_empty())
                     .collect();
                 *courses = new_courses;
@@ -470,7 +554,14 @@ fn trim_requirement_in_place(
             if let Some(options) = req.options.as_mut() {
                 for opt in options {
                     for nested in &mut opt.requirements {
-                        trim_requirement_in_place(nested, protected, depths, include, credits);
+                        trim_requirement_in_place(
+                            nested,
+                            protected,
+                            depths,
+                            include,
+                            credits,
+                            substitutions,
+                        );
                     }
                 }
             }
@@ -480,12 +571,15 @@ fn trim_requirement_in_place(
 
 /// Handle a single entry in a `type: all` `courses:` array. Bundles
 /// (`[A, B]`) pass through unchanged; equivalents (`{A, B}`) get trimmed
-/// like a prerequisite disjunction.
+/// like a prerequisite disjunction, and any dropped equivalent records
+/// a substitution to the chosen canonical course (used later to rewrite
+/// downstream prereq references).
 fn trim_all_entry(
     entry: &str,
     protected: &HashSet<String>,
     depths: &HashMap<String, usize>,
     include: &HashSet<String>,
+    substitutions: &mut HashMap<String, String>,
 ) -> String {
     let trimmed = entry.trim();
     if trimmed.starts_with('{') && trimmed.ends_with('}') {
@@ -496,6 +590,7 @@ fn trim_all_entry(
             .filter(|s| !s.is_empty())
             .collect();
         let kept = pick_equivalents(&courses, protected, depths, include);
+        record_equivalent_substitutions(&courses, &kept, substitutions);
         return match kept.len() {
             0 => String::new(),
             1 => kept.into_iter().next().unwrap_or_default(),
@@ -504,6 +599,28 @@ fn trim_all_entry(
     }
     // Bundles `[A, B]` and bare keys are returned verbatim.
     trimmed.to_string()
+}
+
+/// Record every course dropped from an equivalents group as a
+/// substitution to the canonical (first kept) course. The schema author
+/// declared the group equivalent, so downstream prereq references to a
+/// dropped member should now point at the kept one.
+fn record_equivalent_substitutions(
+    original: &[String],
+    kept: &[String],
+    substitutions: &mut HashMap<String, String>,
+) {
+    let Some(canonical) = kept.first() else {
+        return;
+    };
+    let kept_set: HashSet<&String> = kept.iter().collect();
+    for course in original {
+        if !kept_set.contains(course) && course != canonical {
+            substitutions
+                .entry(course.clone())
+                .or_insert_with(|| canonical.clone());
+        }
+    }
 }
 
 fn pick_equivalents(
@@ -1012,6 +1129,331 @@ mod tests {
         assert!(out.courses.contains_key("BIO100"));
         assert!(!out.courses.contains_key("BIO200"));
         assert_eq!(report.orphan_courses_removed, vec!["BIO200".to_string()]);
+    }
+
+    #[test]
+    fn equivalents_drop_propagates_to_downstream_prereqs() {
+        // Regression for UHM: the calculus requirement says
+        // `{MATH215, MATH241}` (equivalents). MATH215 wins (lex tiebreak).
+        // A separate course that names MATH241 as its only prereq must be
+        // rewritten to MATH215, and MATH241 must vanish entirely.
+        let req = Requirement {
+            name: None,
+            req_type: RequirementType::All,
+            category: None,
+            courses: Some(vec!["{MATH215, MATH241}".to_string()]),
+            from: None,
+            count: None,
+            credits: None,
+            credit_range: None,
+            constraints: None,
+            options: None,
+        };
+        let courses = vec![
+            ("MATH215", course("MATH", "215", 4.0, None)),
+            ("MATH241", course("MATH", "241", 4.0, None)),
+            // Downstream course that explicitly names MATH241 — the trim
+            // must follow the equivalents declaration and substitute.
+            ("CS300", course("CS", "300", 4.0, Some("MATH241"))),
+        ];
+        let program = program_with(
+            Some(vec!["CS"]),
+            courses,
+            vec![("calc", req), ("major", all_req(vec!["CS300"]))],
+        );
+        let (out, report) = trim_program(&program, &TrimOptions::default());
+
+        assert_eq!(
+            out.courses["CS300"].prerequisites_raw.as_deref(),
+            Some("MATH215"),
+            "downstream MATH241 prereq must be rewritten to the kept equivalent MATH215"
+        );
+        assert!(
+            !out.courses.contains_key("MATH241"),
+            "MATH241 must be pruned after substitution"
+        );
+        assert!(
+            report
+                .orphan_courses_removed
+                .contains(&"MATH241".to_string()),
+            "report should list MATH241 as removed"
+        );
+    }
+
+    #[test]
+    fn equivalents_drop_dedups_repeated_substitutions_in_conjunction() {
+        // After substituting MATH241→MATH215, a prereq like
+        // `MATH215 & MATH241` becomes `MATH215 & MATH215`. Without
+        // dedup_ast the trimmed YAML would emit the redundant pair.
+        let req = Requirement {
+            name: None,
+            req_type: RequirementType::All,
+            category: None,
+            courses: Some(vec!["{MATH215, MATH241}".to_string()]),
+            from: None,
+            count: None,
+            credits: None,
+            credit_range: None,
+            constraints: None,
+            options: None,
+        };
+        let courses = vec![
+            ("MATH215", course("MATH", "215", 4.0, None)),
+            ("MATH241", course("MATH", "241", 4.0, None)),
+            // A required conjunction that lists both equivalents — the
+            // substituted form `MATH215 & MATH215` must collapse to one.
+            ("CS300", course("CS", "300", 4.0, Some("MATH215 & MATH241"))),
+        ];
+        let program = program_with(
+            Some(vec!["CS"]),
+            courses,
+            vec![("calc", req), ("major", all_req(vec!["CS300"]))],
+        );
+        let (out, _report) = trim_program(&program, &TrimOptions::default());
+        assert_eq!(
+            out.courses["CS300"].prerequisites_raw.as_deref(),
+            Some("MATH215"),
+            "after MATH241→MATH215 substitution the AND must dedup to a single course"
+        );
+    }
+
+    #[test]
+    fn orphan_pruning_traverses_select_from_groups() {
+        // Regression: the orphan pruner used to ignore `from.groups`,
+        // which caused courses listed only inside a `select` group to be
+        // dropped from `courses:` even though a requirement still
+        // referenced them (breadth_requirements pattern in UHM degree).
+        let req = Requirement {
+            name: None,
+            req_type: RequirementType::Select,
+            category: None,
+            courses: None,
+            from: Some(FromClause {
+                courses: None,
+                pattern: None,
+                include: None,
+                exclude: None,
+                groups: Some(vec![crate::core::degree::CourseGroup {
+                    id: "g1".to_string(),
+                    name: None,
+                    courses: vec!["CS300".to_string(), "CS400".to_string()],
+                }]),
+                groups_required: Some(1),
+                per_group: Some(1),
+            }),
+            count: None,
+            credits: None,
+            credit_range: None,
+            constraints: None,
+            options: None,
+        };
+        let courses = vec![
+            ("CS300", course("CS", "300", 4.0, None)),
+            ("CS400", course("CS", "400", 4.0, None)),
+        ];
+        let program = program_with(Some(vec!["CS"]), courses, vec![("breadth", req)]);
+        let (out, report) = trim_program(&program, &TrimOptions::default());
+        assert!(
+            out.courses.contains_key("CS300") && out.courses.contains_key("CS400"),
+            "courses inside `from.groups[*].courses` must survive orphan pruning"
+        );
+        assert!(
+            report.orphan_courses_removed.is_empty(),
+            "no orphans expected; got {:?}",
+            report.orphan_courses_removed
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // AST helper micro-tests
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn substitute_in_ast_passes_through_when_no_substitutions() {
+        // Fast path: an empty substitutions map must leave the AST untouched.
+        let ast = PrereqExpr::Any(vec![
+            PrereqExpr::Course("CS100".into()),
+            PrereqExpr::Course("CS200".into()),
+        ]);
+        let result = substitute_in_ast(ast.clone(), &HashMap::new());
+        assert_eq!(result, ast);
+    }
+
+    #[test]
+    fn substitute_in_ast_leaves_unmapped_courses_alone() {
+        let ast = PrereqExpr::All(vec![
+            PrereqExpr::Course("CS100".into()),
+            PrereqExpr::Course("UNMAPPED".into()),
+        ]);
+        let subs = HashMap::from([("CS100".to_string(), "CS999".to_string())]);
+        let result = substitute_in_ast(ast, &subs);
+        match result {
+            PrereqExpr::All(xs) => {
+                assert_eq!(xs[0], PrereqExpr::Course("CS999".into()));
+                assert_eq!(xs[1], PrereqExpr::Course("UNMAPPED".into()));
+            }
+            other => panic!("expected All, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dedup_ast_is_noop_on_already_unique_children() {
+        let ast = PrereqExpr::Any(vec![
+            PrereqExpr::Course("CS100".into()),
+            PrereqExpr::Course("CS200".into()),
+            PrereqExpr::Course("CS300".into()),
+        ]);
+        assert_eq!(dedup_ast(ast.clone()), ast);
+    }
+
+    #[test]
+    fn record_equivalent_substitutions_never_self_substitutes_canonical() {
+        // BIO100 is the canonical (first kept). The dropped courses point at
+        // it, but BIO100 itself must not appear as a key in the map.
+        let original = vec![
+            "BIO100".to_string(),
+            "BIO200".to_string(),
+            "BIO300".to_string(),
+        ];
+        let kept = vec!["BIO100".to_string()];
+        let mut subs = HashMap::new();
+        record_equivalent_substitutions(&original, &kept, &mut subs);
+        assert!(!subs.contains_key("BIO100"));
+        assert_eq!(subs["BIO200"], "BIO100");
+        assert_eq!(subs["BIO300"], "BIO100");
+    }
+
+    #[test]
+    fn include_forces_non_default_equivalent_as_canonical() {
+        // Without --include, MATH215 (depth 0) would win on the lex tiebreak.
+        // --include MATH241 must override and rewrite downstream references.
+        let req = Requirement {
+            name: None,
+            req_type: RequirementType::All,
+            category: None,
+            courses: Some(vec!["{MATH215, MATH241}".to_string()]),
+            from: None,
+            count: None,
+            credits: None,
+            credit_range: None,
+            constraints: None,
+            options: None,
+        };
+        let courses = vec![
+            ("MATH215", course("MATH", "215", 4.0, None)),
+            ("MATH241", course("MATH", "241", 4.0, None)),
+            // Downstream course explicitly references MATH215 — with the
+            // include override, it should be rewritten to MATH241.
+            ("CS300", course("CS", "300", 4.0, Some("MATH215"))),
+        ];
+        let program = program_with(
+            Some(vec!["CS"]),
+            courses,
+            vec![("calc", req), ("major", all_req(vec!["CS300"]))],
+        );
+        let opts = TrimOptions {
+            include_courses: HashSet::from(["MATH241".to_string()]),
+            ..TrimOptions::default()
+        };
+        let (out, _report) = trim_program(&program, &opts);
+        assert_eq!(
+            out.courses["CS300"].prerequisites_raw.as_deref(),
+            Some("MATH241"),
+            "include must drag MATH241 in as the canonical and rewrite downstream"
+        );
+        assert!(!out.courses.contains_key("MATH215"));
+    }
+
+    #[test]
+    fn orphan_pruning_handles_from_with_both_courses_and_groups() {
+        // Defensive: a Select.from that populates both `courses` and
+        // `groups` must traverse both during orphan walking.
+        let req = Requirement {
+            name: None,
+            req_type: RequirementType::Select,
+            category: None,
+            courses: None,
+            from: Some(FromClause {
+                courses: Some(vec!["CS100".to_string()]),
+                pattern: None,
+                include: None,
+                exclude: None,
+                groups: Some(vec![crate::core::degree::CourseGroup {
+                    id: "g1".to_string(),
+                    name: None,
+                    courses: vec!["CS200".to_string(), "CS300".to_string()],
+                }]),
+                groups_required: Some(1),
+                per_group: Some(1),
+            }),
+            count: None,
+            credits: None,
+            credit_range: None,
+            constraints: None,
+            options: None,
+        };
+        let courses = vec![
+            ("CS100", course("CS", "100", 3.0, None)),
+            ("CS200", course("CS", "200", 3.0, None)),
+            ("CS300", course("CS", "300", 3.0, None)),
+        ];
+        let program = program_with(Some(vec!["CS"]), courses, vec![("req", req)]);
+        let (out, report) = trim_program(&program, &TrimOptions::default());
+        for k in ["CS100", "CS200", "CS300"] {
+            assert!(out.courses.contains_key(k), "{k} must survive");
+        }
+        assert!(report.orphan_courses_removed.is_empty());
+    }
+
+    #[test]
+    fn orphan_pruning_traverses_nested_oneof_with_from_groups() {
+        // Recursive coverage: `from.groups` inside a `one_of` option must
+        // also be walked when the orphan pruner builds its reference set.
+        let nested = Requirement {
+            name: None,
+            req_type: RequirementType::Select,
+            category: None,
+            courses: None,
+            from: Some(FromClause {
+                courses: None,
+                pattern: None,
+                include: None,
+                exclude: None,
+                groups: Some(vec![crate::core::degree::CourseGroup {
+                    id: "g".to_string(),
+                    name: None,
+                    courses: vec!["MATH300".to_string()],
+                }]),
+                groups_required: Some(1),
+                per_group: Some(1),
+            }),
+            count: None,
+            credits: None,
+            credit_range: None,
+            constraints: None,
+            options: None,
+        };
+        let outer = Requirement {
+            name: None,
+            req_type: RequirementType::OneOf,
+            category: None,
+            courses: None,
+            from: None,
+            count: None,
+            credits: None,
+            credit_range: None,
+            constraints: None,
+            options: Some(vec![crate::core::degree::RequirementOption {
+                id: "opt".to_string(),
+                name: "Option A".to_string(),
+                requirements: vec![nested],
+            }]),
+        };
+        let courses = vec![("MATH300", course("MATH", "300", 3.0, None))];
+        let program = program_with(Some(vec!["CS"]), courses, vec![("outer", outer)]);
+        let (out, report) = trim_program(&program, &TrimOptions::default());
+        assert!(out.courses.contains_key("MATH300"));
+        assert!(report.orphan_courses_removed.is_empty());
     }
 
     #[test]
