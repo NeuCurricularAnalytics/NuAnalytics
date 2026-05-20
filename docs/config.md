@@ -214,76 +214,113 @@ nuanalytics config get
 
 ## Default Configuration
 
-When you first run NuAnalytics, it uses these defaults (which depend on build mode):
+NuAnalytics embeds two default config files in the binary — one for
+release builds, one for debug — and falls back to them when neither the
+home nor the local config file overrides a given key. The defaults
+below are the actual contents of `src/assets/DefaultCLIConfigRelease.toml`
+and `DefaultCLIConfigDebug.toml`.
 
-**Release Mode:**
+**Release Mode** (used by the installed `nuanalytics` binary):
 ```toml
 [logging]
 level = "warn"
-verbose = false
 file = "$NU_ANALYTICS/nuanalytics.log"
+verbose = false
 
 [database]
-endpoint = ""
-anon_key = ""
-enabled = false
+endpoint = "https://oaaqxtzkfcjcosilpbwi.supabase.co"
+anon_key = "eyJhbGciOiJIUzI1NiI..."   # JWT-format anon key — see below
+enabled = true
+auth_file = "$NU_ANALYTICS/auth.json"
+management_key = ""                    # set this only if you run `db exec-sql`
 
 [paths]
 metrics_dir = "./metrics"
 reports_dir = "./reports"
 
+[audit]
+prerequisite_chain_threshold = 4
+
 [degree_analysis]
-max_plans = 1000
+calc_strategy = "median"
 sample_plan_count = 5
-sampling_strategy = "shuffled"
+max_plans = 1000
 ignore_duplicates = true
+sampling_strategy = "shuffled"
 ```
 
-**Debug Mode:**
+**Debug Mode** (used by `cargo run` and other debug builds — output goes
+under `.debug/` to avoid mixing with release output):
 ```toml
 [logging]
 level = "debug"
-verbose = true
 file = ".debug/nuanalytics.debug.log"
+verbose = true
 
 [database]
-endpoint = ""
-anon_key = ""
-enabled = false
+endpoint = "https://oaaqxtzkfcjcosilpbwi.supabase.co"
+anon_key = "eyJhbGciOiJIUzI1NiI..."
+enabled = true
+auth_file = ".debug/dauth.json"        # separate from any active release session
+management_key = ""
 
 [paths]
 metrics_dir = ".debug/metrics"
 reports_dir = ".debug/reports"
 
+[audit]
+prerequisite_chain_threshold = 4
+
 [degree_analysis]
+calc_strategy = "median"
+sample_plan_count = 3                  # smaller for faster debug iteration
 max_plans = 1000
-sample_plan_count = 5
-sampling_strategy = "shuffled"
 ignore_duplicates = true
+sampling_strategy = "shuffled"
 ```
 
-## Degree Analysis Configuration
+> The shipped `anon_key` and `endpoint` point at the project's shared
+> development database. They identify the project but do not grant access
+> — you still need `nuanalytics db login` to obtain a user JWT before any
+> database tool will work (see [Database setup](database/setup.md) for
+> the full flow). `management_key` is a separate Supabase Personal Access
+> Token used by `db exec-sql` for DDL; generate one at
+> <https://app.supabase.com/account/tokens> only if you need it.
 
-The `degree_analysis` section controls behavior of the `degree analyze` command:
+## Audit Configuration
+
+The `[audit]` section controls the `degree audit` command:
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `max_plans` | Maximum number of plans to generate | 1000 |
-| `sample_plan_count` | Number of random plans to export | 5 |
-| `sampling_strategy` | Plan enumeration strategy | "shuffled" |
-| `ignore_duplicates` | Skip duplicate plan combinations | true |
+| `prerequisite_chain_threshold` | Minimum chain depth to flag as "deep". Courses whose longest prereq chain is at least this many steps long are highlighted in audit reports. | 4 |
+
+## Degree Analysis Configuration
+
+The `[degree_analysis]` section controls the `degree analyze` command:
+
+| Key | Description | Default (release) |
+|-----|-------------|-------------------|
+| `calc_strategy` | Aggregate metric strategy across generated plans: `"median"` or `"mean"`. Median is more robust to outlier plans. | `"median"` |
+| `max_plans` | Hard cap on plan generation. Programs with many electives explode combinatorially; this stops runaway generation. | 1000 |
+| `sample_plan_count` | How many random plans to export in full (term schedules + CSVs). Does not affect aggregate stats — those use every analysed plan. | 5 (release) / 3 (debug) |
+| `sampling_strategy` | Plan enumeration order before sampling: `"sequential"`, `"shuffled"`, or `"stratified"`. | `"shuffled"` |
+| `ignore_duplicates` | Skip plans that are permutations of the same course set. Strongly recommended — reduces noise. | true |
 
 **Sampling Strategies:**
 
-- `sequential` - Enumerate plans in order (may bias toward early options)
-- `shuffled` - Randomize enumeration order for unbiased sampling
-- `stratified` - Ensure coverage across the option space
+- `sequential` - Enumerate plans in natural order (may bias statistics toward early options)
+- `shuffled` - Randomize order before sampling (recommended for unbiased stats)
+- `stratified` - Ensure coverage across elective option space
 
 **Examples:**
 
 ```bash
 # Set maximum plans to generate
 nuanalytics config set degree_analysis.max_plans 5000
+
+# Use mean instead of median for aggregate metrics
+nuanalytics config set degree_analysis.calc_strategy mean
 
 # Use stratified sampling for better coverage
 nuanalytics config set degree_analysis.sampling_strategy stratified
