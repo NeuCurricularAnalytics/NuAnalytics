@@ -1,16 +1,22 @@
 # NuAnalytics
 
-**Version 0.3.2**
+**Version 0.4.0**
 
 NuAnalytics is a Rust-based tool for analyzing computer science curricula. It computes detailed metrics about curriculum structure including complexity, blocking relationships, delay paths, and centrality measures to help understand how courses are organized and their impact on students.
 
 It is based off the work of Greg Heileman, and CurricularAnalytics.org. Current version provides command line capabilities for curriculum analysis, degree program validation, and comprehensive reporting.
+
+> **0.4.0 has two breaking changes** (the `degree` command became a
+> subcommand dispatcher and database access now requires login on every
+> call). See [CHANGELOG.md](./CHANGELOG.md) for the full migration
+> checklist before upgrading from 0.3.x.
 
 ## Features
 
 - **Curriculum Analysis**: Parse CSV-formatted curriculum files and analyze course dependencies
 - **Degree Program Validation**: Validate YAML-based degree programs with comprehensive checks
 - **Degree Plan Generation**: Generate all possible degree plans and compute aggregate statistics
+- **Degree Trim** *(new in 0.4.0)*: Collapse a degree YAML to one walkable shortest-path-per-course variant — useful for visualisation and downstream tools that don't reason about alternatives. Protected major subjects keep all options; pattern pools survive orphan pruning.
 - **Gen-Ed Tracking**: Track how major courses satisfy general education requirements
 - **Graph Analysis**: Build and analyze course prerequisite graphs
 - **Curriculum Auditing**: Identify issues like missing prerequisites and complex prerequisite chains
@@ -25,7 +31,8 @@ It is based off the work of Greg Heileman, and CurricularAnalytics.org. Current 
   - **Markdown**: Text-based reports for documentation
 - **Term Scheduling**: Automatic course scheduling respecting prerequisites and credit limits
 - **Configuration Management**: Flexible configuration system with CLI overrides
-- **MCP Server** (optional): AI model integration for interactive degree building via Model Context Protocol
+- **MCP Server** (optional): AI model integration for interactive degree building via Model Context Protocol, including a `trim_degree` tool that pipes a fresh `cache:<hash>` handle back for chained `validate_degree` / `audit_degree` calls.
+- **Authenticated Database Access** *(behavior change in 0.4.0)*: Supabase reads and writes both require a logged-in user (`nuanalytics db login`); session tokens auto-refresh.
 
 ## Quick Start
 
@@ -80,19 +87,26 @@ nuanalytics planner path/to/curriculum.csv --no-report
 Analyze a degree program (generates plans, metrics, and reports):
 
 ```bash
-nuanalytics degree samples/degrees/csu-cs-bscs-general.yaml
+nuanalytics degree analyze samples/degrees/csu-cs-bscs-general.yaml
 ```
 
 Validate a degree program only:
 
 ```bash
-nuanalytics degree --validate samples/degrees/csu-cs-bscs-general.yaml
+nuanalytics degree validate samples/degrees/csu-cs-bscs-general.yaml
 ```
 
 Audit a degree program for issues:
 
 ```bash
-nuanalytics degree --audit samples/degrees/csu-cs-bscs-general.yaml
+nuanalytics degree audit samples/degrees/csu-cs-bscs-general.yaml
+```
+
+Trim a degree to one walkable path per course (collapses alternatives
+outside the major):
+
+```bash
+nuanalytics degree trim samples/degrees/csu-cs-bscs-general.yaml
 ```
 
 Manage configuration:

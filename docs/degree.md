@@ -622,43 +622,40 @@ MATH156 → MATH127 | (MATH124 & MATH126)
 
 ```bash
 # Validate a degree file
-nuanalytics degree degrees/cs_2024.yaml
+nuanalytics degree validate degrees/cs_2024.yaml
 
 # Validate with verbose output
-nuanalytics degree degrees/cs_2024.yaml --verbose
+nuanalytics --verbose degree validate degrees/cs_2024.yaml
 ```
 
 ### Comprehensive Analysis
 
 ```bash
 # Full audit report
-nuanalytics degree --audit degrees/cs_2024.yaml
+nuanalytics degree audit degrees/cs_2024.yaml
 
 # Audit with custom threshold for prerequisite chains
 nuanalytics config set prerequisite_chain_threshold 5
-nuanalytics degree --audit degrees/cs_2024.yaml
+nuanalytics degree audit degrees/cs_2024.yaml
 ```
 
 ### Graph Visualization
 
 ```bash
 # View prerequisite structure
-nuanalytics degree --print-graph degrees/cs_2024.yaml
-
-# Combine audit and graph
-nuanalytics degree --audit --print-graph degrees/cs_2024.yaml
+nuanalytics degree print-graph degrees/cs_2024.yaml
 ```
 
 ### Batch Analysis
 
 ```bash
 # Validate multiple degree files
-nuanalytics degree degrees/*.yaml
+nuanalytics degree validate degrees/*.yaml
 
 # Audit all degree files in directory
 for file in degrees/*.yaml; do
   echo "Auditing $file"
-  nuanalytics degree --audit "$file"
+  nuanalytics degree audit "$file"
 done
 ```
 
@@ -666,10 +663,10 @@ done
 
 ```bash
 # Enable debug logging
-nuanalytics degree --audit degrees/cs_2024.yaml --debug
+nuanalytics --debug degree audit degrees/cs_2024.yaml
 
 # Log to file
-nuanalytics degree --audit degrees/cs_2024.yaml --log-file degree_audit.log
+nuanalytics --log-file degree_audit.log degree audit degrees/cs_2024.yaml
 ```
 
 ## Workflow: Creating a New Degree Program
@@ -678,14 +675,14 @@ nuanalytics degree --audit degrees/cs_2024.yaml --log-file degree_audit.log
 
 2. **Validate structure**:
    ```bash
-   nuanalytics degree my_degree.yaml
+   nuanalytics degree validate my_degree.yaml
    ```
 
 3. **Review validation results** and fix any errors
 
 4. **Run comprehensive audit**:
    ```bash
-   nuanalytics degree --audit my_degree.yaml
+   nuanalytics degree audit my_degree.yaml
    ```
 
 5. **Analyze audit findings**:
@@ -695,10 +692,18 @@ nuanalytics degree --audit degrees/cs_2024.yaml --log-file degree_audit.log
 
 6. **Visualize structure**:
    ```bash
-   nuanalytics degree --print-graph my_degree.yaml
+   nuanalytics degree print-graph my_degree.yaml
    ```
 
 7. **Iterate**: Refine the degree structure based on findings and rerun audit
+
+8. *(Optional)* **Produce a single-path view** for visualization or
+   downstream tools that don't reason about alternatives:
+   ```bash
+   nuanalytics degree trim my_degree.yaml
+   ```
+   See the **Trim** section above for `--keep-all` / `--include` /
+   directory-output semantics.
 
 ## Troubleshooting
 

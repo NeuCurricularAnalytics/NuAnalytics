@@ -376,7 +376,7 @@ Test with a sample degree file:
 
 ```bash
 # Validate using the CLI (for comparison)
-cargo run -- degree --validate samples/degrees/neu-khoury-bscs-boston.yaml
+cargo run -- degree validate samples/degrees/neu-khoury-bscs-boston.yaml
 
 # The MCP validate_degree tool uses the same validation logic
 ```

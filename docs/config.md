@@ -252,7 +252,7 @@ ignore_duplicates = true
 
 ## Degree Analysis Configuration
 
-The `degree_analysis` section controls behavior of the `degree --analyze` command:
+The `degree_analysis` section controls behavior of the `degree analyze` command:
 
 | Key | Description | Default |
 |-----|-------------|---------|

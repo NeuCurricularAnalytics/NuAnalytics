@@ -2,11 +2,26 @@
 
 
 ## Commands
-The command line program will have different command options, they will be
+The command line program has the following top-level commands:
 
-* config - options to update the configuration for the client, often modifying a file in ~/.nuanalytics
-* plan   - handles a single plan, and outputs the tradition CSV seen in the original curricular analytics
-* degree - takes in a degree, can generate the new numbers /plans based on the degree - generates states files in addition to requests curricular sheets.
+* `config`   — manage persistent settings stored in `~/.config/nuanalytics/`
+* `init`     — scaffold a new research project (degrees/, plans/, MCP wiring, skills)
+* `planner`  — handle a single CSV plan, output the traditional curricular-analytics report
+* `degree`   — operate on degree YAML files via nested subcommands (see below)
+* `db`       — manage Supabase access: `login`, `logout`, `whoami`, `status`, `query`, `ipeds-import`, `exec-sql`
+* `mcp`      — run the Model Context Protocol server over stdio
+
+### `degree` subcommands
+* `degree validate    <FILES>...`         — structural validation (schema, prereq cycles, cross-listings)
+* `degree audit       <FILES>...`         — validation + missing prereqs + deep-chain detection
+* `degree print-graph <FILES>...`         — print the prerequisite graph as an association list
+* `degree analyze     <FILES>...`         — full plan enumeration, metrics, HTML report, CSV exports
+* `degree trim        <FILE> [-o <PATH>]` — collapse alternatives to one walkable path per course;
+  `-o` accepts a file or a directory (auto-creates `<stem>_trimmed.<ext>` for batches)
+
+> **Breaking change (v0.4.0):** `degree` was previously a flat command with
+> action flags (`degree --validate`, `degree --analyze`, …). It is now a
+> subcommand dispatcher; the flag form no longer works.
 
 
 ### Future Additions
