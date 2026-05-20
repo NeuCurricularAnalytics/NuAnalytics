@@ -16,11 +16,17 @@ curriculum-plan analyses, driven either from the CLI or from Claude via MCP.
 ## Common commands
 
 ```sh
-# Validate or analyze a single degree YAML
-nuanalytics degree degrees/my-program.yaml
+# Validate a single degree YAML
+nuanalytics degree validate degrees/my-program.yaml
+
+# Full plan-enumeration analysis (writes CSV + HTML)
+nuanalytics degree analyze degrees/my-program.yaml
 
 # Batch-analyze every degree YAML in this project
-nuanalytics degree degrees/*.yaml
+nuanalytics degree analyze degrees/*.yaml
+
+# Trim alternatives down to a single shared shortest path
+nuanalytics degree trim degrees/my-program.yaml -o trimmed/
 
 # Plan analysis on a curriculum CSV (both metrics + HTML report)
 nuanalytics planner plans/my-plan.csv
@@ -33,8 +39,9 @@ nuanalytics config
 
 Running `claude` from this directory picks up `.claude/settings.json` and the
 skills under `.claude/skills/`. The NuAnalytics MCP server is wired in, so
-Claude can call `validate_degree`, `audit_degree`, `analyze_degree`, and
-`get_degree_schema` directly.
+Claude can call the degree tools — `validate_degree`, `audit_degree`,
+`analyze_degree`, `trim_degree`, `get_degree_schema`, and friends —
+directly.
 
 Three skills auto-trigger based on what you ask:
 
