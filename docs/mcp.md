@@ -327,6 +327,112 @@ metrics, and identifies shortest/longest paths with term-by-term schedules.
 - "How complex is this curriculum?" → calls `analyze_degree`
 - "Analyze this degree and write a full curricular analytics report with metrics, shortest/longest paths, and recommendations for improving the curriculum" → calls `analyze_degree`, then formats results into a detailed report
 
+### `degree_pipeline`
+
+Runs `validate_degree` → `audit_degree` → `analyze_degree` in one call.
+Short-circuits on a YAML parse error and surfaces a combined
+`{validate, audit?, analyze?}` response. Saves three round-trips for the
+common "look at this degree" prompt.
+
+**Key parameters:** same yaml-source modes as the individual tools, plus
+`skip_audit` / `skip_analyze` to stop at validate or audit when that's
+all you need.
+
+### `get_course_detail`
+
+Returns everything an LLM typically wants to know about one course:
+title / credits / level, raw + direct + transitive prerequisites,
+dependents, requirements that reference it, cross-listed equivalents,
+and (when `include_analysis=true`, default) per-course metric medians +
+term placement in every selected plan. Use this instead of
+`analyze_degree` when the question is "tell me about CS370 in this
+degree."
+
+**Key parameters:** `course_id` (required), `include_analysis` (default
+true), `max_plans` (analysis depth cap), plus the standard yaml-source
+fields.
+
+### `generate_degree_report`
+
+Build the full HTML degree-analysis report — the same artifact the CLI
+`degree analyze` command produces. Set `output_dir` to also write CSV /
+JSONL / index companions to disk; otherwise the rendered HTML is
+returned inline (~200–300 KB for a typical degree).
+
+**Key parameters:** `output_dir` (optional), `write_plan_csvs` /
+`write_jsonl_summary` / `write_index_csv` (default true in disk mode),
+`return_html_inline` (override to keep inline output when `output_dir`
+is set), plus the analyze knobs (`max_plans`, `include_courses`).
+
+### `render_plan_graph`
+
+Render the prerequisite-graph HTML for one selected plan in a single
+call (analyze + extract spec + visualize). Pick a plan via
+`plan_category` (`"shortest"` / `"longest"` / `"calc-ready-shortest"`
+/ `"sample"`) or by 0-indexed `plan_index`. `format` defaults to
+`"standalone"`; use `"fragment"` to embed in another document. Set
+`dry_run=true` to skip the HTML payload and just probe size.
+
+### `find_courses_matching`
+
+Resolve a list of include/exclude patterns against the courses defined
+in a YAML and return the matched courses with titles + levels. Uses the
+same pattern grammar as `select` requirements (e.g. `"CS:300+"`,
+`"MATH:300-499"`). Useful when sketching a new pattern-based
+requirement and previewing the pool.
+
+### `list_sample_degrees`
+
+List the bundled sample degree YAMLs (CSU, NEU Khoury, UH Manoa). Default
+is metadata-only; pass `include_yaml=true` to also receive the full
+embedded YAML body so you can pipe it into another tool.
+
+### `cache_yaml`
+
+Cache an inline YAML body server-side and return a `cache:<hash>`
+handle. Any tool that accepts `degree_id` will resolve the handle back
+to the body — removes the per-call repaste tax for hosted MCP clients
+whose filesystem the server can't see. Idempotent (same body → same
+handle) with a ~1 h TTL.
+
+### `get_curriculum_visualization`
+
+Lower-level companion to `render_plan_graph` — renders a curriculum
+graph from a pre-computed `graph_spec` (the one `analyze_degree`
+returns when `include_graph_spec=true`). Use this when you've already
+analysed the degree and want to render multiple plans without re-running
+the pipeline.
+
+## Database-backed tools
+
+> **Every tool in this section requires `nuanalytics db login`.** With
+> the v0.4.0 auth-required RLS model, the MCP server skips registering
+> DB tools entirely when no valid session is available — they won't
+> appear in the tool list until you sign in and restart the server.
+
+These tools query the Supabase-backed IPEDS data and stored degrees.
+Each accepts a structured request and returns JSON. Brief inventory:
+
+| Tool | Purpose |
+|---|---|
+| `search_institutions` | Filter institutions by name / state / Carnegie class / control / HBCU / tribal / size |
+| `get_institution` | Full details for one institution by UNITID |
+| `search_cip_codes` | Look up CIP program codes by title keyword or code prefix |
+| `get_lookup_codes` | Decode lookup tables (carnegie_class, award_levels, …) into label maps |
+| `search_degrees` | Stored degrees filtered by UNITID / CIP / catalog year |
+| `get_degree` | Fetch a single stored degree by id |
+| `store_degree` | Write a degree YAML to the database (requires a logged-in user with write access) |
+| `compare_degrees` | Diff two stored degrees (when both are in the database) |
+| `get_institution_completions` | Per-CIP completion counts for one institution / year, with representation ratios |
+| `get_completion_demographics` | Aggregate completion demographics across institutions matching filters |
+| `get_schools_completion_demographics` | Per-school demographics for a Carnegie / award-level cohort |
+| `scaffold_degree_yaml` | Generate a minimal YAML skeleton from UNITID + CIP (writes nothing) |
+
+Run any of these from Claude with natural-language prompts; the model
+picks the right tool and call shape automatically. The descriptions on
+each tool's `#[tool]` attribute in `src/mcp/server.rs` are the
+authoritative source — Claude reads them at handshake time.
+
 ## Testing
 
 ### Using MCP Inspector (Recommended)

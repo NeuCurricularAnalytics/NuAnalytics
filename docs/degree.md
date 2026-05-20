@@ -170,9 +170,23 @@ set from the most-referenced subject prefix in the requirements.
 **Mixed disjuncts** (some protected, some not) trim to the protected
 options only. Example: `CS163 | MATH156` on a CS degree → `CS163`.
 
-**Shared shortest path:** delay is a global property of the prereq
-graph, so two courses that both list `MATH156 | MATH160` will
-independently pick the same alternative — no joint optimization needed.
+**Shared shortest path:** the depth metric is upstream-only (each
+candidate's own prereq tree). It's a global property of the graph, so
+two courses that both list `MATH156 | MATH160` independently pick the
+same alternative — no joint optimization needed. Downstream
+"blocking" (how many other courses depend on a candidate) deliberately
+does *not* influence the choice.
+
+**Equivalents propagation:** when an equivalents group `{A, B, C}`
+inside a `type: all` requirement collapses, dropped equivalents are
+substituted into every downstream prereq expression that named them.
+The dropped courses then have nothing referencing them and get pruned
+in the orphan-pruning pass.
+
+**Pattern pools survive pruning:** courses matched by a Select
+requirement's `from.pattern` (or `from.include` patterns) — e.g. the
+`ICS:400+` electives — are never orphan-pruned, even when no
+requirement lists them by name.
 
 **`--keep-all <SUBJ>`** protects an additional subject prefix.
 Repeatable, also accepts comma-separated values:
@@ -192,9 +206,16 @@ repurposed for trim:
 nuanalytics degree trim degree.yaml --include MATH2331
 ```
 
-**Output:** defaults to `<input-stem>_trimmed.<ext>` next to the input
-file; `-o`/`--out` overrides. The command refuses to overwrite the input
-file.
+**Output:** defaults to `<input-stem>_trimmed.<ext>` next to each input
+file; `-o`/`--out` overrides:
+
+- `-o <FILE>` writes the single trimmed output to that file
+  (only valid when exactly one input file is given).
+- `-o <DIR>` (an existing directory, or any path ending with `/`) places
+  each trimmed output as `<DIR>/<input-stem>_trimmed.<ext>`. The
+  directory is created on demand if it doesn't exist. Required when
+  multiple inputs are given (shell wildcards expand to many files).
+- The command refuses to overwrite the input file, regardless of mode.
 
 **Side effects:** courses no longer referenced anywhere (alternatives
 dropped, with no other path leading to them) are pruned from the

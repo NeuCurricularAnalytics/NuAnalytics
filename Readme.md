@@ -109,6 +109,22 @@ outside the major):
 nuanalytics degree trim samples/degrees/csu-cs-bscs-general.yaml
 ```
 
+Scaffold a new research project (creates `degrees/`, `plans/`, MCP
+wiring, and three SKILL.md skills for Claude Code under `.claude/`):
+
+```bash
+nuanalytics init my-research-project
+cd my-research-project && claude
+```
+
+Sign in to the Supabase-backed IPEDS database (required for any DB
+tool — both reads and writes):
+
+```bash
+nuanalytics db login
+nuanalytics db status
+```
+
 Manage configuration:
 
 ```bash

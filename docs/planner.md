@@ -22,7 +22,7 @@ nuanalytics planner path/to/curriculum.csv
 This will:
 1. Parse the curriculum CSV
 2. Compute all metrics
-3. Export results to the default output directory (configured via `config set out_dir`)
+3. Export results — CSV metrics to `[paths] metrics_dir` and the report (HTML by default) to `[paths] reports_dir`, both configured under `[paths]` in the config file
 
 ### Analyze Multiple Curricula
 
@@ -170,19 +170,25 @@ Each course gets four computed metrics:
 ### Simple Analysis
 
 ```bash
-# Analyze with default output location, creates a file named out_dir/my_curriculum_w_metrics.csv
+# Analyze with default output location. Creates
+#   metrics_dir/my_curriculum_w_metrics.csv  +  reports_dir/my_curriculum_report.html
+# where metrics_dir / reports_dir come from the config's [paths] section.
 nuanalytics planner my_curriculum.csv
 ```
 
 ### Custom Output Location
 
 ```bash
-# Save to specific file
+# Save to specific file (extension chooses CSV vs HTML/MD/PDF)
 nuanalytics planner curriculum.csv -o analysis_results.csv
 
-# Save to specific directory using config
-nuanalytics config set out_dir /home/user/analysis
+# Save to specific directories using config
+nuanalytics config set metrics_dir /home/user/analysis/metrics
+nuanalytics config set reports_dir /home/user/analysis/reports
 nuanalytics planner curriculum.csv
+
+# Or override per-run
+nuanalytics planner curriculum.csv --metrics-dir ./out/metrics --report-dir ./out/reports
 ```
 
 ### Batch Processing
@@ -196,7 +202,8 @@ nuanalytics planner cs_degree.csv math_degree.csv physics_degree.csv \
 more commonly
 
 ```bash
-#  Creates a file for every plan in glob expansion in the out_dir location
+# Creates a file for every plan in glob expansion under the configured
+# metrics_dir / reports_dir.
 nuanalytics planner directory_with_plans/*.csv
 ```
 

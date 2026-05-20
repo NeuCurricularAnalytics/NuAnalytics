@@ -60,7 +60,7 @@ nuanalytics config get
 # Display a specific configuration value
 nuanalytics config get level
 nuanalytics config get file
-nuanalytics config get out_dir
+nuanalytics config get metrics_dir
 ```
 
 **Example Output:**
@@ -74,8 +74,10 @@ nuanalytics config get out_dir
   verbose = false
 
 [database]
-  token = ""
   endpoint = ""
+  anon_key = ""
+  enabled = false
+  auth_file = "~/.config/nuanalytics/auth.json"
 
 [paths]
   metrics_dir = "metrics"
@@ -90,8 +92,8 @@ Set a configuration value that persists in the config file.
 
 ```bash
 nuanalytics config set level debug
-nuanalytics config set out_dir /path/to/output
-nuanalytics config set token your-api-token
+nuanalytics config set metrics_dir /path/to/metrics
+nuanalytics config set database.anon_key eyJhbGc...
 ```
 
 **Supported Configuration Keys:**
@@ -101,8 +103,15 @@ nuanalytics config set token your-api-token
 - `file` - Path to log file
 - `metrics_dir` - Default output directory for CSV metrics files
 - `reports_dir` - Default output directory for report files (HTML, PDF, Markdown)
-- `token` - API token for database integration  (Does nothing at this point - future update)
-- `endpoint` - Database API endpoint URL        (Does nothing at this point - future update)
+- `database.endpoint` - Supabase project URL (e.g. `https://abcdefgh.supabase.co`)
+- `database.anon_key` - Supabase anonymous (public) key, JWT format starting with `eyJhbGc...` (legacy alias: `database.token`)
+- `database.enabled` - Whether to enable database tools (true/false)
+- `database.auth_file` - Path to the auth session file populated by `nuanalytics db login`
+
+> Setting `endpoint` and `anon_key` enables the database tools but
+> does not authorise access on its own. After configuring, run
+> `nuanalytics db login` once to save your OAuth session; the client
+> refreshes the JWT automatically near expiry.
 
 ### `config unset <KEY>`
 
@@ -112,7 +121,7 @@ Reset a configuration value to its default.
 
 ```bash
 nuanalytics config unset level
-nuanalytics config unset token
+nuanalytics config unset database.anon_key
 ```
 
 ### `config reset`
@@ -160,10 +169,11 @@ In addition to `config` subcommands, you can control config at runtime:
 - `--config-level <LEVEL>` - Set logging level and save to config file
 - `--config-verbose` - Set verbose flag and save to config file
 - `--config-log-file <PATH>` - Set log file path and save to config file
-- `--config-out-dir <DIR>` - Set output directory and save to config file
-- `--db-token <TOKEN>` - Override database token at runtime (short form)
+- `--metrics-dir <DIR>` - Override metrics output directory for this run
+- `--reports-dir <DIR>` - Override reports output directory for this run
+- `--db-anon-key <KEY>` - Override database anon key at runtime (short form)
 - `--db-endpoint <URL>` - Override database endpoint at runtime (short form)
-- `--config-db-token <TOKEN>` - Set database token and save to config file
+- `--config-db-anon-key <KEY>` - Set database anon key and save to config file
 - `--config-db-endpoint <URL>` - Set database endpoint and save to config file
 
 
@@ -214,8 +224,9 @@ verbose = false
 file = "$NU_ANALYTICS/nuanalytics.log"
 
 [database]
-token = ""
 endpoint = ""
+anon_key = ""
+enabled = false
 
 [paths]
 metrics_dir = "./metrics"
@@ -236,8 +247,9 @@ verbose = true
 file = ".debug/nuanalytics.debug.log"
 
 [database]
-token = ""
 endpoint = ""
+anon_key = ""
+enabled = false
 
 [paths]
 metrics_dir = ".debug/metrics"
@@ -305,8 +317,12 @@ nuanalytics config set reports_dir /home/user/analysis/reports
 ### Set Database Credentials
 
 ```bash
-nuanalytics config set endpoint https://your-api.example.com
-nuanalytics config set token your-secret-token
+nuanalytics config set database.endpoint https://abcdefgh.supabase.co
+nuanalytics config set database.anon_key eyJhbGc...
+nuanalytics config set database.enabled true
+
+# Then obtain a user session (saved to auth_file):
+nuanalytics db login
 ```
 
 ### Debug a Problem
