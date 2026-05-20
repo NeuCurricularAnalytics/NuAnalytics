@@ -9,6 +9,10 @@ pub enum DatabaseError {
     NotConfigured,
     /// Database is disabled in configuration
     Disabled,
+    /// No valid user session — both reads and writes require a logged-in
+    /// user (`nuanalytics db login`). Carries an explanatory detail (e.g.
+    /// "auth file missing", "refresh token rejected") for diagnostics.
+    NotAuthenticated(String),
     /// Failed to connect to the database
     ConnectionError(String),
     /// Query execution failed
@@ -29,6 +33,10 @@ impl fmt::Display for DatabaseError {
             Self::Disabled => write!(
                 f,
                 "Database is disabled. Set `enabled = true` in [database] config."
+            ),
+            Self::NotAuthenticated(detail) => write!(
+                f,
+                "Not signed in ({detail}). Run `nuanalytics db login` first."
             ),
             Self::ConnectionError(msg) => write!(f, "Database connection error: {msg}"),
             Self::QueryError(msg) => write!(f, "Database query error: {msg}"),
@@ -75,5 +83,13 @@ mod tests {
     fn test_display_ingest_error_includes_detail() {
         let msg = DatabaseError::IngestError("No CSV".to_string()).to_string();
         assert!(msg.contains("No CSV"));
+    }
+
+    #[test]
+    fn test_display_not_authenticated_prompts_login() {
+        let msg = DatabaseError::NotAuthenticated("auth file missing".to_string()).to_string();
+        assert!(msg.contains("Not signed in"));
+        assert!(msg.contains("auth file missing"));
+        assert!(msg.contains("db login"));
     }
 }

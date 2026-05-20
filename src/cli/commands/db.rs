@@ -458,29 +458,62 @@ async fn do_exec_sql(management_key: &str, project_ref: &str, sql: &str) -> Resu
 // ============================================================================
 
 fn run_status(config: &Config) {
-    let client = match DbClient::from_config(&config.database) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("✗ Database not available: {e}");
-            return;
-        }
-    };
+    print_config_line("endpoint", &config.database.endpoint);
+    print_config_line(
+        "anon key",
+        if config.database.anon_key.is_empty() {
+            ""
+        } else {
+            "set"
+        },
+    );
 
-    // Show access level: read-only (anon key) vs read-write (user JWT)
-    if client.is_authenticated() {
-        let email = load_auth_state(&auth_file_path(&config.database))
-            .and_then(|s| s.user_email)
-            .unwrap_or_else(|| "authenticated user".to_string());
-        println!("Auth: read-write  (signed in as {email})");
-    } else {
-        println!("Auth: read-only   (not signed in — run `nuanalytics db login` for write access)");
+    let auth_path = auth_file_path(&config.database);
+    match load_auth_state(&auth_path) {
+        Some(state) => println!(
+            "auth file:     {} ✓ ({})",
+            auth_path.display(),
+            format_session_descriptor(&state)
+        ),
+        None => println!("auth file:     {} ✗ (missing)", auth_path.display()),
     }
 
     let Some(rt) = make_runtime() else { return };
 
-    match rt.block_on(client.ping()) {
-        Ok(()) => println!("✓ Database connection successful"),
-        Err(e) => eprintln!("✗ Database ping failed: {e}"),
+    let probe = rt.block_on(async {
+        let client = DbClient::from_config(&config.database).await?;
+        client.ping().await
+    });
+    match probe {
+        Ok(()) => println!("ping:          ✓ authenticated read succeeded"),
+        Err(e) => {
+            eprintln!("ping:          ✗ {e}");
+            eprintln!("→ run `nuanalytics db login`");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Print a config field as `label:    value ✓/✗`. Empty values become `(unset)` and a ✗.
+fn print_config_line(label: &str, value: &str) {
+    if value.is_empty() {
+        println!("{label:14} (unset) ✗");
+    } else {
+        println!("{label:14} {value} ✓");
+    }
+}
+
+/// Format an auth state into the human-readable expiry/email blurb shown
+/// next to the auth-file path in `db status` output.
+fn format_session_descriptor(state: &AuthState) -> String {
+    let email = state.user_email.as_deref().unwrap_or("(no email)");
+    let remaining = state.expires_at - chrono::Utc::now().timestamp();
+    if remaining > 60 {
+        format!("expires in {} min as {email}", remaining / 60)
+    } else if remaining > 0 {
+        format!("expires in {remaining}s as {email}")
+    } else {
+        format!("expired {} min ago as {email}", -remaining / 60)
     }
 }
 
@@ -527,16 +560,16 @@ fn run_ipeds_import(
     completions_path: Option<std::path::PathBuf>,
     year: u16,
 ) {
-    let client = match DbClient::from_config(&config.database) {
+    let Some(rt) = make_runtime() else { return };
+
+    let client = match rt.block_on(DbClient::from_config(&config.database)) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("✗ Database not available: {e}");
-            eprintln!("  Configure the database and run `nuanalytics db login` for write access.");
+            eprintln!("  Configure the database and run `nuanalytics db login` first.");
             return;
         }
     };
-
-    let Some(rt) = make_runtime() else { return };
 
     let (inst_path, comp_path) =
         resolve_ipeds_paths(dir, institutions_path, completions_path, year);

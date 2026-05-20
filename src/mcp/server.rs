@@ -737,13 +737,23 @@ where
     tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(f()))
 }
 
-/// Return a standardized error JSON when the database is not configured.
+/// Return a standardized error JSON when the database is not available.
+///
+/// The MCP server skips registering a DB client whenever
+/// `DbClient::from_config` fails at startup — that covers both missing
+/// configuration (no endpoint / anon key / `enabled = false`) and missing
+/// authentication (no `auth.json`, expired/revoked refresh token). The
+/// error covers both reasons so the model knows what to suggest.
 #[cfg(feature = "database")]
 fn db_not_configured_response(tool: &str) -> String {
     serde_json::json!({
-        "error": "Database not configured",
+        "error": "Database not available",
         "tool": tool,
-        "suggestion": "Set `endpoint`, `anon_key`, and `enabled = true` in the [database] section of your nuanalytics config file."
+        "suggestion": "Two possible causes: (a) database config is incomplete \
+            (set `endpoint`, `anon_key`, and `enabled = true` in the [database] \
+            section of your nuanalytics config), or (b) you're not signed in \
+            (run `nuanalytics db login` and restart the MCP server). Both reads \
+            and writes now require an authenticated session."
     })
     .to_string()
 }
@@ -818,13 +828,17 @@ pub async fn run_server(db_config: &DatabaseConfig) -> Result<(), Box<dyn std::e
 
     #[cfg(feature = "database")]
     let server = {
-        let db = match DbClient::from_config(db_config) {
+        let db = match DbClient::from_config(db_config).await {
             Ok(client) => {
                 eprintln!("Database client initialized.");
                 Some(Arc::new(client))
             }
             Err(e) => {
                 eprintln!("Database unavailable: {e}");
+                eprintln!(
+                    "DB-backed MCP tools will not be registered. \
+                    Run `nuanalytics db login` and restart this server to enable them."
+                );
                 None
             }
         };

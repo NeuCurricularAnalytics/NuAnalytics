@@ -97,6 +97,116 @@ pub fn auth_file_path(db_config: &crate::core::config::DatabaseConfig) -> PathBu
 }
 
 // ============================================================================
+// Token refresh
+// ============================================================================
+
+/// Relative path for Supabase's refresh-token grant endpoint.
+const REFRESH_TOKEN_PATH: &str = "/auth/v1/token?grant_type=refresh_token";
+
+/// Response body for `POST /auth/v1/token?grant_type=refresh_token`.
+///
+/// Only the fields we persist into [`AuthState`] are deserialised; Supabase
+/// returns extra fields (`token_type`, `user`, …) that we ignore.
+#[derive(Debug, Deserialize)]
+struct RefreshResponse {
+    access_token: String,
+    refresh_token: String,
+    /// Seconds until the new access token expires (typically 3600).
+    /// Supabase also returns the absolute `expires_at` but it's optional in
+    /// some self-hosted setups, so we always recompute from `expires_in`.
+    expires_in: i64,
+    /// Some Supabase deployments return a refreshed user payload; we only
+    /// care about the email for display.
+    #[serde(default)]
+    user: Option<RefreshUser>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RefreshUser {
+    #[serde(default)]
+    email: Option<String>,
+}
+
+/// Exchange a refresh token for a fresh access token.
+///
+/// Calls Supabase's `POST {endpoint}/auth/v1/token?grant_type=refresh_token`
+/// with the project anon key in the `apikey` header. Used by the database
+/// client to keep long-running sessions (MCP servers in particular) from
+/// dead-ending at the 1-hour JWT expiry — `is_expired()` already returns
+/// `true` 60s ahead of the wall-clock expiry to give callers a buffer.
+///
+/// # Errors
+/// Returns a string describing the failure if the HTTP request fails or
+/// Supabase rejects the refresh token (e.g. it was revoked by `db logout`
+/// on another machine, or the user was deleted).
+pub async fn refresh_session(
+    endpoint: &str,
+    anon_key: &str,
+    refresh_token: &str,
+) -> Result<AuthState, String> {
+    let url = format!("{}{REFRESH_TOKEN_PATH}", endpoint.trim_end_matches('/'));
+    let body = serde_json::json!({ "refresh_token": refresh_token });
+
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("apikey", anon_key)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("token refresh request to {url} failed: {e}"))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body_text = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "token refresh at {url} rejected ({status}): {body_text}"
+        ));
+    }
+
+    let parsed: RefreshResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("token refresh returned malformed JSON: {e}"))?;
+
+    Ok(AuthState {
+        access_token: parsed.access_token,
+        refresh_token: parsed.refresh_token,
+        expires_at: chrono::Utc::now().timestamp() + parsed.expires_in,
+        user_email: parsed.user.and_then(|u| u.email),
+    })
+}
+
+/// Load the auth file, refreshing the token if it's expired.
+///
+/// Returns the freshest available [`AuthState`], or `Ok(None)` when no auth
+/// file exists yet — that's a signal for the caller to surface a `db login`
+/// prompt rather than an error. On a successful refresh the new state is
+/// persisted back to disk so the next process startup also sees a valid
+/// session.
+///
+/// # Errors
+/// Returns a string when the file exists but the refresh call failed
+/// (network error, revoked refresh token, malformed response).
+pub async fn load_and_refresh(
+    auth_path: &Path,
+    endpoint: &str,
+    anon_key: &str,
+) -> Result<Option<AuthState>, String> {
+    let Some(state) = load_auth_state(auth_path) else {
+        return Ok(None);
+    };
+    if state.is_valid() {
+        return Ok(Some(state));
+    }
+    let refreshed = refresh_session(endpoint, anon_key, &state.refresh_token).await?;
+    // Best-effort persist — even if we can't write to disk, the in-memory
+    // state is still usable for this process.
+    let _ = save_auth_state(auth_path, &refreshed);
+    Ok(Some(refreshed))
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -186,5 +296,40 @@ mod tests {
         let state = make_state(61);
         assert!(!state.is_expired());
         assert!(state.is_valid());
+    }
+
+    #[tokio::test]
+    async fn load_and_refresh_returns_none_when_auth_file_missing() {
+        // load_and_refresh treats "no file" as the signal-to-prompt case,
+        // not an error — callers turn it into `db login` guidance.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("nope.json");
+        let result = load_and_refresh(&path, "https://example.supabase.co", "anon").await;
+        assert!(
+            matches!(result, Ok(None)),
+            "expected Ok(None), got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_and_refresh_returns_existing_state_when_token_is_fresh() {
+        // No network round-trip should happen for a non-expired token.
+        // Pointing at an obviously invalid endpoint proves the refresh
+        // call wasn't attempted (otherwise it would error out).
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("auth.json");
+        let state = make_state(3600);
+        save_auth_state(&path, &state).unwrap();
+
+        let result = load_and_refresh(
+            &path,
+            "http://127.0.0.1:1/this-should-not-be-called",
+            "anon",
+        )
+        .await
+        .expect("fresh tokens must not trigger a refresh call");
+        let returned = result.expect("auth state should be loaded from disk");
+        assert_eq!(returned.access_token, state.access_token);
+        assert_eq!(returned.refresh_token, state.refresh_token);
     }
 }
