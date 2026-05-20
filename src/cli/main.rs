@@ -121,13 +121,13 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
             commands::degree::run_analyze(&files, &options, config);
         }
         DegreeSubcommand::Trim {
-            file,
+            files,
             out,
             keep_all,
             include,
         } => {
             commands::degree::run_trim(
-                &file,
+                &files,
                 out.as_deref(),
                 &keep_all,
                 include.as_deref(),

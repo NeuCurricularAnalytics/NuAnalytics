@@ -499,20 +499,73 @@ pub fn run_analyze(files: &[PathBuf], options: &AnalyzeOptions, config: &Config)
     run_batch(files, |path| analyze_degree(path, options, config));
 }
 
-/// Run `degree trim` for a single input file.
+/// Run `degree trim` over one or more input files.
+///
+/// `out` resolution rules:
+///
+/// - `None` → each trimmed file is written next to its input as
+///   `<input-stem>_trimmed.<ext>`.
+/// - `Some(dir)` (existing directory, or a path ending in a separator) →
+///   each input becomes `<dir>/<input-stem>_trimmed.<ext>`. Directory is
+///   created on demand.
+/// - `Some(file)` → only valid with a single input; written verbatim.
+///   Multiple inputs with a file-mode `-o` is rejected.
 pub fn run_trim(
-    input: &Path,
+    inputs: &[PathBuf],
     out: Option<&Path>,
     keep_all: &[String],
     include: Option<&[String]>,
     verbose: bool,
 ) {
-    if !is_yaml_path(input) {
-        eprintln!("Error: {} is not a YAML file", input.display());
+    if inputs.is_empty() {
+        eprintln!("Error: No degree file specified.");
         process::exit(1);
     }
-    if let Err(e) = trim_one(input, out, keep_all, include, verbose) {
-        eprintln!("Error: {e}");
+
+    let yaml_inputs = filter_yaml_inputs(inputs);
+    if yaml_inputs.is_empty() {
+        eprintln!("Error: No YAML files to process after filtering.");
+        process::exit(1);
+    }
+
+    let dir_mode = out.is_some_and(looks_like_directory);
+
+    if let Some(file_out) = out.filter(|_| yaml_inputs.len() > 1 && !dir_mode) {
+        eprintln!(
+            "Error: -o {} is a file path, but {} input files were given; pass a directory (or end the path with '/') instead",
+            file_out.display(),
+            yaml_inputs.len()
+        );
+        process::exit(1);
+    }
+
+    if let Some(dir) = out.filter(|_| dir_mode) {
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            eprintln!(
+                "Error: failed to create output directory {}: {e}",
+                dir.display()
+            );
+            process::exit(1);
+        }
+    }
+
+    let total = yaml_inputs.len();
+    let mut had_failure = false;
+    for (idx, input) in yaml_inputs.iter().enumerate() {
+        if total > 1 {
+            if idx > 0 {
+                print_separator();
+            }
+            println!("=== [{}/{}] {} ===", idx + 1, total, input.display());
+        }
+        let out_path = resolve_trim_output(input, out, dir_mode);
+        if let Err(e) = trim_one(input, &out_path, keep_all, include, verbose) {
+            eprintln!("Error: {e}");
+            had_failure = true;
+        }
+    }
+
+    if had_failure {
         process::exit(1);
     }
 }
@@ -531,18 +584,7 @@ where
         process::exit(1);
     }
 
-    let yaml_files: Vec<&Path> = files
-        .iter()
-        .filter_map(|p| {
-            if is_yaml_path(p) {
-                Some(p.as_path())
-            } else {
-                eprintln!("Skipping non-YAML file: {}", p.display());
-                None
-            }
-        })
-        .collect();
-
+    let yaml_files = filter_yaml_inputs(files);
     if yaml_files.is_empty() {
         eprintln!("Error: No YAML files to process after filtering.");
         process::exit(1);
@@ -569,6 +611,22 @@ where
     }
 }
 
+/// Pick out the YAML inputs from a mixed list of paths, warning to stderr
+/// about anything skipped. Shared between [`run_trim`] and [`run_batch`].
+fn filter_yaml_inputs(files: &[PathBuf]) -> Vec<&Path> {
+    files
+        .iter()
+        .filter_map(|p| {
+            if is_yaml_path(p) {
+                Some(p.as_path())
+            } else {
+                eprintln!("Skipping non-YAML file: {}", p.display());
+                None
+            }
+        })
+        .collect()
+}
+
 /// Returns `true` if the path has a `.yaml` or `.yml` extension (case-insensitive).
 fn is_yaml_path(path: &Path) -> bool {
     path.extension()
@@ -580,24 +638,55 @@ fn is_yaml_path(path: &Path) -> bool {
 /// without an explicit `-o`/`--out` path.
 const TRIM_OUTPUT_SUFFIX: &str = "_trimmed";
 
-/// Default output path for `degree trim` when `-o` is not given:
-/// `<input-stem>_trimmed.<ext>` next to the input file.
-fn default_trim_output(input: &Path) -> PathBuf {
+/// Extract `(file_stem, extension)` from a path with degree-YAML-friendly
+/// fallbacks when either piece is missing or non-UTF-8. Centralised so
+/// [`default_trim_output`] and [`resolve_trim_output`] stay in sync.
+fn trim_output_stem_ext(input: &Path) -> (&str, &str) {
     let stem = input
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("degree");
     let ext = input.extension().and_then(|e| e.to_str()).unwrap_or("yaml");
+    (stem, ext)
+}
+
+/// Default output path for `degree trim` when `-o` is not given:
+/// `<input-stem>_trimmed.<ext>` next to the input file.
+fn default_trim_output(input: &Path) -> PathBuf {
+    let (stem, ext) = trim_output_stem_ext(input);
     input.with_file_name(format!("{stem}{TRIM_OUTPUT_SUFFIX}.{ext}"))
 }
 
+/// True if `p` should be treated as a directory destination for
+/// `degree trim -o`. An existing directory always wins; otherwise we
+/// honour the user's intent if they typed a trailing path separator.
+fn looks_like_directory(p: &Path) -> bool {
+    if p.is_dir() {
+        return true;
+    }
+    let s = p.to_string_lossy();
+    s.ends_with('/') || s.ends_with(std::path::MAIN_SEPARATOR)
+}
+
+/// Resolve the on-disk output path for `input` given the user's `-o`
+/// argument and whether we determined it to be a directory destination.
+fn resolve_trim_output(input: &Path, out: Option<&Path>, dir_mode: bool) -> PathBuf {
+    match out {
+        None => default_trim_output(input),
+        Some(dir) if dir_mode => {
+            let (stem, ext) = trim_output_stem_ext(input);
+            dir.join(format!("{stem}{TRIM_OUTPUT_SUFFIX}.{ext}"))
+        }
+        Some(file) => file.to_path_buf(),
+    }
+}
+
 /// Load `input`, apply [`trim_program`] with the given options, and write
-/// the result to `out` (or the default `_trimmed` path). Prints a success
-/// banner; emits the protected-subject set and orphan-course list when
-/// `verbose` is set.
+/// the result to `out_path`. Prints a success banner; emits the
+/// protected-subject set and orphan-course list when `verbose` is set.
 fn trim_one(
     input: &Path,
-    out: Option<&Path>,
+    out_path: &Path,
     keep_all: &[String],
     include: Option<&[String]>,
     verbose: bool,
@@ -616,7 +705,6 @@ fn trim_one(
 
     let (trimmed, report) = trim_program(&program, &opts);
 
-    let out_path = out.map_or_else(|| default_trim_output(input), Path::to_path_buf);
     if out_path == input {
         return Err(format!(
             "refusing to overwrite input file {}; pass an explicit -o path or rely on the default _trimmed suffix",
@@ -624,7 +712,7 @@ fn trim_one(
         ));
     }
 
-    save_degree_to_yaml(&trimmed, &out_path)
+    save_degree_to_yaml(&trimmed, out_path)
         .map_err(|e| format!("Failed to write {}: {}", out_path.display(), e))?;
 
     println!("✓ Trimmed degree written to: {}", out_path.display());
@@ -2195,6 +2283,60 @@ mod tests {
         assert_eq!(
             default_trim_output(Path::new("degree")),
             PathBuf::from("degree_trimmed.yaml")
+        );
+    }
+
+    #[test]
+    fn looks_like_directory_honours_trailing_separator() {
+        assert!(looks_like_directory(Path::new("out/")));
+        // A path without a trailing separator and without an existing
+        // directory on disk is treated as a file. (We use a name that
+        // definitely doesn't exist.)
+        assert!(!looks_like_directory(Path::new(
+            "/tmp/__nuanalytics_test_definitely_missing_xyz"
+        )));
+    }
+
+    #[test]
+    fn looks_like_directory_detects_existing_dir() {
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        assert!(looks_like_directory(tmp.path()));
+    }
+
+    #[test]
+    fn looks_like_directory_rejects_existing_file() {
+        // An actual file on disk must not be misclassified as a directory,
+        // even if some future caller bypasses the trailing-separator hint.
+        let f = tempfile::NamedTempFile::new().expect("tempfile");
+        assert!(!looks_like_directory(f.path()));
+    }
+
+    #[test]
+    fn resolve_trim_output_none_falls_back_to_default() {
+        let input = Path::new("samples/degrees/neu.yaml");
+        assert_eq!(
+            resolve_trim_output(input, None, false),
+            PathBuf::from("samples/degrees/neu_trimmed.yaml")
+        );
+    }
+
+    #[test]
+    fn resolve_trim_output_dir_mode_joins_under_out() {
+        let input = Path::new("samples/degrees/neu.yaml");
+        let out = Path::new("trimmed");
+        assert_eq!(
+            resolve_trim_output(input, Some(out), true),
+            PathBuf::from("trimmed/neu_trimmed.yaml")
+        );
+    }
+
+    #[test]
+    fn resolve_trim_output_file_mode_returns_out_verbatim() {
+        let input = Path::new("samples/degrees/neu.yaml");
+        let out = Path::new("out/explicit.yaml");
+        assert_eq!(
+            resolve_trim_output(input, Some(out), false),
+            PathBuf::from("out/explicit.yaml")
         );
     }
 }

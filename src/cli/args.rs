@@ -260,20 +260,32 @@ pub enum DegreeSubcommand {
     /// # Default: protect major subjects only, write next to the input
     /// nuanalytics degree trim samples/degrees/neu-khoury-bscs-boston.yaml
     ///
-    /// # Also protect MATH alternatives, write to a chosen path
+    /// # Also protect MATH alternatives, write to a chosen file
     /// nuanalytics degree trim degree.yaml --keep-all MATH -o degree.trim.yaml
+    ///
+    /// # Batch with shell wildcards, all outputs into one directory
+    /// nuanalytics degree trim samples/degrees/*.yaml -o trimmed/
     ///
     /// # Pin specific picks (overrides shortest-path metric)
     /// nuanalytics degree trim degree.yaml --include "MATH2331,PHIL1145"
     /// ```
     Trim {
-        /// Source degree YAML file to trim.
-        #[arg(value_name = "FILE")]
-        file: PathBuf,
+        /// Source degree YAML file(s) to trim. Shell wildcards are expanded
+        /// by the shell, so `samples/degrees/*.yaml` works.
+        #[arg(value_name = "FILES", num_args = 1..)]
+        files: Vec<PathBuf>,
 
-        /// Output path. Defaults to `<input-stem>_trimmed.<ext>` next to
-        /// the input. The command refuses to overwrite the input.
-        #[arg(short, long, value_name = "FILE")]
+        /// Output destination. Without `-o`, each trimmed file is written
+        /// next to its input as `<input-stem>_trimmed.<ext>`. With `-o`,
+        /// the value can be either:
+        ///
+        /// * a **file** path — only valid with a single input; written verbatim.
+        /// * a **directory** (existing, or ending with a path separator) —
+        ///   each input becomes `<dir>/<input-stem>_trimmed.<ext>`;
+        ///   created on demand. Required when multiple inputs are passed.
+        ///
+        /// The command refuses to overwrite any input file.
+        #[arg(short, long, value_name = "PATH")]
         out: Option<PathBuf>,
 
         /// Subject prefixes to protect in addition to the degree's
