@@ -8,6 +8,7 @@ pub mod degree_report;
 pub mod formats;
 pub mod plan_export;
 pub mod term_scheduler;
+pub mod unified_report;
 pub mod visualization;
 
 use crate::core::metrics::CurriculumMetrics;

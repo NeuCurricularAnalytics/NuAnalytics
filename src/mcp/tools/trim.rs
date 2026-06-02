@@ -269,7 +269,7 @@ const fn empty_response() -> TrimResponse {
 fn parse_error_response(e: &DegreeParseError, yaml: &str) -> TrimResponse {
     let (line, column) = match e {
         DegreeParseError::YamlError { line, column, .. } => (*line, *column),
-        DegreeParseError::IoError(_) => (None, None),
+        DegreeParseError::IoError(_) | DegreeParseError::JsonError(_) => (None, None),
     };
     let context = match (line, column) {
         (Some(l), Some(c)) => Some(format_yaml_context(yaml, l, c)),

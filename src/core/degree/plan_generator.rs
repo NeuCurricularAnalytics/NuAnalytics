@@ -1337,6 +1337,7 @@ mod tests {
             Requirement {
                 name: Some("Core".to_string()),
                 req_type: RequirementType::All,
+                tags: None,
                 category: Some("major".to_string()),
                 courses: Some(vec!["CS1000".to_string(), "CS2000".to_string()]),
                 from: None,
@@ -1354,6 +1355,7 @@ mod tests {
             Requirement {
                 name: Some("Elective".to_string()),
                 req_type: RequirementType::Select,
+                tags: None,
                 category: Some("major".to_string()),
                 courses: None,
                 from: Some(FromClause {
@@ -1486,6 +1488,7 @@ mod tests {
             Requirement {
                 name: Some("Gen Ed Math".to_string()),
                 req_type: RequirementType::Select,
+                tags: None,
                 category: Some("gen_ed".to_string()),
                 courses: None,
                 from: Some(FromClause {

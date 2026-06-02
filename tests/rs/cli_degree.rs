@@ -800,3 +800,156 @@ fn test_degree_trim_keep_all_preserves_extra_subject() {
         "--keep-all MATH should preserve more MATH references (got default={default_count}, keep-math={keep_math_count})"
     );
 }
+
+// ---------------------------------------------------------------------------
+// degree convert (ai-landscape -> unified JSON)
+// ---------------------------------------------------------------------------
+
+/// `degree convert` turns a raw ai-landscape program file into unified JSON
+/// with structured prerequisites, then that unified file re-parses cleanly
+/// (round-trip), including the AND/OR flip and structured prereq form.
+#[test]
+fn test_degree_convert_landscape_round_trip() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let input = dir.path().join("prog.json");
+    // outer list = AND, inner list = OR  ->  (CS101 | CS102) & CS103
+    std::fs::write(
+        &input,
+        r#"{
+            "university": "Test U",
+            "degree": "Bachelor of Science Computer Science",
+            "ai_program": "Minor",
+            "courses": {
+                "cs_course_core": [
+                    {"course_code":"CS 103","title":"DS","course_hours":"4",
+                     "prerequisites":[["CS 101","CS 102"],["CS 103"]]}
+                ]
+            }
+        }"#,
+    )
+    .unwrap();
+    let out = dir.path().join("prog.unified.json");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "convert"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&out)
+        .arg("--pretty")
+        .output()
+        .expect("run convert");
+    assert!(status.status.success(), "convert should succeed");
+
+    let text = std::fs::read_to_string(&out).expect("unified output written");
+    // Structured tagged prereqs, not the raw string field.
+    assert!(text.contains("\"prerequisites\""));
+    assert!(!text.contains("prerequisites_raw"));
+    assert!(text.contains("\"and\"") && text.contains("\"or\""));
+    // Program tagged as AI.
+    assert!(text.contains("\"ai\""));
+
+    // The emitted unified JSON re-parses through the normal loader.
+    let program = nu_analytics::core::degree::load_degree_from_json(&out)
+        .expect("unified JSON should re-parse");
+    assert!(program.courses.contains_key("CS103"));
+    // Flip preserved: top-level AND with an inner OR group.
+    assert_eq!(
+        program.courses["CS103"].prerequisites_raw.as_deref(),
+        Some("(CS101 | CS102) & CS103")
+    );
+}
+
+/// `degree convert` on a *cluster* pipeline file expands to one unified JSON
+/// per program, named `<school-stem>__<program>.unified.json` under -o.
+/// Verifier wins over scraper; empty-course programs are skipped.
+#[test]
+fn test_degree_convert_cluster_expands_to_multiple_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // File stem ("bigu") becomes the <School> half of each output name.
+    let input = dir.path().join("bigu.json");
+    std::fs::write(
+        &input,
+        r#"{
+            "course_verifier": {
+                "CS BS": {"results": {"university":"Big U","degree":"BS CS","ai_program":"Major","courses":{
+                    "cs_course_core":[{"course_code":"CS 101","title":"Intro","course_hours":"4","prerequisites":[]}]}}},
+                "AI Minor": {"results": {"university":"Big U","degree":"AI Minor","ai_program":"Minor","courses":{
+                    "ai_program_required_courses":[{"course_code":"AI 200","title":"AI","course_hours":"3","prerequisites":[["CS 101"]]}]}}},
+                "Empty": {"results": {"university":"Big U","degree":"X","courses":{"cs_course_core":[]}}}
+            }
+        }"#,
+    )
+    .unwrap();
+    let out_dir = dir.path().join("converted");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "convert"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&out_dir)
+        .output()
+        .expect("run convert cluster");
+    assert!(
+        output.status.success(),
+        "cluster convert should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // safe_filename maps spaces to '_', so "CS BS" -> "CS_BS".
+    let cs = out_dir.join("bigu__CS_BS.unified.json");
+    let ai = out_dir.join("bigu__AI_Minor.unified.json");
+    assert!(cs.exists(), "expected {}", cs.display());
+    assert!(ai.exists(), "expected {}", ai.display());
+    assert!(
+        !out_dir.join("bigu__Empty.unified.json").exists(),
+        "empty-course program must be skipped"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("2 program(s)"),
+        "should report 2 programs"
+    );
+
+    // Each emitted file re-parses through the normal loader.
+    let prog = nu_analytics::core::degree::load_degree_from_json(&ai)
+        .expect("cluster output should re-parse");
+    assert_eq!(
+        prog.courses["AI200"].prerequisites_raw.as_deref(),
+        Some("CS101")
+    );
+}
+
+/// Valid-but-unrecognized JSON is skipped (not a hard failure) in a convert batch.
+#[test]
+fn test_degree_convert_skips_non_degree_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let input = dir.path().join("checkpoint.json");
+    std::fs::write(&input, r#"{"checkpoint": 7, "status": "running"}"#).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "convert"])
+        .arg(&input)
+        .output()
+        .expect("run convert");
+    assert!(
+        output.status.success(),
+        "skipping a sidecar file must not fail the batch"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("skipped (not a degree/program/cluster file)"),
+        "should report the skip"
+    );
+}
+
+/// `degree schema` prints the unified-degree JSON Schema (valid JSON) to stdout.
+#[test]
+fn test_degree_schema_emits_valid_json() {
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "schema"])
+        .output()
+        .expect("run schema");
+    assert!(output.status.success(), "schema should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("emitted schema must be valid JSON");
+    assert_eq!(parsed["title"], "NuAnalytics Unified Degree Program");
+}

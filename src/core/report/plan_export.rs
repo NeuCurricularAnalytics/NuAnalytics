@@ -432,7 +432,9 @@ pub fn scored_plan_to_model(
 /// Sanitize a string for use as a filename
 ///
 /// Replaces characters that are invalid in filenames with underscores.
-fn sanitize_filename(s: &str) -> String {
+/// Replace filesystem-hostile characters in `s` with `_` so it can be used as a
+/// filename component. Shared across report exporters.
+pub(crate) fn sanitize_filename(s: &str) -> String {
     s.chars()
         .map(|c| match c {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | ' ' => '_',
@@ -508,7 +510,7 @@ pub struct DegreeSummary {
 }
 
 /// Summary of a single selected plan for JSONL export
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlanSummary {
     /// Plan category name
     pub category: String,

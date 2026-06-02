@@ -7,8 +7,9 @@ use nu_analytics::core::degree::audit::{
     detect_lowest_course_level, find_deep_chains, find_upper_level_without_prereqs,
 };
 use nu_analytics::core::degree::{
-    load_degree_from_yaml, PlanGenerator, PlanGeneratorConfig, PlanSelector, PlanSelectorConfig,
-    PlanValidator, PlanValidatorConfig, PlanVariant, SamplingStrategy,
+    load_degree_from_json, load_degree_from_yaml, DegreeParseError, PlanGenerator,
+    PlanGeneratorConfig, PlanSelector, PlanSelectorConfig, PlanValidator, PlanValidatorConfig,
+    PlanVariant, SamplingStrategy,
 };
 use nu_analytics::core::metrics::compute_all_metrics;
 use nu_analytics::core::models::course_graph::{CourseNode, PrerequisiteEdge, PrerequisiteType};
@@ -47,7 +48,7 @@ pub fn validate_degree(degree_path: &Path, verbose: bool) -> Result<(), String> 
     }
 
     // Load the degree program
-    let program = load_degree_from_yaml(degree_path).map_err(|e| {
+    let program = load_degree_auto(degree_path).map_err(|e| {
         format!(
             "Failed to load degree program from {}: {}",
             degree_path.display(),
@@ -134,7 +135,7 @@ fn load_and_build_graph(
         eprintln!("Loading degree program from: {}", degree_path.display());
     }
 
-    let program = load_degree_from_yaml(degree_path).map_err(|e| {
+    let program = load_degree_auto(degree_path).map_err(|e| {
         format!(
             "Failed to load degree program from {}: {}",
             degree_path.display(),
@@ -267,7 +268,7 @@ pub fn audit_degree(degree_path: &Path, config: &Config, verbose: bool) -> Resul
     }
 
     // Load the degree program
-    let program = load_degree_from_yaml(degree_path).map_err(|e| {
+    let program = load_degree_auto(degree_path).map_err(|e| {
         format!(
             "Failed to load degree program from {}: {}",
             degree_path.display(),
@@ -477,6 +478,9 @@ pub struct AnalyzeOptions {
     pub verbose: bool,
     /// Courses to always include in all plans
     pub include_courses: Option<Vec<String>>,
+    /// When set, treat the inputs as programs of one school and also emit a
+    /// combined `<school>_school_report.json` rolling up degree-level metrics.
+    pub school: Option<String>,
 }
 
 /// Run `degree validate` over one or more files.
@@ -495,8 +499,62 @@ pub fn run_audit(files: &[PathBuf], config: &Config, verbose: bool) {
 }
 
 /// Run `degree analyze` over one or more files.
+///
+/// Without `--school`, each file is analyzed independently. With `--school`,
+/// the inputs are treated as one school's programs and a combined
+/// `<school>_school_report.json` is also written.
 pub fn run_analyze(files: &[PathBuf], options: &AnalyzeOptions, config: &Config) {
-    run_batch(files, |path| analyze_degree(path, options, config));
+    let Some(school_name) = options.school.clone() else {
+        run_batch(files, |path| {
+            analyze_degree(path, options, config).map(|_| ())
+        });
+        return;
+    };
+
+    // School mode: collect per-program rollups across the batch.
+    let inputs = filter_degree_inputs(files);
+    if inputs.is_empty() {
+        eprintln!("Error: No degree files to process after filtering.");
+        process::exit(1);
+    }
+
+    let total = inputs.len();
+    let mut rollups = Vec::new();
+    let mut had_failure = false;
+    for (idx, path) in inputs.iter().enumerate() {
+        if total > 1 {
+            if idx > 0 {
+                print_separator();
+            }
+            println!("=== [{}/{}] {} ===", idx + 1, total, path.display());
+        }
+        match analyze_degree(path, options, config) {
+            Ok(rollup) => rollups.push(rollup),
+            Err(e) => {
+                eprintln!("Error: {e}");
+                had_failure = true;
+            }
+        }
+    }
+
+    if !rollups.is_empty() {
+        let metrics_dir = options
+            .metrics_dir
+            .as_ref()
+            .map_or_else(|| std::path::PathBuf::from("metrics"), Clone::clone);
+        match nu_analytics::core::report::unified_report::export_school_report_json(
+            &school_name,
+            &rollups,
+            &metrics_dir,
+        ) {
+            Ok(path) => println!("✓ School report: {}", path.display()),
+            Err(e) => eprintln!("Error: Failed to write school report: {e}"),
+        }
+    }
+
+    if had_failure {
+        process::exit(1);
+    }
 }
 
 /// Run `degree trim` over one or more input files.
@@ -584,9 +642,9 @@ where
         process::exit(1);
     }
 
-    let yaml_files = filter_yaml_inputs(files);
+    let yaml_files = filter_degree_inputs(files);
     if yaml_files.is_empty() {
-        eprintln!("Error: No YAML files to process after filtering.");
+        eprintln!("Error: No degree files to process after filtering.");
         process::exit(1);
     }
 
@@ -613,18 +671,27 @@ where
 
 /// Pick out the YAML inputs from a mixed list of paths, warning to stderr
 /// about anything skipped. Shared between [`run_trim`] and [`run_batch`].
-fn filter_yaml_inputs(files: &[PathBuf]) -> Vec<&Path> {
+/// Filter `files` to those `accept`ed, warning (with `expected`) about the rest.
+fn filter_inputs<'a>(
+    files: &'a [PathBuf],
+    accept: fn(&Path) -> bool,
+    expected: &str,
+) -> Vec<&'a Path> {
     files
         .iter()
         .filter_map(|p| {
-            if is_yaml_path(p) {
+            if accept(p) {
                 Some(p.as_path())
             } else {
-                eprintln!("Skipping non-YAML file: {}", p.display());
+                eprintln!("Skipping non-{expected} file: {}", p.display());
                 None
             }
         })
         .collect()
+}
+
+fn filter_yaml_inputs(files: &[PathBuf]) -> Vec<&Path> {
+    filter_inputs(files, is_yaml_path, "YAML")
 }
 
 /// Returns `true` if the path has a `.yaml` or `.yml` extension (case-insensitive).
@@ -632,6 +699,24 @@ fn is_yaml_path(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
+}
+
+fn is_json_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+}
+
+/// A degree input is a YAML or JSON file (JSON may be unified or raw
+/// ai-landscape — both handled by [`load_degree_auto`]).
+fn is_degree_input_path(path: &Path) -> bool {
+    is_yaml_path(path) || is_json_path(path)
+}
+
+/// Filter inputs to degree files (YAML or JSON), warning about the rest.
+/// Used by batch commands that accept both formats.
+fn filter_degree_inputs(files: &[PathBuf]) -> Vec<&Path> {
+    filter_inputs(files, is_degree_input_path, "degree (.yaml/.yml/.json)")
 }
 
 /// Filename suffix appended to the input stem when `degree trim` runs
@@ -668,17 +753,35 @@ fn looks_like_directory(p: &Path) -> bool {
     s.ends_with('/') || s.ends_with(std::path::MAIN_SEPARATOR)
 }
 
-/// Resolve the on-disk output path for `input` given the user's `-o`
-/// argument and whether we determined it to be a directory destination.
-fn resolve_trim_output(input: &Path, out: Option<&Path>, dir_mode: bool) -> PathBuf {
+/// Resolve an output path from a `-o` argument: `None` writes `filename` next to
+/// the input, a directory destination joins `filename` under it, and a file
+/// destination is used verbatim. Shared by `trim` and `convert`.
+fn resolve_output_path(
+    input: &Path,
+    out: Option<&Path>,
+    dir_mode: bool,
+    filename: &str,
+) -> PathBuf {
     match out {
-        None => default_trim_output(input),
-        Some(dir) if dir_mode => {
-            let (stem, ext) = trim_output_stem_ext(input);
-            dir.join(format!("{stem}{TRIM_OUTPUT_SUFFIX}.{ext}"))
-        }
+        None => input.with_file_name(filename),
+        Some(dir) if dir_mode => dir.join(filename),
         Some(file) => file.to_path_buf(),
     }
+}
+
+/// Resolve the on-disk output path for `degree trim` given the user's `-o`
+/// argument and whether we determined it to be a directory destination.
+fn resolve_trim_output(input: &Path, out: Option<&Path>, dir_mode: bool) -> PathBuf {
+    if out.is_none() {
+        return default_trim_output(input);
+    }
+    let (stem, ext) = trim_output_stem_ext(input);
+    resolve_output_path(
+        input,
+        out,
+        dir_mode,
+        &format!("{stem}{TRIM_OUTPUT_SUFFIX}.{ext}"),
+    )
 }
 
 /// Load `input`, apply
@@ -695,7 +798,7 @@ fn trim_one(
 ) -> Result<(), String> {
     use nu_analytics::core::degree::{save_degree_to_yaml, trim_program, TrimOptions};
 
-    let program = load_degree_from_yaml(input)
+    let program = load_degree_auto(input)
         .map_err(|e| format!("Failed to load {}: {}", input.display(), e))?;
 
     let opts = TrimOptions {
@@ -1113,7 +1216,7 @@ fn analyze_degree(
     degree_path: &Path,
     options: &AnalyzeOptions,
     config: &Config,
-) -> Result<(), String> {
+) -> Result<nu_analytics::core::report::unified_report::ProgramRollup, String> {
     let verbose = options.verbose;
 
     // Load and validate the degree program
@@ -1196,10 +1299,341 @@ fn analyze_degree(
     // Print summary
     print_analysis_summary(&ctx, &aggregator, plans_processed);
 
+    Ok(
+        nu_analytics::core::report::unified_report::ProgramRollup::from_analysis(
+            ctx.program,
+            &aggregator,
+        ),
+    )
+}
+
+/// The JSON Schema for the unified degree format, embedded at build time.
+const UNIFIED_DEGREE_SCHEMA: &str = include_str!("../../assets/degree.schema.json");
+
+/// Emit the unified-degree JSON Schema to a file (`out`) or stdout.
+pub fn run_schema(out: Option<&Path>) {
+    if let Some(path) = out {
+        match std::fs::write(path, UNIFIED_DEGREE_SCHEMA) {
+            Ok(()) => println!("✓ Schema written to: {}", path.display()),
+            Err(e) => {
+                eprintln!("Error: Failed to write {}: {e}", path.display());
+                process::exit(1);
+            }
+        }
+    } else {
+        print!("{UNIFIED_DEGREE_SCHEMA}");
+    }
+}
+
+/// Run `degree convert` over one or more inputs, emitting unified JSON.
+pub fn run_convert(files: &[PathBuf], out: Option<&Path>, pretty: bool, verbose: bool) {
+    // Directory mode when -o is a directory, or when multiple inputs share one -o.
+    let dir_mode = out.is_some_and(looks_like_directory) || (out.is_some() && files.len() > 1);
+    run_batch(files, |path| {
+        convert_file(path, out, dir_mode, pretty, verbose)
+    });
+}
+
+/// Convert one input. A cluster pipeline file (the full multi-stage ai-landscape
+/// state) expands to one unified JSON per program; everything else is a single
+/// unified file.
+fn convert_file(
+    input: &Path,
+    out: Option<&Path>,
+    dir_mode: bool,
+    pretty: bool,
+    verbose: bool,
+) -> Result<(), String> {
+    let contents = std::fs::read_to_string(input)
+        .map_err(|e| format!("Failed to read {}: {e}", input.display()))?;
+
+    if is_json_path(input) {
+        // Only parse the Value to route by shape; malformed JSON falls through
+        // to `convert_single`, which surfaces a proper parse error.
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) {
+            if let Some(programs) = nu_analytics::core::degree::extract_cluster_programs(&value) {
+                let out_dir = cluster_out_dir(input, out);
+                return convert_cluster(input, &programs, &out_dir, pretty, verbose);
+            }
+            // Valid JSON that is neither a cluster file, an ai-landscape program
+            // (`courses` category map), nor a unified degree (top-level `degree`)
+            // is skipped rather than failing the batch (e.g. pipeline sidecar
+            // files like checkpoint/metrics in a cluster dump).
+            if !is_landscape_value(&value) && value.get("degree").is_none() {
+                println!(
+                    "• {}: skipped (not a degree/program/cluster file)",
+                    input.display()
+                );
+                return Ok(());
+            }
+        }
+    }
+
+    let out_path = resolve_convert_output(input, out, dir_mode);
+    convert_single(input, &out_path, &contents, pretty, verbose)
+}
+
+/// Filename suffix for `degree convert` output (unified JSON).
+const CONVERT_OUTPUT_SUFFIX: &str = ".unified.json";
+
+/// Separator between school and program in a cluster output filename.
+const CLUSTER_NAME_SEP: &str = "__";
+
+/// File stem of `input` as a `&str`, or `default` when missing/non-UTF-8.
+fn file_stem_or<'a>(input: &'a Path, default: &'a str) -> &'a str {
+    input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(default)
+}
+
+/// Output path for `degree convert`: `<stem>.unified.json` (next to input, or
+/// inside an `-o` directory), or the verbatim `-o` file for a single input.
+fn resolve_convert_output(input: &Path, out: Option<&Path>, dir_mode: bool) -> PathBuf {
+    let stem = file_stem_or(input, "degree");
+    resolve_output_path(
+        input,
+        out,
+        dir_mode,
+        &format!("{stem}{CONVERT_OUTPUT_SUFFIX}"),
+    )
+}
+
+/// Convert a single-program input (YAML, unified JSON, or a flat ai-landscape
+/// program file) to one unified JSON at `out_path`.
+fn convert_single(
+    input: &Path,
+    out_path: &Path,
+    contents: &str,
+    pretty: bool,
+    verbose: bool,
+) -> Result<(), String> {
+    use nu_analytics::core::degree::json_parser::{
+        parse_degree_json_with_warnings, to_unified_value,
+    };
+
+    if out_path == input {
+        return Err(format!(
+            "refusing to overwrite input file {}; pass an explicit -o path",
+            input.display()
+        ));
+    }
+
+    let (program, warnings) = if is_json_path(input) {
+        parse_degree_json_with_warnings(contents)
+            .map_err(|e| format!("Failed to parse {}: {e}", input.display()))?
+    } else {
+        let program = load_degree_from_yaml(input)
+            .map_err(|e| format!("Failed to load {}: {e}", input.display()))?;
+        (program, Vec::new())
+    };
+
+    let mut value = to_unified_value(&program)
+        .map_err(|e| format!("Failed to build unified JSON for {}: {e}", input.display()))?;
+    write_unified_value(&mut value, &warnings, out_path, pretty)?;
+
+    println!("✓ Converted {} -> {}", input.display(), out_path.display());
+    report_warnings(&warnings, verbose);
     Ok(())
 }
 
-/// Load and validate a degree program from YAML
+/// Expand a cluster pipeline file into one unified JSON per program, written as
+/// `<school-stem>__<program>.unified.json` under `out_dir`.
+fn convert_cluster(
+    input: &Path,
+    programs: &[(String, nu_analytics::core::degree::LandscapeProgram)],
+    out_dir: &Path,
+    pretty: bool,
+    verbose: bool,
+) -> Result<(), String> {
+    if programs.is_empty() {
+        println!("• {}: no convertible programs", input.display());
+        return Ok(());
+    }
+
+    let school = file_stem_or(input, "school");
+    let mut total_warnings = 0usize;
+    // Distinct program names can sanitize to the same stem; disambiguate so no
+    // program silently overwrites another.
+    let mut used_stems: HashSet<String> = HashSet::new();
+    for (name, prog) in programs {
+        total_warnings += write_cluster_program(
+            input,
+            school,
+            name,
+            prog,
+            out_dir,
+            &mut used_stems,
+            pretty,
+            verbose,
+        )?;
+    }
+
+    let warn_note = if total_warnings > 0 {
+        format!(", {total_warnings} warning(s)")
+    } else {
+        String::new()
+    };
+    println!(
+        "✓ {}: {} program(s){warn_note}",
+        input.display(),
+        programs.len()
+    );
+    Ok(())
+}
+
+/// Convert one cluster program to `<school>__<program>.unified.json` under
+/// `out_dir` (disambiguating colliding stems via `used_stems`), returning its
+/// conversion-warning count.
+#[allow(clippy::too_many_arguments)]
+fn write_cluster_program(
+    input: &Path,
+    school: &str,
+    name: &str,
+    prog: &nu_analytics::core::degree::LandscapeProgram,
+    out_dir: &Path,
+    used_stems: &mut HashSet<String>,
+    pretty: bool,
+    verbose: bool,
+) -> Result<usize, String> {
+    use nu_analytics::core::degree::{convert_landscape, json_parser::to_unified_value};
+
+    let result = convert_landscape(prog);
+    let mut value = to_unified_value(&result.program).map_err(|e| {
+        format!(
+            "Failed to build unified JSON for {} / {name}: {e}",
+            input.display()
+        )
+    })?;
+    let base = format!(
+        "{}{CLUSTER_NAME_SEP}{}",
+        safe_filename(school),
+        safe_filename(name)
+    );
+    let stem = unique_stem(base, used_stems);
+    let out_path = out_dir.join(format!("{stem}{CONVERT_OUTPUT_SUFFIX}"));
+    write_unified_value(&mut value, &result.warnings, &out_path, pretty)?;
+    if verbose {
+        println!("  ✓ {}", out_path.display());
+    }
+    Ok(result.warnings.len())
+}
+
+/// Directory destination for a cluster file's per-program outputs: the `-o`
+/// path (always a directory, since a cluster expands to many files; created on
+/// demand), or next to the input when `-o` is omitted.
+fn cluster_out_dir(input: &Path, out: Option<&Path>) -> PathBuf {
+    if let Some(dir) = out {
+        return dir.to_path_buf();
+    }
+    // `-o` omitted: write next to the input. `Path::parent` is `Some("")` for a
+    // bare filename, so treat an empty parent as the current directory.
+    input
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
+}
+
+/// Embed `conversion_warnings` (when any), create parent dirs, then write
+/// `value` to `out_path` as JSON (pretty or compact).
+fn write_unified_value(
+    value: &mut serde_json::Value,
+    warnings: &[String],
+    out_path: &Path,
+    pretty: bool,
+) -> Result<(), String> {
+    if !warnings.is_empty() {
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert(
+                "conversion_warnings".to_string(),
+                serde_json::Value::Array(
+                    warnings
+                        .iter()
+                        .map(|w| serde_json::Value::String(w.clone()))
+                        .collect(),
+                ),
+            );
+        }
+    }
+    if let Some(parent) = out_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+        }
+    }
+    let text = if pretty {
+        serde_json::to_string_pretty(value)
+    } else {
+        serde_json::to_string(value)
+    }
+    .map_err(|e| format!("Failed to serialize JSON for {}: {e}", out_path.display()))?;
+    std::fs::write(out_path, text)
+        .map_err(|e| format!("Failed to write {}: {e}", out_path.display()))
+}
+
+/// Print a conversion-warning tally, expanding each warning when `verbose`.
+fn report_warnings(warnings: &[String], verbose: bool) {
+    if warnings.is_empty() {
+        return;
+    }
+    println!("  {} conversion warning(s)", warnings.len());
+    if verbose {
+        for w in warnings {
+            println!("    - {w}");
+        }
+    }
+}
+
+/// Return a filename stem unique within `used`: `base`, else `base-2`, `base-3`,
+/// … Records the chosen stem in `used`.
+fn unique_stem(base: String, used: &mut HashSet<String>) -> String {
+    if used.insert(base.clone()) {
+        return base;
+    }
+    let mut n = 2;
+    loop {
+        let candidate = format!("{base}-{n}");
+        if used.insert(candidate.clone()) {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+/// True if `value` is an ai-landscape flat program: a `courses` object whose
+/// values are arrays (category -> list).
+fn is_landscape_value(value: &serde_json::Value) -> bool {
+    value
+        .get("courses")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|m| m.values().next().is_some_and(serde_json::Value::is_array))
+}
+
+/// Replace filesystem-hostile characters with `_`. Local to this binary crate;
+/// the library's equivalent (`plan_export::sanitize_filename`) is crate-private.
+fn safe_filename(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | ' ' => '_',
+            _ => c,
+        })
+        .collect()
+}
+
+/// Load a degree program, dispatching on file extension: `.json` uses the
+/// unified-JSON loader (which also auto-converts raw ai-landscape files), and
+/// everything else is treated as YAML.
+fn load_degree_auto<P: AsRef<Path>>(
+    path: P,
+) -> Result<nu_analytics::core::DegreeProgram, DegreeParseError> {
+    let path = path.as_ref();
+    if is_json_path(path) {
+        load_degree_from_json(path)
+    } else {
+        load_degree_from_yaml(path)
+    }
+}
+
 fn load_degree_program(
     degree_path: &Path,
     verbose: bool,
@@ -1209,7 +1643,7 @@ fn load_degree_program(
         eprintln!("Loading degree program from: {}", degree_path.display());
     }
 
-    let program = load_degree_from_yaml(degree_path).map_err(|e| {
+    let program = load_degree_auto(degree_path).map_err(|e| {
         format!(
             "Failed to load degree program from {}: {}",
             degree_path.display(),
@@ -1466,6 +1900,25 @@ fn generate_analysis_outputs(
                 }
             }
         }
+
+        // Unified metrics-rich report JSON (the whole degree structure plus
+        // degree- and course-level metrics) for downstream viz/DB. Grouped with
+        // the other metrics-dir exports, so `--no-csv` suppresses it too.
+        let sample_type = sampling_strategy_label(&ctx.gen_config.sampling_strategy);
+        match nu_analytics::core::report::unified_report::export_degree_report_json(
+            ctx.program,
+            aggregator,
+            selected,
+            sample_type,
+            &metrics_dir,
+        ) {
+            Ok(path) => outputs_generated.push(format!("Report JSON: {}", path.display())),
+            Err(e) => {
+                if ctx.verbose {
+                    eprintln!("Warning: Failed to export unified report JSON: {e}");
+                }
+            }
+        }
     }
 
     if ctx.verbose && !outputs_generated.is_empty() {
@@ -1477,6 +1930,16 @@ fn generate_analysis_outputs(
     }
 
     Ok(outputs_generated)
+}
+
+/// Human-readable label for a sampling strategy (used as `sample_type` in the
+/// unified report JSON).
+const fn sampling_strategy_label(strategy: &SamplingStrategy) -> &'static str {
+    match strategy {
+        SamplingStrategy::Sequential => "sequential",
+        SamplingStrategy::Shuffled => "shuffled",
+        SamplingStrategy::Stratified => "stratified",
+    }
 }
 
 /// Generate HTML report
@@ -2231,6 +2694,91 @@ fn print_separator() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_unique_stem_disambiguates_collisions() {
+        let mut used = HashSet::new();
+        assert_eq!(
+            unique_stem("School__CS".to_string(), &mut used),
+            "School__CS"
+        );
+        // Same base again -> suffixed.
+        assert_eq!(
+            unique_stem("School__CS".to_string(), &mut used),
+            "School__CS-2"
+        );
+        assert_eq!(
+            unique_stem("School__CS".to_string(), &mut used),
+            "School__CS-3"
+        );
+        // A distinct base is untouched.
+        assert_eq!(
+            unique_stem("School__AI".to_string(), &mut used),
+            "School__AI"
+        );
+    }
+
+    #[test]
+    fn test_safe_filename_replaces_hostile_chars() {
+        assert_eq!(
+            safe_filename("Computer Science (BS): A/B"),
+            "Computer_Science_(BS)__A_B"
+        );
+        // Clean names pass through untouched.
+        assert_eq!(safe_filename("CS-BS_2024"), "CS-BS_2024");
+    }
+
+    #[test]
+    fn test_cluster_out_dir_branches() {
+        // None -> next to the input (parent dir); bare filename -> ".".
+        assert_eq!(
+            cluster_out_dir(Path::new("clusters/uni.json"), None),
+            PathBuf::from("clusters")
+        );
+        assert_eq!(
+            cluster_out_dir(Path::new("uni.json"), None),
+            PathBuf::from(".")
+        );
+        // Any `-o` is the output directory (a cluster expands to many files,
+        // so it can't target a single file).
+        assert_eq!(
+            cluster_out_dir(Path::new("clusters/uni.json"), Some(Path::new("out"))),
+            PathBuf::from("out")
+        );
+    }
+
+    #[test]
+    fn test_is_landscape_value() {
+        // `courses` object whose first value is an array -> landscape.
+        let yes: serde_json::Value =
+            serde_json::from_str(r#"{"courses":{"cs_course_core":[{"course_code":"CS1"}]}}"#)
+                .unwrap();
+        assert!(is_landscape_value(&yes));
+        // Unified: course keys map to objects, not arrays.
+        let unified: serde_json::Value =
+            serde_json::from_str(r#"{"courses":{"CS1":{"name":"Intro"}}}"#).unwrap();
+        assert!(!is_landscape_value(&unified));
+        // No `courses`, or `courses` not an object.
+        assert!(!is_landscape_value(&serde_json::json!({"degree": "BS"})));
+        assert!(!is_landscape_value(&serde_json::json!({"courses": []})));
+    }
+
+    #[test]
+    fn test_resolve_convert_output_branches() {
+        let input = Path::new("degrees/neu.json");
+        assert_eq!(
+            resolve_convert_output(input, None, false),
+            PathBuf::from("degrees/neu.unified.json")
+        );
+        assert_eq!(
+            resolve_convert_output(input, Some(Path::new("out")), true),
+            PathBuf::from("out/neu.unified.json")
+        );
+        assert_eq!(
+            resolve_convert_output(input, Some(Path::new("out/explicit.json")), false),
+            PathBuf::from("out/explicit.json")
+        );
+    }
 
     #[test]
     fn test_is_yaml_path_yaml_extension() {

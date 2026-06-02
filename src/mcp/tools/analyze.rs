@@ -1014,10 +1014,7 @@ pub fn execute_json(
 // ============================================================================
 
 fn format_parse_error(e: &DegreeParseError) -> String {
-    match e {
-        DegreeParseError::IoError(msg) => format!("File error: {msg}"),
-        DegreeParseError::YamlError { message, .. } => format!("YAML syntax error: {message}"),
-    }
+    crate::mcp::tools::shared::format_degree_parse_error(e)
 }
 
 pub(super) const fn metric_stats_json(s: &MetricStats) -> MetricStatsJson {

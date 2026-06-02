@@ -194,7 +194,7 @@ pub fn execute(
         Err(e) => {
             let (line, column) = match &e {
                 DegreeParseError::YamlError { line, column, .. } => (*line, *column),
-                DegreeParseError::IoError(_) => (None, None),
+                DegreeParseError::IoError(_) | DegreeParseError::JsonError(_) => (None, None),
             };
             let context = match (line, column) {
                 (Some(l), Some(c)) => Some(format_yaml_context(yaml_content, l, c)),

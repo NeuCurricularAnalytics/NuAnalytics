@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Khoury-NeuCurricularAnalytics/NuAnalytics/degree.schema.json",
+  "title": "NuAnalytics Unified Degree Program",
+  "description": "The unified degree JSON: degree metadata, a requirements map, and a courses map. Prerequisites use the symmetric tagged form (a course string, or {\"and\"|\"or\": [...]}). Optional model fields are permitted (additionalProperties is not restricted).",
+  "type": "object",
+  "required": ["degree", "requirements", "courses"],
+  "properties": {
+    "degree": { "$ref": "#/$defs/degree" },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/requirement" }
+    },
+    "courses": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/course" }
+    },
+    "analysis": { "$ref": "#/$defs/analysis" },
+    "selected_plans": { "type": "array" },
+    "conversion_warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "prerequisite": {
+      "description": "Recursive prerequisite expression. A leaf is a course key string; an AND node is {\"and\": [...]}; an OR node is {\"or\": [...]}.",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "required": ["and"],
+          "properties": {
+            "and": { "type": "array", "items": { "$ref": "#/$defs/prerequisite" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["or"],
+          "properties": {
+            "or": { "type": "array", "items": { "$ref": "#/$defs/prerequisite" } }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "metricStats": {
+      "type": "object",
+      "properties": {
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "mean": { "type": "number" },
+        "std_dev": { "type": "number" },
+        "median": { "type": "number" },
+        "q1": { "type": "number" },
+        "q3": { "type": "number" }
+      }
+    },
+    "degree": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "degree_type": { "type": "string" },
+        "cip_code": { "type": ["string", "null"] },
+        "system_type": { "type": "string", "examples": ["semester", "quarter"] },
+        "id": { "type": ["string", "null"] },
+        "institution": { "type": ["string", "null"] },
+        "catalog_year": { "type": ["string", "null"] },
+        "source_url": { "type": ["string", "null"] },
+        "total_credits": { "type": ["integer", "null"] },
+        "tags": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "Program-level classification tags, e.g. [\"ai\", \"ai-concentration\"]."
+        }
+      }
+    },
+    "course": {
+      "type": "object",
+      "required": ["name", "prefix", "number"],
+      "properties": {
+        "name": { "type": "string" },
+        "prefix": { "type": "string" },
+        "number": { "type": "string" },
+        "credit_hours": { "type": "number" },
+        "prerequisites": { "$ref": "#/$defs/prerequisite" },
+        "corequisites": { "type": "array", "items": { "type": "string" } },
+        "strict_corequisites": { "type": "array", "items": { "type": "string" } },
+        "tags": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "Course-level tags, e.g. [\"ai\"]."
+        },
+        "metrics": {
+          "type": "object",
+          "description": "Per-course metric statistics (present in analysis report output).",
+          "properties": {
+            "complexity": { "$ref": "#/$defs/metricStats" },
+            "centrality": { "$ref": "#/$defs/metricStats" },
+            "delay": { "$ref": "#/$defs/metricStats" },
+            "blocking": { "$ref": "#/$defs/metricStats" }
+          }
+        }
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["all", "select", "one_of"] },
+        "name": { "type": ["string", "null"] },
+        "category": { "type": ["string", "null"] },
+        "courses": { "type": ["array", "null"], "items": { "type": "string" } },
+        "count": { "type": ["integer", "null"] },
+        "credits": { "type": ["integer", "null"] },
+        "from": { "type": ["object", "null"] },
+        "options": { "type": ["array", "null"] },
+        "tags": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "Requirement-group tags, e.g. [\"core\"], [\"ai\",\"required\"], [\"elective\"]."
+        }
+      }
+    },
+    "analysis": {
+      "type": "object",
+      "description": "Analysis block in report output.",
+      "properties": {
+        "variations_run": { "type": "integer" },
+        "sample_type": { "type": "string", "examples": ["shuffled", "sequential", "stratified"] },
+        "metrics": {
+          "type": "object",
+          "properties": {
+            "complexity": { "$ref": "#/$defs/metricStats" },
+            "delay": { "$ref": "#/$defs/metricStats" },
+            "credits": { "$ref": "#/$defs/metricStats" }
+          }
+        }
+      }
+    }
+  }
+}

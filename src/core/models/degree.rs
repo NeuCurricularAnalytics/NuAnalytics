@@ -81,6 +81,11 @@ pub struct Degree {
     /// Whether courses can satisfy multiple requirements
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_double_counting: Option<bool>,
+
+    /// Program-level classification tags (e.g., `["ai"]`, `["ai-concentration"]`).
+    /// Generalizes the ai-landscape `ai_program` enum so any program type fits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
 }
 
 /// A requirement in a degree program
@@ -125,6 +130,12 @@ pub struct Requirement {
     /// Mutually exclusive paths (for type: `one_of`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<Vec<RequirementOption>>,
+
+    /// Classification tags for this requirement group (e.g., `["core"]`,
+    /// `["ai","required"]`, `["elective"]`). Generalizes the ai-landscape
+    /// fixed category names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
 }
 
 /// Types of requirements
@@ -276,6 +287,7 @@ impl Degree {
             grade_minimum_note: None,
             major_subjects: None,
             allow_double_counting: None,
+            tags: None,
         }
     }
 
@@ -311,6 +323,7 @@ impl Degree {
             grade_minimum_note: None,
             major_subjects: None,
             allow_double_counting: Some(allow_double_counting),
+            tags: None,
         }
     }
 

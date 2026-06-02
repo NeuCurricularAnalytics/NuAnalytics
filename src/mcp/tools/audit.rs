@@ -360,10 +360,7 @@ pub fn execute_json(
 // ============================================================================
 
 fn format_parse_error(e: &DegreeParseError) -> String {
-    match e {
-        DegreeParseError::IoError(msg) => format!("File error: {msg}"),
-        DegreeParseError::YamlError { message, .. } => format!("YAML syntax error: {message}"),
-    }
+    crate::mcp::tools::shared::format_degree_parse_error(e)
 }
 
 /// Tag a missing-prereq finding as internal (subject in `major_subjects`),

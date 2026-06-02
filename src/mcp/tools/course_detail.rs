@@ -383,10 +383,7 @@ fn error_response(course_id: &str, error: impl Into<String>) -> CourseDetailResp
 }
 
 fn format_parse_error(e: &DegreeParseError) -> String {
-    match e {
-        DegreeParseError::IoError(msg) => format!("File error: {msg}"),
-        DegreeParseError::YamlError { message, .. } => format!("YAML syntax error: {message}"),
-    }
+    crate::mcp::tools::shared::format_degree_parse_error(e)
 }
 
 // ============================================================================

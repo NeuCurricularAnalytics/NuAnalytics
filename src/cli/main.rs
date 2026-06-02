@@ -104,6 +104,7 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
             no_csv,
             no_report,
             include,
+            school,
         } => {
             let options = commands::degree::AnalyzeOptions {
                 calc_strategy: calc_strategy.map(|s| s.to_string()),
@@ -117,6 +118,7 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
                 no_report,
                 verbose,
                 include_courses: include,
+                school,
             };
             commands::degree::run_analyze(&files, &options, config);
         }
@@ -133,6 +135,12 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
                 include.as_deref(),
                 verbose,
             );
+        }
+        DegreeSubcommand::Convert { files, out, pretty } => {
+            commands::degree::run_convert(&files, out.as_deref(), pretty, verbose);
+        }
+        DegreeSubcommand::Schema { out } => {
+            commands::degree::run_schema(out.as_deref());
         }
     }
 }

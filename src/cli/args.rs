@@ -243,6 +243,12 @@ pub enum DegreeSubcommand {
         /// Example: --include "CS3500,MATH2331,PHIL1145"
         #[arg(long, value_name = "COURSES", value_delimiter = ',')]
         include: Option<Vec<String>>,
+
+        /// Treat all input files as programs of one school and also emit a
+        /// combined `<school>_school_report.json` rolling up degree-level
+        /// metrics across the programs. The value is the school name.
+        #[arg(long, value_name = "NAME")]
+        school: Option<String>,
     },
 
     /// Trim a degree program to a single entry path per course.
@@ -299,6 +305,41 @@ pub enum DegreeSubcommand {
         /// flag, repurposed for trim.
         #[arg(long, value_name = "COURSES", value_delimiter = ',')]
         include: Option<Vec<String>>,
+    },
+
+    /// Convert program file(s) to the unified degree JSON.
+    ///
+    /// Accepts raw ai-landscape program JSON (auto-detected and converted),
+    /// existing unified JSON, or YAML, and emits unified JSON with structured
+    /// prerequisites. Data-quality issues (e.g. assumed credits) are reported
+    /// and embedded as `conversion_warnings` in the output.
+    ///
+    /// This converter is transitional — once upstream emits unified JSON
+    /// directly it is no longer needed.
+    Convert {
+        /// Source program file(s). Shell wildcards are expanded by the shell.
+        #[arg(value_name = "FILES", num_args = 1..)]
+        files: Vec<PathBuf>,
+
+        /// Output destination. Without `-o`, each file is written next to its
+        /// input as `<input-stem>.unified.json`. With `-o`, the value is a
+        /// file (single input) or a directory (one output per input).
+        #[arg(short, long, value_name = "PATH")]
+        out: Option<PathBuf>,
+
+        /// Pretty-print the JSON output (default is compact, one line).
+        #[arg(long)]
+        pretty: bool,
+    },
+
+    /// Print the JSON Schema for the unified degree format.
+    ///
+    /// Useful for validating unified JSON files in other tools/pipelines.
+    /// Writes to `-o <path>` if given, otherwise prints to stdout.
+    Schema {
+        /// Write the schema to this file instead of stdout.
+        #[arg(short, long, value_name = "PATH")]
+        out: Option<PathBuf>,
     },
 }
 
@@ -379,25 +420,29 @@ pub enum Command {
         #[arg(long)]
         no_report: bool,
     },
-    /// Validate, analyze, audit, or trim a degree program YAML file.
+    /// Validate, analyze, audit, trim, or convert a degree program (YAML or JSON).
     ///
-    /// Dispatches to one of several actions via subcommand. Circular
-    /// prerequisites are automatically broken by removing optional edges
-    /// to create a valid DAG for analysis.
+    /// Dispatches to one of several actions via subcommand. Inputs may be YAML
+    /// or unified-JSON degree files (raw ai-landscape JSON is auto-converted).
+    /// Circular prerequisites are automatically broken by removing optional
+    /// edges to create a valid DAG for analysis.
     ///
     /// # Examples
     /// ```sh
     /// # Validate one or more files
     /// nuanalytics degree validate samples/degrees/neu-khoury-bscs-boston.yaml
     ///
-    /// # Print the prerequisite graph
-    /// nuanalytics degree print-graph samples/degrees/csu-cs-bscs-general.yaml
-    ///
     /// # Run full plan-enumeration analysis
     /// nuanalytics degree analyze samples/degrees/csu-cs-bscs-general.yaml
     ///
     /// # Trim alternatives down to a single shared shortest path
     /// nuanalytics degree trim samples/degrees/neu-khoury-bscs-boston.yaml
+    ///
+    /// # Convert ai-landscape program JSON to unified JSON (glob into a dir)
+    /// nuanalytics degree convert ai-landscape-tools/validation_jsons/*.json -o converted/
+    ///
+    /// # Emit the unified-degree JSON Schema
+    /// nuanalytics degree schema -o degree.schema.json
     /// ```
     Degree {
         #[command(subcommand)]
