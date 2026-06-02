@@ -244,6 +244,13 @@ pub enum DegreeSubcommand {
         #[arg(long, value_name = "COURSES", value_delimiter = ',')]
         include: Option<Vec<String>>,
 
+        /// Number of files to analyze concurrently, each in its own process so
+        /// a pathological degree (e.g. a full-catalog scrape) can't take down
+        /// the whole batch. Applies only when multiple files are given; use
+        /// `-j 1` to run sequentially in-process with full per-degree output.
+        #[arg(short = 'j', long, value_name = "N", default_value_t = 8)]
+        jobs: usize,
+
         /// Treat all input files as programs of one school and also emit a
         /// combined `<school>_school_report.json` rolling up degree-level
         /// metrics across the programs. The value is the school name.

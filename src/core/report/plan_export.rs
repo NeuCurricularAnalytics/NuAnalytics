@@ -763,6 +763,25 @@ pub fn export_index_csv(
     Ok(output_path)
 }
 
+/// (Re)create `index.csv` in `output_dir` containing only the header row.
+///
+/// Used by parallel batch runners to write the header once up front so that
+/// concurrent [`export_index_csv`] calls (which only append a row when the file
+/// already exists) don't each race to write their own header. Row appends are
+/// individually atomic on POSIX (`O_APPEND`, well under `PIPE_BUF`).
+///
+/// # Errors
+/// Returns an error if the file cannot be created or written.
+pub fn write_index_csv_header(output_dir: &Path) -> Result<std::path::PathBuf, Box<dyn Error>> {
+    let output_path = output_dir.join("index.csv");
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut file = File::create(&output_path)?;
+    writeln!(file, "{INDEX_CSV_HEADER}")?;
+    Ok(output_path)
+}
+
 /// Format a single row for the index CSV
 fn format_index_csv_row(
     school: &School,

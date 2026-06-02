@@ -953,3 +953,105 @@ fn test_degree_schema_emits_valid_json() {
         serde_json::from_str(stdout.trim()).expect("emitted schema must be valid JSON");
     assert_eq!(parsed["title"], "NuAnalytics Unified Degree Program");
 }
+
+/// Write a minimal analyzable unified degree JSON with a distinct id/name.
+#[cfg(test)]
+fn write_min_degree(path: &std::path::Path, id: &str) {
+    std::fs::write(
+        path,
+        format!(
+            r#"{{"degree":{{"name":"Test {id}","degree_type":"BS","system_type":"semester","id":"{id}"}},
+                "requirements":{{"core":{{"type":"all","courses":["CS101","CS102"]}}}},
+                "courses":{{
+                    "CS101":{{"name":"Intro","prefix":"CS","number":"101","credit_hours":3.0}},
+                    "CS102":{{"name":"DS","prefix":"CS","number":"102","credit_hours":3.0,"prerequisites":"CS101"}}
+                }}}}"#
+        ),
+    )
+    .unwrap();
+}
+
+/// A multi-file `degree analyze` runs the default worker pool (one process per
+/// file) and produces one report JSON per program.
+#[test]
+fn test_degree_analyze_parallel_pool_produces_reports() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for id in ["alpha", "beta", "gamma"] {
+        write_min_degree(&dir.path().join(format!("{id}.unified.json")), id);
+    }
+    let out = dir.path().join("metrics");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "analyze"])
+        .arg(dir.path().join("alpha.unified.json"))
+        .arg(dir.path().join("beta.unified.json"))
+        .arg(dir.path().join("gamma.unified.json"))
+        .args(["-j", "2", "--no-report", "--metrics-dir"])
+        .arg(&out)
+        .output()
+        .expect("run analyze pool");
+    assert!(
+        output.status.success(),
+        "pool run should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("worker process"),
+        "should use the pool: {stdout}"
+    );
+    assert!(
+        stdout.contains("analyzed 3/3"),
+        "should report 3/3: {stdout}"
+    );
+
+    let reports = std::fs::read_dir(&out)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with("_report.json"))
+        .count();
+    assert_eq!(reports, 3, "one report JSON per program");
+
+    // Single index.csv with exactly one header + three rows (no header race).
+    let index = std::fs::read_to_string(out.join("index.csv")).unwrap();
+    let lines: Vec<&str> = index.lines().collect();
+    assert_eq!(lines.len(), 4, "header + 3 rows; got {lines:?}");
+    assert_eq!(
+        index.matches("degree_id,degree_name").count(),
+        1,
+        "exactly one header row"
+    );
+}
+
+/// One failing file in the pool is isolated: it's logged and the run exits
+/// non-zero, but the other programs still produce reports.
+#[test]
+fn test_degree_analyze_parallel_isolates_failure() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_min_degree(&dir.path().join("good.unified.json"), "good");
+    std::fs::write(dir.path().join("bad.unified.json"), r#"{"not":"a degree"}"#).unwrap();
+    let out = dir.path().join("metrics");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "analyze"])
+        .arg(dir.path().join("good.unified.json"))
+        .arg(dir.path().join("bad.unified.json"))
+        .args(["-j", "2", "--no-report", "--metrics-dir"])
+        .arg(&out)
+        .output()
+        .expect("run analyze pool");
+    assert!(
+        !output.status.success(),
+        "a failing file makes the run exit non-zero"
+    );
+
+    let failures = std::fs::read_to_string(out.join("failures.log")).unwrap();
+    assert!(
+        failures.contains("bad.unified.json"),
+        "bad file logged: {failures}"
+    );
+    assert!(
+        out.join("good_report.json").exists(),
+        "the good program still produced its report"
+    );
+}

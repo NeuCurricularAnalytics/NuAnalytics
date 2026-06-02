@@ -478,6 +478,8 @@ pub struct AnalyzeOptions {
     pub verbose: bool,
     /// Courses to always include in all plans
     pub include_courses: Option<Vec<String>>,
+    /// Concurrent worker processes for a multi-file batch (1 = in-process).
+    pub jobs: usize,
     /// When set, treat the inputs as programs of one school and also emit a
     /// combined `<school>_school_report.json` rolling up degree-level metrics.
     pub school: Option<String>,
@@ -498,12 +500,220 @@ pub fn run_audit(files: &[PathBuf], config: &Config, verbose: bool) {
     run_batch(files, |path| audit_degree(path, config, verbose));
 }
 
-/// Run `degree analyze` over one or more files.
-///
-/// Without `--school`, each file is analyzed independently. With `--school`,
-/// the inputs are treated as one school's programs and a combined
-/// `<school>_school_report.json` is also written.
+/// Environment marker set on spawned worker processes so they run a single
+/// file in-process instead of recursively spawning their own pool.
+const WORKER_ENV: &str = "NU_ANALYZE_WORKER";
+
+/// Run `degree analyze`. A multi-file batch is processed as a pool of isolated
+/// worker processes (`--jobs`, default 8) so one pathological degree can't take
+/// down the whole run; single-file, `--school`, `-j 1`, and worker-mode
+/// invocations run in-process.
 pub fn run_analyze(files: &[PathBuf], options: &AnalyzeOptions, config: &Config) {
+    let in_worker = std::env::var_os(WORKER_ENV).is_some();
+    if in_worker || options.jobs <= 1 || options.school.is_some() {
+        run_analyze_inprocess(files, options, config);
+        return;
+    }
+
+    let inputs = filter_degree_inputs(files);
+    match inputs.len() {
+        0 => {
+            eprintln!("Error: No degree files to process after filtering.");
+            process::exit(1);
+        }
+        // A single file gains nothing from a worker process; run it in-process
+        // so the user gets the full per-degree output.
+        1 => run_analyze_inprocess(files, options, config),
+        _ => run_analyze_parallel(&inputs, options),
+    }
+}
+
+/// Analyze a multi-file batch as a rolling pool of up to `options.jobs` worker
+/// processes (each re-invokes this binary on one file). Worker output is
+/// suppressed; a progress line and final summary are printed, and any failures
+/// are written to `<metrics-dir>/failures.log`.
+fn run_analyze_parallel(inputs: &[&Path], options: &AnalyzeOptions) {
+    use std::io::Write;
+
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Error: cannot locate the nuanalytics executable: {e}");
+            process::exit(1);
+        }
+    };
+    let metrics_dir = options
+        .metrics_dir
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("metrics"));
+
+    // Write the index.csv header once so concurrent workers only append rows.
+    if !options.no_csv {
+        if let Err(e) =
+            nu_analytics::core::report::plan_export::write_index_csv_header(&metrics_dir)
+        {
+            eprintln!("Warning: could not initialize index.csv: {e}");
+        }
+    }
+
+    let jobs = options.jobs.max(1);
+    let child_flags = analyze_child_flags(options);
+    let total = inputs.len();
+    println!("Analyzing {total} programs with {jobs} worker process(es)…");
+
+    let mut next = 0usize;
+    let mut running: Vec<(PathBuf, std::process::Child)> = Vec::new();
+    let mut done = 0usize;
+    let mut failed: Vec<PathBuf> = Vec::new();
+
+    loop {
+        while running.len() < jobs && next < total {
+            let f = inputs[next];
+            next += 1;
+            match spawn_analyze_worker(&exe, f, &child_flags) {
+                Ok(child) => running.push((f.to_path_buf(), child)),
+                Err(e) => {
+                    eprintln!("\nspawn failed for {}: {e}", f.display());
+                    failed.push(f.to_path_buf());
+                    done += 1;
+                }
+            }
+        }
+        if running.is_empty() {
+            break;
+        }
+
+        let mut i = 0;
+        let mut progressed = false;
+        while i < running.len() {
+            match running[i].1.try_wait() {
+                Ok(Some(status)) => {
+                    let (f, _) = running.remove(i);
+                    done += 1;
+                    if !status.success() {
+                        failed.push(f);
+                    }
+                    progressed = true;
+                }
+                Ok(None) => i += 1,
+                Err(e) => {
+                    let (f, _) = running.remove(i);
+                    done += 1;
+                    eprintln!("\nwait failed for {}: {e}", f.display());
+                    failed.push(f);
+                    progressed = true;
+                }
+            }
+        }
+        if progressed {
+            print!("\r  {done}/{total} done ({} failed)   ", failed.len());
+            let _ = std::io::stdout().flush();
+        } else {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+    println!();
+
+    report_pool_outcome(total, &failed, &metrics_dir);
+}
+
+/// Spawn one isolated worker process to analyze `file` (output suppressed).
+fn spawn_analyze_worker(
+    exe: &Path,
+    file: &Path,
+    flags: &[String],
+) -> std::io::Result<std::process::Child> {
+    std::process::Command::new(exe)
+        .arg("degree")
+        .arg("analyze")
+        .arg(file)
+        .args(flags)
+        .env(WORKER_ENV, "1")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+}
+
+/// Print the batch summary; on any failure, write `failures.log` and exit 1.
+fn report_pool_outcome(total: usize, failed: &[PathBuf], metrics_dir: &Path) {
+    let succeeded = total - failed.len();
+    println!(
+        "✓ analyzed {succeeded}/{total} programs ({} failed)",
+        failed.len()
+    );
+    if failed.is_empty() {
+        return;
+    }
+    let faillog = metrics_dir.join("failures.log");
+    let mut body = failed
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    body.push('\n');
+    if std::fs::write(&faillog, body).is_ok() {
+        println!("  failures listed in {}", faillog.display());
+    }
+    if let Some(first) = failed.first() {
+        println!(
+            "  re-run one for details: nuanalytics degree analyze {} -j 1",
+            first.display()
+        );
+    }
+    process::exit(1);
+}
+
+/// Reconstruct the `degree analyze` flags for a worker child from `options`.
+/// Excludes `--jobs` (the worker marker prevents re-pooling) and `--school`
+/// (the pool only runs when school mode is off).
+fn analyze_child_flags(o: &AnalyzeOptions) -> Vec<String> {
+    let mut a: Vec<String> = Vec::new();
+    if let Some(d) = &o.metrics_dir {
+        a.push("--metrics-dir".into());
+        a.push(d.display().to_string());
+    }
+    if let Some(d) = &o.report_dir {
+        a.push("--report-dir".into());
+        a.push(d.display().to_string());
+    }
+    if o.no_report {
+        a.push("--no-report".into());
+    }
+    if o.no_csv {
+        a.push("--no-csv".into());
+    }
+    if let Some(n) = o.max_plans {
+        a.push("--max-plans".into());
+        a.push(n.to_string());
+    }
+    if let Some(n) = o.sample_plans {
+        a.push("--sample-plans".into());
+        a.push(n.to_string());
+    }
+    if let Some(s) = &o.sampling_strategy {
+        a.push("--sampling-strategy".into());
+        a.push(s.clone());
+    }
+    if let Some(s) = &o.calc_strategy {
+        a.push("--calc-strategy".into());
+        a.push(s.clone());
+    }
+    if o.full_run {
+        a.push("--full-run".into());
+    }
+    if let Some(courses) = &o.include_courses {
+        if !courses.is_empty() {
+            a.push("--include".into());
+            a.push(courses.join(","));
+        }
+    }
+    a
+}
+
+/// Run `degree analyze` in-process (single file, school mode, `-j 1`, or as a
+/// spawned worker). Without `--school`, each file is analyzed independently;
+/// with `--school`, a combined `<school>_school_report.json` is also written.
+fn run_analyze_inprocess(files: &[PathBuf], options: &AnalyzeOptions, config: &Config) {
     let Some(school_name) = options.school.clone() else {
         run_batch(files, |path| {
             analyze_degree(path, options, config).map(|_| ())

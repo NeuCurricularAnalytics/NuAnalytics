@@ -104,6 +104,7 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
             no_csv,
             no_report,
             include,
+            jobs,
             school,
         } => {
             let options = commands::degree::AnalyzeOptions {
@@ -118,6 +119,7 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
                 no_report,
                 verbose,
                 include_courses: include,
+                jobs,
                 school,
             };
             commands::degree::run_analyze(&files, &options, config);
