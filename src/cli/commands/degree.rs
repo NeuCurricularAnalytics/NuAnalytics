@@ -1797,12 +1797,9 @@ fn write_unified_value(
                 .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
         }
     }
-    let text = if pretty {
-        serde_json::to_string_pretty(value)
-    } else {
-        serde_json::to_string(value)
-    }
-    .map_err(|e| format!("Failed to serialize JSON for {}: {e}", out_path.display()))?;
+    // Emit with `degree` first for readability (see unified_value_to_string).
+    let text = nu_analytics::core::degree::unified_value_to_string(value, pretty)
+        .map_err(|e| format!("Failed to serialize JSON for {}: {e}", out_path.display()))?;
     std::fs::write(out_path, text)
         .map_err(|e| format!("Failed to write {}: {e}", out_path.display()))
 }

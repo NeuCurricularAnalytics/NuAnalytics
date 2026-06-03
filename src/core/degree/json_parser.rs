@@ -8,6 +8,7 @@
 
 use std::path::Path;
 
+use serde::Serialize;
 use serde_json::Value;
 
 use super::landscape_convert::convert_landscape_str;
@@ -92,12 +93,40 @@ pub fn serialize_degree_json(
     pretty: bool,
 ) -> Result<String, DegreeParseError> {
     let value = to_unified_value(program)?;
-    let out = if pretty {
-        serde_json::to_string_pretty(&value)
-    } else {
-        serde_json::to_string(&value)
+    unified_value_to_string(&value, pretty)
+        .map_err(|e| DegreeParseError::json_message(format!("Failed to serialize JSON: {e}")))
+}
+
+/// Serialize a unified-degree `Value` to a JSON string with `degree` first
+/// (then `requirements`, `courses`, and any `conversion_warnings`).
+///
+/// The file then opens to the program's identity. Nested objects keep
+/// `serde_json`'s deterministic sorted key order; this only fixes the top-level
+/// layout.
+///
+/// # Errors
+/// Returns the underlying `serde_json` error if serialization fails.
+pub fn unified_value_to_string(value: &Value, pretty: bool) -> Result<String, serde_json::Error> {
+    #[derive(Serialize)]
+    struct Ordered<'a> {
+        degree: &'a Value,
+        requirements: &'a Value,
+        courses: &'a Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        conversion_warnings: Option<&'a Value>,
+    }
+    let null = Value::Null;
+    let ordered = Ordered {
+        degree: value.get("degree").unwrap_or(&null),
+        requirements: value.get("requirements").unwrap_or(&null),
+        courses: value.get("courses").unwrap_or(&null),
+        conversion_warnings: value.get("conversion_warnings"),
     };
-    out.map_err(|e| DegreeParseError::json_message(format!("Failed to serialize JSON: {e}")))
+    if pretty {
+        serde_json::to_string_pretty(&ordered)
+    } else {
+        serde_json::to_string(&ordered)
+    }
 }
 
 /// Build the unified-JSON `Value` for a program.
@@ -153,6 +182,40 @@ pub fn save_degree_to_json<P: AsRef<Path>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_unified_value_to_string_puts_degree_first() {
+        // Keys deliberately out of order; degree must lead, warnings trail.
+        let value = serde_json::json!({
+            "courses": {"CS1": {"name": "Intro"}},
+            "requirements": {"core": {"type": "all"}},
+            "degree": {"name": "Test", "degree_type": "BS"},
+            "conversion_warnings": ["w1"],
+        });
+        let out = unified_value_to_string(&value, false).unwrap();
+        let dp = out.find("\"degree\"").unwrap();
+        let rp = out.find("\"requirements\"").unwrap();
+        let cp = out.find("\"courses\"").unwrap();
+        let wp = out.find("\"conversion_warnings\"").unwrap();
+        assert!(
+            dp < rp && rp < cp && cp < wp,
+            "order should be degree, requirements, courses, warnings: {out}"
+        );
+    }
+
+    #[test]
+    fn test_unified_value_to_string_omits_absent_warnings() {
+        let value = serde_json::json!({
+            "degree": {"name": "Test"},
+            "requirements": {},
+            "courses": {},
+        });
+        let out = unified_value_to_string(&value, false).unwrap();
+        assert!(
+            !out.contains("conversion_warnings"),
+            "absent warnings must be omitted: {out}"
+        );
+    }
 
     #[test]
     fn test_roundtrip_unified_json_structured_prereqs() {

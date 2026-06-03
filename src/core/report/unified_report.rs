@@ -10,13 +10,51 @@
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::core::degree::json_parser::to_unified_value;
 use crate::core::models::DegreeProgram;
-use crate::core::report::plan_export::{sanitize_filename, PlanSummary};
+use crate::core::report::plan_export::sanitize_filename;
 use crate::core::statistics::aggregator::{MetricStats, MetricsAggregator};
 use crate::core::statistics::DescriptiveStats;
+
+/// One term of a selected plan's schedule (mirrors the MCP `analyze_degree`
+/// term shape so consumers can reuse the same rendering).
+#[derive(Serialize)]
+struct TermSchedule {
+    /// 1-based term number.
+    term: usize,
+    /// Course ids scheduled in this term.
+    courses: Vec<String>,
+    /// Total credits this term.
+    credits: f32,
+}
+
+/// A selected sample plan with its course schedule, surfaced in the report so a
+/// consumer can see exactly which courses each exemplar (shortest/longest/…)
+/// contains — especially the shortest path.
+#[derive(Serialize)]
+struct SelectedPlanReport {
+    /// Plan category ("shortest", "longest", …).
+    category: String,
+    /// Terms required to complete this plan.
+    terms_required: usize,
+    /// Total structural complexity.
+    total_complexity: usize,
+    /// Longest delay factor.
+    longest_delay: usize,
+    /// Whether the plan is calc-ready.
+    is_calc_ready: bool,
+    /// Total credits across the plan.
+    credits: f32,
+    /// Number of courses in the plan.
+    course_count: usize,
+    /// Longest prerequisite (delay) chain — the critical path.
+    critical_path: Vec<String>,
+    /// Term-by-term schedule (empty terms omitted).
+    schedule: Vec<TermSchedule>,
+}
 
 /// Build the unified report `Value` for a single analyzed degree.
 ///
@@ -46,14 +84,28 @@ pub fn build_degree_report(
 
     // Degree-level metrics + sampling metadata.
     let degree_stats = aggregator.degree_stats();
-    let selected_plans: Vec<PlanSummary> = selected
+    let selected_plans: Vec<SelectedPlanReport> = selected
         .iter()
-        .map(|(category, plan)| PlanSummary {
+        .map(|(category, plan)| SelectedPlanReport {
             category: category.display_name().to_string(),
             terms_required: plan.score.terms_required,
             total_complexity: plan.score.total_complexity,
             longest_delay: plan.score.longest_delay,
             is_calc_ready: plan.score.is_calc_ready,
+            credits: plan.variant.total_credits,
+            course_count: plan.variant.courses.len(),
+            critical_path: plan.score.longest_delay_chain.clone(),
+            schedule: plan
+                .schedule
+                .terms
+                .iter()
+                .filter(|t| !t.courses.is_empty())
+                .map(|t| TermSchedule {
+                    term: t.number,
+                    courses: t.courses.clone(),
+                    credits: t.total_credits,
+                })
+                .collect(),
         })
         .collect();
 
@@ -96,8 +148,31 @@ pub fn export_degree_report_json(
         "{}_report.json",
         sanitize_filename(&program.degree.degree_id())
     ));
-    std::fs::write(&path, serde_json::to_string_pretty(&value)?)?;
+    std::fs::write(&path, report_value_to_pretty(&value)?)?;
     Ok(path)
+}
+
+/// Serialize a built report `Value` to pretty JSON with `degree` first, then the
+/// analysis summary, requirements, and selected plans, with the large `courses`
+/// block last. Nested objects keep `serde_json`'s deterministic sorted key order.
+fn report_value_to_pretty(value: &Value) -> Result<String, serde_json::Error> {
+    #[derive(Serialize)]
+    struct Ordered<'a> {
+        degree: &'a Value,
+        analysis: &'a Value,
+        requirements: &'a Value,
+        selected_plans: &'a Value,
+        courses: &'a Value,
+    }
+    let null = Value::Null;
+    let ordered = Ordered {
+        degree: value.get("degree").unwrap_or(&null),
+        analysis: value.get("analysis").unwrap_or(&null),
+        requirements: value.get("requirements").unwrap_or(&null),
+        selected_plans: value.get("selected_plans").unwrap_or(&null),
+        courses: value.get("courses").unwrap_or(&null),
+    };
+    serde_json::to_string_pretty(&ordered)
 }
 
 /// Degree-level rollup for one program, used to build a school-level report.
