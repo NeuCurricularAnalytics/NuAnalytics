@@ -767,8 +767,9 @@ pub fn export_index_csv(
 ///
 /// Used by parallel batch runners to write the header once up front so that
 /// concurrent [`export_index_csv`] calls (which only append a row when the file
-/// already exists) don't each race to write their own header. Row appends are
-/// individually atomic on POSIX (`O_APPEND`, well under `PIPE_BUF`).
+/// already exists) don't each race to write their own header. For typical row
+/// sizes, an `O_APPEND` write stays under `PIPE_BUF` and so lands atomically on
+/// POSIX; a pathologically long row could in principle interleave.
 ///
 /// # Errors
 /// Returns an error if the file cannot be created or written.
@@ -1140,6 +1141,47 @@ mod tests {
             contents.matches("degree_id,degree_name").count(),
             1,
             "Header should appear exactly once"
+        );
+    }
+
+    #[test]
+    fn test_write_index_csv_header_writes_only_header() {
+        let tmp = TempDir::new().unwrap();
+        let path = write_index_csv_header(tmp.path()).unwrap();
+
+        assert_eq!(path, tmp.path().join("index.csv"));
+        let contents = fs::read_to_string(&path).unwrap();
+        assert_eq!(contents.trim_end(), INDEX_CSV_HEADER);
+        assert_eq!(contents.lines().count(), 1, "header only, no data rows");
+    }
+
+    #[test]
+    fn test_write_index_csv_header_creates_missing_parent_dirs() {
+        let tmp = TempDir::new().unwrap();
+        let nested = tmp.path().join("a").join("b");
+        let path = write_index_csv_header(&nested).unwrap();
+        assert!(path.exists(), "header file created under a new directory");
+    }
+
+    #[test]
+    fn test_write_index_csv_header_then_append_gives_one_header() {
+        // The parallel-batch contract: pre-write the header, then workers only
+        // append rows (export_index_csv must not add a second header).
+        let tmp = TempDir::new().unwrap();
+        write_index_csv_header(tmp.path()).unwrap();
+
+        let school = create_test_school();
+        let degree = create_test_degree();
+        let aggregator = create_test_aggregator();
+        let selected = create_test_selected();
+        export_index_csv(&school, &degree, &aggregator, &selected, tmp.path()).unwrap();
+
+        let contents = fs::read_to_string(tmp.path().join("index.csv")).unwrap();
+        assert_eq!(contents.lines().count(), 2, "header + one appended row");
+        assert_eq!(
+            contents.matches("degree_id,degree_name").count(),
+            1,
+            "pre-written header must not be duplicated by the append"
         );
     }
 }

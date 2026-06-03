@@ -6,6 +6,11 @@ use std::path::PathBuf;
 use nu_analytics::config::ConfigOverrides;
 use nu_analytics::logger::Level;
 
+/// Default number of concurrent worker processes for `degree analyze` on a
+/// multi-file batch. A small, machine-independent default that keeps memory
+/// bounded while still overlapping I/O-bound scrape conversions.
+pub const DEFAULT_ANALYZE_JOBS: usize = 8;
+
 /// CLI log level argument
 ///
 /// Represents log levels that can be passed via CLI arguments. Converts to lowercase
@@ -248,7 +253,7 @@ pub enum DegreeSubcommand {
         /// a pathological degree (e.g. a full-catalog scrape) can't take down
         /// the whole batch. Applies only when multiple files are given; use
         /// `-j 1` to run sequentially in-process with full per-degree output.
-        #[arg(short = 'j', long, value_name = "N", default_value_t = 8)]
+        #[arg(short = 'j', long, value_name = "N", default_value_t = DEFAULT_ANALYZE_JOBS)]
         jobs: usize,
 
         /// Treat all input files as programs of one school and also emit a

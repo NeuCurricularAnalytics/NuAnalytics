@@ -528,10 +528,26 @@ pub fn run_analyze(files: &[PathBuf], options: &AnalyzeOptions, config: &Config)
     }
 }
 
+/// Poll interval for reaping finished worker processes.
+const WORKER_POLL: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// The metrics output directory from `options`, defaulting to `metrics/`.
+fn metrics_dir_or_default(options: &AnalyzeOptions) -> PathBuf {
+    options
+        .metrics_dir
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("metrics"))
+}
+
 /// Analyze a multi-file batch as a rolling pool of up to `options.jobs` worker
 /// processes (each re-invokes this binary on one file). Worker output is
 /// suppressed; a progress line and final summary are printed, and any failures
-/// are written to `<metrics-dir>/failures.log`.
+/// (path + exit status) are written to `<metrics-dir>/failures.log`.
+///
+/// Isolation here is reactive: a worker that exhausts memory is killed by the
+/// OS and recorded as a failure. Unlike `scripts/analyze-batch.sh`, the pool
+/// imposes no per-process memory cap or timeout — use that script when a hard
+/// `ulimit -v` / `timeout` guard is required.
 fn run_analyze_parallel(inputs: &[&Path], options: &AnalyzeOptions) {
     use std::io::Write;
 
@@ -542,10 +558,7 @@ fn run_analyze_parallel(inputs: &[&Path], options: &AnalyzeOptions) {
             process::exit(1);
         }
     };
-    let metrics_dir = options
-        .metrics_dir
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("metrics"));
+    let metrics_dir = metrics_dir_or_default(options);
 
     // Write the index.csv header once so concurrent workers only append rows.
     if !options.no_csv {
@@ -564,7 +577,7 @@ fn run_analyze_parallel(inputs: &[&Path], options: &AnalyzeOptions) {
     let mut next = 0usize;
     let mut running: Vec<(PathBuf, std::process::Child)> = Vec::new();
     let mut done = 0usize;
-    let mut failed: Vec<PathBuf> = Vec::new();
+    let mut failed: Vec<(PathBuf, String)> = Vec::new();
 
     loop {
         while running.len() < jobs && next < total {
@@ -573,8 +586,7 @@ fn run_analyze_parallel(inputs: &[&Path], options: &AnalyzeOptions) {
             match spawn_analyze_worker(&exe, f, &child_flags) {
                 Ok(child) => running.push((f.to_path_buf(), child)),
                 Err(e) => {
-                    eprintln!("\nspawn failed for {}: {e}", f.display());
-                    failed.push(f.to_path_buf());
+                    failed.push((f.to_path_buf(), format!("spawn error: {e}")));
                     done += 1;
                 }
             }
@@ -583,38 +595,49 @@ fn run_analyze_parallel(inputs: &[&Path], options: &AnalyzeOptions) {
             break;
         }
 
-        let mut i = 0;
-        let mut progressed = false;
-        while i < running.len() {
-            match running[i].1.try_wait() {
-                Ok(Some(status)) => {
-                    let (f, _) = running.remove(i);
-                    done += 1;
-                    if !status.success() {
-                        failed.push(f);
-                    }
-                    progressed = true;
-                }
-                Ok(None) => i += 1,
-                Err(e) => {
-                    let (f, _) = running.remove(i);
-                    done += 1;
-                    eprintln!("\nwait failed for {}: {e}", f.display());
-                    failed.push(f);
-                    progressed = true;
-                }
-            }
-        }
-        if progressed {
+        let reaped = reap_finished(&mut running, &mut failed);
+        if reaped > 0 {
+            done += reaped;
             print!("\r  {done}/{total} done ({} failed)   ", failed.len());
             let _ = std::io::stdout().flush();
         } else {
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            std::thread::sleep(WORKER_POLL);
         }
     }
     println!();
 
     report_pool_outcome(total, &failed, &metrics_dir);
+}
+
+/// Reap every worker that has finished, removing it from `running` and
+/// recording non-success exits in `failed` (path + status string). Returns the
+/// number reaped this pass (0 ⇒ nothing finished yet).
+fn reap_finished(
+    running: &mut Vec<(PathBuf, std::process::Child)>,
+    failed: &mut Vec<(PathBuf, String)>,
+) -> usize {
+    let mut reaped = 0;
+    let mut i = 0;
+    while i < running.len() {
+        match running[i].1.try_wait() {
+            Ok(Some(status)) => {
+                let (f, _) = running.remove(i);
+                if !status.success() {
+                    // ExitStatus Display includes the signal on Unix, so an
+                    // OOM-killed worker reads e.g. "signal: 9 (SIGKILL)".
+                    failed.push((f, status.to_string()));
+                }
+                reaped += 1;
+            }
+            Ok(None) => i += 1,
+            Err(e) => {
+                let (f, _) = running.remove(i);
+                failed.push((f, format!("wait error: {e}")));
+                reaped += 1;
+            }
+        }
+    }
+    reaped
 }
 
 /// Spawn one isolated worker process to analyze `file` (output suppressed).
@@ -634,8 +657,11 @@ fn spawn_analyze_worker(
         .spawn()
 }
 
-/// Print the batch summary; on any failure, write `failures.log` and exit 1.
-fn report_pool_outcome(total: usize, failed: &[PathBuf], metrics_dir: &Path) {
+/// Print the batch summary; on any failure, write `failures.log` (one
+/// `path<TAB>status` line each) and exit 1.
+fn report_pool_outcome(total: usize, failed: &[(PathBuf, String)], metrics_dir: &Path) {
+    use std::fmt::Write as _;
+
     let succeeded = total - failed.len();
     println!(
         "✓ analyzed {succeeded}/{total} programs ({} failed)",
@@ -645,16 +671,14 @@ fn report_pool_outcome(total: usize, failed: &[PathBuf], metrics_dir: &Path) {
         return;
     }
     let faillog = metrics_dir.join("failures.log");
-    let mut body = failed
-        .iter()
-        .map(|p| p.display().to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    body.push('\n');
+    let mut body = String::new();
+    for (path, reason) in failed {
+        let _ = writeln!(body, "{}\t{reason}", path.display());
+    }
     if std::fs::write(&faillog, body).is_ok() {
         println!("  failures listed in {}", faillog.display());
     }
-    if let Some(first) = failed.first() {
+    if let Some((first, _)) = failed.first() {
         println!(
             "  re-run one for details: nuanalytics degree analyze {} -j 1",
             first.display()
@@ -666,6 +690,11 @@ fn report_pool_outcome(total: usize, failed: &[PathBuf], metrics_dir: &Path) {
 /// Reconstruct the `degree analyze` flags for a worker child from `options`.
 /// Excludes `--jobs` (the worker marker prevents re-pooling) and `--school`
 /// (the pool only runs when school mode is off).
+///
+/// This must mirror every *result-affecting* flag on the `Analyze` subcommand
+/// in `src/cli/args.rs`: a flag added there but omitted here is silently dropped
+/// for pooled runs, so workers would analyze with different settings than the
+/// user asked for. Covered by `test_analyze_child_flags_*`.
 fn analyze_child_flags(o: &AnalyzeOptions) -> Vec<String> {
     let mut a: Vec<String> = Vec::new();
     if let Some(d) = &o.metrics_dir {
@@ -3098,5 +3127,171 @@ mod tests {
             resolve_trim_output(input, Some(out), false),
             PathBuf::from("out/explicit.yaml")
         );
+    }
+
+    #[test]
+    fn test_analyze_child_flags_default_is_empty() {
+        // A worker started from default options should carry no extra flags.
+        let flags = analyze_child_flags(&AnalyzeOptions::default());
+        assert!(flags.is_empty(), "expected no flags, got {flags:?}");
+    }
+
+    #[test]
+    fn test_analyze_child_flags_excludes_jobs_and_school() {
+        // --jobs and --school must never be forwarded: the worker marker stops
+        // re-pooling and the pool only runs when school mode is off.
+        let opts = AnalyzeOptions {
+            jobs: 16,
+            school: Some("Northeastern".to_string()),
+            ..Default::default()
+        };
+        let flags = analyze_child_flags(&opts);
+        assert!(!flags.iter().any(|f| f == "--jobs" || f == "-j"));
+        assert!(!flags.iter().any(|f| f == "--school"));
+        assert!(flags.is_empty(), "expected no flags, got {flags:?}");
+    }
+
+    #[test]
+    fn test_analyze_child_flags_propagates_result_affecting_options() {
+        let opts = AnalyzeOptions {
+            metrics_dir: Some(PathBuf::from("m")),
+            report_dir: Some(PathBuf::from("r")),
+            no_report: true,
+            no_csv: true,
+            max_plans: Some(500),
+            sample_plans: Some(50),
+            sampling_strategy: Some("shuffled".to_string()),
+            calc_strategy: Some("median".to_string()),
+            full_run: true,
+            include_courses: Some(vec!["CS3500".to_string(), "MATH2331".to_string()]),
+            ..Default::default()
+        };
+        let flags = analyze_child_flags(&opts);
+        let joined = flags.join(" ");
+        for expected in [
+            "--metrics-dir m",
+            "--report-dir r",
+            "--no-report",
+            "--no-csv",
+            "--max-plans 500",
+            "--sample-plans 50",
+            "--sampling-strategy shuffled",
+            "--calc-strategy median",
+            "--full-run",
+            "--include CS3500,MATH2331",
+        ] {
+            assert!(
+                joined.contains(expected),
+                "missing {expected:?} in {joined:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_analyze_child_flags_empty_include_is_omitted() {
+        // An empty include list must not produce a dangling `--include`.
+        let opts = AnalyzeOptions {
+            include_courses: Some(Vec::new()),
+            ..Default::default()
+        };
+        let flags = analyze_child_flags(&opts);
+        assert!(!flags.iter().any(|f| f == "--include"));
+    }
+
+    #[test]
+    fn test_analyze_child_flags_roundtrips_through_clap() {
+        // The reconstructed flags must parse back on the `analyze` subcommand,
+        // guarding against a flag name drifting away from args.rs.
+        use crate::args::{Cli, Command, DegreeSubcommand, SamplingStrategyArg};
+        use clap::Parser;
+
+        let opts = AnalyzeOptions {
+            no_report: true,
+            max_plans: Some(1234),
+            sampling_strategy: Some("stratified".to_string()),
+            ..Default::default()
+        };
+        let mut argv = vec![
+            "nuanalytics".to_string(),
+            "degree".to_string(),
+            "analyze".to_string(),
+            "some.json".to_string(),
+        ];
+        argv.extend(analyze_child_flags(&opts));
+        let cli = Cli::try_parse_from(argv).expect("reconstructed flags should parse");
+        match cli.command {
+            Command::Degree { subcommand } => match subcommand {
+                DegreeSubcommand::Analyze {
+                    no_report,
+                    max_plans,
+                    sampling_strategy,
+                    ..
+                } => {
+                    assert!(no_report);
+                    assert_eq!(max_plans, Some(1234));
+                    assert_eq!(sampling_strategy, Some(SamplingStrategyArg::Stratified));
+                }
+                other => panic!("expected Analyze, got {other:?}"),
+            },
+            other => panic!("expected Degree command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_metrics_dir_or_default_falls_back_to_metrics() {
+        assert_eq!(
+            metrics_dir_or_default(&AnalyzeOptions::default()),
+            PathBuf::from("metrics")
+        );
+        let opts = AnalyzeOptions {
+            metrics_dir: Some(PathBuf::from("custom")),
+            ..Default::default()
+        };
+        assert_eq!(metrics_dir_or_default(&opts), PathBuf::from("custom"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_reap_finished_records_failed_exit_and_keeps_running() {
+        use std::process::Command;
+        // One child exits non-zero immediately; the other stays alive.
+        let dead = Command::new("/bin/sh")
+            .arg("-c")
+            .arg("exit 7")
+            .spawn()
+            .expect("spawn dead");
+        let alive = Command::new("/bin/sh")
+            .arg("-c")
+            .arg("sleep 30")
+            .spawn()
+            .expect("spawn alive");
+        let mut running = vec![
+            (PathBuf::from("dead.json"), dead),
+            (PathBuf::from("alive.json"), alive),
+        ];
+        let mut failed: Vec<(PathBuf, String)> = Vec::new();
+
+        // Poll until the short-lived child is reaped (it exits near-instantly).
+        let mut total = 0;
+        for _ in 0..200 {
+            total += reap_finished(&mut running, &mut failed);
+            if total >= 1 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        assert_eq!(total, 1, "the exited child should be reaped exactly once");
+        assert_eq!(failed.len(), 1, "non-zero exit must be recorded");
+        assert_eq!(failed[0].0, PathBuf::from("dead.json"));
+        assert!(
+            !failed[0].1.is_empty(),
+            "a status string should be recorded"
+        );
+        assert_eq!(running.len(), 1, "the still-running child must remain");
+        assert_eq!(running[0].0, PathBuf::from("alive.json"));
+
+        let _ = running[0].1.kill();
+        let _ = running[0].1.wait();
     }
 }

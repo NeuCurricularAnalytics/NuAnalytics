@@ -1055,3 +1055,40 @@ fn test_degree_analyze_parallel_isolates_failure() {
         "the good program still produced its report"
     );
 }
+
+/// `-j 1` forces the in-process path even for a multi-file batch: reports are
+/// still produced, but no worker-pool banner is printed.
+#[test]
+fn test_degree_analyze_jobs_one_runs_in_process() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for id in ["alpha", "beta"] {
+        write_min_degree(&dir.path().join(format!("{id}.unified.json")), id);
+    }
+    let out = dir.path().join("metrics");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "analyze"])
+        .arg(dir.path().join("alpha.unified.json"))
+        .arg(dir.path().join("beta.unified.json"))
+        .args(["-j", "1", "--no-report", "--metrics-dir"])
+        .arg(&out)
+        .output()
+        .expect("run analyze in-process");
+    assert!(
+        output.status.success(),
+        "in-process run should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("worker process"),
+        "`-j 1` must not spawn the worker pool: {stdout}"
+    );
+
+    let reports = std::fs::read_dir(&out)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with("_report.json"))
+        .count();
+    assert_eq!(reports, 2, "one report JSON per program even in-process");
+}
