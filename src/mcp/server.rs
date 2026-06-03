@@ -6,12 +6,12 @@ use std::sync::Arc;
 
 use crate::core::config::DatabaseConfig;
 use crate::mcp::tools::{
-    analyze, audit, cache, course_detail, match_courses, pipeline, plan_graph, report, samples,
-    schema, shared, trim, validate, visualize, AnalyzeDegreeRequest, AuditDegreeRequest,
-    CacheYamlRequest, DegreePipelineRequest, FindCoursesMatchingRequest,
-    GenerateDegreeReportRequest, GetCourseDetailRequest, GetCurriculumVisualizationRequest,
-    GetSchemaRequest, ListSampleDegreesRequest, RenderPlanGraphRequest, TrimDegreeRequest,
-    ValidateDegreeRequest,
+    analyze, audit, cache, convert, course_detail, json_schema, match_courses, pipeline,
+    plan_graph, report, samples, schema, shared, trim, validate, visualize, AnalyzeDegreeRequest,
+    AuditDegreeRequest, CacheYamlRequest, ConvertDegreeRequest, DegreePipelineRequest,
+    FindCoursesMatchingRequest, GenerateDegreeReportRequest, GetCourseDetailRequest,
+    GetCurriculumVisualizationRequest, GetDegreeJsonSchemaRequest, GetSchemaRequest,
+    ListSampleDegreesRequest, RenderPlanGraphRequest, TrimDegreeRequest, ValidateDegreeRequest,
 };
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -87,6 +87,32 @@ impl NuAnalyticsMcpServer {
     #[allow(clippy::unused_self)]
     fn get_degree_schema(&self, Parameters(req): Parameters<GetSchemaRequest>) -> String {
         schema::execute(req.section.as_deref())
+    }
+
+    /// Return the unified-degree JSON Schema (machine-validatable)
+    #[tool(
+        description = "Return the machine-validatable JSON Schema (2020-12) for the unified degree format — the structure convert_degree produces and that analyze_degree / validate_degree / trim_degree accept. Use it to validate a unified degree document or to understand the format, including wildcard `from` pools (e.g. pattern \"CS:2500+\" or \"*:*\"). Distinct from get_degree_schema, which returns the human-readable YAML reference."
+    )]
+    #[allow(clippy::unused_self)]
+    fn get_degree_json_schema(
+        &self,
+        Parameters(_req): Parameters<GetDegreeJsonSchemaRequest>,
+    ) -> String {
+        json_schema::execute()
+    }
+
+    /// Convert an ai-landscape program JSON to the unified degree JSON
+    #[tool(
+        description = "Convert an ai-landscape program JSON into the unified NuAnalytics degree JSON (the same format analyze_degree / validate_degree accept). Provide exactly ONE source: json_content (inline) or json_path (file on the server). For a multi-program cluster pipeline file, omit `program` to get the program inventory, or set `program` to convert one of them. Returns the unified JSON plus any conversion_warnings and a cache:<hash> handle you can pass as `degree_id` to validate_degree / analyze_degree without re-pasting."
+    )]
+    #[allow(clippy::unused_self)]
+    fn convert_degree(&self, Parameters(req): Parameters<ConvertDegreeRequest>) -> String {
+        convert::execute_json(
+            req.json_content,
+            req.json_path,
+            req.program.as_deref(),
+            req.pretty.unwrap_or(true),
+        )
     }
 
     /// Validate a degree program YAML

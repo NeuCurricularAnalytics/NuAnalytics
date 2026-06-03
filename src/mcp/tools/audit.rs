@@ -8,7 +8,7 @@ use crate::core::degree::audit::{
     detect_lowest_course_level, find_deep_chains, find_missing_intermediate_prereqs,
     find_upper_level_without_prereqs, MissingIntermediateFinding,
 };
-use crate::core::degree::{parse_degree_yaml, DegreeParseError};
+use crate::core::degree::{parse_degree_auto, DegreeParseError};
 use crate::core::models::CourseGraph;
 use crate::core::validate_degree_program;
 use crate::core::DegreeProgram;
@@ -198,9 +198,9 @@ pub fn execute(
 ) -> AuditResponse {
     let threshold = chain_threshold.unwrap_or(DEFAULT_CHAIN_THRESHOLD);
 
-    // Try to parse the YAML
-    let program = match parse_degree_yaml(yaml_content) {
-        Ok(p) => p,
+    // Parse the degree (YAML or unified/ai-landscape JSON, auto-detected).
+    let program = match parse_degree_auto(yaml_content) {
+        Ok((p, _warnings)) => p,
         Err(e) => {
             return AuditResponse {
                 passed: false,

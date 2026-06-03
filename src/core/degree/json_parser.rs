@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::landscape_convert::convert_landscape_str;
-use super::yaml_parser::{resolve_prerequisites, DegreeParseError};
+use super::yaml_parser::{parse_degree_yaml, resolve_prerequisites, DegreeParseError};
 use crate::core::models::DegreeProgram;
 use crate::core::prerequisite_parser::parse_to_ast;
 
@@ -55,6 +55,31 @@ pub fn parse_degree_json_with_warnings(
 
     resolve_prerequisites(&mut program);
     Ok((program, warnings))
+}
+
+/// Parse a degree from a string of unknown format (YAML or JSON).
+///
+/// Dispatches on the first non-whitespace byte: `{` or `[` selects the JSON
+/// loader (which also auto-converts a raw ai-landscape program and returns
+/// conversion warnings); anything else is treated as YAML. This is the
+/// content-level analogue of the extension-based file loader the CLI uses, so
+/// callers that only have a body (e.g. MCP `*_content` inputs) accept unified
+/// JSON and ai-landscape JSON, not just YAML.
+///
+/// # Errors
+/// Returns an error if the content parses as neither unified/ai-landscape JSON
+/// nor a degree YAML document.
+pub fn parse_degree_auto(content: &str) -> Result<(DegreeProgram, Vec<String>), DegreeParseError> {
+    let looks_json = content
+        .trim_start()
+        .as_bytes()
+        .first()
+        .is_some_and(|b| matches!(b, b'{' | b'['));
+    if looks_json {
+        parse_degree_json_with_warnings(content)
+    } else {
+        parse_degree_yaml(content).map(|program| (program, Vec::new()))
+    }
 }
 
 /// Heuristic: an ai-landscape file has a `courses` object whose values are
@@ -215,6 +240,46 @@ mod tests {
             !out.contains("conversion_warnings"),
             "absent warnings must be omitted: {out}"
         );
+    }
+
+    #[test]
+    fn test_parse_degree_auto_dispatches_by_shape() {
+        // YAML body → YAML loader, no conversion warnings.
+        let yaml = "degree:\n  name: Y\n  degree_type: BS\n  system_type: semester\n\
+                    requirements:\n  core:\n    type: all\n    courses: [CS101]\n\
+                    courses:\n  CS101:\n    prefix: CS\n    number: '101'\n    title: Intro\n    credits: 3\n";
+        let (p, w) = parse_degree_auto(yaml).unwrap();
+        assert_eq!(p.degree.name, "Y");
+        assert!(w.is_empty(), "YAML path emits no conversion warnings");
+
+        // Unified JSON body → JSON loader.
+        let json = r#"{"degree":{"name":"J","degree_type":"BS","system_type":"semester"},
+            "requirements":{"core":{"type":"all","courses":["CS101"]}},
+            "courses":{"CS101":{"name":"Intro","prefix":"CS","number":"101","credit_hours":3.0}}}"#;
+        let (p2, _) = parse_degree_auto(json).unwrap();
+        assert_eq!(p2.degree.name, "J");
+
+        // Raw ai-landscape JSON (leading '{') → auto-convert, surfacing warnings
+        // (the lone course has no course_hours, so credits are defaulted).
+        let land = r#"{"university":"U","degree":"BS in CS","ai_program":null,
+            "courses":{"cs_course_core":[{"course_code":"CS 101","title":"Intro",
+            "picklist":[],"prerequisites":[],"corequisites":[],"strict_corequisites":[]}]}}"#;
+        let (p3, w3) = parse_degree_auto(land).unwrap();
+        assert!(!p3.courses.is_empty());
+        assert!(
+            w3.iter().any(|m| m.to_lowercase().contains("credit")),
+            "missing course_hours should warn: {w3:?}"
+        );
+    }
+
+    #[test]
+    fn test_parse_degree_auto_sniffs_past_leading_whitespace() {
+        // Leading newlines/spaces must not defeat the `{`/`[` JSON sniff.
+        let json = "\n\n   {\"degree\":{\"name\":\"W\",\"degree_type\":\"BS\",\"system_type\":\"semester\"},\
+            \"requirements\":{\"core\":{\"type\":\"all\",\"courses\":[\"CS101\"]}},\
+            \"courses\":{\"CS101\":{\"name\":\"Intro\",\"prefix\":\"CS\",\"number\":\"101\",\"credit_hours\":3.0}}}";
+        let (p, _) = parse_degree_auto(json).unwrap();
+        assert_eq!(p.degree.name, "W");
     }
 
     #[test]

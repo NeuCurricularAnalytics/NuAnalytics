@@ -115,12 +115,50 @@
         "courses": { "type": ["array", "null"], "items": { "type": "string" } },
         "count": { "type": ["integer", "null"] },
         "credits": { "type": ["integer", "null"] },
-        "from": { "type": ["object", "null"] },
+        "from": { "anyOf": [{ "$ref": "#/$defs/fromClause" }, { "type": "null" }] },
         "options": { "type": ["array", "null"] },
         "tags": {
           "type": ["array", "null"],
           "items": { "type": "string" },
           "description": "Requirement-group tags, e.g. [\"core\"], [\"ai\",\"required\"], [\"elective\"]."
+        }
+      }
+    },
+    "fromClause": {
+      "type": "object",
+      "description": "Course pool a `select`/`one_of` requirement draws from. Combine an explicit `courses` list with subject `pattern`s (wildcards). A pure-wildcard pool with `credits` (e.g. pattern \"*:*\") resolves to placeholder electives, so general-education / free-elective buckets can be modeled WITHOUT enumerating every real course. The same wildcard support exists in the YAML format.",
+      "properties": {
+        "courses": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "Explicit course keys in the pool."
+        },
+        "pattern": {
+          "type": ["string", "null"],
+          "description": "Subject pattern / wildcard, e.g. \"CS:2500+\", \"CS:300-479\", or \"*:*\" for any course.",
+          "examples": ["CS:2500+", "CS:300-479", "*:*"]
+        },
+        "include": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "Additional patterns to fold into the pool, e.g. [\"CS:300-479\", \"MATH:300-479\"]."
+        },
+        "exclude": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "Courses or patterns to remove from the pool."
+        },
+        "groups": {
+          "type": ["array", "null"],
+          "description": "Grouped selection: pick from N named groups of courses."
+        },
+        "groups_required": {
+          "type": ["integer", "null"],
+          "description": "How many groups to satisfy (null = all)."
+        },
+        "per_group": {
+          "type": ["integer", "null"],
+          "description": "How many courses to pick from each chosen group."
         }
       }
     },
