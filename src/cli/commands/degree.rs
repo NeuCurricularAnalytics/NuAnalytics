@@ -819,19 +819,19 @@ pub fn run_trim(
         process::exit(1);
     }
 
-    let yaml_inputs = filter_yaml_inputs(inputs);
-    if yaml_inputs.is_empty() {
-        eprintln!("Error: No YAML files to process after filtering.");
+    let degree_inputs = filter_degree_inputs(inputs);
+    if degree_inputs.is_empty() {
+        eprintln!("Error: No degree files to process after filtering.");
         process::exit(1);
     }
 
     let dir_mode = out.is_some_and(looks_like_directory);
 
-    if let Some(file_out) = out.filter(|_| yaml_inputs.len() > 1 && !dir_mode) {
+    if let Some(file_out) = out.filter(|_| degree_inputs.len() > 1 && !dir_mode) {
         eprintln!(
             "Error: -o {} is a file path, but {} input files were given; pass a directory (or end the path with '/') instead",
             file_out.display(),
-            yaml_inputs.len()
+            degree_inputs.len()
         );
         process::exit(1);
     }
@@ -846,9 +846,9 @@ pub fn run_trim(
         }
     }
 
-    let total = yaml_inputs.len();
+    let total = degree_inputs.len();
     let mut had_failure = false;
-    for (idx, input) in yaml_inputs.iter().enumerate() {
+    for (idx, input) in degree_inputs.iter().enumerate() {
         if total > 1 {
             if idx > 0 {
                 print_separator();
@@ -908,9 +908,8 @@ where
     }
 }
 
-/// Pick out the YAML inputs from a mixed list of paths, warning to stderr
-/// about anything skipped. Shared between [`run_trim`] and [`run_batch`].
-/// Filter `files` to those `accept`ed, warning (with `expected`) about the rest.
+/// Filter `files` to those `accept`ed, warning to stderr (with `expected` naming
+/// the wanted kind) about each path skipped. Shared by the degree subcommands.
 fn filter_inputs<'a>(
     files: &'a [PathBuf],
     accept: fn(&Path) -> bool,
@@ -929,10 +928,6 @@ fn filter_inputs<'a>(
         .collect()
 }
 
-fn filter_yaml_inputs(files: &[PathBuf]) -> Vec<&Path> {
-    filter_inputs(files, is_yaml_path, "YAML")
-}
-
 /// Returns `true` if the path has a `.yaml` or `.yml` extension (case-insensitive).
 fn is_yaml_path(path: &Path) -> bool {
     path.extension()
@@ -940,6 +935,7 @@ fn is_yaml_path(path: &Path) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
 }
 
+/// Returns `true` if the path has a `.json` extension (case-insensitive).
 fn is_json_path(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
@@ -1035,7 +1031,7 @@ fn trim_one(
     include: Option<&[String]>,
     verbose: bool,
 ) -> Result<(), String> {
-    use nu_analytics::core::degree::{save_degree_to_yaml, trim_program, TrimOptions};
+    use nu_analytics::core::degree::{trim_program, TrimOptions};
 
     let program = load_degree_auto(input)
         .map_err(|e| format!("Failed to load {}: {}", input.display(), e))?;
@@ -1056,8 +1052,9 @@ fn trim_one(
         ));
     }
 
-    save_degree_to_yaml(&trimmed, out_path)
-        .map_err(|e| format!("Failed to write {}: {}", out_path.display(), e))?;
+    // Round-trip the input format: a JSON input yields a trimmed JSON file
+    // (resolve_trim_output preserves the extension), YAML stays YAML.
+    save_degree_auto(&trimmed, out_path)?;
 
     println!("✓ Trimmed degree written to: {}", out_path.display());
     if verbose {
@@ -1871,6 +1868,22 @@ fn load_degree_auto<P: AsRef<Path>>(
     } else {
         load_degree_from_yaml(path)
     }
+}
+
+/// Save a degree program, dispatching on file extension to mirror
+/// [`load_degree_auto`]: `.json` writes unified JSON, everything else YAML. The
+/// error carries the destination path.
+fn save_degree_auto(
+    program: &nu_analytics::core::DegreeProgram,
+    path: &Path,
+) -> Result<(), String> {
+    use nu_analytics::core::degree::{save_degree_to_json, save_degree_to_yaml};
+    let result = if is_json_path(path) {
+        save_degree_to_json(program, path)
+    } else {
+        save_degree_to_yaml(program, path)
+    };
+    result.map_err(|e| format!("Failed to write {}: {e}", path.display()))
 }
 
 fn load_degree_program(

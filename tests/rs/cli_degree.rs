@@ -674,8 +674,8 @@ fn test_degree_trim_skips_non_yaml_and_proceeds() {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Skipping non-YAML file") && stderr.contains("Readme.md"),
-        "stderr should warn about the non-YAML input; got: {stderr}"
+        stderr.contains("Skipping non-degree") && stderr.contains("Readme.md"),
+        "stderr should warn about the non-degree input; got: {stderr}"
     );
     assert!(
         temp_dir
@@ -687,9 +687,9 @@ fn test_degree_trim_skips_non_yaml_and_proceeds() {
 }
 
 /// All-invalid input list: every file is filtered out, command fails with
-/// the dedicated "no YAML files to process" error.
+/// the dedicated "no degree files to process" error.
 #[test]
-fn test_degree_trim_rejects_all_non_yaml_inputs() {
+fn test_degree_trim_rejects_all_non_degree_inputs() {
     let output = Command::new("cargo")
         .args(["run", "--", "degree", "trim", "Readme.md", "Cargo.toml"])
         .output()
@@ -697,12 +697,127 @@ fn test_degree_trim_rejects_all_non_yaml_inputs() {
 
     assert!(
         !output.status.success(),
-        "trim must fail when no YAML inputs survive filtering"
+        "trim must fail when no degree inputs survive filtering"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("No YAML files to process after filtering"),
+        stderr.contains("No degree files to process after filtering"),
         "stderr should explain the empty-after-filter state; got: {stderr}"
+    );
+}
+
+/// Trim accepts a unified-JSON input and round-trips the format: the trimmed
+/// file is written as JSON (not YAML), preserving the `.json` extension.
+#[test]
+fn test_degree_trim_accepts_json_and_writes_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let input = dir.path().join("prog.unified.json");
+    write_min_degree(&input, "json-trim");
+    let out = dir.path().join("out");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "trim"])
+        .arg(&input)
+        .arg("-o")
+        .arg(format!("{}/", out.display()))
+        .output()
+        .expect("run trim on json");
+    assert!(
+        output.status.success(),
+        "trim should accept JSON input. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let trimmed = out.join("prog.unified_trimmed.json");
+    assert!(
+        trimmed.exists(),
+        "trimmed JSON should be written at {trimmed:?}"
+    );
+    let body = std::fs::read_to_string(&trimmed).unwrap();
+    assert!(
+        body.trim_start().starts_with('{'),
+        "output must be JSON, not YAML; got: {}",
+        &body[..body.len().min(40)]
+    );
+    assert!(
+        body.contains("\"degree\""),
+        "trimmed JSON keeps the degree block"
+    );
+}
+
+/// A mixed batch (one YAML + one JSON) processes both, and each output keeps
+/// its input format: YAML→`.yaml`, JSON→`.json`.
+#[test]
+fn test_degree_trim_batch_mixed_yaml_and_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let json_input = dir.path().join("prog.unified.json");
+    write_min_degree(&json_input, "mixed-json");
+    let out = dir.path().join("trimmed");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args([
+            "degree",
+            "trim",
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+        ])
+        .arg(&json_input)
+        .arg("-o")
+        .arg(format!("{}/", out.display()))
+        .output()
+        .expect("run trim on mixed batch");
+    assert!(
+        output.status.success(),
+        "trim must process a mixed YAML+JSON batch. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let yaml_out = out.join("neu-khoury-bscs-boston_trimmed.yaml");
+    let json_out = out.join("prog.unified_trimmed.json");
+    assert!(
+        yaml_out.exists(),
+        "YAML input should yield .yaml at {yaml_out:?}"
+    );
+    assert!(
+        json_out.exists(),
+        "JSON input should yield .json at {json_out:?}"
+    );
+    assert!(
+        std::fs::read_to_string(&json_out)
+            .unwrap()
+            .trim_start()
+            .starts_with('{'),
+        "JSON output must be JSON, not YAML"
+    );
+    assert!(
+        std::fs::read_to_string(&yaml_out)
+            .unwrap()
+            .contains("degree:"),
+        "YAML output must stay YAML"
+    );
+}
+
+/// The overwrite guard applies to JSON inputs too: `-o <input.json>` is refused.
+#[test]
+fn test_degree_trim_refuses_to_overwrite_json_input() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let input = dir.path().join("prog.unified.json");
+    write_min_degree(&input, "json-self");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "trim"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&input)
+        .output()
+        .expect("run trim with -o == input");
+    assert!(
+        !output.status.success(),
+        "trim must refuse to overwrite a JSON input in place"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("refusing to overwrite"),
+        "stderr should explain the refusal; got: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 
