@@ -5,7 +5,17 @@
 
 use crate::core::models::course::Course;
 use crate::core::models::degree::{FromClause, Requirement, RequirementType};
+use fastrand::Rng;
 use std::collections::{HashMap, HashSet};
+
+/// Upper bound on the number of `select` combinations materialized for a single
+/// requirement. A pool whose full `C(n, k)` exceeds this (e.g. "choose 15 of 42"
+/// ≈ 10¹¹) is down-sampled to this many distinct combinations instead of being
+/// fully enumerated. Plan-level sampling (capped by `max_plans`) then explores
+/// across requirements, so losing exhaustiveness on one oversized pool is
+/// acceptable — and it prevents the multi-gigabyte allocation that previously
+/// OOM-killed full-catalog runs.
+const MAX_MATERIALIZED_COMBINATIONS: usize = 2_000;
 
 /// Represents the possible choices for a single requirement
 #[derive(Debug, Clone)]
@@ -293,8 +303,9 @@ impl<'a> RequirementResolver<'a> {
                 .with_exclude_used(exclude_used);
         }
 
-        // Generate all combinations of size `count`
-        let combinations = self.generate_combinations(&pool, count);
+        // Generate combinations of size `count`, bounding the materialized set so
+        // an oversized pool can't exhaust memory (see MAX_MATERIALIZED_COMBINATIONS).
+        let combinations = self.bounded_combinations(&pool, count);
 
         // For exclude_used requirements, also track the pool and count for dynamic selection
         let mut resolved =
@@ -732,6 +743,66 @@ impl<'a> RequirementResolver<'a> {
         false
     }
 
+    /// Generate size-`k` combinations from `pool`, fully when `C(n, k)` is small
+    /// and as a bounded random sample when it would exceed
+    /// [`MAX_MATERIALIZED_COMBINATIONS`].
+    #[allow(clippy::unused_self)] // Keep as method for API consistency
+    fn bounded_combinations(&self, pool: &[String], k: usize) -> Vec<Vec<String>> {
+        if Self::combinations_exceed(pool.len(), k, MAX_MATERIALIZED_COMBINATIONS) {
+            Self::sample_combinations(pool, k, MAX_MATERIALIZED_COMBINATIONS)
+        } else {
+            self.generate_combinations(pool, k)
+        }
+    }
+
+    /// Whether `C(n, k)` strictly exceeds `cap`, computed without overflowing:
+    /// the running value never grows past `cap * n` before the early return.
+    fn combinations_exceed(n: usize, k: usize, cap: usize) -> bool {
+        if k > n {
+            return false;
+        }
+        let k = k.min(n - k); // C(n, k) == C(n, n - k); use the smaller factor count
+        let cap = cap as u128;
+        let mut result: u128 = 1;
+        for i in 0..k as u128 {
+            result = result * (n as u128 - i) / (i + 1);
+            if result > cap {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Draw up to `cap` distinct size-`k` combinations from `pool`. Deterministic
+    /// (fixed seed derived from the pool shape) so analysis output is reproducible.
+    fn sample_combinations(pool: &[String], k: usize, cap: usize) -> Vec<Vec<String>> {
+        let n = pool.len();
+        if k == 0 || k > n {
+            return vec![Vec::new()];
+        }
+        let mut rng = Rng::with_seed(0x5EED_0000 ^ ((n as u64) << 16) ^ k as u64);
+        let mut seen: HashSet<Vec<usize>> = HashSet::with_capacity(cap);
+        let mut out: Vec<Vec<String>> = Vec::with_capacity(cap);
+        // Bound attempts so we can't spin forever if cap approaches C(n, k).
+        let max_attempts = cap.saturating_mul(20).max(cap + 1);
+        let mut attempts = 0;
+        while out.len() < cap && attempts < max_attempts {
+            attempts += 1;
+            let mut idx: Vec<usize> = Vec::with_capacity(k);
+            while idx.len() < k {
+                let c = rng.usize(0..n);
+                if !idx.contains(&c) {
+                    idx.push(c);
+                }
+            }
+            idx.sort_unstable();
+            if seen.insert(idx.clone()) {
+                out.push(idx.iter().map(|&i| pool[i].clone()).collect());
+            }
+        }
+        out
+    }
+
     /// Generate all combinations of size k from a pool
     #[allow(clippy::unused_self)] // Keep as method for API consistency
     fn generate_combinations(&self, pool: &[String], k: usize) -> Vec<Vec<String>> {
@@ -974,6 +1045,91 @@ mod tests {
         assert!(combos.contains(&vec!["A".to_string(), "B".to_string()]));
         assert!(combos.contains(&vec!["A".to_string(), "C".to_string()]));
         assert!(combos.contains(&vec!["B".to_string(), "C".to_string()]));
+    }
+
+    #[test]
+    fn test_combinations_exceed_matches_binomial() {
+        // Exact boundary cases around the cap.
+        assert!(!RequirementResolver::combinations_exceed(5, 2, 10)); // C(5,2)=10, not >10
+        assert!(RequirementResolver::combinations_exceed(5, 2, 9)); // 10 > 9
+        assert!(!RequirementResolver::combinations_exceed(
+            42,
+            15,
+            usize::MAX
+        )); // huge but not > MAX-ish cap
+            // The pathological pool that used to OOM must be flagged as oversized.
+        assert!(RequirementResolver::combinations_exceed(42, 15, 2_000));
+        assert!(RequirementResolver::combinations_exceed(16_000, 6, 2_000));
+        // k > n is zero combinations, never exceeds.
+        assert!(!RequirementResolver::combinations_exceed(3, 5, 1));
+    }
+
+    #[test]
+    fn test_sample_combinations_bounded_distinct_and_valid() {
+        let pool: Vec<String> = (0..42).map(|i| format!("C{i}")).collect();
+        let cap = 2_000;
+        let sample = RequirementResolver::sample_combinations(&pool, 15, cap);
+
+        assert!(sample.len() <= cap, "must not exceed the cap");
+        assert!(
+            sample.len() > 1,
+            "should produce many distinct combinations"
+        );
+        // Every combination has the right size and only real pool courses.
+        for combo in &sample {
+            assert_eq!(combo.len(), 15);
+            assert!(combo.iter().all(|c| pool.contains(c)));
+            let mut uniq = combo.clone();
+            uniq.sort();
+            uniq.dedup();
+            assert_eq!(uniq.len(), 15, "courses within a combination are distinct");
+        }
+        // Distinct combinations (no duplicates in the sampled set).
+        let mut keys: Vec<Vec<String>> = sample.clone();
+        keys.sort();
+        keys.dedup();
+        assert_eq!(keys.len(), sample.len(), "combinations are distinct");
+    }
+
+    #[test]
+    fn test_sample_combinations_is_deterministic() {
+        let pool: Vec<String> = (0..30).map(|i| format!("C{i}")).collect();
+        let a = RequirementResolver::sample_combinations(&pool, 10, 500);
+        let b = RequirementResolver::sample_combinations(&pool, 10, 500);
+        assert_eq!(a, b, "fixed seed must yield reproducible output");
+    }
+
+    #[test]
+    fn test_bounded_combinations_caps_huge_pool_but_enumerates_small() {
+        let courses = sample_courses();
+        let resolver = RequirementResolver::new(&courses);
+
+        // Small pool: fully enumerated (C(5,2)=10).
+        let small: Vec<String> = (0..5).map(|i| format!("S{i}")).collect();
+        assert_eq!(resolver.bounded_combinations(&small, 2).len(), 10);
+
+        // Huge pool: capped at MAX_MATERIALIZED_COMBINATIONS instead of C(42,15).
+        let big: Vec<String> = (0..42).map(|i| format!("B{i}")).collect();
+        assert_eq!(
+            resolver.bounded_combinations(&big, 15).len(),
+            MAX_MATERIALIZED_COMBINATIONS
+        );
+    }
+
+    #[test]
+    fn test_bounded_combinations_k_zero_and_k_equals_n() {
+        let courses = sample_courses();
+        let resolver = RequirementResolver::new(&courses);
+        let pool: Vec<String> = (0..5).map(|i| format!("C{i}")).collect();
+
+        // k == 0 -> the single empty combination.
+        let zero = resolver.bounded_combinations(&pool, 0);
+        assert_eq!(zero, vec![Vec::<String>::new()]);
+
+        // k == n -> exactly one combination containing all courses.
+        let all = resolver.bounded_combinations(&pool, 5);
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].len(), 5);
     }
 
     #[test]
