@@ -30,6 +30,7 @@ pub fn format_degree_parse_error(e: &DegreeParseError) -> String {
             (Some(l), Some(c)) => format!("YAML syntax error at line {l} column {c}: {message}"),
             _ => format!("YAML syntax error: {message}"),
         },
+        DegreeParseError::JsonError(msg) => format!("JSON syntax error: {msg}"),
     }
 }
 

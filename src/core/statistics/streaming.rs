@@ -56,7 +56,7 @@ impl WelfordAccumulator {
         let delta = value - self.mean;
         self.mean += delta / self.count as f64;
         let delta2 = value - self.mean;
-        self.m2 += delta * delta2;
+        self.m2 = delta.mul_add(delta2, self.m2);
     }
 
     /// Get the current count

@@ -21,6 +21,7 @@
 //! - `(CS101 & CS102) | CS103` - Both CS101 and CS102, OR just CS103
 //! - `CS101[B] & CS102[C]` - With grade requirements (stripped)
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashSet;
 
 /// AND/OR tree form of a prerequisite expression.
@@ -90,6 +91,89 @@ impl PrereqExpr {
             Self::Course(c) => c.is_empty(),
             Self::All(xs) | Self::Any(xs) => xs.iter().all(Self::is_empty),
         }
+    }
+}
+
+// Unified-JSON serialization for prerequisites (symmetric tagged form):
+//   - a leaf course      -> a bare JSON string  ("CS101")
+//   - All (AND)          -> {"and": [ <children> ]}
+//   - Any (OR)           -> {"or":  [ <children> ]}
+// This nests to any depth and round-trips losslessly with the AST. The node
+// type encodes the operator, so the structure is unambiguous for consumers.
+impl Serialize for PrereqExpr {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        match self {
+            Self::Course(c) => serializer.serialize_str(c),
+            Self::All(xs) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("and", xs)?;
+                map.end()
+            }
+            Self::Any(xs) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("or", xs)?;
+                map.end()
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PrereqExpr {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct PrereqExprVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for PrereqExprVisitor {
+            type Value = PrereqExpr;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a course string or an object with a single `and`/`or` key")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(PrereqExpr::Course(v.to_string()))
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(PrereqExpr::Course(v))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let key: String = map
+                    .next_key()?
+                    .ok_or_else(|| serde::de::Error::custom("expected `and` or `or` key"))?;
+                let children: Vec<PrereqExpr> = map.next_value()?;
+                if map.next_key::<String>()?.is_some() {
+                    return Err(serde::de::Error::custom(
+                        "prerequisite object must have exactly one key (`and` or `or`)",
+                    ));
+                }
+                match key.as_str() {
+                    "and" => Ok(PrereqExpr::All(children)),
+                    "or" => Ok(PrereqExpr::Any(children)),
+                    other => Err(serde::de::Error::custom(format!(
+                        "unknown prerequisite operator `{other}` (expected `and` or `or`)"
+                    ))),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(PrereqExprVisitor)
     }
 }
 
@@ -460,6 +544,69 @@ mod tests {
     fn test_parse_to_dnf_simple() {
         let result = parse_to_dnf("CS101");
         assert_eq!(result, vec![vec!["CS101".to_string()]]);
+    }
+
+    #[test]
+    fn test_prereq_expr_json_tagged_form() {
+        // Leaf -> bare string
+        let leaf = PrereqExpr::Course("CS101".into());
+        assert_eq!(serde_json::to_string(&leaf).unwrap(), "\"CS101\"");
+
+        // (X & Y) | Z  ->  {"or":[{"and":["X","Y"]},"Z"]}
+        let expr = parse_to_ast("(X & Y) | Z").unwrap();
+        let json = serde_json::to_string(&expr).unwrap();
+        assert_eq!(json, r#"{"or":[{"and":["X","Y"]},"Z"]}"#);
+
+        // Round-trips losslessly
+        let back: PrereqExpr = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, expr);
+    }
+
+    #[test]
+    fn test_prereq_expr_json_rejects_bad_operator() {
+        let err = serde_json::from_str::<PrereqExpr>(r#"{"xor":["A","B"]}"#);
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_prereq_expr_deserialize_bare_string_leaf() {
+        let leaf: PrereqExpr = serde_json::from_str("\"CS101\"").unwrap();
+        assert_eq!(leaf, PrereqExpr::Course("CS101".to_string()));
+    }
+
+    #[test]
+    fn test_prereq_expr_deserialize_empty_and_or() {
+        let and: PrereqExpr = serde_json::from_str(r#"{"and":[]}"#).unwrap();
+        assert_eq!(and, PrereqExpr::All(vec![]));
+        let or: PrereqExpr = serde_json::from_str(r#"{"or":[]}"#).unwrap();
+        assert_eq!(or, PrereqExpr::Any(vec![]));
+    }
+
+    #[test]
+    fn test_prereq_expr_deserialize_rejects_two_key_object() {
+        let err = serde_json::from_str::<PrereqExpr>(r#"{"and":["A"],"or":["B"]}"#);
+        assert!(err.is_err(), "object with two keys must be rejected");
+    }
+
+    #[test]
+    fn test_prereq_expr_deserialize_nested_depth_roundtrips() {
+        // (A & (B | C)) | D — recursion through both node types.
+        let json = r#"{"or":[{"and":["A",{"or":["B","C"]}]},"D"]}"#;
+        let expr: PrereqExpr = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            expr,
+            PrereqExpr::Any(vec![
+                PrereqExpr::All(vec![
+                    PrereqExpr::Course("A".into()),
+                    PrereqExpr::Any(vec![
+                        PrereqExpr::Course("B".into()),
+                        PrereqExpr::Course("C".into()),
+                    ]),
+                ]),
+                PrereqExpr::Course("D".into()),
+            ])
+        );
+        assert_eq!(serde_json::to_string(&expr).unwrap(), json);
     }
 
     #[test]

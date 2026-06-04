@@ -31,7 +31,19 @@ nuanalytics degree print-graph samples/degrees/csu-cs-bscs-general.yaml
 
 # Trim alternatives down to a single shared shortest path
 nuanalytics degree trim samples/degrees/csu-cs-bscs-general.yaml
+
+# Convert ai-landscape program JSON to the unified degree JSON
+nuanalytics degree convert program.json -o converted/
+
+# Emit the unified-degree JSON Schema
+nuanalytics degree schema -o degree.schema.json
 ```
+
+> **Input formats:** every subcommand accepts both YAML and the unified
+> JSON degree format, and auto-detects which on load (content starting
+> with `{` or `[` is parsed as JSON, otherwise YAML). Raw ai-landscape
+> program JSON is detected and converted automatically. See
+> [Input File Format](#input-file-format).
 
 > **Migration note:** prior versions exposed these as flags
 > (`degree --validate`, `degree --analyze`, etc.). Every flag has moved
@@ -66,6 +78,8 @@ This generates:
 | `--report-dir <DIR>` | Override reports output directory | from config |
 | `--metrics-dir <DIR>` | Override metrics output directory | from config |
 | `--include <COURSES>` | Courses to always include in all plans (comma-separated) | none |
+| `-j, --jobs <N>` | Files to analyze concurrently when multiple are given, each in its own process (see [Parallel analysis](#parallel-analysis)) | 8 |
+| `--school <NAME>` | Treat all inputs as programs of one school and also emit a combined `<school>_school_report.json` rollup | none |
 
 **Examples:**
 
@@ -111,6 +125,32 @@ nuanalytics degree analyze --include "CS3500,STAT301" samples/degrees/csu-cs-bsc
 ```
 
 `degree trim` reuses the same flag — see the **Trim** section below for trim-specific semantics.
+
+### Parallel Analysis
+
+When you pass **multiple** files to `analyze`, the command runs a rolling
+pool of worker processes — one file per OS process, `-j/--jobs` at a time
+(default 8). Process isolation matters: a pathological degree (for example a
+full-catalog scrape with thousands of courses) is contained to its own
+process, so if it exhausts memory or crashes, the kernel kills only that
+child. The parent records the failure in `<metrics-dir>/failures.log` — one
+`path<TAB>status` line, so an OOM kill shows as `signal: 9 (SIGKILL)` and is
+distinguishable from a non-zero exit — and the remaining files carry on. The
+parent prints a progress line and a summary; per-worker stdout/stderr is
+suppressed.
+
+```bash
+# Analyze a directory of degrees, 12 at a time
+nuanalytics degree analyze samples/degrees/*.yaml -j 12 --metrics-dir out/
+
+# Roll the per-degree metrics up into one school report
+nuanalytics degree analyze cs-programs/*.json --school "Example University"
+```
+
+Single-file runs, `--school`, and `-j 1` run in-process with full per-degree
+console output. For an externally throttled variant (a per-process
+`ulimit -v` memory cap and a timeout), see `scripts/analyze-batch.sh`; the
+in-process pool deliberately imposes no ulimit or timeout.
 
 ### Validation (`validate`)
 
@@ -231,6 +271,60 @@ prints the protected-subject set and the list of removed orphans.
 - `type: one_of` concentrations are preserved as a whole; trim recurses
   into each concentration's nested requirements.
 
+### Convert (`convert`)
+
+Convert program file(s) into the unified degree JSON format.
+
+```bash
+nuanalytics degree convert path/to/program.json
+```
+
+The input may be raw ai-landscape program JSON (auto-detected and
+converted), an existing unified JSON file, or YAML; the output is always
+unified JSON with structured prerequisites. The converter maps ai-landscape
+category lists and picklists to requirements, flips their AND-of-OR
+prerequisites into the internal expression tree, and defaults missing course
+credits to 3. Data-quality issues (such as assumed credits) are reported and
+embedded as a `conversion_warnings` array in the output.
+
+ai-landscape *cluster* pipeline files (`course_verifier` /
+`course_scraper.<program>.results`) are expanded into **one unified file per
+program**, using collision-safe `<school>__<program>.unified.json` names.
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-o, --out <PATH>` | Output file (single input) or directory (one `<stem>.unified.json` per input) | next to each input as `<stem>.unified.json` |
+| `--pretty` | Pretty-print the JSON (default is compact, one line) | false |
+
+```bash
+# Convert a directory of ai-landscape programs into ./converted/
+nuanalytics degree convert ai-landscape-tools/validation_jsons/*.json -o converted/
+
+# Convert one program, pretty-printed
+nuanalytics degree convert program.json --pretty -o program.unified.json
+```
+
+> This converter is transitional — once upstream emits unified JSON
+> directly it is no longer needed.
+
+### Schema (`schema`)
+
+Print the JSON Schema for the unified degree format — useful for validating
+unified JSON files in other tools or pipelines. This is the same
+`degree.schema.json` the MCP server serves via `get_degree_json_schema`.
+
+```bash
+# Print to stdout
+nuanalytics degree schema
+
+# Write to a file
+nuanalytics degree schema -o degree.schema.json
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-o, --out <PATH>` | Write the schema to this file instead of stdout | stdout |
+
 ## Analysis Output
 
 ### Console Output
@@ -331,6 +425,15 @@ nuanalytics config set metrics_dir "./metrics"
 ## Input File Format
 
 Degree programs are defined in YAML files with three main sections:
+
+> **Unified JSON.** The same three-section model can also be expressed as
+> *unified JSON* — the degree model serialized directly to JSON, with
+> prerequisites written as a symmetric tagged structure
+> (`{"and"|"or": [...]}`, a bare string being a single prerequisite) and an
+> optional `tags` array on degrees, requirements, and courses. Every
+> subcommand auto-detects YAML vs. JSON on load, and `degree schema` emits
+> the JSON Schema for the format. The sections below describe the YAML form;
+> the JSON form mirrors it field-for-field.
 
 ### Degree Metadata
 

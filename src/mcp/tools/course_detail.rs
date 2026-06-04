@@ -11,7 +11,7 @@
 //! true (default).
 
 use crate::core::degree::audit::extract_course_level;
-use crate::core::degree::{parse_degree_yaml, DegreeParseError};
+use crate::core::degree::{parse_degree_auto, DegreeParseError};
 use crate::core::models::CourseGraph;
 use crate::core::DegreeProgram;
 use crate::mcp::tools::analyze::{metric_stats_json, AnalysisArtifacts, MetricStatsJson};
@@ -153,8 +153,8 @@ pub fn execute(
     include_analysis: bool,
     max_plans: Option<usize>,
 ) -> CourseDetailResponse {
-    let program = match parse_degree_yaml(yaml_content) {
-        Ok(p) => p,
+    let program = match parse_degree_auto(yaml_content) {
+        Ok((p, _warnings)) => p,
         Err(e) => return error_response(course_id, format_parse_error(&e)),
     };
 
@@ -383,10 +383,7 @@ fn error_response(course_id: &str, error: impl Into<String>) -> CourseDetailResp
 }
 
 fn format_parse_error(e: &DegreeParseError) -> String {
-    match e {
-        DegreeParseError::IoError(msg) => format!("File error: {msg}"),
-        DegreeParseError::YamlError { message, .. } => format!("YAML syntax error: {message}"),
-    }
+    crate::mcp::tools::shared::format_degree_parse_error(e)
 }
 
 // ============================================================================

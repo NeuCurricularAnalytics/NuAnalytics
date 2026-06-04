@@ -11,6 +11,11 @@ dist
 /metrics
 /reports
 
+# AI Landscape tool for interaction
+/ai-landscape-tools
+
+
+# WSL / windows file, not needed
 *Zone.Identifier*
 
 server.log

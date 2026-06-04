@@ -4,6 +4,93 @@ All notable changes to NuAnalytics are recorded here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the
 project uses semantic versioning.
 
+## [0.4.1] — 2026-06-04
+
+This release is additive — no breaking changes from 0.4.0. It introduces a
+unified JSON degree format and the tooling around it, parallel/process-isolated
+batch analysis, and two new MCP tools, plus two engine fixes that make
+machine-converted catalogs analyzable.
+
+### Added
+
+- **Unified JSON degree format.** Degree programs can now be authored and
+  consumed as JSON (the `DegreeProgram` model serialized directly) alongside
+  YAML. Every `degree` subcommand auto-detects the format on load (content
+  starting with `{`/`[` → JSON, otherwise YAML), and raw ai-landscape JSON
+  shapes are converted on the fly. Prerequisites serialize as a symmetric
+  tagged structure (`{"and"|"or": [...]}`, with a bare string as a leaf), and
+  `tags` are available on degrees, requirements, and courses.
+
+- **`degree convert`** — convert ai-landscape program JSON into the unified
+  format. Category lists and picklists map to requirements, AND-of-OR
+  prerequisites flip into the internal `PrereqExpr` tree, and missing credits
+  default to 3 (with warnings). ai-landscape *cluster* pipeline files
+  (`course_verifier`/`course_scraper.<program>.results`) expand into one unified
+  file per program with collision-safe `<school>__<program>.unified.json` names.
+  `-o <PATH>` accepts a file (single input) or directory; `--pretty` pretty-prints.
+
+- **`degree schema`** — emit the unified-degree JSON Schema
+  (`src/assets/degree.schema.json`), the same schema the MCP server serves, to
+  stdout or `-o <PATH>`. The schema now documents the `from` clause
+  (`fromClause`: courses / pattern / include / exclude / groups), confirming the
+  unified format supports the same wildcard gen-ed/elective pools as YAML
+  (e.g. `"CS:2500+"`, `"*:*"`).
+
+- **Parallel `degree analyze` (`-j`/`--jobs`, default 8).** A multi-file analyze
+  now runs as a rolling pool of worker processes, one file per OS process. A
+  pathological degree (e.g. a full-catalog scrape) is contained to its own
+  process: if it OOMs or crashes, the kernel kills only that child, the parent
+  records it in `<metrics-dir>/failures.log` with its exit status (so a
+  `SIGKILL` is distinguishable from a non-zero exit), and the rest continue.
+  Single-file, `--school`, and `-j 1` runs stay in-process with full per-degree
+  output.
+
+- **`--school <NAME>` on `degree analyze`** — treat all inputs as programs of
+  one school and emit a combined `<school>_school_report.json` rolling up
+  degree-level metrics across the programs.
+
+- **`scripts/analyze-batch.sh`** — process-isolated batch analyze with a
+  per-process virtual-memory cap (`ulimit -v`) and a timeout, for running large
+  directories of degrees without the OS OOM-killer taking down the whole batch.
+
+- **JSON input for `degree trim`.** Trim now accepts unified (and raw
+  ai-landscape) JSON and writes the trimmed program back in the input's format —
+  a `.json` input yields a trimmed `.json`; YAML stays YAML.
+
+- **Metrics-rich report JSON.** Output JSON now opens with the degree block and
+  is laid out degree → analysis → requirements → selected plans → courses. Each
+  selected plan carries its courses, credits, course count, critical path, and a
+  term-by-term schedule (mirroring the MCP `analyze_degree` shape). `total_credits`
+  surfaces at the top.
+
+- **New MCP tools.** `convert_degree` (ai-landscape JSON → unified JSON +
+  warnings, caching the result for chaining by `degree_id`; a cluster file
+  returns a bounded program inventory) and `get_degree_json_schema` (returns the
+  machine JSON Schema). The existing degree tools
+  (`validate_degree` / `analyze_degree` / `audit_degree` / `trim_degree` /
+  `get_course_detail`) now accept unified and ai-landscape JSON content — and the
+  `cache:<hash>` handle from `convert_degree` — in addition to YAML, via a
+  content-level format sniff; `validate_degree` surfaces any
+  `conversion_warnings`.
+
+### Fixed
+
+- **Out-of-memory on large select pools.** `RequirementResolver` materialized
+  every `C(n, k)` combination of a select pool — a "choose 15 of 42" pool
+  (~10¹¹) could allocate tens of GB and get OOM-killed even for an otherwise
+  tiny program. Combination generation is now bounded: when `C(n, k)` exceeds
+  2000, it deterministically down-samples to that cap. Peak memory on the worst
+  catalog programs drops from >6 GB to ~25–120 MB.
+
+- **Converted programs collapsed to a single plan.** Elective-category selects
+  were excluded from the plan space (`ENUMERABLE_CATEGORIES` was `["major"]`
+  only), so converted programs produced one plan with `std_dev = 0`. Electives
+  are now enumerated (plan-count estimation uses saturating multiplication so a
+  capped pool can't overflow), restoring real metric spread.
+
+- **JSON parse errors** now report as a distinct `JsonError` rather than
+  "YAML Parse Error".
+
 ## [0.4.0] — 2026-05-20
 
 ### Breaking changes

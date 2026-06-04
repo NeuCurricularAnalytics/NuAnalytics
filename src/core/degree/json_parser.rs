@@ -1,0 +1,387 @@
+//! JSON degree parser (unified format) with ai-landscape auto-conversion.
+//!
+//! The unified JSON is the serialized [`DegreeProgram`] (the same model YAML
+//! produces) with prerequisites carried as the symmetric tagged structure
+//! (`{"and"|"or": [...]}`, bare string = leaf). On load we also accept a raw
+//! ai-landscape program file and convert it on the fly (see
+//! [`crate::core::degree::landscape_convert`]).
+
+use std::path::Path;
+
+use serde::Serialize;
+use serde_json::Value;
+
+use super::landscape_convert::convert_landscape_str;
+use super::yaml_parser::{parse_degree_yaml, resolve_prerequisites, DegreeParseError};
+use crate::core::models::DegreeProgram;
+use crate::core::prerequisite_parser::parse_to_ast;
+
+/// Parse a unified degree JSON string (auto-converting ai-landscape files).
+///
+/// # Errors
+/// Returns an error if the JSON is invalid or matches neither shape.
+pub fn parse_degree_json(json: &str) -> Result<DegreeProgram, DegreeParseError> {
+    let (program, warnings) = parse_degree_json_with_warnings(json)?;
+    for w in &warnings {
+        eprintln!("warning: {w}");
+    }
+    Ok(program)
+}
+
+/// Parse a unified degree JSON string, returning conversion warnings (if any).
+///
+/// # Errors
+/// Returns an error if the JSON is invalid or matches neither shape.
+pub fn parse_degree_json_with_warnings(
+    json: &str,
+) -> Result<(DegreeProgram, Vec<String>), DegreeParseError> {
+    let value: Value = serde_json::from_str(json)
+        .map_err(|e| DegreeParseError::json_message(format!("Failed to parse JSON: {e}")))?;
+
+    let (mut program, warnings) = if looks_like_landscape(&value) {
+        let result = convert_landscape_str(json).map_err(DegreeParseError::json_message)?;
+        (result.program, result.warnings)
+    } else {
+        let program: DegreeProgram = serde_json::from_value(value).map_err(|e| {
+            DegreeParseError::json_message(format!(
+                "unrecognized JSON ({e}). Expected a unified degree (top-level `degree`) or an \
+                 ai-landscape program (a `courses` category map). Cluster pipeline files nest \
+                 programs under `course_scraper.<program>.results` / `course_verifier...` — run \
+                 `degree convert` on those (it expands each program)."
+            ))
+        })?;
+        (program, Vec::new())
+    };
+
+    resolve_prerequisites(&mut program);
+    Ok((program, warnings))
+}
+
+/// Parse a degree from a string of unknown format (YAML or JSON).
+///
+/// Dispatches on the first non-whitespace byte: `{` or `[` selects the JSON
+/// loader (which also auto-converts a raw ai-landscape program and returns
+/// conversion warnings); anything else is treated as YAML. This is the
+/// content-level analogue of the extension-based file loader the CLI uses, so
+/// callers that only have a body (e.g. MCP `*_content` inputs) accept unified
+/// JSON and ai-landscape JSON, not just YAML.
+///
+/// # Errors
+/// Returns an error if the content parses as neither unified/ai-landscape JSON
+/// nor a degree YAML document.
+pub fn parse_degree_auto(content: &str) -> Result<(DegreeProgram, Vec<String>), DegreeParseError> {
+    let looks_json = content
+        .trim_start()
+        .as_bytes()
+        .first()
+        .is_some_and(|b| matches!(b, b'{' | b'['));
+    if looks_json {
+        parse_degree_json_with_warnings(content)
+    } else {
+        parse_degree_yaml(content).map(|program| (program, Vec::new()))
+    }
+}
+
+/// Heuristic: an ai-landscape file has a `courses` object whose values are
+/// arrays (category -> list), whereas the unified format maps course keys to
+/// course objects.
+fn looks_like_landscape(value: &Value) -> bool {
+    value
+        .get("courses")
+        .and_then(Value::as_object)
+        .is_some_and(|courses| courses.values().next().is_some_and(Value::is_array))
+}
+
+/// Load a unified degree JSON file (auto-converting ai-landscape files).
+///
+/// # Errors
+/// Returns an error if the file cannot be read or parsed.
+pub fn load_degree_from_json<P: AsRef<Path>>(path: P) -> Result<DegreeProgram, DegreeParseError> {
+    let path = path.as_ref();
+    let contents = std::fs::read_to_string(path).map_err(|e| {
+        DegreeParseError::IoError(format!("Failed to read {}: {e}", path.display()))
+    })?;
+    let (program, warnings) = parse_degree_json_with_warnings(&contents)?;
+    for w in &warnings {
+        eprintln!("warning ({}): {w}", path.display());
+    }
+    Ok(program)
+}
+
+/// Serialize a degree program to unified JSON, emitting prerequisites in the
+/// structured tagged form. Set `pretty` for human-readable output.
+///
+/// # Errors
+/// Returns an error if serialization fails.
+pub fn serialize_degree_json(
+    program: &DegreeProgram,
+    pretty: bool,
+) -> Result<String, DegreeParseError> {
+    let value = to_unified_value(program)?;
+    unified_value_to_string(&value, pretty)
+        .map_err(|e| DegreeParseError::json_message(format!("Failed to serialize JSON: {e}")))
+}
+
+/// Serialize a unified-degree `Value` to a JSON string with `degree` first
+/// (then `requirements`, `courses`, and any `conversion_warnings`).
+///
+/// The file then opens to the program's identity. Nested objects keep
+/// `serde_json`'s deterministic sorted key order; this only fixes the top-level
+/// layout.
+///
+/// # Errors
+/// Returns the underlying `serde_json` error if serialization fails.
+pub fn unified_value_to_string(value: &Value, pretty: bool) -> Result<String, serde_json::Error> {
+    #[derive(Serialize)]
+    struct Ordered<'a> {
+        degree: &'a Value,
+        requirements: &'a Value,
+        courses: &'a Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        conversion_warnings: Option<&'a Value>,
+    }
+    let null = Value::Null;
+    let ordered = Ordered {
+        degree: value.get("degree").unwrap_or(&null),
+        requirements: value.get("requirements").unwrap_or(&null),
+        courses: value.get("courses").unwrap_or(&null),
+        conversion_warnings: value.get("conversion_warnings"),
+    };
+    if pretty {
+        serde_json::to_string_pretty(&ordered)
+    } else {
+        serde_json::to_string(&ordered)
+    }
+}
+
+/// Build the unified-JSON `Value` for a program.
+///
+/// Serializes the model, then rewrites each course's `prerequisites_raw`
+/// boolean string into the structured `{"and"|"or": ...}` tagged form under the
+/// `prerequisites` key.
+///
+/// # Errors
+/// Returns an error if model serialization fails.
+pub fn to_unified_value(program: &DegreeProgram) -> Result<Value, DegreeParseError> {
+    let mut value = serde_json::to_value(program)
+        .map_err(|e| DegreeParseError::json_message(format!("Failed to serialize program: {e}")))?;
+    structurize_prereqs(&mut value);
+    Ok(value)
+}
+
+/// Replace each course's `prerequisites_raw` string with the structured tagged
+/// `prerequisites` object. Courses without a parseable expression are left
+/// without a prerequisites field.
+fn structurize_prereqs(value: &mut Value) {
+    let Some(courses) = value.get_mut("courses").and_then(Value::as_object_mut) else {
+        return;
+    };
+    for course in courses.values_mut() {
+        let Some(obj) = course.as_object_mut() else {
+            continue;
+        };
+        if let Some(raw) = obj.remove("prerequisites_raw") {
+            if let Some(expr) = raw.as_str().and_then(parse_to_ast) {
+                if let Ok(structured) = serde_json::to_value(&expr) {
+                    obj.insert("prerequisites".to_string(), structured);
+                }
+            }
+        }
+    }
+}
+
+/// Save a degree program to a unified JSON file (pretty-printed).
+///
+/// # Errors
+/// Returns an error if the file cannot be written or serialization fails.
+pub fn save_degree_to_json<P: AsRef<Path>>(
+    program: &DegreeProgram,
+    path: P,
+) -> Result<(), DegreeParseError> {
+    let path = path.as_ref();
+    let json = serialize_degree_json(program, true)?;
+    std::fs::write(path, json)
+        .map_err(|e| DegreeParseError::IoError(format!("Failed to write {}: {e}", path.display())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unified_value_to_string_puts_degree_first() {
+        // Keys deliberately out of order; degree must lead, warnings trail.
+        let value = serde_json::json!({
+            "courses": {"CS1": {"name": "Intro"}},
+            "requirements": {"core": {"type": "all"}},
+            "degree": {"name": "Test", "degree_type": "BS"},
+            "conversion_warnings": ["w1"],
+        });
+        let out = unified_value_to_string(&value, false).unwrap();
+        let dp = out.find("\"degree\"").unwrap();
+        let rp = out.find("\"requirements\"").unwrap();
+        let cp = out.find("\"courses\"").unwrap();
+        let wp = out.find("\"conversion_warnings\"").unwrap();
+        assert!(
+            dp < rp && rp < cp && cp < wp,
+            "order should be degree, requirements, courses, warnings: {out}"
+        );
+    }
+
+    #[test]
+    fn test_unified_value_to_string_omits_absent_warnings() {
+        let value = serde_json::json!({
+            "degree": {"name": "Test"},
+            "requirements": {},
+            "courses": {},
+        });
+        let out = unified_value_to_string(&value, false).unwrap();
+        assert!(
+            !out.contains("conversion_warnings"),
+            "absent warnings must be omitted: {out}"
+        );
+    }
+
+    #[test]
+    fn test_parse_degree_auto_dispatches_by_shape() {
+        // YAML body → YAML loader, no conversion warnings.
+        let yaml = "degree:\n  name: Y\n  degree_type: BS\n  system_type: semester\n\
+                    requirements:\n  core:\n    type: all\n    courses: [CS101]\n\
+                    courses:\n  CS101:\n    prefix: CS\n    number: '101'\n    title: Intro\n    credits: 3\n";
+        let (p, w) = parse_degree_auto(yaml).unwrap();
+        assert_eq!(p.degree.name, "Y");
+        assert!(w.is_empty(), "YAML path emits no conversion warnings");
+
+        // Unified JSON body → JSON loader.
+        let json = r#"{"degree":{"name":"J","degree_type":"BS","system_type":"semester"},
+            "requirements":{"core":{"type":"all","courses":["CS101"]}},
+            "courses":{"CS101":{"name":"Intro","prefix":"CS","number":"101","credit_hours":3.0}}}"#;
+        let (p2, _) = parse_degree_auto(json).unwrap();
+        assert_eq!(p2.degree.name, "J");
+
+        // Raw ai-landscape JSON (leading '{') → auto-convert, surfacing warnings
+        // (the lone course has no course_hours, so credits are defaulted).
+        let land = r#"{"university":"U","degree":"BS in CS","ai_program":null,
+            "courses":{"cs_course_core":[{"course_code":"CS 101","title":"Intro",
+            "picklist":[],"prerequisites":[],"corequisites":[],"strict_corequisites":[]}]}}"#;
+        let (p3, w3) = parse_degree_auto(land).unwrap();
+        assert!(!p3.courses.is_empty());
+        assert!(
+            w3.iter().any(|m| m.to_lowercase().contains("credit")),
+            "missing course_hours should warn: {w3:?}"
+        );
+    }
+
+    #[test]
+    fn test_parse_degree_auto_sniffs_past_leading_whitespace() {
+        // Leading newlines/spaces must not defeat the `{`/`[` JSON sniff.
+        let json = "\n\n   {\"degree\":{\"name\":\"W\",\"degree_type\":\"BS\",\"system_type\":\"semester\"},\
+            \"requirements\":{\"core\":{\"type\":\"all\",\"courses\":[\"CS101\"]}},\
+            \"courses\":{\"CS101\":{\"name\":\"Intro\",\"prefix\":\"CS\",\"number\":\"101\",\"credit_hours\":3.0}}}";
+        let (p, _) = parse_degree_auto(json).unwrap();
+        assert_eq!(p.degree.name, "W");
+    }
+
+    #[test]
+    fn test_roundtrip_unified_json_structured_prereqs() {
+        let landscape = r#"{
+            "university": "Test U",
+            "degree": "Bachelor's of Science Computer Science",
+            "ai_program": null,
+            "courses": {
+                "cs_course_core": [
+                    {"course_code":"CS 101","title":"Intro","course_hours":"4","prerequisites":[]},
+                    {"course_code":"CS 201","title":"DS","course_hours":"4","prerequisites":[["CS 101"]]}
+                ]
+            }
+        }"#;
+
+        // Auto-convert from landscape shape.
+        let (program, _warn) = parse_degree_json_with_warnings(landscape).unwrap();
+        assert!(program.courses.contains_key("CS201"));
+
+        // Serialize to unified JSON: prereqs become the structured tagged form.
+        let unified = serialize_degree_json(&program, false).unwrap();
+        assert!(unified.contains("\"prerequisites\""));
+        assert!(!unified.contains("prerequisites_raw"));
+
+        // Re-parse the unified JSON (now the non-landscape branch) and confirm
+        // the prerequisite survives the round-trip.
+        let reparsed = parse_degree_json(&unified).unwrap();
+        assert_eq!(
+            reparsed.courses["CS201"].prerequisites_raw.as_deref(),
+            Some("CS101")
+        );
+    }
+
+    #[test]
+    fn test_parse_degree_json_invalid_json_errors() {
+        assert!(parse_degree_json_with_warnings("{ not json ").is_err());
+    }
+
+    #[test]
+    fn test_parse_degree_json_cluster_shape_errors_with_guidance() {
+        // A cluster pipeline file is neither landscape nor a unified degree, so
+        // the loader errors — and the message steers the user to `degree convert`.
+        let cluster = r#"{"course_verifier":{"CS BS":{"results":{
+            "university":"U","degree":"BS","courses":{
+                "cs_course_core":[{"course_code":"CS 101","title":"Intro","course_hours":"3","prerequisites":[]}]}}}}}"#;
+        let msg = parse_degree_json_with_warnings(cluster)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("course_scraper") || msg.contains("degree convert"),
+            "cluster files should be steered to `degree convert`; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_parse_degree_json_neither_shape_errors() {
+        // Valid JSON, `courses` maps a key to an object (so not landscape), but
+        // the value isn't a valid Course -> unified branch must surface an error.
+        let bad = r#"{"courses":{"CS1":{"credit_hours":"not-a-number"}}}"#;
+        assert!(parse_degree_json_with_warnings(bad).is_err());
+    }
+
+    #[test]
+    fn test_load_and_save_degree_json_file_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let landscape = dir.path().join("prog.json");
+        std::fs::write(
+            &landscape,
+            r#"{"university":"U","degree":"BS CS","ai_program":null,
+                "courses":{"cs_course_core":[
+                    {"course_code":"CS 201","title":"DS","course_hours":"4",
+                     "prerequisites":[["CS 101"]]}]}}"#,
+        )
+        .unwrap();
+
+        // Load auto-converts the landscape file.
+        let program = load_degree_from_json(&landscape).unwrap();
+        assert!(program.courses.contains_key("CS201"));
+
+        // Save to unified JSON and reload through the file path.
+        let unified = dir.path().join("prog.unified.json");
+        save_degree_to_json(&program, &unified).unwrap();
+        let reloaded = load_degree_from_json(&unified).unwrap();
+        assert_eq!(
+            reloaded.courses["CS201"].prerequisites_raw.as_deref(),
+            Some("CS101")
+        );
+    }
+
+    #[test]
+    fn test_detects_landscape_vs_unified() {
+        let landscape: Value =
+            serde_json::from_str(r#"{"courses":{"cs_course_core":[]}}"#).unwrap();
+        // empty arrays -> first value is array
+        assert!(looks_like_landscape(
+            &serde_json::from_str(r#"{"courses":{"core":[{"course_code":"CS1"}]}}"#).unwrap()
+        ));
+        // unified: course keys map to objects
+        assert!(!looks_like_landscape(
+            &serde_json::from_str(r#"{"courses":{"CS1":{"name":"x"}}}"#).unwrap()
+        ));
+        let _ = landscape;
+    }
+}

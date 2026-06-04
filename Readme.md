@@ -1,6 +1,6 @@
 # NuAnalytics
 
-**Version 0.4.0**
+**Version 0.4.1**
 
 NuAnalytics is a Rust-based tool for analyzing computer science curricula. It computes detailed metrics about curriculum structure including complexity, blocking relationships, delay paths, and centrality measures to help understand how courses are organized and their impact on students.
 
@@ -16,7 +16,9 @@ It is based off the work of Greg Heileman, and CurricularAnalytics.org. Current 
 - **Curriculum Analysis**: Parse CSV-formatted curriculum files and analyze course dependencies
 - **Degree Program Validation**: Validate YAML-based degree programs with comprehensive checks
 - **Degree Plan Generation**: Generate all possible degree plans and compute aggregate statistics
-- **Degree Trim** *(new in 0.4.0)*: Collapse a degree YAML to one walkable shortest-path-per-course variant — useful for visualisation and downstream tools that don't reason about alternatives. Protected major subjects keep all options; pattern pools survive orphan pruning.
+- **Unified JSON Degree Format** *(new in 0.4.1)*: Author and analyze degrees as JSON as well as YAML — every `degree` subcommand auto-detects the format on load. `degree convert` turns ai-landscape program JSON into the unified format, and `degree schema` emits its JSON Schema for downstream validation.
+- **Parallel Batch Analysis** *(new in 0.4.1)*: `degree analyze -j N` runs a process-isolated worker pool (default 8) so a pathological degree (e.g. a full-catalog scrape) can't take down the whole batch; failures are logged and the run continues.
+- **Degree Trim** *(new in 0.4.0)*: Collapse a degree to one walkable shortest-path-per-course variant — useful for visualisation and downstream tools that don't reason about alternatives. Protected major subjects keep all options; pattern pools survive orphan pruning. Accepts YAML or JSON and round-trips the input format.
 - **Gen-Ed Tracking**: Track how major courses satisfy general education requirements
 - **Graph Analysis**: Build and analyze course prerequisite graphs
 - **Curriculum Auditing**: Identify issues like missing prerequisites and complex prerequisite chains
@@ -31,7 +33,7 @@ It is based off the work of Greg Heileman, and CurricularAnalytics.org. Current 
   - **Markdown**: Text-based reports for documentation
 - **Term Scheduling**: Automatic course scheduling respecting prerequisites and credit limits
 - **Configuration Management**: Flexible configuration system with CLI overrides
-- **MCP Server** (optional): AI model integration for interactive degree building via Model Context Protocol, including a `trim_degree` tool that pipes a fresh `cache:<hash>` handle back for chained `validate_degree` / `audit_degree` calls.
+- **MCP Server** (optional): AI model integration for interactive degree building via Model Context Protocol. Degree tools accept YAML, unified JSON, or raw ai-landscape JSON; `convert_degree` *(new in 0.4.1)* converts ai-landscape JSON to the unified format and `get_degree_json_schema` *(new in 0.4.1)* returns the machine schema. The `trim_degree` tool pipes a fresh `cache:<hash>` handle back for chained `validate_degree` / `audit_degree` calls.
 - **Authenticated Database Access** *(behavior change in 0.4.0)*: Supabase reads and writes both require a logged-in user (`nuanalytics db login`); session tokens auto-refresh.
 
 ## Quick Start

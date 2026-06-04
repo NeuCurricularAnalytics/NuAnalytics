@@ -102,7 +102,7 @@ impl Default for CourseAggregator {
 }
 
 /// Aggregated statistics for a single course across all plans
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AggregatedCourseStats {
     /// Course identifier
     pub course_id: String,
@@ -119,7 +119,7 @@ pub struct AggregatedCourseStats {
 }
 
 /// Statistics for a single metric
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MetricStats {
     /// Minimum value
     pub min: f64,
@@ -200,7 +200,7 @@ impl MetricStats {
 }
 
 /// Degree-level aggregated statistics
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AggregatedDegreeStats {
     /// Total plans processed
     pub plan_count: usize,

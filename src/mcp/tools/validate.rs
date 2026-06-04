@@ -4,7 +4,7 @@
 //! and returns structured feedback.
 
 use crate::core::degree::audit::{detect_lowest_course_level, find_upper_level_without_prereqs};
-use crate::core::degree::{parse_degree_yaml, DegreeParseError, RequirementResolver};
+use crate::core::degree::{parse_degree_auto, DegreeParseError, RequirementResolver};
 use crate::core::models::degree::{FromClause, Requirement, RequirementType};
 use crate::core::models::CourseGraph;
 use crate::core::{
@@ -136,6 +136,11 @@ pub struct ValidationResponse {
     pub errors: Vec<ValidationErrorInfo>,
     /// List of validation warnings
     pub warnings: Vec<ValidationWarningInfo>,
+    /// Warnings emitted while converting a non-unified input (e.g. an
+    /// ai-landscape JSON body): defaulted credit hours, collapsed corequisite
+    /// choices, etc. Empty when the input was already YAML / unified JSON.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub conversion_warnings: Vec<String>,
     /// Context about what's defined in the degree
     pub context: Option<DegreeContext>,
     /// Pool resolution for every requirement that uses a `from` clause.
@@ -188,13 +193,13 @@ pub fn execute(
     allow_unmatched_patterns: bool,
     include_hidden_prereq_warnings: bool,
 ) -> ValidationResponse {
-    // Try to parse the YAML
-    let program = match parse_degree_yaml(yaml_content) {
-        Ok(p) => p,
+    // Parse the degree (YAML or unified/ai-landscape JSON, auto-detected).
+    let (program, conversion_warnings) = match parse_degree_auto(yaml_content) {
+        Ok((p, w)) => (p, w),
         Err(e) => {
             let (line, column) = match &e {
                 DegreeParseError::YamlError { line, column, .. } => (*line, *column),
-                DegreeParseError::IoError(_) => (None, None),
+                DegreeParseError::IoError(_) | DegreeParseError::JsonError(_) => (None, None),
             };
             let context = match (line, column) {
                 (Some(l), Some(c)) => Some(format_yaml_context(yaml_content, l, c)),
@@ -202,6 +207,7 @@ pub fn execute(
             };
             return ValidationResponse {
                 is_valid: false,
+                conversion_warnings: vec![],
                 parse_error: Some(format_degree_parse_error(&e)),
                 parse_error_line: line,
                 parse_error_column: column,
@@ -268,6 +274,7 @@ pub fn execute(
 
     ValidationResponse {
         is_valid: result.is_valid,
+        conversion_warnings,
         parse_error: None,
         parse_error_line: None,
         parse_error_column: None,
@@ -685,6 +692,41 @@ const fn requirement_type_label(req_type: &RequirementType) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validate_accepts_unified_json_content() {
+        // Proves the tool now accepts unified-JSON bodies, not just YAML.
+        let json = r#"{"degree":{"name":"J","degree_type":"BS","system_type":"semester"},
+            "requirements":{"core":{"type":"all","courses":["CS101"]}},
+            "courses":{"CS101":{"name":"Intro","prefix":"CS","number":"101","credit_hours":3.0}}}"#;
+        let r = execute(json, false, true);
+        assert!(
+            r.parse_error.is_none(),
+            "unified-JSON content must parse: {:?}",
+            r.parse_error
+        );
+        assert!(
+            r.conversion_warnings.is_empty(),
+            "already-unified input needs no conversion"
+        );
+    }
+
+    #[test]
+    fn validate_accepts_ai_landscape_json_and_surfaces_warnings() {
+        let land = r#"{"university":"U","degree":"BS in CS","ai_program":null,
+            "courses":{"cs_course_core":[{"course_code":"CS 101","title":"Intro",
+            "picklist":[],"prerequisites":[],"corequisites":[],"strict_corequisites":[]}]}}"#;
+        let r = execute(land, false, true);
+        assert!(
+            r.parse_error.is_none(),
+            "raw ai-landscape JSON must auto-convert on validate: {:?}",
+            r.parse_error
+        );
+        assert!(
+            !r.conversion_warnings.is_empty(),
+            "defaulted credit hours should surface as a conversion warning"
+        );
+    }
 
     const VALID_YAML: &str = r#"
 degree:

@@ -25,6 +25,9 @@ pub enum DegreeParseError {
         /// 1-indexed source column, when known.
         column: Option<usize>,
     },
+
+    /// JSON parse/serialize error (unified JSON or ai-landscape input).
+    JsonError(String),
 }
 
 impl DegreeParseError {
@@ -38,6 +41,12 @@ impl DegreeParseError {
             column: None,
         }
     }
+
+    /// Construct a `JsonError` from a message.
+    #[must_use]
+    pub fn json_message(message: impl Into<String>) -> Self {
+        Self::JsonError(message.into())
+    }
 }
 
 impl std::fmt::Display for DegreeParseError {
@@ -45,6 +54,7 @@ impl std::fmt::Display for DegreeParseError {
         match self {
             Self::IoError(msg) => write!(f, "IO Error: {msg}"),
             Self::YamlError { message, .. } => write!(f, "YAML Parse Error: {message}"),
+            Self::JsonError(msg) => write!(f, "JSON Parse Error: {msg}"),
         }
     }
 }
@@ -104,8 +114,11 @@ pub fn parse_degree_yaml(yaml_content: &str) -> Result<DegreeProgram, DegreePars
     Ok(program)
 }
 
-/// Helper to populate `prerequisites` vector from `prerequisites_raw` string
-fn resolve_prerequisites(program: &mut DegreeProgram) {
+/// Helper to populate `prerequisites` vector from `prerequisites_raw` string.
+///
+/// Shared by the JSON parser so YAML and JSON inputs run the same
+/// preprocessing stage.
+pub(crate) fn resolve_prerequisites(program: &mut DegreeProgram) {
     for course in program.courses.values_mut() {
         if let Some(raw) = &course.prerequisites_raw {
             if course.prerequisites.is_empty() {
@@ -243,6 +256,7 @@ courses: {}
                 assert!(column.is_some());
             }
             DegreeParseError::IoError(msg) => panic!("expected YamlError, got IoError({msg})"),
+            DegreeParseError::JsonError(msg) => panic!("expected YamlError, got JsonError({msg})"),
         }
     }
 

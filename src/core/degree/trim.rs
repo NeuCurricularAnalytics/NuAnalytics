@@ -971,6 +971,7 @@ mod tests {
         Requirement {
             name: None,
             req_type: RequirementType::All,
+            tags: None,
             category: None,
             courses: Some(courses.into_iter().map(str::to_string).collect()),
             from: None,
@@ -1103,6 +1104,7 @@ mod tests {
         let select_req = Requirement {
             name: Some("pick 2".to_string()),
             req_type: RequirementType::Select,
+            tags: None,
             category: None,
             courses: None,
             from: Some(empty_from_with_courses(vec![
@@ -1135,6 +1137,7 @@ mod tests {
         let req = Requirement {
             name: None,
             req_type: RequirementType::All,
+            tags: None,
             category: None,
             courses: Some(vec!["{BIO100, BIO200}".to_string()]),
             from: None,
@@ -1160,6 +1163,7 @@ mod tests {
         let req = Requirement {
             name: None,
             req_type: RequirementType::All,
+            tags: None,
             category: None,
             courses: Some(vec!["{CS530, CS535}".to_string()]),
             from: None,
@@ -1187,6 +1191,7 @@ mod tests {
         let req = Requirement {
             name: None,
             req_type: RequirementType::All,
+            tags: None,
             category: None,
             courses: Some(vec!["{BIO100, BIO200}".to_string()]),
             from: None,
@@ -1216,6 +1221,7 @@ mod tests {
         let req = Requirement {
             name: None,
             req_type: RequirementType::All,
+            tags: None,
             category: None,
             courses: Some(vec!["{MATH215, MATH241}".to_string()]),
             from: None,
@@ -1264,6 +1270,7 @@ mod tests {
         let req = Requirement {
             name: None,
             req_type: RequirementType::All,
+            tags: None,
             category: None,
             courses: Some(vec!["{MATH215, MATH241}".to_string()]),
             from: None,
@@ -1302,6 +1309,7 @@ mod tests {
         let req = Requirement {
             name: None,
             req_type: RequirementType::Select,
+            tags: None,
             category: None,
             courses: None,
             from: Some(FromClause {
@@ -1406,6 +1414,7 @@ mod tests {
         let req = Requirement {
             name: None,
             req_type: RequirementType::All,
+            tags: None,
             category: None,
             courses: Some(vec!["{MATH215, MATH241}".to_string()]),
             from: None,
@@ -1447,6 +1456,7 @@ mod tests {
         let req = Requirement {
             name: None,
             req_type: RequirementType::Select,
+            tags: None,
             category: None,
             courses: None,
             from: Some(FromClause {
@@ -1502,6 +1512,7 @@ mod tests {
         let req = Requirement {
             name: None,
             req_type: RequirementType::Select,
+            tags: None,
             category: None,
             courses: None,
             from: Some(FromClause {
@@ -1551,6 +1562,7 @@ mod tests {
         let req = Requirement {
             name: None,
             req_type: RequirementType::Select,
+            tags: None,
             category: None,
             courses: None,
             from: Some(FromClause {
@@ -1591,6 +1603,7 @@ mod tests {
         let nested = Requirement {
             name: None,
             req_type: RequirementType::Select,
+            tags: None,
             category: None,
             courses: None,
             from: Some(FromClause {
@@ -1615,6 +1628,7 @@ mod tests {
         let outer = Requirement {
             name: None,
             req_type: RequirementType::OneOf,
+            tags: None,
             category: None,
             courses: None,
             from: None,
@@ -1641,6 +1655,7 @@ mod tests {
         let req = Requirement {
             name: None,
             req_type: RequirementType::All,
+            tags: None,
             category: None,
             courses: Some(vec![
                 "CS100".to_string(),
@@ -1724,6 +1739,7 @@ mod tests {
         let select_req = Requirement {
             name: None,
             req_type: RequirementType::Select,
+            tags: None,
             category: None,
             courses: None,
             from: Some(empty_from_with_courses(vec![

@@ -136,6 +136,14 @@ The server uses stdio transport, compatible with any MCP client. Configure your 
 
 ## Available Tools
 
+> **Input formats.** The degree tools (`validate_degree`, `audit_degree`,
+> `trim_degree`, `analyze_degree`, `get_course_detail`) accept YAML, unified
+> JSON, or raw ai-landscape JSON in their `yaml_content` parameter — the
+> format is auto-detected, and ai-landscape shapes are converted on the fly.
+> They also accept a `cache:<hash>` handle (from `cache_yaml` or
+> `convert_degree`) as `degree_id`. When the input is ai-landscape JSON, any
+> assumptions made during conversion are reported as `conversion_warnings`.
+
 ### `get_degree_schema`
 
 Returns documentation about the degree YAML format.
@@ -149,6 +157,24 @@ Returns documentation about the degree YAML format.
 - "Show me the degree schema" → calls with `section: "all"`
 - "What fields go in the degree section?" → calls with `section: "degree"`
 - "Give me an example degree YAML" → calls with `section: "examples"`
+
+### `get_degree_json_schema`
+
+Returns the machine-validatable JSON Schema (draft 2020-12) for the unified
+degree format — the structure `convert_degree` produces and that
+`validate_degree` / `analyze_degree` / `trim_degree` accept. Use it to
+validate a unified degree document or to understand the format
+programmatically, including wildcard `from` pools (e.g. pattern `"CS:2500+"`
+or `"*:*"`). It is the same schema the CLI emits via `degree schema`.
+
+This is distinct from `get_degree_schema`, which returns the *human-readable
+YAML* reference.
+
+**Parameters:** none.
+
+**Example Prompts:**
+- "Give me the JSON Schema for a degree" → calls `get_degree_json_schema`
+- "What does a valid unified degree document look like?" → calls `get_degree_json_schema`
 
 ### `validate_degree`
 
@@ -278,6 +304,46 @@ prune even when no requirement names them explicitly.
 - "Trim this degree to a single path through alternatives" → calls `trim_degree`
 - "Also keep all MATH alternatives" → calls with `keep_all: ["MATH"]`
 - "Force MATH241 wherever possible" → calls with `include: ["MATH241"]`
+
+### `convert_degree`
+
+Converts an ai-landscape program JSON into the unified NuAnalytics degree
+JSON (the same format `analyze_degree` / `validate_degree` accept). Maps
+category lists and picklists to requirements, flips AND-of-OR prerequisites
+into the internal expression tree, and defaults missing credits (reported as
+`conversion_warnings`).
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `json_content` | string | One of `json_content` / `json_path` | Inline ai-landscape (or already-unified) program JSON |
+| `json_path` | string | One of `json_content` / `json_path` | Path to a JSON file on the MCP server's filesystem |
+| `program` | string | No | For a multi-program *cluster* pipeline file: the program to convert. Omit to get the cluster's program inventory instead. |
+| `pretty` | boolean | No | Pretty-print the `unified_json` body (default compact) |
+
+**Response Format:**
+```json
+{
+  "success": true,
+  "kind": "single",
+  "program_count": 1,
+  "unified_json": "{ ... unified degree JSON ... }",
+  "conversion_warnings": ["Course 'CS101' missing credits; assumed 3"],
+  "cache_id": "cache:9f3a…",
+  "note": "Pass cache_id as degree_id to validate_degree / analyze_degree to chain."
+}
+```
+
+The `cache_id` is a `cache:<hash>` handle for the converted body — pass its
+value to `validate_degree` / `analyze_degree` / `audit_degree` / `trim_degree`
+(as their `degree_id`) to chain without re-pasting the JSON. For a cluster
+pipeline file with no `program` set, `kind` is `"cluster"` and a `programs`
+array lists the available program names (pass one back as `program`).
+
+**Example Prompts:**
+- "Convert this ai-landscape program to the unified format" → calls with `json_content: "…"`
+- "What programs are in this cluster file?" → calls with `json_path: "…"`, no `program`
+- "Convert the BSCS program from that cluster and analyze it" → `convert_degree` then `analyze_degree` with the returned `degree_id`
 
 ### `analyze_degree`
 

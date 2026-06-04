@@ -1,5 +1,6 @@
 //! Course model
 
+use crate::core::prerequisite_parser::PrereqExpr;
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Variable credit range for courses with flexible credits
@@ -85,14 +86,22 @@ where
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum PrereqRaw {
+        /// A boolean-expression string (YAML form), e.g. "(CS101 | CS102) & CS103",
+        /// or a bare single-course leaf, e.g. "CS101".
         String(String),
+        /// Legacy resolved prerequisite list (ignored; not the raw form).
         Vec(Vec<String>),
+        /// Unified-JSON structured form: a `{"and"|"or": [...]}` tagged object.
+        Expr(PrereqExpr),
         Null,
     }
 
     match PrereqRaw::deserialize(deserializer)? {
         PrereqRaw::String(s) => Ok(Some(s)),
         PrereqRaw::Vec(_v) => Ok(None), // Vec is resolved prerequisites, not raw
+        // Collapse the structured tree back into the canonical boolean string so
+        // the rest of the pipeline (trim, course graph, resolver) is unchanged.
+        PrereqRaw::Expr(expr) => Ok(Some(expr.to_expression_string())),
         PrereqRaw::Null => Ok(None),
     }
 }
@@ -177,6 +186,11 @@ pub struct Course {
     /// Variable credit range (alternative to fixed `credit_hours`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub credit_range: Option<CreditRange>,
+
+    /// Classification tags (e.g., `["ai"]`). Generalizes the ai-landscape
+    /// course categories so the unified format is program-agnostic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
 }
 
 impl Course {
@@ -209,6 +223,7 @@ impl Course {
             repeatable: None,
             max_repeat_credits: None,
             credit_range: None,
+            tags: None,
         }
     }
 
@@ -246,6 +261,7 @@ impl Course {
             repeatable: None,
             max_repeat_credits: None,
             credit_range: None,
+            tags: None,
         }
     }
 
@@ -318,6 +334,15 @@ impl Course {
     /// Set the canonical name
     pub fn set_canonical_name(&mut self, name: String) {
         self.canonical_name = Some(name);
+    }
+
+    /// Add a classification tag (e.g. `"ai"`), creating the tag list if needed
+    /// and skipping duplicates.
+    pub fn add_tag(&mut self, tag: &str) {
+        let tags = self.tags.get_or_insert_with(Vec::new);
+        if !tags.iter().any(|t| t == tag) {
+            tags.push(tag.to_string());
+        }
     }
 }
 
@@ -397,6 +422,51 @@ mod tests {
         course.add_corequisite("PHYS1152".to_string());
         assert_eq!(course.corequisites.len(), 1);
         assert_eq!(course.corequisites[0], "PHYS1152");
+    }
+
+    #[test]
+    fn test_deserialize_structured_prereq_object_into_raw_string() {
+        // Unified-JSON structured tagged prereqs collapse to the canonical
+        // boolean string (the OR child of the AND is parenthesized).
+        let json = r#"{
+            "name": "Data Structures", "prefix": "CS", "number": "201",
+            "credit_hours": 4.0,
+            "prerequisites": {"and": ["CS101", {"or": ["CS102", "CS103"]}]}
+        }"#;
+        let course: Course = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            course.prerequisites_raw.as_deref(),
+            Some("CS101 & (CS102 | CS103)")
+        );
+    }
+
+    #[test]
+    fn test_deserialize_bare_string_prereq_passthrough() {
+        let json = r#"{"name":"X","prefix":"CS","number":"2","credit_hours":3.0,
+                       "prerequisites":"CS101 | CS102"}"#;
+        let course: Course = serde_json::from_str(json).unwrap();
+        assert_eq!(course.prerequisites_raw.as_deref(), Some("CS101 | CS102"));
+    }
+
+    #[test]
+    fn test_deserialize_null_prereq_is_none() {
+        let json = r#"{"name":"X","prefix":"CS","number":"1","credit_hours":3.0,
+                       "prerequisites":null}"#;
+        let course: Course = serde_json::from_str(json).unwrap();
+        assert!(course.prerequisites_raw.is_none());
+    }
+
+    #[test]
+    fn test_add_tag_dedups_and_creates() {
+        let mut course = Course::new("X".into(), "CS".into(), "1".into(), 3.0);
+        assert!(course.tags.is_none());
+        course.add_tag("ai");
+        course.add_tag("ai"); // duplicate ignored
+        course.add_tag("core");
+        assert_eq!(
+            course.tags.as_deref(),
+            Some(&["ai".to_string(), "core".to_string()][..])
+        );
     }
 
     #[test]

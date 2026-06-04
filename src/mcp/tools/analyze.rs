@@ -9,7 +9,7 @@
 //! without duplicating ~50 lines of orchestration.
 
 use crate::core::degree::{
-    parse_degree_yaml, DegreeParseError, PlanGenerationStats, PlanGenerator, PlanGeneratorConfig,
+    parse_degree_auto, DegreeParseError, PlanGenerationStats, PlanGenerator, PlanGeneratorConfig,
     PlanSelector, PlanSelectorConfig, PlanVariant, SamplingStrategy, SelectedPlans,
 };
 use crate::core::metrics::compute_all_metrics;
@@ -505,7 +505,10 @@ pub(crate) fn build_artifacts(
         .clamp(MIN_ANALYSIS_TIMEOUT_SECS, MAX_ANALYSIS_TIMEOUT_SECS);
     let deadline = Some(Instant::now() + Duration::from_secs(timeout_secs));
 
-    let program = parse_degree_yaml(yaml_content).map_err(|e| format_parse_error(&e))?;
+    // Accept YAML or unified/ai-landscape JSON (auto-detected). Conversion
+    // warnings are surfaced by validate_degree / convert_degree, not here.
+    let (program, _conversion_warnings) =
+        parse_degree_auto(yaml_content).map_err(|e| format_parse_error(&e))?;
 
     let school = build_school(&program);
     let mut graph_result = CourseGraph::from_degree_program(&program);
@@ -1014,10 +1017,7 @@ pub fn execute_json(
 // ============================================================================
 
 fn format_parse_error(e: &DegreeParseError) -> String {
-    match e {
-        DegreeParseError::IoError(msg) => format!("File error: {msg}"),
-        DegreeParseError::YamlError { message, .. } => format!("YAML syntax error: {message}"),
-    }
+    crate::mcp::tools::shared::format_degree_parse_error(e)
 }
 
 pub(super) const fn metric_stats_json(s: &MetricStats) -> MetricStatsJson {

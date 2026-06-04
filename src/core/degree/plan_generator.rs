@@ -30,8 +30,15 @@ use crate::core::models::degree::Requirement;
 use fastrand::Rng;
 use std::collections::{HashMap, HashSet};
 
-/// Categories that should be enumerated for plan generation
-const ENUMERABLE_CATEGORIES: [&str; 1] = ["major"];
+/// Categories whose requirements are enumerated as plan-variation choice points.
+///
+/// `elective` is included so a "choose k of N" elective pool actually produces
+/// plan variety; without it every converted program collapsed to a single plan
+/// (`variations_run = 1`). Oversized pools stay memory-safe because the resolver
+/// caps how many combinations it materializes (see `MAX_MATERIALIZED_COMBINATIONS`).
+/// `gen_ed`/`supporting` are deliberately excluded — they keep their flat,
+/// credit-reducing treatment.
+const ENUMERABLE_CATEGORIES: [&str; 2] = ["major", "elective"];
 
 // ============================================================================
 // Helper Functions
@@ -763,10 +770,12 @@ impl<'a> PlanGenerator<'a> {
         if self.major_requirements.is_empty() {
             return 1; // Single plan with no major choices
         }
+        // Saturating product: a capped elective pool can still push the nominal
+        // plan space past usize::MAX, and overflow would panic in debug builds.
         self.major_requirements
             .iter()
             .map(|r| r.choice_count.max(1))
-            .product()
+            .fold(1usize, usize::saturating_mul)
     }
 
     /// Get statistics about the plan space
@@ -1337,6 +1346,7 @@ mod tests {
             Requirement {
                 name: Some("Core".to_string()),
                 req_type: RequirementType::All,
+                tags: None,
                 category: Some("major".to_string()),
                 courses: Some(vec!["CS1000".to_string(), "CS2000".to_string()]),
                 from: None,
@@ -1354,6 +1364,7 @@ mod tests {
             Requirement {
                 name: Some("Elective".to_string()),
                 req_type: RequirementType::Select,
+                tags: None,
                 category: Some("major".to_string()),
                 courses: None,
                 from: Some(FromClause {
@@ -1390,6 +1401,59 @@ mod tests {
 
         // 1 fixed * 3 choices = 3 plans
         assert_eq!(generator.estimate_plan_count(), 3);
+    }
+
+    #[test]
+    fn test_elective_category_is_enumerated() {
+        // Bug B: a `category: "elective"` select must now contribute to the plan
+        // space. Previously only "major" was enumerated, collapsing converted
+        // programs to a single plan.
+        let courses = sample_courses();
+
+        // Baseline (core fixed + a major 1-of-3 select) = 3 plans.
+        let base = PlanGenerator::new(
+            &sample_requirements(),
+            &courses,
+            PlanGeneratorConfig::default(),
+        );
+        assert_eq!(base.estimate_plan_count(), 3);
+
+        // Add an elective-category select (choose 1 of 3): 3 -> 9.
+        let mut reqs = sample_requirements();
+        reqs.insert(
+            "free_choice".to_string(),
+            Requirement {
+                name: Some("Free Choice".to_string()),
+                req_type: RequirementType::Select,
+                tags: None,
+                category: Some("elective".to_string()),
+                courses: None,
+                from: Some(FromClause {
+                    courses: Some(vec![
+                        "CS1000".to_string(),
+                        "CS2000".to_string(),
+                        "CS3000".to_string(),
+                    ]),
+                    pattern: None,
+                    include: None,
+                    exclude: None,
+                    groups: None,
+                    groups_required: None,
+                    per_group: None,
+                }),
+                count: Some(1),
+                credits: None,
+                credit_range: None,
+                constraints: None,
+                options: None,
+            },
+        );
+        let generator = PlanGenerator::new(&reqs, &courses, PlanGeneratorConfig::default());
+        assert_eq!(
+            generator.estimate_plan_count(),
+            9,
+            "an elective-category select(1 of 3) must multiply the plan space 3 -> 9"
+        );
     }
 
     #[test]
@@ -1486,6 +1550,7 @@ mod tests {
             Requirement {
                 name: Some("Gen Ed Math".to_string()),
                 req_type: RequirementType::Select,
+                tags: None,
                 category: Some("gen_ed".to_string()),
                 courses: None,
                 from: Some(FromClause {

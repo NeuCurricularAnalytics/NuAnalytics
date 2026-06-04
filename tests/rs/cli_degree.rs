@@ -674,8 +674,8 @@ fn test_degree_trim_skips_non_yaml_and_proceeds() {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Skipping non-YAML file") && stderr.contains("Readme.md"),
-        "stderr should warn about the non-YAML input; got: {stderr}"
+        stderr.contains("Skipping non-degree") && stderr.contains("Readme.md"),
+        "stderr should warn about the non-degree input; got: {stderr}"
     );
     assert!(
         temp_dir
@@ -687,9 +687,9 @@ fn test_degree_trim_skips_non_yaml_and_proceeds() {
 }
 
 /// All-invalid input list: every file is filtered out, command fails with
-/// the dedicated "no YAML files to process" error.
+/// the dedicated "no degree files to process" error.
 #[test]
-fn test_degree_trim_rejects_all_non_yaml_inputs() {
+fn test_degree_trim_rejects_all_non_degree_inputs() {
     let output = Command::new("cargo")
         .args(["run", "--", "degree", "trim", "Readme.md", "Cargo.toml"])
         .output()
@@ -697,12 +697,127 @@ fn test_degree_trim_rejects_all_non_yaml_inputs() {
 
     assert!(
         !output.status.success(),
-        "trim must fail when no YAML inputs survive filtering"
+        "trim must fail when no degree inputs survive filtering"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("No YAML files to process after filtering"),
+        stderr.contains("No degree files to process after filtering"),
         "stderr should explain the empty-after-filter state; got: {stderr}"
+    );
+}
+
+/// Trim accepts a unified-JSON input and round-trips the format: the trimmed
+/// file is written as JSON (not YAML), preserving the `.json` extension.
+#[test]
+fn test_degree_trim_accepts_json_and_writes_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let input = dir.path().join("prog.unified.json");
+    write_min_degree(&input, "json-trim");
+    let out = dir.path().join("out");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "trim"])
+        .arg(&input)
+        .arg("-o")
+        .arg(format!("{}/", out.display()))
+        .output()
+        .expect("run trim on json");
+    assert!(
+        output.status.success(),
+        "trim should accept JSON input. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let trimmed = out.join("prog.unified_trimmed.json");
+    assert!(
+        trimmed.exists(),
+        "trimmed JSON should be written at {trimmed:?}"
+    );
+    let body = std::fs::read_to_string(&trimmed).unwrap();
+    assert!(
+        body.trim_start().starts_with('{'),
+        "output must be JSON, not YAML; got: {}",
+        &body[..body.len().min(40)]
+    );
+    assert!(
+        body.contains("\"degree\""),
+        "trimmed JSON keeps the degree block"
+    );
+}
+
+/// A mixed batch (one YAML + one JSON) processes both, and each output keeps
+/// its input format: YAML→`.yaml`, JSON→`.json`.
+#[test]
+fn test_degree_trim_batch_mixed_yaml_and_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let json_input = dir.path().join("prog.unified.json");
+    write_min_degree(&json_input, "mixed-json");
+    let out = dir.path().join("trimmed");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args([
+            "degree",
+            "trim",
+            "samples/degrees/neu-khoury-bscs-boston.yaml",
+        ])
+        .arg(&json_input)
+        .arg("-o")
+        .arg(format!("{}/", out.display()))
+        .output()
+        .expect("run trim on mixed batch");
+    assert!(
+        output.status.success(),
+        "trim must process a mixed YAML+JSON batch. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let yaml_out = out.join("neu-khoury-bscs-boston_trimmed.yaml");
+    let json_out = out.join("prog.unified_trimmed.json");
+    assert!(
+        yaml_out.exists(),
+        "YAML input should yield .yaml at {yaml_out:?}"
+    );
+    assert!(
+        json_out.exists(),
+        "JSON input should yield .json at {json_out:?}"
+    );
+    assert!(
+        std::fs::read_to_string(&json_out)
+            .unwrap()
+            .trim_start()
+            .starts_with('{'),
+        "JSON output must be JSON, not YAML"
+    );
+    assert!(
+        std::fs::read_to_string(&yaml_out)
+            .unwrap()
+            .contains("degree:"),
+        "YAML output must stay YAML"
+    );
+}
+
+/// The overwrite guard applies to JSON inputs too: `-o <input.json>` is refused.
+#[test]
+fn test_degree_trim_refuses_to_overwrite_json_input() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let input = dir.path().join("prog.unified.json");
+    write_min_degree(&input, "json-self");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "trim"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&input)
+        .output()
+        .expect("run trim with -o == input");
+    assert!(
+        !output.status.success(),
+        "trim must refuse to overwrite a JSON input in place"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("refusing to overwrite"),
+        "stderr should explain the refusal; got: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 
@@ -799,4 +914,296 @@ fn test_degree_trim_keep_all_preserves_extra_subject() {
         keep_math_count > default_count,
         "--keep-all MATH should preserve more MATH references (got default={default_count}, keep-math={keep_math_count})"
     );
+}
+
+// ---------------------------------------------------------------------------
+// degree convert (ai-landscape -> unified JSON)
+// ---------------------------------------------------------------------------
+
+/// `degree convert` turns a raw ai-landscape program file into unified JSON
+/// with structured prerequisites, then that unified file re-parses cleanly
+/// (round-trip), including the AND/OR flip and structured prereq form.
+#[test]
+fn test_degree_convert_landscape_round_trip() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let input = dir.path().join("prog.json");
+    // outer list = AND, inner list = OR  ->  (CS101 | CS102) & CS103
+    std::fs::write(
+        &input,
+        r#"{
+            "university": "Test U",
+            "degree": "Bachelor of Science Computer Science",
+            "ai_program": "Minor",
+            "courses": {
+                "cs_course_core": [
+                    {"course_code":"CS 103","title":"DS","course_hours":"4",
+                     "prerequisites":[["CS 101","CS 102"],["CS 103"]]}
+                ]
+            }
+        }"#,
+    )
+    .unwrap();
+    let out = dir.path().join("prog.unified.json");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "convert"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&out)
+        .arg("--pretty")
+        .output()
+        .expect("run convert");
+    assert!(status.status.success(), "convert should succeed");
+
+    let text = std::fs::read_to_string(&out).expect("unified output written");
+    // Structured tagged prereqs, not the raw string field.
+    assert!(text.contains("\"prerequisites\""));
+    assert!(!text.contains("prerequisites_raw"));
+    assert!(text.contains("\"and\"") && text.contains("\"or\""));
+    // Program tagged as AI.
+    assert!(text.contains("\"ai\""));
+
+    // The emitted unified JSON re-parses through the normal loader.
+    let program = nu_analytics::core::degree::load_degree_from_json(&out)
+        .expect("unified JSON should re-parse");
+    assert!(program.courses.contains_key("CS103"));
+    // Flip preserved: top-level AND with an inner OR group.
+    assert_eq!(
+        program.courses["CS103"].prerequisites_raw.as_deref(),
+        Some("(CS101 | CS102) & CS103")
+    );
+}
+
+/// `degree convert` on a *cluster* pipeline file expands to one unified JSON
+/// per program, named `<school-stem>__<program>.unified.json` under -o.
+/// Verifier wins over scraper; empty-course programs are skipped.
+#[test]
+fn test_degree_convert_cluster_expands_to_multiple_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // File stem ("bigu") becomes the <School> half of each output name.
+    let input = dir.path().join("bigu.json");
+    std::fs::write(
+        &input,
+        r#"{
+            "course_verifier": {
+                "CS BS": {"results": {"university":"Big U","degree":"BS CS","ai_program":"Major","courses":{
+                    "cs_course_core":[{"course_code":"CS 101","title":"Intro","course_hours":"4","prerequisites":[]}]}}},
+                "AI Minor": {"results": {"university":"Big U","degree":"AI Minor","ai_program":"Minor","courses":{
+                    "ai_program_required_courses":[{"course_code":"AI 200","title":"AI","course_hours":"3","prerequisites":[["CS 101"]]}]}}},
+                "Empty": {"results": {"university":"Big U","degree":"X","courses":{"cs_course_core":[]}}}
+            }
+        }"#,
+    )
+    .unwrap();
+    let out_dir = dir.path().join("converted");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "convert"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&out_dir)
+        .output()
+        .expect("run convert cluster");
+    assert!(
+        output.status.success(),
+        "cluster convert should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // safe_filename maps spaces to '_', so "CS BS" -> "CS_BS".
+    let cs = out_dir.join("bigu__CS_BS.unified.json");
+    let ai = out_dir.join("bigu__AI_Minor.unified.json");
+    assert!(cs.exists(), "expected {}", cs.display());
+    assert!(ai.exists(), "expected {}", ai.display());
+    assert!(
+        !out_dir.join("bigu__Empty.unified.json").exists(),
+        "empty-course program must be skipped"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("2 program(s)"),
+        "should report 2 programs"
+    );
+
+    // Each emitted file re-parses through the normal loader.
+    let prog = nu_analytics::core::degree::load_degree_from_json(&ai)
+        .expect("cluster output should re-parse");
+    assert_eq!(
+        prog.courses["AI200"].prerequisites_raw.as_deref(),
+        Some("CS101")
+    );
+}
+
+/// Valid-but-unrecognized JSON is skipped (not a hard failure) in a convert batch.
+#[test]
+fn test_degree_convert_skips_non_degree_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let input = dir.path().join("checkpoint.json");
+    std::fs::write(&input, r#"{"checkpoint": 7, "status": "running"}"#).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "convert"])
+        .arg(&input)
+        .output()
+        .expect("run convert");
+    assert!(
+        output.status.success(),
+        "skipping a sidecar file must not fail the batch"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("skipped (not a degree/program/cluster file)"),
+        "should report the skip"
+    );
+}
+
+/// `degree schema` prints the unified-degree JSON Schema (valid JSON) to stdout.
+#[test]
+fn test_degree_schema_emits_valid_json() {
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "schema"])
+        .output()
+        .expect("run schema");
+    assert!(output.status.success(), "schema should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("emitted schema must be valid JSON");
+    assert_eq!(parsed["title"], "NuAnalytics Unified Degree Program");
+}
+
+/// Write a minimal analyzable unified degree JSON with a distinct id/name.
+#[cfg(test)]
+fn write_min_degree(path: &std::path::Path, id: &str) {
+    std::fs::write(
+        path,
+        format!(
+            r#"{{"degree":{{"name":"Test {id}","degree_type":"BS","system_type":"semester","id":"{id}"}},
+                "requirements":{{"core":{{"type":"all","courses":["CS101","CS102"]}}}},
+                "courses":{{
+                    "CS101":{{"name":"Intro","prefix":"CS","number":"101","credit_hours":3.0}},
+                    "CS102":{{"name":"DS","prefix":"CS","number":"102","credit_hours":3.0,"prerequisites":"CS101"}}
+                }}}}"#
+        ),
+    )
+    .unwrap();
+}
+
+/// A multi-file `degree analyze` runs the default worker pool (one process per
+/// file) and produces one report JSON per program.
+#[test]
+fn test_degree_analyze_parallel_pool_produces_reports() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for id in ["alpha", "beta", "gamma"] {
+        write_min_degree(&dir.path().join(format!("{id}.unified.json")), id);
+    }
+    let out = dir.path().join("metrics");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "analyze"])
+        .arg(dir.path().join("alpha.unified.json"))
+        .arg(dir.path().join("beta.unified.json"))
+        .arg(dir.path().join("gamma.unified.json"))
+        .args(["-j", "2", "--no-report", "--metrics-dir"])
+        .arg(&out)
+        .output()
+        .expect("run analyze pool");
+    assert!(
+        output.status.success(),
+        "pool run should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("worker process"),
+        "should use the pool: {stdout}"
+    );
+    assert!(
+        stdout.contains("analyzed 3/3"),
+        "should report 3/3: {stdout}"
+    );
+
+    let reports = std::fs::read_dir(&out)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with("_report.json"))
+        .count();
+    assert_eq!(reports, 3, "one report JSON per program");
+
+    // Single index.csv with exactly one header + three rows (no header race).
+    let index = std::fs::read_to_string(out.join("index.csv")).unwrap();
+    let lines: Vec<&str> = index.lines().collect();
+    assert_eq!(lines.len(), 4, "header + 3 rows; got {lines:?}");
+    assert_eq!(
+        index.matches("degree_id,degree_name").count(),
+        1,
+        "exactly one header row"
+    );
+}
+
+/// One failing file in the pool is isolated: it's logged and the run exits
+/// non-zero, but the other programs still produce reports.
+#[test]
+fn test_degree_analyze_parallel_isolates_failure() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_min_degree(&dir.path().join("good.unified.json"), "good");
+    std::fs::write(dir.path().join("bad.unified.json"), r#"{"not":"a degree"}"#).unwrap();
+    let out = dir.path().join("metrics");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "analyze"])
+        .arg(dir.path().join("good.unified.json"))
+        .arg(dir.path().join("bad.unified.json"))
+        .args(["-j", "2", "--no-report", "--metrics-dir"])
+        .arg(&out)
+        .output()
+        .expect("run analyze pool");
+    assert!(
+        !output.status.success(),
+        "a failing file makes the run exit non-zero"
+    );
+
+    let failures = std::fs::read_to_string(out.join("failures.log")).unwrap();
+    assert!(
+        failures.contains("bad.unified.json"),
+        "bad file logged: {failures}"
+    );
+    assert!(
+        out.join("good_report.json").exists(),
+        "the good program still produced its report"
+    );
+}
+
+/// `-j 1` forces the in-process path even for a multi-file batch: reports are
+/// still produced, but no worker-pool banner is printed.
+#[test]
+fn test_degree_analyze_jobs_one_runs_in_process() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for id in ["alpha", "beta"] {
+        write_min_degree(&dir.path().join(format!("{id}.unified.json")), id);
+    }
+    let out = dir.path().join("metrics");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .args(["degree", "analyze"])
+        .arg(dir.path().join("alpha.unified.json"))
+        .arg(dir.path().join("beta.unified.json"))
+        .args(["-j", "1", "--no-report", "--metrics-dir"])
+        .arg(&out)
+        .output()
+        .expect("run analyze in-process");
+    assert!(
+        output.status.success(),
+        "in-process run should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("worker process"),
+        "`-j 1` must not spawn the worker pool: {stdout}"
+    );
+
+    let reports = std::fs::read_dir(&out)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with("_report.json"))
+        .count();
+    assert_eq!(reports, 2, "one report JSON per program even in-process");
 }

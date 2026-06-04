@@ -25,6 +25,8 @@
 pub mod audit;
 pub mod course_reference;
 pub mod gen_ed_tracker;
+pub mod json_parser;
+pub mod landscape_convert;
 pub mod plan_generator;
 pub mod plan_selector;
 pub mod plan_validation;
@@ -52,6 +54,16 @@ pub use crate::core::models::DegreeProgram;
 pub use yaml_parser::{
     load_degree_from_yaml, parse_degree_yaml, save_degree_to_yaml, serialize_degree_yaml,
     DegreeParseError,
+};
+
+// JSON input/output (unified format) and ai-landscape conversion
+pub use json_parser::{
+    load_degree_from_json, parse_degree_auto, parse_degree_json, parse_degree_json_with_warnings,
+    save_degree_to_json, serialize_degree_json, to_unified_value, unified_value_to_string,
+};
+pub use landscape_convert::{
+    convert_landscape, convert_landscape_str, extract_cluster_programs, ConversionResult,
+    LandscapeProgram,
 };
 
 // Re-export course reference types

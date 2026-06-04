@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 use crate::core::degree::{
-    parse_degree_yaml, save_degree_to_yaml, serialize_degree_yaml, trim_program, DegreeParseError,
+    parse_degree_auto, save_degree_to_yaml, serialize_degree_yaml, trim_program, DegreeParseError,
     TrimOptions, TrimReport,
 };
 use crate::mcp::cache::YAML_CACHE;
@@ -162,8 +162,8 @@ pub fn execute(
     output_path: Option<&str>,
     source_path: Option<&str>,
 ) -> TrimResponse {
-    let program = match parse_degree_yaml(yaml_content) {
-        Ok(p) => p,
+    let program = match parse_degree_auto(yaml_content) {
+        Ok((p, _warnings)) => p,
         Err(e) => return parse_error_response(&e, yaml_content),
     };
 
@@ -269,7 +269,7 @@ const fn empty_response() -> TrimResponse {
 fn parse_error_response(e: &DegreeParseError, yaml: &str) -> TrimResponse {
     let (line, column) = match e {
         DegreeParseError::YamlError { line, column, .. } => (*line, *column),
-        DegreeParseError::IoError(_) => (None, None),
+        DegreeParseError::IoError(_) | DegreeParseError::JsonError(_) => (None, None),
     };
     let context = match (line, column) {
         (Some(l), Some(c)) => Some(format_yaml_context(yaml, l, c)),
