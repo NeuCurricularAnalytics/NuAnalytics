@@ -2517,11 +2517,19 @@ fn expand_courses_with_prerequisites(
     // - It was added as an OR-alternative for some course
     // - Another course in the plan would also satisfy that OR requirement
     // - OR an equivalent course is already in the plan
-    // BUT never remove protected courses (explicitly included by user)
+    // BUT only courses ADDED during expansion (Phase 1) may be pruned. Courses
+    // from the original plan are degree requirements (e.g. a `type: all` core
+    // course) and must never be dropped here — even when they also happen to be
+    // an OR-prerequisite alternative for some elective. Without this guard a
+    // required course like CS320 ("Algorithms"), which is also an OR option of
+    // an elective's prereq (`CS320 | CS370`), gets deleted whenever the sibling
+    // CS370 is present, silently dropping it from generated plans.
+    // `protected_courses` additionally pins user --include courses.
+    let original_courses: HashSet<&str> = courses.iter().map(String::as_str).collect();
     let expanded_clone = expanded.clone();
     let redundant = find_redundant_prerequisites(&expanded_clone, graph, equivalences);
     for course in redundant {
-        if !protected_courses.contains(&course) {
+        if !protected_courses.contains(&course) && !original_courses.contains(course.as_str()) {
             expanded.remove(&course);
         }
     }
@@ -2943,6 +2951,73 @@ fn print_separator() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression: a required course that is ALSO an OR-prerequisite alternative
+    /// for another course must survive Phase-2 redundancy pruning in
+    /// `expand_courses_with_prerequisites`. This mirrors the CSU bug where CS320
+    /// (a `type: all` core course, and the `CS320 | CS370` OR-prereq of an
+    /// elective) was silently dropped from generated plans whenever its OR
+    /// sibling CS370 was present — only courses ADDED during expansion may be
+    /// pruned, never the plan's own required courses.
+    #[test]
+    fn test_expand_preserves_required_or_alternative() {
+        let yaml = r#"
+degree:
+  id: regress-or-alt
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+requirements:
+  core:
+    name: Core
+    type: all
+    category: major
+    courses: [COR101, COR102]
+  upper:
+    name: Upper
+    type: all
+    category: major
+    courses: [UPP301, UPP401]
+courses:
+  COR101: {title: A, prefix: COR, number: "101", credits: 3}
+  COR102: {title: B, prefix: COR, number: "102", credits: 3}
+  UPP301: {title: X, prefix: UPP, number: "301", credits: 3, prerequisites_raw: "COR101 | COR102"}
+  UPP401: {title: Y, prefix: UPP, number: "401", credits: 3, prerequisites_raw: "COR101"}
+"#;
+        let tmp = tempfile::TempDir::new().expect("create tempdir");
+        let path = tmp.path().join("degree.yaml");
+        std::fs::write(&path, yaml).expect("write temp yaml");
+        let program = load_degree_from_yaml(&path).expect("parse degree");
+
+        let graph = CourseGraph::from_degree_program(&program).graph;
+        let equivalences = HashMap::new();
+        let exclude = HashSet::new();
+        let protected = HashSet::new();
+        // The plan as the generator produces it: both required core courses plus
+        // the two required upper courses.
+        let plan = vec![
+            "COR101".to_string(),
+            "COR102".to_string(),
+            "UPP301".to_string(),
+            "UPP401".to_string(),
+        ];
+        let expanded =
+            expand_courses_with_prerequisites(&plan, &graph, &equivalences, &exclude, &protected);
+
+        // COR102 is an OR-alternative of UPP301's `COR101 | COR102` prereq with no
+        // other dependents, while COR101 is independently required by UPP401 — so
+        // pre-fix COR102 was pruned as "redundant". It is a hard requirement and
+        // must survive expansion.
+        assert!(
+            expanded.contains(&"COR102".to_string()),
+            "required type:all course COR102 was dropped as a redundant OR-prereq: {expanded:?}"
+        );
+        assert!(
+            expanded.contains(&"COR101".to_string()),
+            "required core course COR101 must survive expansion: {expanded:?}"
+        );
+    }
 
     #[test]
     fn test_unique_stem_disambiguates_collisions() {
