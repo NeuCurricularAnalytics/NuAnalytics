@@ -1,5 +1,10 @@
 # Degree YAML Ingestion Implementation Plan
 
+> **Status:** the "future database storage" this plan anticipates is now
+> implemented — degrees import into the normalized program tables via the CLI
+> `db import` command and the `import_degree` MCP tool. See
+> [Database Setup → Stored programs (normalized)](database/setup.md#stored-programs-normalized).
+
 ## Overview
 
 Add degree YAML parsing and validation without plan extraction. Load degrees via CLI and test the structure. Incremental delivery focused on reading YAML, validating structure, and ensuring proper data representation for future database storage.

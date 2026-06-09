@@ -1,6 +1,6 @@
 [package]
 name = "nu-analytics"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
 authors = ["Albert Lionelle <a.lionelle@northeastern.edu>"]
 description = "A CLI tool for computing Curricular Analytics metrics. Based off metrics from CurricularAnalytics.org. Currently, only basic metrics and additional reporting features."
@@ -40,6 +40,7 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 csv = { version = "1.3", optional = true }
 zip = { version = "8", optional = true }
 form_urlencoded = { version = "1.2", optional = true }
+sha2 = { version = "0.10", optional = true }
 
 [dev-dependencies]
 tempfile = "3.10"
@@ -57,7 +58,7 @@ log-info = []
 log-debug = []
 verbose = []
 file-logging = []
-database = ["dep:supabase-client-sdk", "dep:reqwest", "dep:csv", "dep:zip", "dep:tokio", "dep:form_urlencoded"]
+database = ["dep:supabase-client-sdk", "dep:reqwest", "dep:csv", "dep:zip", "dep:tokio", "dep:form_urlencoded", "dep:sha2"]
 mcp = ["dep:rmcp", "dep:tokio", "database"]
 
 [profile.release]

@@ -27,6 +27,8 @@ pub mod completions;
 #[cfg(feature = "database")]
 pub mod degrees;
 #[cfg(feature = "database")]
+pub mod import;
+#[cfg(feature = "database")]
 pub mod institutions;
 #[cfg(feature = "database")]
 pub mod lookup;
@@ -65,6 +67,8 @@ pub use completions::{
 pub use degrees::{
     CompareDegreesRequest, GetDegreeRequest, SearchDegreesRequest, StoreDegreeRequest,
 };
+#[cfg(feature = "database")]
+pub use import::ImportDegreeRequest;
 #[cfg(feature = "database")]
 pub use institutions::{GetInstitutionRequest, SearchInstitutionsRequest};
 #[cfg(feature = "database")]

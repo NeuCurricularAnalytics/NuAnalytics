@@ -111,15 +111,28 @@ The schema creates:
 
 ### Step 4b — Seed the lookup and CIP tables
 
-After the schema, run these two files in the SQL Editor. Order matters.
+After the schema, run these files in the SQL Editor. Order matters.
 
 ```
-docs/database/schema.sql      ← run first (creates tables + indexes + RLS policies)
-docs/database/cip-seed.sql    ← run second (populates cip_codes — 2,173 CIP 2020 codes)
-docs/database/lookup-seed.sql ← run third (populates award_levels, carnegie_class, locale, etc.)
+docs/database/schema.sql               ← run first (creates tables + indexes + RLS policies)
+docs/database/cip-seed.sql             ← run second (populates cip_codes — 2,173 CIP 2020 codes)
+docs/database/lookup-seed.sql          ← run third (populates award_levels, carnegie_class, locale, etc.)
+docs/database/programs-schema.sql      ← run fourth (creates the stored-programs tables — see below)
+docs/database/program-lookup-seed.sql  ← run fifth (seeds degree_types)
 ```
 
-All three must be done **before** importing IPEDS data.
+The first three must be done **before** importing IPEDS data. The last two add
+the normalized stored-programs tables; run them before `db import` /
+`import_degree` (see [Stored programs (normalized)](#stored-programs-normalized)).
+Each can also be applied from the CLI:
+
+```sh
+nuanalytics db exec-sql docs/database/programs-schema.sql
+nuanalytics db exec-sql docs/database/program-lookup-seed.sql
+```
+
+Every object in these files uses `IF NOT EXISTS` and drops policies before
+recreating them, so they are safe to re-run on a live database.
 
 ---
 
@@ -274,6 +287,72 @@ Sign out when done:
 ```sh
 nuanalytics db logout
 ```
+
+---
+
+## Stored programs (normalized)
+
+`docs/database/programs-schema.sql` (+ `docs/database/program-lookup-seed.sql`,
+applied in [Step 4b](#step-4b--seed-the-lookup-and-cip-tables)) add a
+normalized, **queryable** projection of imported degree programs alongside the
+lossless source document. Eight tables:
+
+| Table | What it holds |
+|-------|---------------|
+| `degree_types` | Lookup for normalized `degree_type` codes (`BS`, `BA`, `MINOR`, …); seeded by `program-lookup-seed.sql` |
+| `programs` | One row per program. The lossless unified-JSON `document` (JSONB) is the source of truth; the other columns are a queryable scalar projection. `program_key` is the deterministic idempotency key |
+| `courses` | Shared per-institution course catalog, partitioned by `institution_ref` and keyed `(institution_ref, course_code)` |
+| `program_courses` | M:N junction programs ↔ courses, with per-program `credit_hours_override` / `name_as_listed` |
+| `program_requirements` | The requirement tree flattened by `req_path` / `parent_path`, with JSONB `selection_spec` / `req_constraints` and `is_impossible` / `allow_double_count` flags |
+| `analysis_runs` | One row per `degree analyze` run of a program: `variant`, `trimmed`, `variations_run`, `sample_type`, the `degree_metrics` JSONB, plus promoted `complexity_mean` / `delay_mean` / `credits_mean` |
+| `analysis_course_metrics` | Per run × course metric breakdown (promoted `*_mean` columns + full JSONB) |
+| `analysis_plans` | Per run × selected exemplar plan (shortest / longest / sample) |
+
+Design mirrors the IPEDS tables: rows link by **natural keys** (`program_key`,
+`(institution_ref, course_code)`) with no cross-table foreign keys, RLS gates
+every read and write on `auth.role() = 'authenticated'`, and a per-import
+`generation` stamp makes re-syncing idempotent (the `programs` row is the commit
+marker, bumped last).
+
+### Importing programs
+
+Once the tables exist and you're signed in, load degree reports with the CLI
+`db import` command (or the `import_degree` MCP tool). A degree-first analysis
+report (`*_report.json`) populates the program projection and, when it carries
+an `analysis` block, one analysis run; a plain unified/YAML degree populates
+just the program. The institution is resolved against `institutions` (the
+report's `unitid`, then a name + CIP lookup); an ambiguous name lists candidate
+institutions and writes nothing.
+
+```sh
+# Import one report
+nuanalytics db import metrics/neu-khoury-bscs-boston_report.json
+
+# Preview a directory of reports without writing
+nuanalytics db import metrics/ --dry-run
+
+# Pin the institution and overwrite an existing (unverified) program
+nuanalytics db import report.json --unitid 167358 --replace
+```
+
+`--dry-run` reports the row counts without writing:
+
+```
+ℹ <report>.json: skipped (dry-run)
+  institution:    Colorado State University (unitid 126818)
+  program_key:    prog:126818|11.0701|2025-2026|BS
+  variant:        full
+  analysis:       10000 variations (shuffled), 7 sample plans
+  rows:           82 courses, 32 requirements, 72 course-metrics
+```
+
+Overwriting an existing program requires `--replace` (unverified) or `--force`
+(verified). Stored programs can then be analyzed without re-reading the file via
+`degree analyze --from-db <NAME>` (see [Degree Command](../degree.md#analyze-a-stored-program---from-db)).
+The full flag set (`--variant`, `--unitid`, `--institution`, `--cip`,
+`--catalog`, `--degree-id`, `--force`, `--replace`, `--skip-existing`,
+`--dry-run`, `-j/--jobs`) is available via `nuanalytics db import --help`; the
+[MCP `import_degree` tool](../mcp.md#import_degree) exposes the same options.
 
 ---
 

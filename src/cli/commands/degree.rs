@@ -528,6 +528,215 @@ pub fn run_analyze(files: &[PathBuf], options: &AnalyzeOptions, config: &Config)
     }
 }
 
+/// One stored `programs` row, projected to the columns needed to resolve and
+/// analyze a program by name (the lossless `document` plus identity fields used
+/// for the candidate list and the "loaded" banner).
+#[cfg(feature = "database")]
+#[derive(Debug, Clone, serde::Deserialize)]
+struct StoredProgramRow {
+    program_key: String,
+    name: String,
+    unitid: Option<i32>,
+    institution_raw: Option<String>,
+    catalog_year: Option<String>,
+    document: serde_json::Value,
+}
+
+/// Columns selected when resolving a `--from-db` program (lossless `document`
+/// last, identity fields for the banner / candidate list first).
+#[cfg(feature = "database")]
+const FROM_DB_COLS: &str =
+    "program_key,degree_id,name,unitid,institution_raw,catalog_year,document";
+
+/// Cap on candidate rows fetched while resolving a `--from-db` name.
+#[cfg(feature = "database")]
+const FROM_DB_MAX_ROWS: usize = 25;
+
+/// Run `degree analyze --from-db <NAME>`: fetch one stored program's canonical
+/// degree from the database and analyze it with the same options as the
+/// file-based path. This is single-program only (no worker pool / `--jobs`).
+///
+/// Resolution ladder: exact `program_key`, then exact `degree_id`, then a
+/// `name` substring (`ILIKE`). Zero matches exits non-zero; multiple matches
+/// print the candidates and exit non-zero; exactly one is parsed from its
+/// `document` and analyzed.
+#[cfg(feature = "database")]
+pub fn run_analyze_from_db(name: &str, options: &AnalyzeOptions, config: &Config) {
+    use nu_analytics::database::DbClient;
+
+    let Some(rt) = super::db::make_runtime() else {
+        process::exit(1);
+    };
+
+    let client = match rt.block_on(DbClient::from_config(&config.database)) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("✗ Database not available: {e}");
+            eprintln!("  Configure the database and run `nuanalytics db login` first.");
+            process::exit(1);
+        }
+    };
+
+    let rows = match rt.block_on(resolve_program_rows(&client, name)) {
+        Ok(rows) => rows,
+        Err(e) => {
+            eprintln!("✗ Database query failed: {e}");
+            process::exit(1);
+        }
+    };
+
+    match rows.len() {
+        0 => {
+            eprintln!("✗ no stored program matches '{name}'");
+            process::exit(1);
+        }
+        1 => {
+            let row = &rows[0];
+            let program = match program_from_document(&row.document) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!(
+                        "✗ failed to parse stored document for '{}': {e}",
+                        row.program_key
+                    );
+                    process::exit(1);
+                }
+            };
+            print_loaded_program(row);
+            if let Err(e) = analyze_program(&program, options, config) {
+                eprintln!("Error: {e}");
+                process::exit(1);
+            }
+        }
+        n => {
+            eprintln!(
+                "⚠ '{name}' matched {n} stored programs — re-run with a more specific name or the exact program_key:"
+            );
+            for line in format_program_candidates(&rows) {
+                eprintln!("  • {line}");
+            }
+            process::exit(1);
+        }
+    }
+}
+
+/// Resolve a `--from-db` name to candidate `programs` rows via the ladder:
+/// exact `program_key`, then exact `degree_id`, then `name` substring.
+///
+/// Each tier is tried in turn and the first non-empty result wins. The
+/// substring tier caps at [`FROM_DB_MAX_ROWS`] so an over-broad name can't pull
+/// the whole table.
+#[cfg(feature = "database")]
+async fn resolve_program_rows(
+    client: &nu_analytics::database::DbClient,
+    name: &str,
+) -> Result<Vec<StoredProgramRow>, nu_analytics::database::DatabaseError> {
+    use nu_analytics::database::{tables, QueryFilters};
+
+    // Tier 1: exact program_key.
+    let by_key = QueryFilters::new().eq("program_key", Some(name));
+    let rows = parse_program_rows(
+        &client
+            .select(tables::PROGRAMS, FROM_DB_COLS, &by_key, Some(1))
+            .await?,
+    );
+    if !rows.is_empty() {
+        return Ok(rows);
+    }
+
+    // Tier 2: exact degree_id.
+    let by_id = QueryFilters::new().eq("degree_id", Some(name));
+    let rows = parse_program_rows(
+        &client
+            .select(
+                tables::PROGRAMS,
+                FROM_DB_COLS,
+                &by_id,
+                Some(FROM_DB_MAX_ROWS),
+            )
+            .await?,
+    );
+    if !rows.is_empty() {
+        return Ok(rows);
+    }
+
+    // Tier 3: name substring (ILIKE '%name%').
+    let by_name = QueryFilters::new().ilike("name", Some(name));
+    Ok(parse_program_rows(
+        &client
+            .select(
+                tables::PROGRAMS,
+                FROM_DB_COLS,
+                &by_name,
+                Some(FROM_DB_MAX_ROWS),
+            )
+            .await?,
+    ))
+}
+
+/// Parse a `select` JSON array into [`StoredProgramRow`]s, dropping rows that
+/// fail to deserialize. Mirrors the MCP tools' `parse_json_array` pattern.
+#[cfg(feature = "database")]
+fn parse_program_rows(value: &serde_json::Value) -> Vec<StoredProgramRow> {
+    value
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|r| serde_json::from_value(r.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Turn a stored `document` JSONB value into a `DegreeProgram`.
+///
+/// The `document` is the lossless unified-degree JSON produced by
+/// `to_unified_value` (prerequisites carried in the structured tagged form), so
+/// it round-trips through `parse_degree_auto` on its serialized string — the
+/// same loader the import core uses on report text. (`serde_json::from_value`
+/// would *not* round-trip: the model has no `prerequisites` field, only
+/// `prerequisites_raw`.)
+#[cfg(feature = "database")]
+fn program_from_document(
+    document: &serde_json::Value,
+) -> Result<nu_analytics::core::DegreeProgram, String> {
+    let text = serde_json::to_string(document)
+        .map_err(|e| format!("could not serialize stored document: {e}"))?;
+    nu_analytics::core::degree::parse_degree_auto(&text)
+        .map(|(program, _warnings)| program)
+        .map_err(|e| e.to_string())
+}
+
+/// Print the "loaded program" banner for a resolved `--from-db` row
+/// (name + `program_key` + unitid).
+#[cfg(feature = "database")]
+fn print_loaded_program(row: &StoredProgramRow) {
+    let unitid = row
+        .unitid
+        .map_or_else(|| "unresolved".to_string(), |u| u.to_string());
+    println!(
+        "✓ Loaded stored program: {} (program_key {} · unitid {unitid})",
+        row.name, row.program_key
+    );
+}
+
+/// Format candidate program rows into one display line each for the ambiguous
+/// `--from-db` message: `program_key  ·  name  ·  institution_raw  ·
+/// catalog_year`. Pure (no DB / no I/O) so it can be unit-tested offline.
+#[cfg(feature = "database")]
+fn format_program_candidates(rows: &[StoredProgramRow]) -> Vec<String> {
+    rows.iter()
+        .map(|r| {
+            let institution = r.institution_raw.as_deref().unwrap_or("(unknown)");
+            let catalog = r.catalog_year.as_deref().unwrap_or("(no catalog year)");
+            format!(
+                "{}  ·  {}  ·  {institution}  ·  {catalog}",
+                r.program_key, r.name
+            )
+        })
+        .collect()
+}
+
 /// Poll interval for reaping finished worker processes.
 const WORKER_POLL: std::time::Duration = std::time::Duration::from_millis(50);
 
@@ -1453,13 +1662,29 @@ fn analyze_degree(
     options: &AnalyzeOptions,
     config: &Config,
 ) -> Result<nu_analytics::core::report::unified_report::ProgramRollup, String> {
+    // Load and validate the degree program, then run the shared single-degree
+    // analysis on it. This is the in-process, non-worker-pool seam shared with
+    // the `--from-db` path (which supplies an already-loaded program).
+    let program = load_degree_program(degree_path, options.verbose)?;
+    analyze_program(&program, options, config)
+}
+
+/// Run the full single-degree analysis on an already-loaded `DegreeProgram`.
+///
+/// This is the shared analysis seam: [`analyze_degree`] calls it after loading a
+/// file, and the `--from-db` path calls it with a program parsed from a stored
+/// `document`. It builds the course graph (breaking cycles), generates plans,
+/// computes/aggregates metrics, validates the selected plans, writes the report
+/// + CSV outputs, prints the summary, and returns the program rollup.
+fn analyze_program(
+    program: &nu_analytics::core::DegreeProgram,
+    options: &AnalyzeOptions,
+    config: &Config,
+) -> Result<nu_analytics::core::report::unified_report::ProgramRollup, String> {
     let verbose = options.verbose;
 
-    // Load and validate the degree program
-    let program = load_degree_program(degree_path, verbose)?;
-
     // Build course graph and handle cycles by breaking them
-    let mut graph_result = CourseGraph::from_degree_program(&program);
+    let mut graph_result = CourseGraph::from_degree_program(program);
     if !graph_result.cycles.is_empty() {
         if verbose {
             eprintln!(
@@ -1499,8 +1724,8 @@ fn analyze_degree(
 
     // Build analysis context
     let ctx = AnalysisContext {
-        program: &program,
-        school: build_school_from_program(&program),
+        program,
+        school: build_school_from_program(program),
         dag: build_dag_from_graph(&graph_result.graph),
         graph: &graph_result.graph,
         gen_config: PlanGeneratorConfig {
@@ -2517,11 +2742,19 @@ fn expand_courses_with_prerequisites(
     // - It was added as an OR-alternative for some course
     // - Another course in the plan would also satisfy that OR requirement
     // - OR an equivalent course is already in the plan
-    // BUT never remove protected courses (explicitly included by user)
+    // BUT only courses ADDED during expansion (Phase 1) may be pruned. Courses
+    // from the original plan are degree requirements (e.g. a `type: all` core
+    // course) and must never be dropped here — even when they also happen to be
+    // an OR-prerequisite alternative for some elective. Without this guard a
+    // required course like CS320 ("Algorithms"), which is also an OR option of
+    // an elective's prereq (`CS320 | CS370`), gets deleted whenever the sibling
+    // CS370 is present, silently dropping it from generated plans.
+    // `protected_courses` additionally pins user --include courses.
+    let original_courses: HashSet<&str> = courses.iter().map(String::as_str).collect();
     let expanded_clone = expanded.clone();
     let redundant = find_redundant_prerequisites(&expanded_clone, graph, equivalences);
     for course in redundant {
-        if !protected_courses.contains(&course) {
+        if !protected_courses.contains(&course) && !original_courses.contains(course.as_str()) {
             expanded.remove(&course);
         }
     }
@@ -2944,6 +3177,73 @@ fn print_separator() {
 mod tests {
     use super::*;
 
+    /// Regression: a required course that is ALSO an OR-prerequisite alternative
+    /// for another course must survive Phase-2 redundancy pruning in
+    /// `expand_courses_with_prerequisites`. This mirrors the CSU bug where CS320
+    /// (a `type: all` core course, and the `CS320 | CS370` OR-prereq of an
+    /// elective) was silently dropped from generated plans whenever its OR
+    /// sibling CS370 was present — only courses ADDED during expansion may be
+    /// pruned, never the plan's own required courses.
+    #[test]
+    fn test_expand_preserves_required_or_alternative() {
+        let yaml = r#"
+degree:
+  id: regress-or-alt
+  institution: T
+  program: T
+  total_credits: 12
+  gpa_minimum: 2.0
+requirements:
+  core:
+    name: Core
+    type: all
+    category: major
+    courses: [COR101, COR102]
+  upper:
+    name: Upper
+    type: all
+    category: major
+    courses: [UPP301, UPP401]
+courses:
+  COR101: {title: A, prefix: COR, number: "101", credits: 3}
+  COR102: {title: B, prefix: COR, number: "102", credits: 3}
+  UPP301: {title: X, prefix: UPP, number: "301", credits: 3, prerequisites_raw: "COR101 | COR102"}
+  UPP401: {title: Y, prefix: UPP, number: "401", credits: 3, prerequisites_raw: "COR101"}
+"#;
+        let tmp = tempfile::TempDir::new().expect("create tempdir");
+        let path = tmp.path().join("degree.yaml");
+        std::fs::write(&path, yaml).expect("write temp yaml");
+        let program = load_degree_from_yaml(&path).expect("parse degree");
+
+        let graph = CourseGraph::from_degree_program(&program).graph;
+        let equivalences = HashMap::new();
+        let exclude = HashSet::new();
+        let protected = HashSet::new();
+        // The plan as the generator produces it: both required core courses plus
+        // the two required upper courses.
+        let plan = vec![
+            "COR101".to_string(),
+            "COR102".to_string(),
+            "UPP301".to_string(),
+            "UPP401".to_string(),
+        ];
+        let expanded =
+            expand_courses_with_prerequisites(&plan, &graph, &equivalences, &exclude, &protected);
+
+        // COR102 is an OR-alternative of UPP301's `COR101 | COR102` prereq with no
+        // other dependents, while COR101 is independently required by UPP401 — so
+        // pre-fix COR102 was pruned as "redundant". It is a hard requirement and
+        // must survive expansion.
+        assert!(
+            expanded.contains(&"COR102".to_string()),
+            "required type:all course COR102 was dropped as a redundant OR-prereq: {expanded:?}"
+        );
+        assert!(
+            expanded.contains(&"COR101".to_string()),
+            "required core course COR101 must survive expansion: {expanded:?}"
+        );
+    }
+
     #[test]
     fn test_unique_stem_disambiguates_collisions() {
         let mut used = HashSet::new();
@@ -3303,5 +3603,114 @@ mod tests {
 
         let _ = running[0].1.kill();
         let _ = running[0].1.wait();
+    }
+
+    // --- --from-db helpers (offline; no DB) --------------------------------
+
+    #[cfg(feature = "database")]
+    #[test]
+    fn test_parse_program_rows_skips_malformed() {
+        // A valid row, a row missing the required `name` field, and a non-object
+        // — only the valid row should survive.
+        let value = serde_json::json!([
+            {
+                "program_key": "prog:1|11.0701|2024-2025|BS",
+                "degree_id": "cs-2024",
+                "name": "Computer Science",
+                "unitid": 1,
+                "institution_raw": "Test U",
+                "catalog_year": "2024-2025",
+                "document": {}
+            },
+            { "program_key": "prog:bad", "document": {} },
+            "not-an-object"
+        ]);
+        let rows = parse_program_rows(&value);
+        assert_eq!(rows.len(), 1, "only the well-formed row parses");
+        assert_eq!(rows[0].program_key, "prog:1|11.0701|2024-2025|BS");
+        assert_eq!(rows[0].name, "Computer Science");
+        assert_eq!(rows[0].unitid, Some(1));
+    }
+
+    #[cfg(feature = "database")]
+    #[test]
+    fn test_parse_program_rows_non_array_is_empty() {
+        assert!(parse_program_rows(&serde_json::json!({})).is_empty());
+        assert!(parse_program_rows(&serde_json::Value::Null).is_empty());
+    }
+
+    #[cfg(feature = "database")]
+    #[test]
+    fn test_format_program_candidates_layout_and_fallbacks() {
+        let rows = vec![
+            StoredProgramRow {
+                program_key: "prog:1|11.0701|2024-2025|BS".to_string(),
+                name: "Computer Science".to_string(),
+                unitid: Some(1),
+                institution_raw: Some("Test University".to_string()),
+                catalog_year: Some("2024-2025".to_string()),
+                document: serde_json::Value::Null,
+            },
+            StoredProgramRow {
+                program_key: "fp:abcdef".to_string(),
+                name: "Data Science".to_string(),
+                unitid: None,
+                institution_raw: None,
+                catalog_year: None,
+                document: serde_json::Value::Null,
+            },
+        ];
+        let lines = format_program_candidates(&rows);
+        assert_eq!(
+            lines[0],
+            "prog:1|11.0701|2024-2025|BS  ·  Computer Science  ·  Test University  ·  2024-2025"
+        );
+        // Missing institution_raw / catalog_year fall back to placeholders.
+        assert_eq!(
+            lines[1],
+            "fp:abcdef  ·  Data Science  ·  (unknown)  ·  (no catalog year)"
+        );
+    }
+
+    #[cfg(feature = "database")]
+    #[test]
+    fn test_program_from_document_round_trips_unified_json() {
+        // A stored `document` carries prerequisites in the structured tagged
+        // form (what `to_unified_value` emits); parsing it back must recover the
+        // model — including the `prerequisites_raw` for CS201 → CS101.
+        let document = serde_json::json!({
+            "degree": {
+                "name": "Computer Science",
+                "degree_type": "BS",
+                "system_type": "semester",
+                "institution": "Test University",
+                "total_credits": 8
+            },
+            "requirements": {
+                "core": { "type": "all", "category": "major", "courses": ["CS101", "CS201"] }
+            },
+            "courses": {
+                "CS101": { "name": "Intro", "prefix": "CS", "number": "101", "credit_hours": 4.0 },
+                "CS201": {
+                    "name": "Data Structures", "prefix": "CS", "number": "201",
+                    "credit_hours": 4.0, "prerequisites": "CS101"
+                }
+            }
+        });
+        let program = program_from_document(&document).expect("document should round-trip");
+        assert_eq!(program.degree.name, "Computer Science");
+        assert_eq!(program.courses.len(), 2);
+        let cs201 = program.courses.get("CS201").expect("CS201 present");
+        assert_eq!(cs201.prerequisites_raw.as_deref(), Some("CS101"));
+    }
+
+    #[cfg(feature = "database")]
+    #[test]
+    fn test_program_from_document_rejects_invalid_document() {
+        // A JSON object that isn't a degree must error cleanly, never panic.
+        let bad = serde_json::json!({ "not_a_degree": true });
+        let err = program_from_document(&bad)
+            .expect_err("invalid document must return an error, not panic");
+        assert!(!err.is_empty(), "error message should not be empty");
     }
 }

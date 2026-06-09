@@ -80,6 +80,9 @@ This generates:
 | `--include <COURSES>` | Courses to always include in all plans (comma-separated) | none |
 | `-j, --jobs <N>` | Files to analyze concurrently when multiple are given, each in its own process (see [Parallel analysis](#parallel-analysis)) | 8 |
 | `--school <NAME>` | Treat all inputs as programs of one school and also emit a combined `<school>_school_report.json` rollup | none |
+| `--from-db <NAME>` | Analyze a stored program fetched from the database instead of a file (see [Analyze a stored program](#analyze-a-stored-program---from-db)). Mutually exclusive with positional `FILES` | none |
+
+`FILES` is optional when `--from-db` is given; otherwise at least one file is required.
 
 **Examples:**
 
@@ -151,6 +154,42 @@ Single-file runs, `--school`, and `-j 1` run in-process with full per-degree
 console output. For an externally throttled variant (a per-process
 `ulimit -v` memory cap and a timeout), see `scripts/analyze-batch.sh`; the
 in-process pool deliberately imposes no ulimit or timeout.
+
+### Analyze a stored program (`--from-db`)
+
+`--from-db <NAME>` analyzes a program already imported into the database
+(via `db import` or the `import_degree` MCP tool — see
+[Database Setup](database/setup.md)) instead of a local file. The stored
+program's lossless `document` is parsed back into a degree and analyzed with
+exactly the same options as the file-based path. This is single-program only —
+no worker pool, so `-j/--jobs` doesn't apply.
+
+`<NAME>` is resolved through a ladder; the first tier that matches wins:
+
+1. exact `program_key` (e.g. `prog:167358|11.0701|2025-2026|BS`)
+2. exact `degree_id`
+3. a `name` substring (case-insensitive `ILIKE`)
+
+Exactly one match is analyzed; zero matches is an error; multiple matches list
+the candidates as `program_key · name · institution · catalog_year` so you can
+re-run with a more specific name or the exact `program_key`.
+
+```bash
+# Analyze a stored program by name
+nuanalytics degree analyze --from-db "Computer Science (Boston)"
+
+# Or pin the exact program by key, with the usual analyze options
+nuanalytics degree analyze --from-db "prog:167358|11.0701|2025-2026|BS" --sample-plans 20
+```
+
+On a single match the loaded-program banner is printed before analysis:
+
+```
+✓ Loaded stored program: Bachelor of Science in Computer Science (Boston) (program_key prog:167358|11.0701|2025-2026|BS · unitid 167358)
+```
+
+`--from-db` requires a configured, logged-in database session
+(`nuanalytics db login`). It is mutually exclusive with positional `FILES`.
 
 ### Validation (`validate`)
 

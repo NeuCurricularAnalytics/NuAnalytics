@@ -24,6 +24,8 @@
 pub mod auth;
 pub mod client;
 pub mod error;
+#[cfg(feature = "database")]
+pub mod import;
 pub mod ipeds;
 pub mod models;
 pub mod query;
@@ -40,6 +42,22 @@ pub mod tables {
     pub const INSTITUTION_COMPLETION_TOTALS: &str = "institution_completion_totals";
     /// CIP code taxonomy lookup
     pub const CIP_CODES: &str = "cip_codes";
+    /// Imported degree programs (normalized; one row per program + lossless `document`)
+    pub const PROGRAMS: &str = "programs";
+    /// Shared per-institution course catalog
+    pub const COURSES: &str = "courses";
+    /// M:N junction linking programs to courses (with per-program overrides)
+    pub const PROGRAM_COURSES: &str = "program_courses";
+    /// Flattened requirement tree per program (addressed by `req_path`)
+    pub const PROGRAM_REQUIREMENTS: &str = "program_requirements";
+    /// Lookup for normalized `degree_type` codes
+    pub const DEGREE_TYPES: &str = "degree_types";
+    /// One row per `degree analyze` run of a program (params + variant + degree-level metrics)
+    pub const ANALYSIS_RUNS: &str = "analysis_runs";
+    /// Per run x course graph metrics (complexity/centrality/delay/blocking)
+    pub const ANALYSIS_COURSE_METRICS: &str = "analysis_course_metrics";
+    /// Per run x selected exemplar plan (shortest/longest/samples)
+    pub const ANALYSIS_PLANS: &str = "analysis_plans";
 }
 
 pub use crate::core::config::DatabaseConfig;

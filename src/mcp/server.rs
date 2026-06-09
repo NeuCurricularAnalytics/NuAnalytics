@@ -25,10 +25,10 @@ use rmcp::{
 use crate::core::database::DbClient;
 #[cfg(feature = "database")]
 use crate::mcp::tools::{
-    cip_codes, completions, degrees, institutions, lookup, scaffold, CompareDegreesRequest,
+    cip_codes, completions, degrees, import, institutions, lookup, scaffold, CompareDegreesRequest,
     CompletionDemographicsRequest, GetDegreeRequest, GetInstitutionCompletionsRequest,
     GetInstitutionRequest, GetLookupCodesRequest, GetSchoolsCompletionDemographicsRequest,
-    ScaffoldDegreeYamlRequest, SearchCipCodesRequest, SearchDegreesRequest,
+    ImportDegreeRequest, ScaffoldDegreeYamlRequest, SearchCipCodesRequest, SearchDegreesRequest,
     SearchInstitutionsRequest,
 };
 // `StoreDegreeRequest` import kept out of the active list while the
@@ -535,6 +535,17 @@ impl NuAnalyticsMcpServer {
     fn compare_degrees(&self, Parameters(req): Parameters<CompareDegreesRequest>) -> String {
         self.call_db("compare_degrees", |db| async move {
             degrees::execute_compare_json(&db, req).await
+        })
+    }
+
+    /// Import a degree report into the normalized program tables
+    #[cfg(feature = "database")]
+    #[tool(
+        description = "Import a degree-first analysis report (or a plain unified degree) JSON into the normalized program tables (programs, courses, program_courses, program_requirements); when the input carries an `analysis` block, one analysis run is also attached. Provide exactly ONE source: json_content (inline) or json_path (file on the server's filesystem). Set dry_run=true to preview the write counts without touching the database. The institution is resolved read-only; when the name matches multiple institutions the result is \"institution_ambiguous\" with institution_candidates [{unitid, name}] — re-call with an explicit unitid to pick one. variant defaults to \"full\" (writes the program projection); a non-full variant only attaches an analysis run. Use force/replace to overwrite an existing program and skip_existing to leave it untouched."
+    )]
+    fn import_degree(&self, Parameters(req): Parameters<ImportDegreeRequest>) -> String {
+        self.call_db("import_degree", |db| async move {
+            import::execute_json(&db, req).await
         })
     }
 
