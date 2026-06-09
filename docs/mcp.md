@@ -485,10 +485,10 @@ Each accepts a structured request and returns JSON. Brief inventory:
 | `get_institution` | Full details for one institution by UNITID |
 | `search_cip_codes` | Look up CIP program codes by title keyword or code prefix |
 | `get_lookup_codes` | Decode lookup tables (carnegie_class, award_levels, …) into label maps |
-| `search_degrees` | Stored degrees filtered by UNITID / CIP / catalog year |
-| `get_degree` | Fetch a single stored degree by id |
-| `store_degree` | Write a degree YAML to the database (requires a logged-in user with write access) |
-| `compare_degrees` | Diff two stored degrees (when both are in the database) |
+| `search_degrees` | Stored programs (the normalized `programs` table) filtered by UNITID / CIP prefix / catalog year / `degree_type` / `program_kind` / `discipline` |
+| `get_degree` | Fetch one stored program by `program_key` → `degree_id` → natural key; returns the lossless unified-JSON `document` |
+| `import_degree` | Import a report/degree JSON into the `programs` tables (the supported write path) |
+| `compare_degrees` | Diff stored programs and/or inline YAMLs side-by-side with analyze metrics |
 | `get_institution_completions` | Per-CIP completion counts for one institution / year, with representation ratios |
 | `get_completion_demographics` | Aggregate completion demographics across institutions matching filters |
 | `get_schools_completion_demographics` | Per-school demographics for a Carnegie / award-level cohort |

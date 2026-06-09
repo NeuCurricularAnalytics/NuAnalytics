@@ -16,19 +16,43 @@
 //! [`super::auth::load_and_refresh`], which exchanges the saved refresh
 //! token for a fresh access token whenever the current one is within
 //! the [`AuthState::is_expired`] 60s safety buffer.
+//!
+//! ## Long-lived sessions (MCP server)
+//!
+//! The whole [`AuthState`] (access **and** refresh token) is held behind an
+//! `Arc<RwLock<…>>`, and every request first calls [`DbClient::current_token`],
+//! which refreshes proactively when the cached access token is expired. This
+//! keeps a long-running process (the MCP server in particular) alive past the
+//! 1-hour JWT expiry without a restart — and, because the refresh path re-reads
+//! the on-disk auth file first, a fresh `db login` by the user is picked up
+//! mid-process. A 401 from `PostgREST` triggers one reactive refresh + retry.
 
-use super::auth::{auth_file_path, load_and_refresh, load_auth_state, save_auth_state, AuthState};
+use super::auth::{
+    auth_file_path, load_and_refresh, load_auth_state, refresh_session, save_auth_state, AuthState,
+};
 use super::error::{DatabaseError, DatabaseResult};
 use super::query::{FilterKind, QueryFilters};
 use super::tables;
 use crate::core::config::DatabaseConfig;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::RwLock;
 
 /// Batch size for upsert HTTP requests.
 const WRITE_BATCH_SIZE: usize = 500;
 
 /// Relative path under which `PostgREST` exposes the tables.
 const REST_API_PREFIX: &str = "/rest/v1";
+
+/// Total per-request timeout. A stalled `PostgREST` call (e.g. against a
+/// half-open connection after a laptop sleep) returns a clean error well under
+/// the 4-minute MCP ceiling instead of hanging the tool call.
+const HTTP_TIMEOUT: Duration = Duration::from_mins(1);
+
+/// Connection-establishment timeout — fail fast when the endpoint is
+/// unreachable rather than waiting out the full request budget.
+const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Database client backed by Supabase.
 ///
@@ -44,12 +68,14 @@ pub struct DbClient {
     endpoint: String,
     /// Project anon key — goes in the `apikey` header on every request
     anon_key: String,
-    /// Signed-in user JWT — goes in `Authorization: Bearer` on every request
-    user_jwt: String,
+    /// The signed-in session (access + refresh token + expiry), behind a lock
+    /// so it can be refreshed in place across a long-lived process. Cloned
+    /// `DbClient`s share the same session via the `Arc`.
+    session: Arc<RwLock<AuthState>>,
     /// Path to the on-disk auth file, when known. Used to persist refreshed
     /// tokens back to disk so the next process startup also sees a valid
-    /// session. `None` when the client was constructed with an explicit JWT
-    /// (e.g. in tests).
+    /// session, and to pick up a fresh `db login` mid-process. `None` when the
+    /// client was constructed with an explicit JWT (e.g. in tests).
     auth_path: Option<PathBuf>,
 }
 
@@ -78,46 +104,115 @@ impl DbClient {
             .ok_or_else(|| {
                 DatabaseError::NotAuthenticated(format!("no auth file at {}", auth_path.display()))
             })?;
-        Self::new_with_auth_path(
-            &config.endpoint,
-            &config.anon_key,
-            state.access_token,
-            Some(auth_path),
-        )
+        Self::new_with_session(&config.endpoint, &config.anon_key, state, Some(auth_path))
     }
 
-    /// Create a client with explicit credentials. Useful for tests and for
-    /// callers that have already loaded a session manually.
+    /// Create a client with an explicit JWT. Useful for tests and for callers
+    /// that already hold a token. The synthesised session carries no refresh
+    /// token and never expires, so such a client never attempts a refresh.
     ///
     /// # Errors
     ///
     /// - [`DatabaseError::NotConfigured`] if endpoint or anon key are empty.
     /// - [`DatabaseError::NotAuthenticated`] if `user_jwt` is empty.
     pub fn new(endpoint: &str, anon_key: &str, user_jwt: String) -> DatabaseResult<Self> {
-        Self::new_with_auth_path(endpoint, anon_key, user_jwt, None)
+        let state = AuthState {
+            access_token: user_jwt,
+            refresh_token: String::new(),
+            // Far-future expiry → `is_valid()` is always true → no refresh path.
+            expires_at: i64::MAX,
+            user_email: None,
+        };
+        Self::new_with_session(endpoint, anon_key, state, None)
     }
 
-    fn new_with_auth_path(
+    fn new_with_session(
         endpoint: &str,
         anon_key: &str,
-        user_jwt: String,
+        state: AuthState,
         auth_path: Option<PathBuf>,
     ) -> DatabaseResult<Self> {
         if endpoint.is_empty() || anon_key.is_empty() {
             return Err(DatabaseError::NotConfigured);
         }
-        if user_jwt.is_empty() {
+        if state.access_token.is_empty() {
             return Err(DatabaseError::NotAuthenticated(
                 "empty user JWT".to_string(),
             ));
         }
+        let http = reqwest::Client::builder()
+            .timeout(HTTP_TIMEOUT)
+            .connect_timeout(HTTP_CONNECT_TIMEOUT)
+            .build()
+            .map_err(|e| {
+                DatabaseError::ConnectionError(format!("HTTP client build failed: {e}"))
+            })?;
         Ok(Self {
-            http: reqwest::Client::new(),
+            http,
             endpoint: endpoint.to_string(),
             anon_key: anon_key.to_string(),
-            user_jwt,
+            session: Arc::new(RwLock::new(state)),
             auth_path,
         })
+    }
+
+    /// Return a usable access token, refreshing proactively when the cached one
+    /// is expired (or within the 60s safety buffer).
+    ///
+    /// # Errors
+    /// [`DatabaseError::NotAuthenticated`] if a refresh was needed but failed
+    /// (network error, revoked refresh token, missing auth file).
+    async fn current_token(&self) -> DatabaseResult<String> {
+        {
+            let session = self.session.read().await;
+            if session.is_valid() {
+                return Ok(session.access_token.clone());
+            }
+        }
+        self.reauthenticate(false).await
+    }
+
+    /// Refresh the in-memory session and return the new access token.
+    ///
+    /// `force` skips the "another task already refreshed" fast path so a 401 on
+    /// a clock-valid token still triggers a re-auth. Holds the write lock across
+    /// the network call so concurrent callers don't stampede the refresh.
+    async fn reauthenticate(&self, force: bool) -> DatabaseResult<String> {
+        let mut guard = self.session.write().await;
+        if !force && guard.is_valid() {
+            return Ok(guard.access_token.clone());
+        }
+        let fresh = self.load_fresh_state(&guard).await?;
+        let token = fresh.access_token.clone();
+        *guard = fresh;
+        drop(guard);
+        Ok(token)
+    }
+
+    /// Obtain a fresh [`AuthState`]. Prefers the on-disk auth file (so a fresh
+    /// `db login` is picked up without a restart) via [`load_and_refresh`],
+    /// which also persists the refreshed token; falls back to refreshing the
+    /// in-memory refresh token for clients with no tracked auth file.
+    async fn load_fresh_state(&self, current: &AuthState) -> DatabaseResult<AuthState> {
+        if let Some(path) = self.auth_path.as_deref() {
+            return load_and_refresh(path, &self.endpoint, &self.anon_key)
+                .await
+                .map_err(DatabaseError::NotAuthenticated)?
+                .ok_or_else(|| {
+                    DatabaseError::NotAuthenticated(format!(
+                        "auth file disappeared at {}; run `nuanalytics db login`",
+                        path.display()
+                    ))
+                });
+        }
+        if current.refresh_token.is_empty() {
+            return Err(DatabaseError::NotAuthenticated(
+                "session expired and no refresh token available".to_string(),
+            ));
+        }
+        refresh_session(&self.endpoint, &self.anon_key, &current.refresh_token)
+            .await
+            .map_err(DatabaseError::NotAuthenticated)
     }
 
     /// Refresh the cached email associated with the current session, if any.
@@ -182,15 +277,15 @@ impl DbClient {
         limit: Option<usize>,
     ) -> DatabaseResult<serde_json::Value> {
         let url = build_select_url(&self.endpoint, table, select_cols, filters, limit);
-        let response = self
-            .http
-            .get(&url)
-            .header("apikey", &self.anon_key)
-            .header("Authorization", format!("Bearer {}", self.user_jwt))
-            .header("Accept", "application/json")
-            .send()
-            .await
-            .map_err(|e| DatabaseError::QueryError(format!("HTTP request failed: {e}")))?;
+
+        let mut token = self.current_token().await?;
+        let mut response = self.send_get(&url, &token).await?;
+        // A 401 here means the token was rejected despite looking valid by the
+        // clock (revoked, clock skew). Force one reauth + retry before giving up.
+        if response.status().as_u16() == 401 {
+            token = self.reauthenticate(true).await?;
+            response = self.send_get(&url, &token).await?;
+        }
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -204,6 +299,39 @@ impl DbClient {
             .json::<serde_json::Value>()
             .await
             .map_err(|e| DatabaseError::ParseError(e.to_string()))
+    }
+
+    /// Issue a single authenticated `GET`. Split out so [`Self::select`] can
+    /// reissue it with a fresh token after a 401.
+    async fn send_get(&self, url: &str, token: &str) -> DatabaseResult<reqwest::Response> {
+        self.http
+            .get(url)
+            .header("apikey", &self.anon_key)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| DatabaseError::QueryError(format!("HTTP request failed: {e}")))
+    }
+
+    /// Issue a single authenticated upsert `POST` for one chunk. Split out so
+    /// [`Self::upsert_batch`] can reissue it with a fresh token after a 401.
+    async fn send_upsert(
+        &self,
+        url: &str,
+        token: &str,
+        chunk: &[serde_json::Value],
+    ) -> DatabaseResult<reqwest::Response> {
+        self.http
+            .post(url)
+            .header("apikey", &self.anon_key)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Content-Type", "application/json")
+            .header("Prefer", "resolution=merge-duplicates")
+            .json(chunk)
+            .send()
+            .await
+            .map_err(|e| DatabaseError::QueryError(format!("HTTP request failed: {e}")))
     }
 
     /// Upsert a batch of records.
@@ -248,17 +376,12 @@ impl DbClient {
         );
 
         for chunk in json_records.chunks(WRITE_BATCH_SIZE) {
-            let response = self
-                .http
-                .post(&url)
-                .header("apikey", &self.anon_key)
-                .header("Authorization", format!("Bearer {}", self.user_jwt))
-                .header("Content-Type", "application/json")
-                .header("Prefer", "resolution=merge-duplicates")
-                .json(chunk)
-                .send()
-                .await
-                .map_err(|e| DatabaseError::QueryError(format!("HTTP request failed: {e}")))?;
+            let mut token = self.current_token().await?;
+            let mut response = self.send_upsert(&url, &token, chunk).await?;
+            if response.status().as_u16() == 401 {
+                token = self.reauthenticate(true).await?;
+                response = self.send_upsert(&url, &token, chunk).await?;
+            }
 
             if !response.status().is_success() {
                 let status = response.status().as_u16();
@@ -356,7 +479,16 @@ mod tests {
             .expect("complete credentials must produce a client");
         assert_eq!(client.endpoint, "https://example.supabase.co");
         assert_eq!(client.anon_key, "anon");
-        assert_eq!(client.user_jwt, "jwt");
+        let session = client
+            .session
+            .try_read()
+            .expect("uncontended session read in test");
+        assert_eq!(session.access_token, "jwt");
+        // The explicit-JWT constructor synthesises a non-expiring session with
+        // no refresh token, so such a client never attempts a refresh.
+        assert!(session.refresh_token.is_empty());
+        assert!(session.is_valid());
+        drop(session);
         assert!(client.auth_path().is_none());
     }
 
@@ -506,5 +638,83 @@ mod tests {
             }
             other => panic!("expected NotAuthenticated, got {other:?}"),
         }
+    }
+
+    fn auth_state(access: &str, refresh: &str, expires_offset_secs: i64) -> AuthState {
+        AuthState {
+            access_token: access.to_string(),
+            refresh_token: refresh.to_string(),
+            expires_at: chrono::Utc::now().timestamp() + expires_offset_secs,
+            user_email: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn current_token_returns_cached_token_without_network_when_valid() {
+        // `new` synthesises a far-future expiry. Pointing at an unreachable
+        // endpoint proves no refresh round-trip is attempted for a valid token.
+        let client = DbClient::new(
+            "http://127.0.0.1:1/never",
+            "anon",
+            "valid-token".to_string(),
+        )
+        .expect("test client");
+        let token = client
+            .current_token()
+            .await
+            .expect("a valid token must not trigger a refresh");
+        assert_eq!(token, "valid-token");
+    }
+
+    #[tokio::test]
+    async fn explicit_jwt_client_never_refreshes() {
+        let client =
+            DbClient::new("http://127.0.0.1:1/never", "anon", "tok".to_string()).expect("client");
+        // Both the proactive and the non-forced reauth paths short-circuit on a
+        // session that is valid by the clock.
+        assert_eq!(client.current_token().await.unwrap(), "tok");
+        assert_eq!(client.reauthenticate(false).await.unwrap(), "tok");
+    }
+
+    #[tokio::test]
+    async fn current_token_picks_up_fresh_disk_session_when_cached_is_expired() {
+        // Mirrors the field report's "user re-ran `db login` but the MCP server
+        // didn't notice" case: a fresh, valid session on disk must be adopted
+        // without a network refresh (the unreachable endpoint proves it).
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("auth.json");
+        save_auth_state(&path, &auth_state("disk-fresh", "r", 3600)).expect("write disk session");
+
+        let stale = auth_state("stale", "old-refresh", -100);
+        let client =
+            DbClient::new_with_session("http://127.0.0.1:1/never", "anon", stale, Some(path))
+                .expect("client");
+
+        let token = client
+            .current_token()
+            .await
+            .expect("must adopt the fresh disk session");
+        assert_eq!(
+            token, "disk-fresh",
+            "a valid on-disk re-login must be picked up without a restart or network call"
+        );
+    }
+
+    #[tokio::test]
+    async fn current_token_errors_when_expired_and_no_refresh_available() {
+        // Expired in-memory session, no auth file, empty refresh token → there
+        // is nothing to refresh with, so it must fail fast rather than hang.
+        let expired = auth_state("x", "", -100);
+        let client =
+            DbClient::new_with_session("https://example.supabase.co", "anon", expired, None)
+                .expect("client");
+        let err = client
+            .current_token()
+            .await
+            .expect_err("expired session with no refresh path must error");
+        assert!(
+            matches!(err, DatabaseError::NotAuthenticated(_)),
+            "got {err:?}"
+        );
     }
 }
