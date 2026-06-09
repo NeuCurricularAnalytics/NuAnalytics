@@ -199,9 +199,20 @@ pub enum DegreeSubcommand {
     /// Run full degree analysis: generate plans, compute metrics, produce
     /// HTML reports with statistics, and export CSV plan files.
     Analyze {
-        /// Degree YAML file(s) to analyze.
-        #[arg(value_name = "FILES", num_args = 1..)]
+        /// Degree YAML file(s) to analyze. Optional when `--from-db` is given;
+        /// otherwise at least one file is required.
+        #[arg(value_name = "FILES", num_args = 0..)]
         files: Vec<PathBuf>,
+
+        /// Analyze a stored program's canonical degree fetched from the
+        /// database instead of a local file. The value matches a program by
+        /// exact `program_key`/`degree_id`, then falls back to a name
+        /// substring. Ambiguous matches are listed and the run stops.
+        /// Mutually exclusive with positional FILES; single-program only
+        /// (no worker pool / `--jobs`).
+        #[cfg(feature = "database")]
+        #[arg(long, value_name = "NAME")]
+        from_db: Option<String>,
 
         /// Calculation strategy for aggregate metrics (median or mean)
         #[arg(long, value_enum, value_name = "STRATEGY")]

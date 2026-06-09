@@ -69,7 +69,7 @@ pub fn run(subcommand: DbSubcommand, config: &Config) {
 // ============================================================================
 
 /// Build a single-threaded Tokio runtime, printing an error and returning `None` on failure.
-fn make_runtime() -> Option<tokio::runtime::Runtime> {
+pub(super) fn make_runtime() -> Option<tokio::runtime::Runtime> {
     match tokio::runtime::Runtime::new() {
         Ok(rt) => Some(rt),
         Err(e) => {
