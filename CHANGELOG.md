@@ -4,7 +4,7 @@ All notable changes to NuAnalytics are recorded here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the
 project uses semantic versioning.
 
-## [Unreleased]
+## [0.5.0] — 2026-06-09
 
 Adds database-backed degree storage: a normalized, queryable projection of
 imported degree programs alongside the lossless source document, plus the CLI,

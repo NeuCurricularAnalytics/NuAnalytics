@@ -1,6 +1,6 @@
 # NuAnalytics
 
-**Version 0.4.1**
+**Version 0.5.0**
 
 NuAnalytics is a Rust-based tool for analyzing computer science curricula. It computes detailed metrics about curriculum structure including complexity, blocking relationships, delay paths, and centrality measures to help understand how courses are organized and their impact on students.
 
@@ -35,7 +35,7 @@ It is based off the work of Greg Heileman, and CurricularAnalytics.org. Current 
 - **Configuration Management**: Flexible configuration system with CLI overrides
 - **MCP Server** (optional): AI model integration for interactive degree building via Model Context Protocol. Degree tools accept YAML, unified JSON, or raw ai-landscape JSON; `convert_degree` *(new in 0.4.1)* converts ai-landscape JSON to the unified format and `get_degree_json_schema` *(new in 0.4.1)* returns the machine schema. The `trim_degree` tool pipes a fresh `cache:<hash>` handle back for chained `validate_degree` / `audit_degree` calls.
 - **Authenticated Database Access** *(behavior change in 0.4.0)*: Supabase reads and writes both require a logged-in user (`nuanalytics db login`); session tokens auto-refresh.
-- **Degree Database Import & Stored Programs** *(new)*: Import degree reports into a normalized, queryable program store (`nuanalytics db import`, or the `import_degree` MCP tool) — one report becomes a program plus its courses, flattened requirement tree, and analysis run, alongside the lossless source document. Stored programs can be analyzed straight from the database with `degree analyze --from-db <NAME>`. See [Database Setup](docs/database/setup.md#stored-programs-normalized).
+- **Degree Database Import & Stored Programs** *(new in 0.5.0)*: Import degree reports into a normalized, queryable program store (`nuanalytics db import`, or the `import_degree` MCP tool) — one report becomes a program plus its courses, flattened requirement tree, and analysis run, alongside the lossless source document. Stored programs can be analyzed straight from the database with `degree analyze --from-db <NAME>`. See [Database Setup](docs/database/setup.md#stored-programs-normalized).
 
 ## Quick Start
 
