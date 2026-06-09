@@ -345,6 +345,15 @@ pub struct AnalysisResponse {
     /// Excludes YAML parse / graph build / per-course-metrics shaping —
     /// the cost callers actually care about for budgeting future runs.
     pub time_elapsed_ms: u64,
+
+    /// Machine-readable companion to the truncation follow-up: the `max_plans`
+    /// value worth using next. `None` when the run already covered the full
+    /// population (nothing to widen). Equals the current cap when complexity is
+    /// CV-stable (widening won't change the conclusions) and the
+    /// doubled-and-capped value otherwise — so agentic callers can adapt
+    /// without parsing the follow-up prose.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended_max_plans: Option<usize>,
 }
 
 // ============================================================================
@@ -634,6 +643,7 @@ fn parse_error_response(error: &str) -> AnalysisResponse {
         notes: vec![],
         time_limit_reached: false,
         time_elapsed_ms: 0,
+        recommended_max_plans: None,
     }
 }
 
@@ -705,6 +715,25 @@ fn run_plan_analysis(
     }
 
     (plans_processed, time_limit_reached)
+}
+
+/// Free-form notes the analyze pass produced as side effects (duplicate
+/// calc-ready suppression, clock-truncation). Empty when nothing notable
+/// happened.
+fn build_response_notes(artifacts: &AnalysisArtifacts) -> Vec<String> {
+    let mut notes = Vec::new();
+    if artifacts.selected.calc_ready_suppressed {
+        notes.push(
+            "calc-ready-shortest suppressed as structural duplicate of shortest-path".to_string(),
+        );
+    }
+    if artifacts.time_limit_reached {
+        notes.push(format!(
+            "plan-generation loop stopped early at {} plans after {} ms — analysis_timeout_seconds tripped",
+            artifacts.plans_processed, artifacts.time_elapsed_ms,
+        ));
+    }
+    notes
 }
 
 /// Build the analysis response from a populated [`AnalysisArtifacts`] bundle.
@@ -788,18 +817,7 @@ fn build_response(
     } else {
         "random_uniform"
     };
-    let mut notes = Vec::new();
-    if artifacts.selected.calc_ready_suppressed {
-        notes.push(
-            "calc-ready-shortest suppressed as structural duplicate of shortest-path".to_string(),
-        );
-    }
-    if artifacts.time_limit_reached {
-        notes.push(format!(
-            "plan-generation loop stopped early at {} plans after {} ms — analysis_timeout_seconds tripped",
-            artifacts.plans_processed, artifacts.time_elapsed_ms,
-        ));
-    }
+    let notes = build_response_notes(artifacts);
 
     AnalysisResponse {
         success: true,
@@ -814,6 +832,11 @@ fn build_response(
         is_full_population,
         sampling_method,
         seed_used: artifacts.seed_used,
+        recommended_max_plans: recommend_max_plans(
+            artifacts,
+            Some(&complexity_stats),
+            was_truncated,
+        ),
         complexity: Some(complexity_stats),
         longest_delay: Some(metric_stats_json(&degree_stats.longest_delay)),
         total_credits: Some(metric_stats_json(&degree_stats.total_credits)),
@@ -876,6 +899,44 @@ fn is_placeholder_course(id: &str) -> bool {
 /// tighten when callers report still seeing meaningful shifts above it.
 const STABLE_CV_THRESHOLD: f64 = 0.10;
 
+/// Coefficient of variation of the complexity distribution, when computable
+/// (`std_dev / |mean|`). `None` when there are no stats or the mean is ~0.
+fn complexity_cv(complexity: Option<&MetricStatsJson>) -> Option<f64> {
+    complexity
+        .filter(|s| s.mean.abs() > f64::EPSILON)
+        .map(|s| s.std_dev / s.mean.abs())
+}
+
+/// The next `max_plans` worth trying to widen a truncated sample: double the
+/// current cap, capped at the population estimate so we never recommend more
+/// plans than exist. `saturating_mul` guards usize overflow; `.max(+1)` covers
+/// the corner where doubling saturates back to the same value.
+fn next_max_plans(artifacts: &AnalysisArtifacts) -> usize {
+    let doubled = artifacts
+        .max_plans
+        .saturating_mul(2)
+        .max(artifacts.max_plans + 1);
+    doubled.min(artifacts.stats.total_possible.max(artifacts.max_plans))
+}
+
+/// Machine-readable `max_plans` recommendation, mirroring the truncation
+/// follow-up's logic: `None` for a full-population run (nothing to widen); the
+/// current cap when complexity is CV-stable (widening won't move the
+/// conclusions); otherwise the doubled-and-capped `next_max_plans`.
+fn recommend_max_plans(
+    artifacts: &AnalysisArtifacts,
+    complexity: Option<&MetricStatsJson>,
+    was_truncated: bool,
+) -> Option<usize> {
+    if !was_truncated {
+        return None;
+    }
+    match complexity_cv(complexity) {
+        Some(cv) if cv < STABLE_CV_THRESHOLD => Some(artifacts.max_plans),
+        _ => Some(next_max_plans(artifacts)),
+    }
+}
+
 /// Build follow-up suggestions for an analyze response. Triggered on three
 /// signals: truncated sample (rerun with higher cap when variance is still
 /// material), tiny full population (cheap to audit deeply), or long critical
@@ -893,9 +954,7 @@ fn build_analysis_followups(
         // Coefficient of variation lets us decide whether bumping the cap
         // is worth the budget. A small CV (<10 %) means the medians have
         // stabilised — rerunning at 2× burns context for marginal change.
-        let cv = complexity
-            .filter(|s| s.mean.abs() > f64::EPSILON)
-            .map(|s| s.std_dev / s.mean.abs());
+        let cv = complexity_cv(complexity);
 
         if let Some(cv) = cv {
             if cv < STABLE_CV_THRESHOLD {
@@ -913,16 +972,8 @@ fn build_analysis_followups(
             }
         }
 
-        // Otherwise: suggest doubling, but capped at population_size so
-        // we never recommend a value larger than what exists.
-        // `saturating_mul(2)` guards against usize overflow on absurdly
-        // large caps; the `.max(+1)` guard catches the corner where
-        // doubling saturates back to the same value.
-        let doubled = artifacts
-            .max_plans
-            .saturating_mul(2)
-            .max(artifacts.max_plans + 1);
-        let next = doubled.min(artifacts.stats.total_possible.max(artifacts.max_plans));
+        // Otherwise: suggest doubling, capped at the population estimate.
+        let next = next_max_plans(artifacts);
         let cv_note = cv.map_or_else(String::new, |cv| format!(" (CV={cv:.2})"));
         followups.push(ToolFollowup {
             tool: TOOL_ANALYZE_DEGREE,
@@ -1362,6 +1413,84 @@ courses:
         assert!(response.complexity.is_some());
         assert!(response.total_credits.is_some());
         assert!(!response.selected_plans.is_empty());
+    }
+
+    /// `recommended_max_plans` is the machine-readable companion to the
+    /// truncation follow-up: `None` for a full-population run, `Some` when the
+    /// run was capped. A select-1-of-4 degree has a 4-plan population.
+    #[test]
+    fn test_recommended_max_plans_tracks_truncation() {
+        const SELECT_YAML: &str = r#"
+degree:
+  id: rec-max-plans
+  institution: Test University
+  program: Test Program
+  total_credits: 4
+  gpa_minimum: 2.0
+
+requirements:
+  pick:
+    name: Pick One
+    type: select
+    category: major
+    from:
+      courses:
+        - CS101
+        - CS102
+        - CS103
+        - CS104
+    count: 1
+
+courses:
+  CS101: {title: A, prefix: CS, number: "101", credits: 4}
+  CS102: {title: B, prefix: CS, number: "102", credits: 4}
+  CS103: {title: C, prefix: CS, number: "103", credits: 4}
+  CS104: {title: D, prefix: CS, number: "104", credits: 4}
+"#;
+
+        // Capped below the population → truncated → a concrete recommendation.
+        let capped = execute(
+            SELECT_YAML,
+            Some(1),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
+        assert!(capped.success, "error: {:?}", capped.error);
+        assert!(
+            capped.was_truncated,
+            "max_plans=1 vs a 4-plan population must truncate"
+        );
+        let rec = capped
+            .recommended_max_plans
+            .expect("a truncated run must recommend a max_plans");
+        assert!(rec >= 1, "recommendation must be a positive cap, got {rec}");
+
+        // Full population → nothing to widen → no recommendation.
+        let full = execute(
+            SELECT_YAML,
+            Some(50),
+            None,
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+        );
+        assert!(full.success, "error: {:?}", full.error);
+        assert!(
+            !full.was_truncated,
+            "max_plans=50 covers the 4-plan population"
+        );
+        assert_eq!(
+            full.recommended_max_plans, None,
+            "a full-population run must not recommend widening"
+        );
     }
 
     #[test]

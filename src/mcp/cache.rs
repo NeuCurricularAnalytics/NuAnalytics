@@ -41,6 +41,23 @@ pub const YAML_CACHE_PREFIX: &str = "cache:";
 pub const YAML_CACHE_TTL: Duration = Duration::from_hours(24);
 const ARTIFACT_CACHE_CAPACITY: usize = 4;
 
+/// Entry count past which [`YamlCache::insert`] runs the O(n) expiry sweep.
+/// Keeps the common-case write cheap while still bounding cache growth.
+const SWEEP_THRESHOLD: usize = 64;
+
+/// Outcome of looking up a `cache:<hash>` handle.
+///
+/// Distinguishes a handle that was never minted from one that has aged out, so
+/// callers can give a precise hint instead of a single "unknown or expired".
+pub enum CacheLookup {
+    /// Handle is live; carries the body and the remaining TTL.
+    Hit(Arc<str>, Duration),
+    /// Handle was minted but has passed its TTL.
+    Expired,
+    /// No such handle was ever minted (typo, or a different server process).
+    Unknown,
+}
+
 // ============================================================================
 // YAML cache
 // ============================================================================
@@ -67,10 +84,16 @@ impl YamlCache {
         format!("{YAML_CACHE_PREFIX}{:016x}", hasher.finish())
     }
 
-    /// Insert a YAML body, returning its handle. Sweeps expired entries as
-    /// a side-effect so the cache doesn't grow unboundedly under heavy use.
+    /// Insert a YAML body, returning its handle.
+    ///
+    /// The expiry sweep is O(n), so we only run it once the cache has grown
+    /// past `SWEEP_THRESHOLD` rather than on every write — keeping the write
+    /// lock held briefly in the common case (the field report's intermittent
+    /// `cache_yaml` timeouts) while still bounding growth under heavy use.
     pub fn insert(&mut self, body: String) -> String {
-        self.sweep_expired();
+        if self.entries.len() >= SWEEP_THRESHOLD {
+            self.sweep_expired();
+        }
         let handle = Self::handle_for(&body);
         self.entries.insert(
             handle.clone(),
@@ -88,10 +111,24 @@ impl YamlCache {
     /// re-cache before it lapses mid-session.
     #[must_use]
     pub fn get(&self, handle: &str) -> Option<(Arc<str>, Duration)> {
-        let entry = self.entries.get(handle)?;
-        let elapsed = entry.inserted_at.elapsed();
-        let remaining = YAML_CACHE_TTL.checked_sub(elapsed)?;
-        Some((entry.body.clone(), remaining))
+        match self.lookup(handle) {
+            CacheLookup::Hit(body, remaining) => Some((body, remaining)),
+            CacheLookup::Expired | CacheLookup::Unknown => None,
+        }
+    }
+
+    /// Like [`Self::get`] but distinguishes an aged-out handle from one that
+    /// was never minted, so the caller can surface a precise hint.
+    #[must_use]
+    pub fn lookup(&self, handle: &str) -> CacheLookup {
+        let Some(entry) = self.entries.get(handle) else {
+            return CacheLookup::Unknown;
+        };
+        YAML_CACHE_TTL
+            .checked_sub(entry.inserted_at.elapsed())
+            .map_or(CacheLookup::Expired, |remaining| {
+                CacheLookup::Hit(entry.body.clone(), remaining)
+            })
     }
 
     /// Current entry count. Exposed for the `cache_yaml` response so callers
@@ -324,6 +361,32 @@ mod tests {
     fn test_yaml_cache_unknown_handle_returns_none() {
         let cache = YamlCache::default();
         assert!(cache.get("cache:deadbeefdeadbeef").is_none());
+    }
+
+    #[test]
+    fn test_lookup_distinguishes_unknown_expired_and_hit() {
+        let mut cache = YamlCache::default();
+        // Never minted → Unknown.
+        assert!(matches!(
+            cache.lookup("cache:0000000000000000"),
+            CacheLookup::Unknown
+        ));
+
+        // Fresh handle → Hit with a remaining TTL.
+        let handle = cache.insert("degree:\n  id: lk\n".to_string());
+        assert!(matches!(cache.lookup(&handle), CacheLookup::Hit(_, _)));
+
+        // Backdate past the TTL window → Expired (distinct from Unknown), so
+        // the server can tell the caller to re-cache rather than guess a typo.
+        let stale = Instant::now()
+            .checked_sub(YAML_CACHE_TTL + Duration::from_secs(1))
+            .expect("backdated instant supported on this platform");
+        cache
+            .entries
+            .get_mut(&handle)
+            .expect("present after insert")
+            .inserted_at = stale;
+        assert!(matches!(cache.lookup(&handle), CacheLookup::Expired));
     }
 
     #[test]

@@ -114,6 +114,15 @@ pub fn parse_yaml_source(
         ));
     }
     if let Some(c) = yaml_content {
+        // A leading `@` is never valid degree YAML/JSON (it's a reserved YAML
+        // indicator) and almost always means the caller meant an at-path
+        // reference. Fail fast with a directive error rather than handing it to
+        // the parser, which previously stalled the whole tool call.
+        if c.trim_start().starts_with('@') {
+            return Err(error_json(
+                "yaml_content must be inline YAML/JSON, not a path reference (it starts with '@'). Use yaml_path for a file on the server, or degree_id for a cache:<hash> / stored program.",
+            ));
+        }
         return Ok(YamlSource::Content(c));
     }
     if let Some(p) = yaml_path {
@@ -412,6 +421,28 @@ mod tests {
     fn test_error_json_formats_message() {
         let out = error_json("something went wrong");
         assert_eq!(out, r#"{"error":"something went wrong"}"#);
+    }
+
+    #[test]
+    fn test_parse_yaml_source_rejects_at_prefixed_content() {
+        // A leading `@` means the caller mistook yaml_content for an at-path
+        // reference — fail fast with a directive error instead of stalling the
+        // YAML parser (the field-report hang).
+        let err = parse_yaml_source(Some("@/path/to/degree.yaml".to_string()), None, None)
+            .expect_err("@-prefixed yaml_content must be rejected");
+        assert!(
+            err.contains("yaml_path") && err.contains('@'),
+            "error must redirect to yaml_path and name the '@': {err}"
+        );
+        // Leading whitespace before the `@` is still caught.
+        assert!(parse_yaml_source(Some("   @foo".to_string()), None, None).is_err());
+    }
+
+    #[test]
+    fn test_parse_yaml_source_accepts_normal_content() {
+        let src = parse_yaml_source(Some("degree:\n  id: x\n".to_string()), None, None)
+            .expect("normal yaml_content must be accepted");
+        assert!(matches!(src, YamlSource::Content(_)));
     }
 
     #[test]
