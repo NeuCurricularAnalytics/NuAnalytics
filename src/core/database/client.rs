@@ -20,7 +20,7 @@
 //! ## Long-lived sessions (MCP server)
 //!
 //! The whole [`AuthState`] (access **and** refresh token) is held behind an
-//! `Arc<RwLock<…>>`, and every request first calls [`DbClient::current_token`],
+//! `Arc<RwLock<…>>`, and every request first calls `current_token` (private),
 //! which refreshes proactively when the cached access token is expired. This
 //! keeps a long-running process (the MCP server in particular) alive past the
 //! 1-hour JWT expiry without a restart — and, because the refresh path re-reads
