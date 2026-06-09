@@ -24,6 +24,8 @@
 pub mod auth;
 pub mod client;
 pub mod error;
+#[cfg(feature = "database")]
+pub mod import;
 pub mod ipeds;
 pub mod models;
 pub mod query;

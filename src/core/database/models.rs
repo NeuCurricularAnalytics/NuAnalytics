@@ -209,6 +209,309 @@ pub struct DemographicRepresentation {
     pub representation_ratio: Option<f64>,
 }
 
+// =============================================================================
+// Imported degree program tables (see docs/database/programs-schema.sql).
+// `id`/`created_at`/`updated_at` are DB-assigned, so they are skipped when None
+// (PostgREST rejects bulk INSERTs that declare a DB-assigned column); every other
+// optional stays in the payload as `null` so each batch has a uniform key set.
+// JSONB columns are `serde_json::Value`; Postgres `text[]` columns are
+// `Option<Vec<String>>`.
+// =============================================================================
+
+/// Row in `programs` — one imported degree program (+ lossless `document`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredProgram {
+    /// Auto-generated record ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    /// Deterministic idempotency key (`on_conflict` target)
+    pub program_key: String,
+    /// `Degree.id` slug (may be null; non-unique here)
+    pub degree_id: Option<String>,
+    /// Resolved IPEDS unit id (no FK)
+    pub unitid: Option<i32>,
+    /// Course-catalog partition: `unitid` as text when resolved, else institution slug
+    pub institution_ref: String,
+    /// Original `Degree.institution` string
+    pub institution_raw: Option<String>,
+    /// CIP code (no FK; LEFT JOIN `cip_codes`)
+    pub cip_code: Option<String>,
+    /// Program name
+    pub name: String,
+    /// Normalized degree type code (→ `degree_types.code`, no FK)
+    pub degree_type: Option<String>,
+    /// Derived: major | minor | concentration | certificate | track | …
+    pub program_kind: Option<String>,
+    /// Derived discipline: ai | cs | ds | cy | …
+    pub discipline: Option<String>,
+    /// `semester` | `quarter`
+    pub system_type: String,
+    /// Raw tag set (GIN-indexed)
+    pub tags: Option<Vec<String>>,
+    /// Catalog year (part of the program identity)
+    pub catalog_year: Option<String>,
+    /// Official catalog URL
+    pub source_url: Option<String>,
+    /// Credits required to graduate
+    pub total_credits: Option<i32>,
+    /// Minimum upper-division credits
+    pub upper_division_credits: Option<i32>,
+    /// Minimum in-major credits
+    pub in_major_credits: Option<i32>,
+    /// Minimum overall GPA
+    pub gpa_minimum: Option<f32>,
+    /// Minimum major GPA
+    pub gpa_major: Option<f32>,
+    /// Default minimum grade
+    pub grade_minimum: Option<String>,
+    /// Subject prefixes counting toward the major
+    pub major_subjects: Option<Vec<String>>,
+    /// Program-level double-counting default (effective control is per-requirement)
+    pub allow_double_counting: Option<bool>,
+    /// Authoritative unified-JSON degree document (source of truth)
+    pub document: serde_json::Value,
+    /// sha256 of the canonical document (change detection)
+    pub document_hash: String,
+    /// Human-confirmed; gates overwrite
+    pub verified: bool,
+    /// Whether `unitid` was resolved
+    pub institution_resolved: bool,
+    /// Whether any requirement is logically impossible (count > pool)
+    pub has_impossible_requirements: bool,
+    /// Re-import commit-marker generation
+    pub generation: i64,
+    /// Creation timestamp (ISO 8601)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    /// Update timestamp (ISO 8601)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+/// Row in `courses` — shared per-institution course catalog.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredCourse {
+    /// Auto-generated record ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    /// Catalog partition (unitid-as-text or institution slug)
+    pub institution_ref: String,
+    /// Resolved IPEDS unit id (no FK)
+    pub unitid: Option<i32>,
+    /// Course-map key, e.g. "CMPSC121"
+    pub course_code: String,
+    /// Subject prefix
+    pub prefix: Option<String>,
+    /// Course number
+    pub number: Option<String>,
+    /// Course title
+    pub name: Option<String>,
+    /// Credit hours
+    pub credit_hours: Option<f32>,
+    /// Variable-credit minimum
+    pub credit_min: Option<i32>,
+    /// Variable-credit maximum
+    pub credit_max: Option<i32>,
+    /// Prerequisite tree ({and|or|leaf})
+    pub prerequisites: Option<serde_json::Value>,
+    /// Raw prerequisite expression string
+    pub prerequisites_raw: Option<String>,
+    /// Gen-ed attribute codes
+    pub gen_ed_attributes: Option<Vec<String>>,
+    /// Cross-listed course codes
+    pub cross_listed_as: Option<Vec<String>>,
+    /// Course-level tags
+    pub tags: Option<Vec<String>>,
+    /// Sync generation stamp
+    pub generation: i64,
+    /// Creation timestamp (ISO 8601)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    /// Update timestamp (ISO 8601)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+/// Row in `program_courses` — M:N junction with per-program overrides.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredProgramCourse {
+    /// Auto-generated record ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    /// Parent program natural key
+    pub program_key: String,
+    /// Joins to `courses` on (`institution_ref`, `course_code`)
+    pub institution_ref: String,
+    /// Course-map key
+    pub course_code: String,
+    /// Program-specific credit override when it diverges from the canonical course
+    pub credit_hours_override: Option<f32>,
+    /// Program-specific course name when it diverges
+    pub name_as_listed: Option<String>,
+    /// Sync generation stamp (swept per program)
+    pub generation: i64,
+}
+
+/// Row in `program_requirements` — the requirement tree flattened by `req_path`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredProgramRequirement {
+    /// Auto-generated record ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    /// Parent program natural key
+    pub program_key: String,
+    /// Deterministic address of this node in the requirement tree
+    pub req_path: String,
+    /// Parent `req_path` (NULL for top-level) — `one_of` adjacency
+    pub parent_path: Option<String>,
+    /// Top-level requirements-map key (NULL for nested)
+    pub map_key: Option<String>,
+    /// `RequirementOption.id` when under a `one_of` option
+    pub option_id: Option<String>,
+    /// `RequirementOption.name`
+    pub option_name: Option<String>,
+    /// Human-readable requirement name
+    pub name: Option<String>,
+    /// `all` | `select` | `one_of`
+    pub req_type: String,
+    /// major | supporting | `gen_ed` | elective
+    pub category: Option<String>,
+    /// Number of courses to select
+    pub count: Option<i32>,
+    /// Credits to select
+    pub credits: Option<i32>,
+    /// Variable-credit minimum
+    pub credit_min: Option<i32>,
+    /// Variable-credit maximum
+    pub credit_max: Option<i32>,
+    /// Requirement-level tags
+    pub tags: Option<Vec<String>>,
+    /// Course list for `type: all`
+    pub courses: Option<serde_json::Value>,
+    /// The `from`-clause (courses/pattern/include/exclude/groups/…)
+    pub selection_spec: Option<serde_json::Value>,
+    /// `RequirementConstraints` (named to avoid the SQL `CONSTRAINT` keyword)
+    pub req_constraints: Option<serde_json::Value>,
+    /// Computed: count > resolvable pool (queryable, not dropped)
+    pub is_impossible: bool,
+    /// Derived from `constraints.exclude_used` (+ program default)
+    pub allow_double_count: Option<bool>,
+    /// Sync generation stamp (swept per program)
+    pub generation: i64,
+}
+
+/// Row in `analysis_runs` — one `degree analyze` run of a program.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredAnalysisRun {
+    /// Auto-generated record ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    /// Deterministic run key (`on_conflict` target)
+    pub run_key: String,
+    /// Parent program natural key (no FK; LEFT JOIN programs)
+    pub program_key: String,
+    /// Hash of the exact degree analyzed (the trimmed variant if trimmed)
+    pub analyzed_document_hash: String,
+    /// `full` | `trimmed` | other transform label
+    pub variant: String,
+    /// Convenience flag (variant trims the degree)
+    pub trimmed: bool,
+    /// The analyzed degree when it differs from the program's document; NULL for full runs
+    pub analyzed_document: Option<serde_json::Value>,
+    /// Plans enumerated/sampled
+    pub variations_run: Option<i32>,
+    /// `sequential` | `shuffled` | `stratified`
+    pub sample_type: Option<String>,
+    /// `mean` | `median`
+    pub calc_strategy: Option<String>,
+    /// Plan enumeration strategy
+    pub sampling_strategy: Option<String>,
+    /// Plan generation cap used
+    pub max_plans: Option<i32>,
+    /// Whether the full plan space was generated
+    pub full_run: Option<bool>,
+    /// Courses pinned into every plan
+    pub included_courses: Option<Vec<String>>,
+    /// Degree-level metric stats {complexity, credits, delay}
+    pub degree_metrics: Option<serde_json::Value>,
+    /// Promoted mean complexity (for ranking)
+    pub complexity_mean: Option<f32>,
+    /// Promoted mean delay
+    pub delay_mean: Option<f32>,
+    /// Promoted mean credits
+    pub credits_mean: Option<f32>,
+    /// Sync generation stamp
+    pub generation: i64,
+    /// Creation timestamp (ISO 8601)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    /// Update timestamp (ISO 8601)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+/// Row in `analysis_course_metrics` — per run × course graph metrics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredAnalysisCourseMetric {
+    /// Auto-generated record ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    /// Parent run key (`on_conflict` target with `course_code`)
+    pub run_key: String,
+    /// Denormalized program key for cross-run course queries
+    pub program_key: String,
+    /// Course-map key
+    pub course_code: String,
+    /// How many variations included this course
+    pub plan_count: Option<i32>,
+    /// Promoted mean complexity
+    pub complexity_mean: Option<f32>,
+    /// Promoted mean centrality
+    pub centrality_mean: Option<f32>,
+    /// Promoted mean delay
+    pub delay_mean: Option<f32>,
+    /// Promoted mean blocking
+    pub blocking_mean: Option<f32>,
+    /// Full 7-stat breakdown {complexity, centrality, delay, blocking}
+    pub metrics: Option<serde_json::Value>,
+    /// Sync generation stamp
+    pub generation: i64,
+}
+
+/// Row in `analysis_plans` — per run × selected exemplar plan.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredAnalysisPlan {
+    /// Auto-generated record ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    /// Parent run key (`on_conflict` target with `plan_index`)
+    pub run_key: String,
+    /// Denormalized program key
+    pub program_key: String,
+    /// Position within the run's `selected_plans`
+    pub plan_index: i32,
+    /// `Shortest Path` | `Longest Path` | `Random Sample` | …
+    pub category: Option<String>,
+    /// Terms required to complete this plan
+    pub terms_required: Option<i32>,
+    /// Total curriculum complexity of the plan
+    pub total_complexity: Option<f32>,
+    /// Longest delay factor in the plan
+    pub longest_delay: Option<f32>,
+    /// Total credits in the plan
+    pub credits: Option<f32>,
+    /// Number of courses in the plan
+    pub course_count: Option<i32>,
+    /// Whether the plan is ready for the calc tool
+    pub is_calc_ready: Option<bool>,
+    /// Critical path course codes
+    pub critical_path: Option<serde_json::Value>,
+    /// Term-by-term schedule [{term, courses, credits}, …]
+    pub schedule: Option<serde_json::Value>,
+    /// Sync generation stamp
+    pub generation: i64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -38,6 +38,10 @@ pub struct Degree {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub institution: Option<String>,
 
+    /// IPEDS unit id, when known
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unitid: Option<i32>,
+
     /// Catalog year (e.g., "2024-2025")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub catalog_year: Option<String>,
@@ -276,6 +280,7 @@ impl Degree {
             // Extended fields default to None
             id: None,
             institution: None,
+            unitid: None,
             catalog_year: None,
             source_url: None,
             total_credits: None,
@@ -312,6 +317,7 @@ impl Degree {
             system_type,
             id: Some(id),
             institution: Some(institution),
+            unitid: None,
             catalog_year: Some(catalog_year),
             source_url: None,
             total_credits: Some(total_credits),

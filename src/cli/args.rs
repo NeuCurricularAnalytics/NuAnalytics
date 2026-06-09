@@ -604,6 +604,79 @@ pub enum DbSubcommand {
         #[arg(long, default_value = "2023")]
         year: u16,
     },
+    /// Import degree analysis report(s) into the normalized program tables.
+    ///
+    /// Each input is a degree-first analysis report (`*_report.json`) or a plain
+    /// unified degree (JSON/YAML). The shared import core parses the document,
+    /// resolves its institution against IPEDS, and upserts the program projection
+    /// (`programs`, `courses`, `program_courses`, `program_requirements`) plus, when
+    /// the report carries an `analysis` block, one analysis run with its course
+    /// metrics and selected plans.
+    ///
+    /// Each positional argument may be a file or a directory; a directory is
+    /// expanded to its `*_report.json` files (falling back to `*.json` when none
+    /// match). Overwriting an existing program requires `--replace` (unverified) or
+    /// `--force` (verified) — that explicit flag is the double-check, so there is no
+    /// interactive prompt. `--dry-run` reports the row counts without writing.
+    ///
+    /// Examples:
+    /// ```sh
+    /// nuanalytics db import metrics/neu-khoury-bscs-boston_report.json
+    /// nuanalytics db import metrics/ --dry-run
+    /// nuanalytics db import report.json --unitid 167358 --replace
+    /// ```
+    Import {
+        /// Degree report / unified degree file(s) and/or directories. A directory
+        /// is expanded to its `*_report.json` files (fallback `*.json`).
+        #[arg(value_name = "FILES", num_args = 1..)]
+        files: Vec<std::path::PathBuf>,
+
+        /// Analysis-run variant label. `full` (default) writes the program
+        /// projection; a non-`full` variant only attaches an analysis run.
+        #[arg(long, value_name = "NAME")]
+        variant: Option<String>,
+
+        /// Override the resolved institution IPEDS unit id.
+        #[arg(long, value_name = "N")]
+        unitid: Option<i32>,
+
+        /// Override the institution name used for resolution.
+        #[arg(long, value_name = "NAME")]
+        institution: Option<String>,
+
+        /// Override the CIP code (part of the natural program key).
+        #[arg(long, value_name = "CIP")]
+        cip: Option<String>,
+
+        /// Override the catalog year (part of the program identity).
+        #[arg(long, value_name = "YEAR")]
+        catalog: Option<String>,
+
+        /// Override the degree id.
+        #[arg(long = "degree-id", value_name = "ID")]
+        degree_id: Option<String>,
+
+        /// Overwrite a verified program / skip confirmation.
+        #[arg(long)]
+        force: bool,
+
+        /// Replace an existing (unverified) program.
+        #[arg(long)]
+        replace: bool,
+
+        /// Skip the program entirely if it already exists.
+        #[arg(long = "skip-existing")]
+        skip_existing: bool,
+
+        /// Build the plan and report counts, but write nothing.
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+
+        /// Number of files to process concurrently. v1 always runs sequentially;
+        /// reserved for a future worker pool.
+        #[arg(short = 'j', long, value_name = "N", default_value_t = 1)]
+        jobs: usize,
+    },
 }
 
 #[derive(Parser, Debug)]

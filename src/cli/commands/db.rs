@@ -4,10 +4,12 @@
 //! - `login` / `logout` / `whoami` — Supabase OAuth authentication
 //! - `status` — connectivity check
 //! - `ipeds-import` — IPEDS CSV ingestion
+//! - `import` — degree report → normalized program tables
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use nu_analytics::config::Config;
+use nu_analytics::database::import::{execute_import, ImportOptions, ImportOutcome, ImportResult};
 use nu_analytics::database::{
     auth_file_path, clear_auth_state, ipeds, load_auth_state, save_auth_state, AuthState, DbClient,
 };
@@ -31,6 +33,34 @@ pub fn run(subcommand: DbSubcommand, config: &Config) {
             completions,
             year,
         } => run_ipeds_import(config, dir.as_deref(), institutions, completions, year),
+        DbSubcommand::Import {
+            files,
+            variant,
+            unitid,
+            institution,
+            cip,
+            catalog,
+            degree_id,
+            force,
+            replace,
+            skip_existing,
+            dry_run,
+            jobs,
+        } => {
+            let opts = ImportOptions {
+                variant: variant.unwrap_or_else(|| "full".to_string()),
+                unitid,
+                institution,
+                cip_code: cip,
+                catalog_year: catalog,
+                degree_id,
+                force,
+                replace,
+                skip_existing,
+                dry_run,
+            };
+            run_import(config, &files, &opts, jobs);
+        }
     }
 }
 
@@ -599,6 +629,362 @@ fn run_ipeds_import(
         }
     } else {
         println!("  ℹ Skipping completions (no file provided or found)");
+    }
+}
+
+// ============================================================================
+// Degree import
+// ============================================================================
+
+/// Run `db import`: load degree report(s) into the normalized program tables.
+///
+/// Expands any directory arguments to their report files, connects to the
+/// database (printing login guidance if unauthenticated), then imports each
+/// file. A single file prints a detailed outcome and exits non-zero on a
+/// blocked result; a batch isolates per-file failures to `import_failures.log`
+/// and prints a final summary.
+fn run_import(config: &Config, files: &[std::path::PathBuf], opts: &ImportOptions, jobs: usize) {
+    // `--jobs` is accepted for forward-compatibility; v1 always runs
+    // sequentially (no worker pool yet — the heavy lifting is one network
+    // round-trip per file, so a pool buys little for the common batch sizes).
+    let _ = jobs;
+
+    let inputs = collect_import_inputs(files);
+    if inputs.is_empty() {
+        eprintln!("✗ No degree report files to import.");
+        eprintln!("  Pass one or more *.json report files, or a directory containing them.");
+        std::process::exit(1);
+    }
+
+    let Some(rt) = make_runtime() else { return };
+
+    let client = match rt.block_on(DbClient::from_config(&config.database)) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("✗ Database not available: {e}");
+            eprintln!("  Configure the database and run `nuanalytics db login` first.");
+            std::process::exit(1);
+        }
+    };
+
+    let dry = if opts.dry_run { " (dry-run)" } else { "" };
+
+    if inputs.len() == 1 {
+        run_import_single(&rt, &client, &inputs[0], opts, dry);
+    } else {
+        run_import_batch(&rt, &client, &inputs, opts, dry);
+    }
+}
+
+/// Import a single file with full diagnostics; exit non-zero when the import is
+/// blocked (rejected / ambiguous / needs-confirmation) or a transport error
+/// occurs.
+fn run_import_single(
+    rt: &tokio::runtime::Runtime,
+    client: &DbClient,
+    path: &std::path::Path,
+    opts: &ImportOptions,
+    dry: &str,
+) {
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("✗ Cannot read {}: {e}", path.display());
+            std::process::exit(1);
+        }
+    };
+
+    match rt.block_on(execute_import(client, &text, opts)) {
+        Ok(outcome) => {
+            print_import_outcome(path, &outcome, dry);
+            if is_blocked(&outcome.result) {
+                std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            eprintln!("✗ Import failed for {}: {e}", path.display());
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Running tally of batch outcomes by class.
+#[derive(Default)]
+struct ImportTally {
+    created: usize,
+    updated: usize,
+    skipped: usize,
+    needs_confirmation: usize,
+    ambiguous: usize,
+    rejected: usize,
+    errors: usize,
+}
+
+/// Import many files with per-file isolation: a read/parse/transport error on
+/// one file is logged and the run continues. Failures are written to
+/// `import_failures.log`; a one-line progress is printed per file plus a final
+/// summary.
+fn run_import_batch(
+    rt: &tokio::runtime::Runtime,
+    client: &DbClient,
+    inputs: &[std::path::PathBuf],
+    opts: &ImportOptions,
+    dry: &str,
+) {
+    let total = inputs.len();
+    println!("Importing {total} report(s){dry}…");
+
+    let mut tally = ImportTally::default();
+    let mut failures: Vec<(std::path::PathBuf, String)> = Vec::new();
+
+    for (idx, path) in inputs.iter().enumerate() {
+        let label = format!("[{}/{total}] {}", idx + 1, path.display());
+        let text = match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(e) => {
+                tally.errors += 1;
+                failures.push((path.clone(), format!("read error: {e}")));
+                println!("  ✗ {label}: read error: {e}");
+                continue;
+            }
+        };
+        match rt.block_on(execute_import(client, &text, opts)) {
+            Ok(outcome) => {
+                tally_outcome(&mut tally, &outcome.result);
+                println!(
+                    "  {} {label}: {}",
+                    outcome_marker(&outcome.result),
+                    result_label(&outcome.result)
+                );
+            }
+            Err(e) => {
+                tally.errors += 1;
+                failures.push((path.clone(), e.to_string()));
+                println!("  ✗ {label}: {e}");
+            }
+        }
+    }
+
+    print_import_summary(&tally, total, dry);
+    write_import_failures(&failures);
+}
+
+/// Expand `files` into a flat list of report files. A directory is expanded to
+/// its `*_report.json` files, falling back to `*.json` when none match. A plain
+/// file path is taken verbatim. Missing paths are warned about and skipped.
+fn collect_import_inputs(files: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    for path in files {
+        if path.is_dir() {
+            let expanded = collect_dir_reports(path);
+            if expanded.is_empty() {
+                eprintln!("⚠ No *.json report files found in {}", path.display());
+            }
+            out.extend(expanded);
+        } else if path.exists() {
+            out.push(path.clone());
+        } else {
+            eprintln!("⚠ Skipping missing path: {}", path.display());
+        }
+    }
+    out
+}
+
+/// List the report files directly under `dir`: `*_report.json` if any exist,
+/// otherwise every `*.json`. Results are sorted for a deterministic order.
+fn collect_dir_reports(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let json: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_file()
+                && p.extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+        })
+        .collect();
+    let mut reports: Vec<std::path::PathBuf> = json
+        .iter()
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.ends_with("_report.json"))
+        })
+        .cloned()
+        .collect();
+    if reports.is_empty() {
+        reports = json;
+    }
+    reports.sort();
+    reports
+}
+
+/// Whether a result requires the user to act before the import can proceed.
+const fn is_blocked(result: &ImportResult) -> bool {
+    matches!(
+        result,
+        ImportResult::NeedsConfirmation(_)
+            | ImportResult::InstitutionAmbiguous(_)
+            | ImportResult::Rejected(_)
+    )
+}
+
+/// The `✓`/`⚠`/`✗` status marker for a result class.
+const fn outcome_marker(result: &ImportResult) -> &'static str {
+    match result {
+        ImportResult::Created | ImportResult::Updated => "✓",
+        ImportResult::Skipped => "ℹ",
+        ImportResult::NeedsConfirmation(_) | ImportResult::InstitutionAmbiguous(_) => "⚠",
+        ImportResult::Rejected(_) => "✗",
+    }
+}
+
+/// A short human label for a result class.
+const fn result_label(result: &ImportResult) -> &'static str {
+    match result {
+        ImportResult::Created => "created",
+        ImportResult::Updated => "updated",
+        ImportResult::Skipped => "skipped",
+        ImportResult::NeedsConfirmation(_) => "needs confirmation",
+        ImportResult::InstitutionAmbiguous(_) => "institution ambiguous",
+        ImportResult::Rejected(_) => "rejected",
+    }
+}
+
+/// Increment the batch tally for one result.
+const fn tally_outcome(tally: &mut ImportTally, result: &ImportResult) {
+    match result {
+        ImportResult::Created => tally.created += 1,
+        ImportResult::Updated => tally.updated += 1,
+        ImportResult::Skipped => tally.skipped += 1,
+        ImportResult::NeedsConfirmation(_) => tally.needs_confirmation += 1,
+        ImportResult::InstitutionAmbiguous(_) => tally.ambiguous += 1,
+        ImportResult::Rejected(_) => tally.rejected += 1,
+    }
+}
+
+/// Print the detailed outcome of a single import (result, resolved unit id,
+/// row counts, conversion warnings, messages, and guidance when blocked).
+fn print_import_outcome(path: &std::path::Path, outcome: &ImportOutcome, dry: &str) {
+    println!(
+        "{} {}: {}{dry}",
+        outcome_marker(&outcome.result),
+        path.display(),
+        result_label(&outcome.result)
+    );
+    let institution = match (&outcome.institution, outcome.resolved_unitid) {
+        (Some(name), Some(u)) => format!("{name} (unitid {u})"),
+        (Some(name), None) => format!("{name} (unresolved)"),
+        (None, Some(u)) => format!("(unitid {u})"),
+        (None, None) => "(unresolved)".to_string(),
+    };
+    println!("  institution:    {institution}");
+    println!("  program_key:    {}", outcome.program_key);
+    println!("  variant:        {}", outcome.variant);
+    // On the ambiguous path nothing is built (resolution stops early), so the
+    // analysis/row counts would be meaningless — skip them; the candidate list
+    // printed below is the actionable part.
+    if !matches!(outcome.result, ImportResult::InstitutionAmbiguous(_)) {
+        if outcome.run_written {
+            match (outcome.variations_run, outcome.sample_type.as_deref()) {
+                (Some(v), Some(s)) => println!(
+                    "  analysis:       {v} variations ({s}), {} sample plans",
+                    outcome.plans_written
+                ),
+                (Some(v), None) => {
+                    println!(
+                        "  analysis:       {v} variations, {} sample plans",
+                        outcome.plans_written
+                    );
+                }
+                _ => println!("  analysis:       {} sample plans", outcome.plans_written),
+            }
+        } else {
+            println!("  analysis:       none (no metrics in upload)");
+        }
+        println!(
+            "  rows:           {} courses, {} requirements, {} course-metrics",
+            outcome.courses_written, outcome.requirements_written, outcome.course_metrics_written
+        );
+    }
+
+    if !outcome.conversion_warnings.is_empty() {
+        println!("  conversion warnings:");
+        for w in &outcome.conversion_warnings {
+            println!("    • {w}");
+        }
+    }
+    if !outcome.messages.is_empty() {
+        println!("  messages:");
+        for m in &outcome.messages {
+            println!("    • {m}");
+        }
+    }
+
+    print_blocked_guidance(&outcome.result);
+}
+
+/// Print actionable guidance for a blocked result (rejected / ambiguous /
+/// needs-confirmation); no-op for create/update/skip.
+fn print_blocked_guidance(result: &ImportResult) {
+    match result {
+        ImportResult::Rejected(errors) => {
+            eprintln!("  ✗ report rejected:");
+            for e in errors {
+                eprintln!("    • {e}");
+            }
+        }
+        ImportResult::InstitutionAmbiguous(candidates) => {
+            eprintln!(
+                "  ⚠ institution name matched multiple institutions — re-run with --unitid <N>:"
+            );
+            for (unitid, name) in candidates {
+                eprintln!("    • {unitid}  {name}");
+            }
+        }
+        ImportResult::NeedsConfirmation(reason) => {
+            eprintln!("  ⚠ {reason}");
+            eprintln!("    re-run with --replace (unverified) or --force (verified) to overwrite");
+        }
+        ImportResult::Created | ImportResult::Updated | ImportResult::Skipped => {}
+    }
+}
+
+/// Print the final batch summary line(s).
+fn print_import_summary(tally: &ImportTally, total: usize, dry: &str) {
+    println!(
+        "✓ imported {created} created, {updated} updated, {skipped} skipped of {total}{dry}",
+        created = tally.created,
+        updated = tally.updated,
+        skipped = tally.skipped,
+    );
+    let attention = tally.needs_confirmation + tally.ambiguous + tally.rejected + tally.errors;
+    if attention > 0 {
+        println!(
+            "  ⚠ {} needs-confirmation, {} ambiguous, {} rejected, {} error(s)",
+            tally.needs_confirmation, tally.ambiguous, tally.rejected, tally.errors
+        );
+    }
+}
+
+/// Write batch failures to `import_failures.log` in the current directory
+/// (one `path<TAB>reason` line each). No-op when there are no failures.
+fn write_import_failures(failures: &[(std::path::PathBuf, String)]) {
+    use std::fmt::Write as _;
+
+    if failures.is_empty() {
+        return;
+    }
+    let mut body = String::new();
+    for (path, reason) in failures {
+        let _ = writeln!(body, "{}\t{reason}", path.display());
+    }
+    let log = std::path::Path::new("import_failures.log");
+    if std::fs::write(log, body).is_ok() {
+        println!("  failures listed in {}", log.display());
     }
 }
 

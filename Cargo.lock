@@ -1383,6 +1383,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "supabase-client-sdk",
  "tempfile",
  "tokio",
