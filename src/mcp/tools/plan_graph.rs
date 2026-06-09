@@ -649,4 +649,64 @@ courses:
         // The shared GRAPH_VANILLA_JS prelude marker must be absent.
         assert!(!html.contains("window.nuGraphs ="));
     }
+
+    #[test]
+    fn test_render_does_not_hang_on_pathological_prerequisites() {
+        // Regression for the field-report "render_plan_graph → Tool execution
+        // failed" hang: an in-plan course whose prerequisites_raw is a wide
+        // AND-of-ORs makes build_edges_from_courses → parse_to_dnf explode
+        // (2^30 paths) and the tool times out. The expression resolves to just
+        // CS101 (so the plan is valid and CS201 is schedulable) but the raw
+        // string still drives the unbounded expansion. With the DNF cap this
+        // returns promptly; without it, this test hangs.
+        let groups = vec!["(CS101|CS101)"; 30].join(" & ");
+        let yaml = format!(
+            r#"
+degree:
+  id: pathological
+  institution: Test University
+  program: Test Program
+  total_credits: 8
+  gpa_minimum: 2.0
+  major_subjects: ["CS"]
+
+requirements:
+  intro:
+    name: Intro
+    type: all
+    category: major
+    courses: [CS101, CS201]
+
+courses:
+  CS101:
+    title: Intro CS
+    prefix: CS
+    number: "101"
+    credits: 4
+  CS201:
+    title: Data Structures
+    prefix: CS
+    number: "201"
+    credits: 4
+    prerequisites_raw: "{groups}"
+"#
+        );
+
+        let response = execute(
+            &yaml,
+            Some("shortest"),
+            None,
+            None,
+            VisualizationFormat::Standalone,
+            Some(10),
+            None,
+            false,
+        );
+        assert!(
+            response.success,
+            "render must stay bounded on a pathological prereq: {:?}",
+            response.error
+        );
+        assert!(response.node_count.is_some_and(|n| n > 0));
+    }
 }

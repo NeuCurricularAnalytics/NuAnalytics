@@ -394,6 +394,16 @@ pub fn extract_all_courses(raw: &str) -> Vec<String> {
 // ============================================================================
 
 /// Recursively parse prerequisite expression into DNF
+/// Hard cap on the number of DNF paths produced for a single prerequisite
+/// expression. DNF is an OR-of-ANDs, so an `(A|B) & (C|D) & …` expression with
+/// `n` two-way OR groups expands to `2^n` paths — a pathological scrape (~30
+/// groups) is a billion `Vec`s and effectively hangs the caller (this is the
+/// `render_plan_graph` "Tool execution failed" timeout). No real prerequisite
+/// has anywhere near this many genuinely distinct satisfying paths, so we cap
+/// the expansion: every kept path is still complete and valid (it includes a
+/// course from each AND part), we just stop enumerating further alternatives.
+const MAX_DNF_PATHS: usize = 1024;
+
 fn parse_dnf_recursive(s: &str) -> Vec<Vec<String>> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
@@ -407,8 +417,11 @@ fn parse_dnf_recursive(s: &str) -> Vec<Vec<String>> {
         let or_parts = split_at_level(unwrapped, '|');
         let mut result = Vec::new();
         for part in or_parts {
-            let part_dnf = parse_dnf_recursive(part.trim());
-            result.extend(part_dnf);
+            result.extend(parse_dnf_recursive(part.trim()));
+            if result.len() >= MAX_DNF_PATHS {
+                result.truncate(MAX_DNF_PATHS);
+                break;
+            }
         }
         return result;
     }
@@ -424,13 +437,18 @@ fn parse_dnf_recursive(s: &str) -> Vec<Vec<String>> {
                 continue;
             }
 
-            // Cartesian product
+            // Cartesian product, bounded at MAX_DNF_PATHS so a pathological
+            // AND-of-ORs can't explode. Stop pushing once the cap is hit; the
+            // paths kept so far each still span every AND part processed.
             let mut new_paths = Vec::new();
-            for existing in &current_paths {
+            'product: for existing in &current_paths {
                 for new_part in &part_dnf {
                     let mut combined = existing.clone();
                     combined.extend(new_part.clone());
                     new_paths.push(combined);
+                    if new_paths.len() >= MAX_DNF_PATHS {
+                        break 'product;
+                    }
                 }
             }
             current_paths = new_paths;
@@ -897,5 +915,51 @@ mod tests {
         let result = extract_all_courses("CS-101 & CS_102[A] | CS.103");
         // Should extract courses even with special chars
         assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_dnf_bounds_pathological_and_of_ors() {
+        // `(A0|B0) & (A1|B1) & … & (A29|B29)` is 2^30 ≈ 1.07e9 DNF paths
+        // unbounded — the exact explosion that hung render_plan_graph. The cap
+        // must keep this fast and bounded. (This test running at all, rather
+        // than hanging/OOMing, is the regression guard.)
+        const GROUPS: usize = 30;
+        let expr = (0..GROUPS)
+            .map(|i| format!("(A{i}|B{i})"))
+            .collect::<Vec<_>>()
+            .join(" & ");
+
+        let paths = parse_to_dnf(&expr);
+
+        assert!(
+            paths.len() <= MAX_DNF_PATHS,
+            "DNF expansion must be capped at {MAX_DNF_PATHS}, got {}",
+            paths.len()
+        );
+        assert!(
+            !paths.is_empty(),
+            "a satisfiable expression must yield paths"
+        );
+        // Every kept path must still be complete — one course from each of the
+        // 30 AND groups — so a capped path remains a valid satisfying set.
+        for path in &paths {
+            assert_eq!(
+                path.len(),
+                GROUPS,
+                "each kept path must span every AND group: {path:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_dnf_bounds_wide_or() {
+        // A degenerate wide OR (`X0 | X1 | … | X4999`) must also stay bounded.
+        let expr = (0..5000)
+            .map(|i| format!("X{i}"))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        let paths = parse_to_dnf(&expr);
+        assert!(paths.len() <= MAX_DNF_PATHS, "wide OR must be capped");
+        assert!(!paths.is_empty());
     }
 }
