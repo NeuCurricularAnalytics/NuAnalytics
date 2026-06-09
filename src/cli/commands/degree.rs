@@ -688,7 +688,7 @@ fn parse_program_rows(value: &serde_json::Value) -> Vec<StoredProgramRow> {
         .unwrap_or_default()
 }
 
-/// Turn a stored `document` JSONB value into a [`DegreeProgram`].
+/// Turn a stored `document` JSONB value into a `DegreeProgram`.
 ///
 /// The `document` is the lossless unified-degree JSON produced by
 /// `to_unified_value` (prerequisites carried in the structured tagged form), so
@@ -1669,7 +1669,7 @@ fn analyze_degree(
     analyze_program(&program, options, config)
 }
 
-/// Run the full single-degree analysis on an already-loaded [`DegreeProgram`].
+/// Run the full single-degree analysis on an already-loaded `DegreeProgram`.
 ///
 /// This is the shared analysis seam: [`analyze_degree`] calls it after loading a
 /// file, and the `--from-db` path calls it with a program parsed from a stored
