@@ -1,0 +1,6605 @@
+{
+  "degree": {
+    "allow_double_counting": false,
+    "catalog_year": "2025-2026",
+    "cip_code": "11.0701",
+    "degree_type": "BS",
+    "gpa_major": 2.0,
+    "gpa_minimum": 2.0,
+    "grade_minimum": "D-",
+    "id": "northeastern-university-bachelor-of-science-in-computer-science-concentration",
+    "institution": "Northeastern University",
+    "major_subjects": [
+      "CS",
+      "CY",
+      "DS",
+      "IS"
+    ],
+    "name": "Bachelor of Science in Computer Science (Boston)",
+    "source_url": "https://catalog.northeastern.edu/undergraduate/computer-information-science/computer-science/bscs/#programrequirementstext",
+    "system_type": "semester",
+    "tags": [
+      "ai",
+      "ai-concentration"
+    ],
+    "total_credits": 134
+  },
+  "analysis": {
+    "metrics": {
+      "complexity": {
+        "max": 259.0,
+        "mean": 191.05789842732656,
+        "median": 191.0,
+        "min": 131.0,
+        "q1": 178.0,
+        "q3": 205.0,
+        "std_dev": 18.677582874782683
+      },
+      "credits": {
+        "max": 168.0,
+        "mean": 143.36862666533113,
+        "median": 143.36862666533113,
+        "min": 134.0,
+        "q1": 137.40596063882904,
+        "q3": 149.33129269183323,
+        "std_dev": 5.962666026502099
+      },
+      "delay": {
+        "max": 6.0,
+        "mean": 5.601422418110796,
+        "median": 6.0,
+        "min": 4.0,
+        "q1": 5.0,
+        "q3": 6.0,
+        "std_dev": 0.4950986656588116
+      }
+    },
+    "sample_type": "shuffled",
+    "variations_run": 9983
+  },
+  "requirements": {
+    "advanced_writing": {
+      "category": "gen_ed",
+      "courses": [
+        "{ENGW3302, ENGW3315}"
+      ],
+      "name": "Advanced Writing in the Disciplines",
+      "tags": [
+        "required"
+      ],
+      "type": "all"
+    },
+    "computing_social_issues": {
+      "category": "supporting",
+      "count": 1,
+      "from": {
+        "courses": [
+          "AFCS2600",
+          "CY4170",
+          "CY5240",
+          "{DS1300, PHIL1300}",
+          "HIST2220",
+          "INSH2102",
+          "JRNL3700",
+          "PHIL1145",
+          "SOCL1280",
+          "SOCL2485",
+          "SOCL4528"
+        ]
+      },
+      "name": "Computing and Social Issues",
+      "tags": [
+        "required"
+      ],
+      "type": "select"
+    },
+    "concentration": {
+      "category": "major",
+      "name": "Computer Science Concentration",
+      "options": [
+        {
+          "id": "artificial_intelligence",
+          "name": "Concentration in Artificial Intelligence",
+          "requirements": [
+            {
+              "courses": [
+                "CS4100",
+                "DS4400"
+              ],
+              "name": "AI Required Courses",
+              "type": "all"
+            },
+            {
+              "count": 2,
+              "from": {
+                "courses": [
+                  "CS4120",
+                  "CS4150",
+                  "CS4180",
+                  "CS4220",
+                  "CS4610",
+                  "CY4100",
+                  "DS4420",
+                  "DS4440"
+                ]
+              },
+              "name": "AI Electives",
+              "type": "select"
+            }
+          ]
+        },
+        {
+          "id": "foundations",
+          "name": "Concentration in Foundations",
+          "requirements": [
+            {
+              "count": 2,
+              "from": {
+                "courses": [
+                  "{CS2800, CS4820}",
+                  "{CS4805, CS4810}"
+                ]
+              },
+              "name": "Foundations Required Courses",
+              "type": "select"
+            },
+            {
+              "count": 2,
+              "from": {
+                "courses": [
+                  "CS3950",
+                  "CS4950",
+                  "CS4805",
+                  "CS4810",
+                  "CS4820",
+                  "CS4830",
+                  "CY4770"
+                ]
+              },
+              "name": "Foundations Electives",
+              "type": "select"
+            }
+          ]
+        },
+        {
+          "id": "human_centered_computing",
+          "name": "Concentration in Human-Centered Computing",
+          "requirements": [
+            {
+              "courses": [
+                "CS2484",
+                "CS3484"
+              ],
+              "name": "HCC Required Courses",
+              "type": "all"
+            },
+            {
+              "count": 2,
+              "from": {
+                "courses": [
+                  "CS4097",
+                  "CS4350",
+                  "CS4520",
+                  "CS4550",
+                  "DS4200",
+                  "HINF5300"
+                ]
+              },
+              "name": "HCC Electives",
+              "type": "select"
+            }
+          ]
+        },
+        {
+          "id": "software",
+          "name": "Concentration in Software",
+          "requirements": [
+            {
+              "courses": [
+                "CS2800",
+                "CS4400",
+                "{CS4700, CS4730}"
+              ],
+              "name": "Software Required Courses",
+              "type": "all"
+            },
+            {
+              "count": 1,
+              "from": {
+                "courses": [
+                  "CS3520",
+                  "CS4410",
+                  "CS4520",
+                  "CS4550",
+                  "CS4700",
+                  "CS4730",
+                  "CS4820",
+                  "CS4830"
+                ]
+              },
+              "name": "Software Electives",
+              "type": "select"
+            }
+          ]
+        },
+        {
+          "id": "systems",
+          "name": "Concentration in Systems",
+          "requirements": [
+            {
+              "courses": [
+                "{CS4700, CS4730}"
+              ],
+              "name": "Systems Required Networks",
+              "type": "all"
+            },
+            {
+              "count": 1,
+              "from": {
+                "courses": [
+                  "CY3740",
+                  "CY4740"
+                ]
+              },
+              "name": "Systems Required Security",
+              "type": "select"
+            },
+            {
+              "count": 2,
+              "from": {
+                "courses": [
+                  "CS3520",
+                  "CS4300",
+                  "CS4360",
+                  "CS4610",
+                  "CS4700",
+                  "CS4730",
+                  "CY3740",
+                  "CY4740",
+                  "CY4760"
+                ]
+              },
+              "name": "Systems Electives",
+              "type": "select"
+            }
+          ]
+        }
+      ],
+      "tags": [
+        "ai",
+        "required"
+      ],
+      "type": "one_of"
+    },
+    "cs_fundamentals": {
+      "category": "major",
+      "courses": [
+        "[CS1800, CS1802]",
+        "[CS2000, CS2001]",
+        "[CS2100, CS2101]"
+      ],
+      "name": "Computer Science Fundamental Courses",
+      "tags": [
+        "core"
+      ],
+      "type": "all"
+    },
+    "cs_overview": {
+      "category": "major",
+      "courses": [
+        "CS1200",
+        "CS1210"
+      ],
+      "name": "Computer Science Overview",
+      "tags": [
+        "core"
+      ],
+      "type": "all"
+    },
+    "cs_required": {
+      "category": "major",
+      "courses": [
+        "CS3000",
+        "[CS3100, CS3101]",
+        "CS3650",
+        "CS3800",
+        "{CS4530, CS4535}",
+        "DS3000"
+      ],
+      "name": "Computer Science Required Courses",
+      "tags": [
+        "core"
+      ],
+      "type": "all"
+    },
+    "electrical_engineering": {
+      "category": "supporting",
+      "courses": [
+        "[EECE2310, EECE2311]"
+      ],
+      "name": "Digital Design and Computer Architecture",
+      "tags": [
+        "required"
+      ],
+      "type": "all"
+    },
+    "first_year_writing": {
+      "category": "gen_ed",
+      "courses": [
+        "ENGW1111"
+      ],
+      "name": "College Writing",
+      "tags": [
+        "required"
+      ],
+      "type": "all"
+    },
+    "general_electives": {
+      "category": "elective",
+      "credits": 28,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "name": "Required General Electives (NUpath gen-ed and free electives)",
+      "tags": [
+        "elective",
+        "gen_ed"
+      ],
+      "type": "select"
+    },
+    "khoury_electives": {
+      "category": "major",
+      "credits": 8,
+      "from": {
+        "courses": [
+          "MKTG4606"
+        ],
+        "include": [
+          "CS:2500+",
+          "CY:2000+",
+          "DS:2500+"
+        ]
+      },
+      "name": "Khoury Approved Electives",
+      "tags": [
+        "elective"
+      ],
+      "type": "select"
+    },
+    "mathematics": {
+      "category": "supporting",
+      "courses": [
+        "MATH1341",
+        "{MATH1365, MATH1465}"
+      ],
+      "name": "Mathematics Courses",
+      "tags": [
+        "core"
+      ],
+      "type": "all"
+    },
+    "presentation_requirement": {
+      "category": "major",
+      "count": 1,
+      "from": {
+        "courses": [
+          "COMM1112",
+          "COMM1113",
+          "COMM1210",
+          "COMM1511",
+          "THTR1125",
+          "THTR1130",
+          "THTR1180",
+          "THTR2345"
+        ]
+      },
+      "name": "Presentation Requirement",
+      "tags": [
+        "required"
+      ],
+      "type": "select"
+    },
+    "science_requirement": {
+      "category": "supporting",
+      "count": 2,
+      "from": {
+        "courses": [
+          "[BIOL1111, BIOL1112]",
+          "[BIOL1113, BIOL1114]",
+          "[BIOL2301, BIOL2302]",
+          "[CHEM1161, CHEM1162]",
+          "[CHEM1211, CHEM1212]",
+          "[CHEM1214, CHEM1215]",
+          "[ENVR1200, ENVR1201]",
+          "[ENVR2310, ENVR2311]",
+          "[ENVR2340, ENVR2341]",
+          "[ENVR3300, ENVR3301]",
+          "[ENVR4500, ENVR4501]",
+          "MATH1342",
+          "MATH2280",
+          "MATH2331",
+          "MATH3081",
+          "[PHYS1145, PHYS1146]",
+          "[PHYS1147, PHYS1148]",
+          "[PHYS1151, PHYS1152]",
+          "[PHYS1155, PHYS1156]",
+          "[PHYS1161, PHYS1162]",
+          "[PHYS1165, PHYS1166]"
+        ]
+      },
+      "name": "Science Requirement",
+      "tags": [
+        "required"
+      ],
+      "type": "select"
+    },
+    "security_requirement": {
+      "category": "major",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CY2550",
+          "CY3740",
+          "CY4740"
+        ]
+      },
+      "name": "Security Required Course",
+      "tags": [
+        "required"
+      ],
+      "type": "select"
+    }
+  },
+  "selected_plans": [
+    {
+      "category": "Shortest Path",
+      "course_count": 44,
+      "credits": 134.0,
+      "critical_path": [
+        "CS2000",
+        "CS2100",
+        "DS3000"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 4,
+      "schedule": [
+        {
+          "courses": [
+            "CS2000",
+            "CS2001",
+            "MATH1341",
+            "CS1800",
+            "CS1802",
+            "GE09"
+          ],
+          "credits": 17.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "CS2100",
+            "CS2101",
+            "MATH1342",
+            "GE01",
+            "GE05",
+            "THTR1125"
+          ],
+          "credits": 19.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "CS2800",
+            "CS3000",
+            "CS3100",
+            "CS3101",
+            "CS1210",
+            "GE10S"
+          ],
+          "credits": 16.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "CS3800",
+            "MATH2280",
+            "CS3650",
+            "GE06"
+          ],
+          "credits": 15.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "CS4530",
+            "CS4805",
+            "CS4820",
+            "GE07"
+          ],
+          "credits": 15.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "DS3000",
+            "CY2550",
+            "ELEC003",
+            "GE03",
+            "MATH1365"
+          ],
+          "credits": 18.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "AFCS2600",
+            "ELEC001",
+            "ELEC002",
+            "GE02",
+            "GE08"
+          ],
+          "credits": 16.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "CS1200",
+            "CS2501",
+            "DS2501",
+            "EECE2310",
+            "EECE2311",
+            "ELEC004",
+            "GE04",
+            "MKTG4606"
+          ],
+          "credits": 18.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 131
+    },
+    {
+      "category": "Longest Path",
+      "course_count": 48,
+      "credits": 157.0,
+      "critical_path": [
+        "CS2000",
+        "CS2100",
+        "DS3000",
+        "DS4400",
+        "DS4420"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 6,
+      "schedule": [
+        {
+          "courses": [
+            "CS2000",
+            "CS2001",
+            "MATH1341",
+            "CS1800",
+            "CS1802"
+          ],
+          "credits": 14.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "CS2100",
+            "CS2101",
+            "MATH1342",
+            "EECE2310",
+            "EECE2311"
+          ],
+          "credits": 14.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "CS3100",
+            "CS3101",
+            "MATH2280",
+            "CS3000",
+            "CS1210",
+            "CS3800"
+          ],
+          "credits": 18.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "CS3650",
+            "DS3000",
+            "CS4400",
+            "CS4530",
+            "GE04"
+          ],
+          "credits": 19.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "CY4740",
+            "DS4400",
+            "CS3540",
+            "COMM1112",
+            "GE05"
+          ],
+          "credits": 19.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "CY4100",
+            "CY4760",
+            "DS4420",
+            "CS4097",
+            "GE06"
+          ],
+          "credits": 19.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "CS4360",
+            "CS4410",
+            "CS4700",
+            "CS1200",
+            "GE01",
+            "GE07"
+          ],
+          "credits": 19.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "CS4730",
+            "CY3740",
+            "DS4200",
+            "DS2501",
+            "GE02",
+            "GE08"
+          ],
+          "credits": 19.0,
+          "term": 8
+        },
+        {
+          "courses": [
+            "MATH1365",
+            "GE03",
+            "GE09",
+            "AFCS2600",
+            "GE10S"
+          ],
+          "credits": 16.0,
+          "term": 9
+        }
+      ],
+      "terms_required": 9,
+      "total_complexity": 259
+    },
+    {
+      "category": "Random Sample",
+      "course_count": 46,
+      "credits": 150.0,
+      "critical_path": [
+        "CS2000",
+        "CS2100",
+        "CS3100",
+        "CS3650",
+        "CY3740",
+        "CY4770"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 6,
+      "schedule": [
+        {
+          "courses": [
+            "CS2000",
+            "CS2001",
+            "MATH1341",
+            "CS1800",
+            "CS1802",
+            "GE05",
+            "MATH1365"
+          ],
+          "credits": 21.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "CS2100",
+            "CS2101",
+            "MATH1342",
+            "AFCS2600",
+            "GE03",
+            "GE09"
+          ],
+          "credits": 19.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "CS3100",
+            "CS3101",
+            "MATH2280",
+            "CS2800",
+            "CS1210",
+            "DS2500"
+          ],
+          "credits": 18.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "CS3650",
+            "DS3000",
+            "CS3000",
+            "CS1200",
+            "GE04",
+            "GE10S"
+          ],
+          "credits": 18.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "CY3740",
+            "CS3800",
+            "CS4700",
+            "CS3950",
+            "GE06",
+            "THTR2345"
+          ],
+          "credits": 21.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "CY4770",
+            "DS4400",
+            "CS4530",
+            "EECE2310",
+            "EECE2311"
+          ],
+          "credits": 17.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "CS4535",
+            "CS4550",
+            "CS4805",
+            "GE01",
+            "GE07"
+          ],
+          "credits": 18.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "CS4820",
+            "CS3500",
+            "CY2550",
+            "GE02",
+            "GE08"
+          ],
+          "credits": 18.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 203
+    },
+    {
+      "category": "Random Sample",
+      "course_count": 44,
+      "credits": 141.0,
+      "critical_path": [
+        "MATH1341",
+        "MATH1342",
+        "MATH2280",
+        "DS3000",
+        "DS4400",
+        "DS4420"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 6,
+      "schedule": [
+        {
+          "courses": [
+            "MATH1341",
+            "CS2000",
+            "CS2001",
+            "CS1800",
+            "CS1802",
+            "GE06"
+          ],
+          "credits": 17.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "MATH1342",
+            "CS2100",
+            "CS2101",
+            "COMM1210",
+            "GE03",
+            "GE10S"
+          ],
+          "credits": 18.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "MATH2280",
+            "CS3100",
+            "CS3101",
+            "CS2800",
+            "CS1210",
+            "GE07"
+          ],
+          "credits": 17.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "DS3000",
+            "CS3650",
+            "CS3000",
+            "CS1200",
+            "GE04",
+            "MATH1365"
+          ],
+          "credits": 20.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "DS4400",
+            "CS4350",
+            "CS4700",
+            "CS2511",
+            "GE05"
+          ],
+          "credits": 16.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "DS4420",
+            "CY3740",
+            "DS4200",
+            "EECE2310",
+            "EECE2311"
+          ],
+          "credits": 17.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "CS4400",
+            "CS4530",
+            "CS4820",
+            "GE01",
+            "GE08"
+          ],
+          "credits": 18.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "CS3800",
+            "DS2500",
+            "AFCS2600",
+            "GE02",
+            "GE09"
+          ],
+          "credits": 18.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 204
+    },
+    {
+      "category": "Random Sample",
+      "course_count": 45,
+      "credits": 148.0,
+      "critical_path": [
+        "MATH1341",
+        "MATH1342",
+        "MATH2280",
+        "DS3000",
+        "DS4400",
+        "DS4440"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 6,
+      "schedule": [
+        {
+          "courses": [
+            "MATH1341",
+            "CS2000",
+            "CS2001",
+            "CS1800",
+            "CS1802",
+            "GE04",
+            "MATH1365"
+          ],
+          "credits": 21.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "MATH1342",
+            "CS2100",
+            "CS2101",
+            "AFCS2600",
+            "GE02",
+            "GE07"
+          ],
+          "credits": 19.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "MATH2280",
+            "CS3100",
+            "CS3101",
+            "CS3540",
+            "CS1210",
+            "GE05"
+          ],
+          "credits": 17.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "DS3000",
+            "CS3650",
+            "CS4097",
+            "COMM1511",
+            "GE08"
+          ],
+          "credits": 19.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "DS4400",
+            "CS4360",
+            "CY4740",
+            "CS1200",
+            "GE03",
+            "GE09"
+          ],
+          "credits": 19.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "CY4100",
+            "DS4420",
+            "DS4440",
+            "CS2484",
+            "GE10S"
+          ],
+          "credits": 18.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "CS4530",
+            "CS4550",
+            "CS4610",
+            "EECE2310",
+            "EECE2311"
+          ],
+          "credits": 17.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "CS3000",
+            "CS3484",
+            "CS3800",
+            "GE01",
+            "GE06"
+          ],
+          "credits": 18.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 213
+    },
+    {
+      "category": "Random Sample",
+      "course_count": 46,
+      "credits": 152.0,
+      "critical_path": [
+        "CS2000",
+        "CS2100",
+        "DS3000",
+        "DS4400",
+        "DS4420"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 6,
+      "schedule": [
+        {
+          "courses": [
+            "CS2000",
+            "CS2001",
+            "CS1800",
+            "CS1802",
+            "MATH1341",
+            "GE04",
+            "GE10S"
+          ],
+          "credits": 19.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "CS2100",
+            "CS2101",
+            "MATH1342",
+            "AFCS2600",
+            "GE02",
+            "GE06"
+          ],
+          "credits": 19.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "CS2810",
+            "CS3100",
+            "CS3101",
+            "CS3000",
+            "CS1210",
+            "CS2800"
+          ],
+          "credits": 18.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "DS3000",
+            "CS3650",
+            "CS3520",
+            "MATH2280",
+            "GE07"
+          ],
+          "credits": 19.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "DS4400",
+            "CS3800",
+            "CS4350",
+            "COMM1112",
+            "GE08"
+          ],
+          "credits": 19.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "DS4420",
+            "CY3740",
+            "CY4740",
+            "CS1200",
+            "GE03",
+            "GE09"
+          ],
+          "credits": 19.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "CS4150",
+            "CS4400",
+            "CS4530",
+            "EECE2310",
+            "EECE2311",
+            "MATH1365"
+          ],
+          "credits": 21.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "CS4805",
+            "CS4810",
+            "CS4830",
+            "GE01",
+            "GE05"
+          ],
+          "credits": 18.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 216
+    },
+    {
+      "category": "Random Sample",
+      "course_count": 44,
+      "credits": 144.0,
+      "critical_path": [
+        "CS2000",
+        "CS2100",
+        "CS3100",
+        "CS4400",
+        "CS4410"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 5,
+      "schedule": [
+        {
+          "courses": [
+            "CS2000",
+            "CS2001",
+            "CS1800",
+            "CS1802",
+            "MATH1341",
+            "GE05"
+          ],
+          "credits": 17.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "CS2100",
+            "CS2101",
+            "MATH1342",
+            "COMM1112",
+            "GE03",
+            "GE09"
+          ],
+          "credits": 19.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "CS3000",
+            "CS3100",
+            "CS3101",
+            "MATH2280",
+            "CS1210",
+            "GE06"
+          ],
+          "credits": 17.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "CS3650",
+            "CS4400",
+            "CS4100",
+            "CS1200",
+            "GE04",
+            "GE10S"
+          ],
+          "credits": 18.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "CS4410",
+            "CS4700",
+            "CS4730",
+            "CS2500",
+            "MATH1365"
+          ],
+          "credits": 20.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "CY3740",
+            "CY4740",
+            "CS4530",
+            "EECE2310",
+            "EECE2311"
+          ],
+          "credits": 17.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "CS4610",
+            "DS3000",
+            "CS2800",
+            "GE01",
+            "GE07"
+          ],
+          "credits": 18.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "CS3800",
+            "CY2550",
+            "AFCS2600",
+            "GE02",
+            "GE08"
+          ],
+          "credits": 18.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 183
+    }
+  ],
+  "courses": {
+    "AFCS2600": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "AFCS2600",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 9983
+      },
+      "name": "Issues in Race, Science, and Technology",
+      "number": "2600",
+      "prefix": "AFCS",
+      "strict_corequisites": []
+    },
+    "BIOL1111": {
+      "canonical_name": null,
+      "corequisites": [
+        "BIOL1112"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "General Biology 1",
+      "number": "1111",
+      "prefix": "BIOL",
+      "strict_corequisites": [
+        "BIOL1112"
+      ]
+    },
+    "BIOL1112": {
+      "canonical_name": null,
+      "corequisites": [
+        "BIOL1111"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for BIOL 1111",
+      "number": "1112",
+      "prefix": "BIOL",
+      "strict_corequisites": [
+        "BIOL1111"
+      ]
+    },
+    "BIOL1113": {
+      "canonical_name": null,
+      "corequisites": [
+        "BIOL1114"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "General Biology 2",
+      "number": "1113",
+      "prefix": "BIOL",
+      "prerequisites": "BIOL1111",
+      "strict_corequisites": [
+        "BIOL1114"
+      ]
+    },
+    "BIOL1114": {
+      "canonical_name": null,
+      "corequisites": [
+        "BIOL1113"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for BIOL 1113",
+      "number": "1114",
+      "prefix": "BIOL",
+      "strict_corequisites": [
+        "BIOL1113"
+      ]
+    },
+    "BIOL2301": {
+      "canonical_name": null,
+      "corequisites": [
+        "BIOL2302"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Genetics and Molecular Biology",
+      "number": "2301",
+      "prefix": "BIOL",
+      "prerequisites": "BIOL1111",
+      "strict_corequisites": [
+        "BIOL2302"
+      ]
+    },
+    "BIOL2302": {
+      "canonical_name": null,
+      "corequisites": [
+        "BIOL2301"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for BIOL 2301",
+      "number": "2302",
+      "prefix": "BIOL",
+      "strict_corequisites": [
+        "BIOL2301"
+      ]
+    },
+    "CHEM1161": {
+      "canonical_name": null,
+      "corequisites": [
+        "CHEM1162"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "General Chemistry for Science Majors",
+      "number": "1161",
+      "prefix": "CHEM",
+      "strict_corequisites": [
+        "CHEM1162"
+      ]
+    },
+    "CHEM1162": {
+      "canonical_name": null,
+      "corequisites": [
+        "CHEM1161"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for CHEM 1161",
+      "number": "1162",
+      "prefix": "CHEM",
+      "strict_corequisites": [
+        "CHEM1161"
+      ]
+    },
+    "CHEM1211": {
+      "canonical_name": null,
+      "corequisites": [
+        "CHEM1212"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "General Chemistry 1",
+      "number": "1211",
+      "prefix": "CHEM",
+      "strict_corequisites": [
+        "CHEM1212"
+      ]
+    },
+    "CHEM1212": {
+      "canonical_name": null,
+      "corequisites": [
+        "CHEM1211"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for CHEM 1211",
+      "number": "1212",
+      "prefix": "CHEM",
+      "strict_corequisites": [
+        "CHEM1211"
+      ]
+    },
+    "CHEM1214": {
+      "canonical_name": null,
+      "corequisites": [
+        "CHEM1215"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "General Chemistry 2",
+      "number": "1214",
+      "prefix": "CHEM",
+      "prerequisites": "CHEM1211",
+      "strict_corequisites": [
+        "CHEM1215"
+      ]
+    },
+    "CHEM1215": {
+      "canonical_name": null,
+      "corequisites": [
+        "CHEM1214"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for CHEM 1214",
+      "number": "1215",
+      "prefix": "CHEM",
+      "strict_corequisites": [
+        "CHEM1214"
+      ]
+    },
+    "COMM1112": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "COMM1112",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1230
+      },
+      "name": "Public Speaking",
+      "number": "1112",
+      "prefix": "COMM",
+      "strict_corequisites": []
+    },
+    "COMM1113": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "COMM1113",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1257
+      },
+      "name": "Business and Professional Speaking",
+      "number": "1113",
+      "prefix": "COMM",
+      "strict_corequisites": []
+    },
+    "COMM1210": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "COMM1210",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1267
+      },
+      "name": "Persuasion and Rhetoric",
+      "number": "1210",
+      "prefix": "COMM",
+      "strict_corequisites": []
+    },
+    "COMM1511": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "COMM1511",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1233
+      },
+      "name": "Communication and Storytelling",
+      "number": "1511",
+      "prefix": "COMM",
+      "strict_corequisites": []
+    },
+    "CS1200": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS1200",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 9983
+      },
+      "name": "First Year Seminar",
+      "number": "1200",
+      "prefix": "CS",
+      "strict_corequisites": []
+    },
+    "CS1210": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS1210",
+        "delay": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 9983
+      },
+      "name": "Professional Development for Khoury Co-op",
+      "number": "1210",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS2100",
+          "CS2510",
+          "DS2500"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS1800": {
+      "canonical_name": null,
+      "corequisites": [
+        "CS1802"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 12.0,
+          "mean": 4.158168887108041,
+          "median": 4.158168887108041,
+          "min": 2.0,
+          "q1": 2.3780812648184035,
+          "q3": 5.938256509397679,
+          "std_dev": 1.7800876222896376
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 17.0,
+          "mean": 7.087649003305608,
+          "median": 7.0,
+          "min": 4.0,
+          "q1": 5.0,
+          "q3": 8.0,
+          "std_dev": 2.3678179548658935
+        },
+        "course_id": "CS1800",
+        "delay": {
+          "max": 5.0,
+          "mean": 2.929480116197539,
+          "median": 2.929480116197539,
+          "min": 2.0,
+          "q1": 2.21610747088294,
+          "q3": 3.642852761512138,
+          "std_dev": 0.7133726453145992
+        },
+        "plan_count": 9983
+      },
+      "name": "Discrete Structures",
+      "number": "1800",
+      "prefix": "CS",
+      "strict_corequisites": [
+        "CS1802"
+      ]
+    },
+    "CS1802": {
+      "canonical_name": null,
+      "corequisites": [
+        "CS1800"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS1802",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 9983
+      },
+      "name": "Seminar for CS 1800",
+      "number": "1802",
+      "prefix": "CS",
+      "strict_corequisites": [
+        "CS1800"
+      ]
+    },
+    "CS2000": {
+      "canonical_name": null,
+      "corequisites": [
+        "CS2001"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 24.0,
+          "mean": 17.693278573575054,
+          "median": 17.693278573575054,
+          "min": 1.0,
+          "q1": 15.73245780410589,
+          "q3": 19.654099343044216,
+          "std_dev": 1.9608207694691637
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 29.0,
+          "mean": 23.045877992587346,
+          "median": 23.0,
+          "min": 3.0,
+          "q1": 22.0,
+          "q3": 24.0,
+          "std_dev": 2.1805921805275092
+        },
+        "course_id": "CS2000",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.352599419012309,
+          "median": 5.352599419012309,
+          "min": 2.0,
+          "q1": 4.799784321341827,
+          "q3": 5.905414516682791,
+          "std_dev": 0.5528150976704818
+        },
+        "plan_count": 9983
+      },
+      "name": "Introduction to Program Design and Implementation",
+      "number": "2000",
+      "prefix": "CS",
+      "strict_corequisites": [
+        "CS2001"
+      ]
+    },
+    "CS2001": {
+      "canonical_name": null,
+      "corequisites": [
+        "CS2000"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS2001",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 9983
+      },
+      "name": "Lab for CS 2000",
+      "number": "2001",
+      "prefix": "CS",
+      "strict_corequisites": [
+        "CS2000"
+      ]
+    },
+    "CS2100": {
+      "canonical_name": null,
+      "corequisites": [
+        "CS2101"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 23.0,
+          "mean": 16.693278573575054,
+          "median": 16.693278573575054,
+          "min": 0.0,
+          "q1": 14.73245780410589,
+          "q3": 18.654099343044216,
+          "std_dev": 1.9608207694691637
+        },
+        "centrality": {
+          "max": 99.0,
+          "mean": 53.783131323249485,
+          "median": 53.783131323249485,
+          "min": 0.0,
+          "q1": 44.261089225190744,
+          "q3": 63.305173421308226,
+          "std_dev": 9.522042098058744
+        },
+        "complexity": {
+          "max": 28.0,
+          "mean": 22.045877992587346,
+          "median": 22.0,
+          "min": 2.0,
+          "q1": 21.0,
+          "q3": 23.0,
+          "std_dev": 2.1805921805275092
+        },
+        "course_id": "CS2100",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.352599419012309,
+          "median": 5.352599419012309,
+          "min": 2.0,
+          "q1": 4.799784321341827,
+          "q3": 5.905414516682791,
+          "std_dev": 0.5528150976704818
+        },
+        "plan_count": 9983
+      },
+      "name": "Program Design and Implementation 1",
+      "number": "2100",
+      "prefix": "CS",
+      "prerequisites": "CS2000",
+      "strict_corequisites": [
+        "CS2101"
+      ]
+    },
+    "CS2101": {
+      "canonical_name": null,
+      "corequisites": [
+        "CS2100"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS2101",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 9983
+      },
+      "name": "Lab for CS 2100",
+      "number": "2101",
+      "prefix": "CS",
+      "strict_corequisites": [
+        "CS2100"
+      ]
+    },
+    "CS2484": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS2484",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 973
+      },
+      "name": "Principles of Human-Computer Interaction",
+      "number": "2484",
+      "prefix": "CS",
+      "strict_corequisites": []
+    },
+    "CS2500": {
+      "canonical_name": null,
+      "corequisites": [
+        "CS2501"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 19.0,
+          "mean": 0.7728651928912016,
+          "median": 0.7728651928912016,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 2.6502257339823894,
+          "std_dev": 1.877360541091188
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 24.0,
+          "mean": 2.3849154746423924,
+          "median": 3.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 3.0,
+          "std_dev": 2.482552472501751
+        },
+        "course_id": "CS2500",
+        "delay": {
+          "max": 6.0,
+          "mean": 1.6120502817511921,
+          "median": 1.6120502817511921,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 2.2936510017246063,
+          "std_dev": 0.6816007199734142
+        },
+        "plan_count": 2307
+      },
+      "name": "Fundamentals of Computer Science 1",
+      "number": "2500",
+      "prefix": "CS",
+      "strict_corequisites": []
+    },
+    "CS2501": {
+      "canonical_name": null,
+      "corequisites": [
+        "CS2500"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS2501",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1233
+      },
+      "name": "Lab for CS 2500",
+      "number": "2501",
+      "prefix": "CS",
+      "strict_corequisites": [
+        "CS2500"
+      ]
+    },
+    "CS2510": {
+      "canonical_name": null,
+      "corequisites": [
+        "CS2511"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 18.0,
+          "mean": 0.374710871241326,
+          "median": 0.374710871241326,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 2.707456963390437,
+          "std_dev": 2.3327460921491108
+        },
+        "centrality": {
+          "max": 65.0,
+          "mean": 1.186584425597535,
+          "median": 1.186584425597535,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 8.626337126707059,
+          "std_dev": 7.439752701109523
+        },
+        "complexity": {
+          "max": 23.0,
+          "mean": 2.4633770239013155,
+          "median": 2.0,
+          "min": 2.0,
+          "q1": 2.0,
+          "q3": 2.0,
+          "std_dev": 2.8819634798750173
+        },
+        "course_id": "CS2510",
+        "delay": {
+          "max": 6.0,
+          "mean": 2.0886661526599877,
+          "median": 2.0886661526599877,
+          "min": 2.0,
+          "q1": 2.0,
+          "q3": 2.6431762182429033,
+          "std_dev": 0.5545100655829158
+        },
+        "plan_count": 1297
+      },
+      "name": "Fundamentals of Computer Science 2",
+      "number": "2510",
+      "prefix": "CS",
+      "prerequisites": "CS2500",
+      "strict_corequisites": []
+    },
+    "CS2511": {
+      "canonical_name": null,
+      "corequisites": [
+        "CS2510"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS2511",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1203
+      },
+      "name": "Lab for CS 2510",
+      "number": "2511",
+      "prefix": "CS",
+      "strict_corequisites": [
+        "CS2510"
+      ]
+    },
+    "CS2800": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 0.4304149797570866,
+          "median": 0.4304149797570866,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.9255492291862621,
+          "std_dev": 0.4951342494291756
+        },
+        "centrality": {
+          "max": 7.0,
+          "mean": 3.0129048582995983,
+          "median": 3.0129048582995983,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 6.478844604303822,
+          "std_dev": 3.4659397460042234
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 3.8608299595141577,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 5.0,
+          "std_dev": 0.9902684988583511
+        },
+        "course_id": "CS2800",
+        "delay": {
+          "max": 4.0,
+          "mean": 3.430414979757086,
+          "median": 3.430414979757086,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.9255492291862617,
+          "std_dev": 0.4951342494291758
+        },
+        "plan_count": 3952
+      },
+      "name": "Logic and Computation",
+      "number": "2800",
+      "prefix": "CS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "CS1800",
+              "MATH1365",
+              "MATH2310"
+            ]
+          },
+          {
+            "or": [
+              "CS2100",
+              "CS2510"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS2810": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 7.0,
+          "mean": 1.8363072148952673,
+          "median": 1.8363072148952673,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 3.851852083897861,
+          "std_dev": 2.0155448690025937
+        },
+        "centrality": {
+          "max": 51.0,
+          "mean": 10.925523661753317,
+          "median": 10.925523661753317,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 23.110510108299096,
+          "std_dev": 12.184986446545777
+        },
+        "complexity": {
+          "max": 13.0,
+          "mean": 5.930178432893718,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 9.0,
+          "std_dev": 3.206340215684002
+        },
+        "course_id": "CS2810",
+        "delay": {
+          "max": 6.0,
+          "mean": 4.093871217998452,
+          "median": 4.093871217998452,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 5.3059265102663,
+          "std_dev": 1.212055292267848
+        },
+        "plan_count": 1289
+      },
+      "name": "Mathematics of Data Models",
+      "number": "2810",
+      "prefix": "CS",
+      "prerequisites": {
+        "and": [
+          "CS1800",
+          {
+            "or": [
+              "CS2500",
+              "CS2100",
+              "DS2000"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS3000": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 5.0,
+          "mean": 0.9207653010117205,
+          "median": 0.9207653010117205,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 1.9215325791821374,
+          "std_dev": 1.0007672781704169
+        },
+        "centrality": {
+          "max": 35.0,
+          "mean": 5.9094460582991095,
+          "median": 5.9094460582991095,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 12.142234754947111,
+          "std_dev": 6.232788696648003
+        },
+        "complexity": {
+          "max": 10.0,
+          "mean": 4.596714414504673,
+          "median": 5.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 6.0,
+          "std_dev": 1.6092357225147707
+        },
+        "course_id": "CS3000",
+        "delay": {
+          "max": 5.0,
+          "mean": 3.67594911349294,
+          "median": 3.67594911349294,
+          "min": 3.0,
+          "q1": 3.0176130830539076,
+          "q3": 4.3342851439319725,
+          "std_dev": 0.6583360304390323
+        },
+        "plan_count": 9983
+      },
+      "name": "Algorithms and Data",
+      "number": "3000",
+      "prefix": "CS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "CS2100",
+              "CS2510",
+              "DS2500"
+            ]
+          },
+          "CS1800"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS3100": {
+      "canonical_name": null,
+      "corequisites": [
+        "CS3101"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 14.0,
+          "mean": 8.036061304217206,
+          "median": 8.036061304217206,
+          "min": 2.0,
+          "q1": 6.198170086526155,
+          "q3": 9.873952521908256,
+          "std_dev": 1.8378912176910507
+        },
+        "centrality": {
+          "max": 51.0,
+          "mean": 27.82119603325656,
+          "median": 27.82119603325656,
+          "min": 8.0,
+          "q1": 20.868703195557607,
+          "q3": 34.77368887095551,
+          "std_dev": 6.95249283769895
+        },
+        "complexity": {
+          "max": 20.0,
+          "mean": 13.383351697886395,
+          "median": 13.0,
+          "min": 6.0,
+          "q1": 12.0,
+          "q3": 15.0,
+          "std_dev": 2.0141220604186665
+        },
+        "course_id": "CS3100",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.347290393669229,
+          "median": 5.347290393669229,
+          "min": 4.0,
+          "q1": 4.831007959964405,
+          "q3": 5.863572827374052,
+          "std_dev": 0.5162824337048237
+        },
+        "plan_count": 9983
+      },
+      "name": "Program Design and Implementation 2",
+      "number": "3100",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS2100",
+          "CS2510"
+        ]
+      },
+      "strict_corequisites": [
+        "CS3101"
+      ]
+    },
+    "CS3101": {
+      "canonical_name": null,
+      "corequisites": [
+        "CS3100"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS3101",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 9983
+      },
+      "name": "Lab for CS 3100",
+      "number": "3101",
+      "prefix": "CS",
+      "strict_corequisites": [
+        "CS3100"
+      ]
+    },
+    "CS3484": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS3484",
+        "delay": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 2151
+      },
+      "name": "GUI Programming",
+      "number": "3484",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS2100",
+          "CS2510"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS3500": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS3500",
+        "delay": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1044
+      },
+      "name": "Object-Oriented Design",
+      "number": "3500",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS2510",
+          "CS2100"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS3520": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 0.48531011969532123,
+          "median": 0.48531011969532123,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.9850942805254083,
+          "std_dev": 0.49978416083008703
+        },
+        "centrality": {
+          "max": 4.0,
+          "mean": 1.941240478781285,
+          "median": 1.941240478781285,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 3.940377122101633,
+          "std_dev": 1.9991366433203481
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 3.97062023939064,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 5.0,
+          "std_dev": 0.9995683216601742
+        },
+        "course_id": "CS3520",
+        "delay": {
+          "max": 4.0,
+          "mean": 3.4853101196953182,
+          "median": 3.4853101196953182,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.9850942805254053,
+          "std_dev": 0.499784160830087
+        },
+        "plan_count": 3676
+      },
+      "name": "Programming in C++",
+      "number": "3520",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS2100",
+          "CS2510"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS3540": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 0.5824701195219131,
+          "median": 0.5824701195219131,
+          "min": 0.0,
+          "q1": 0.08931833823542012,
+          "q3": 1.0,
+          "std_dev": 0.49315178128649295
+        },
+        "centrality": {
+          "max": 4.0,
+          "mean": 2.3298804780876523,
+          "median": 2.3298804780876523,
+          "min": 0.0,
+          "q1": 0.3572733529416805,
+          "q3": 4.0,
+          "std_dev": 1.9726071251459718
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 4.164940239043831,
+          "median": 5.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 5.0,
+          "std_dev": 0.986303562572986
+        },
+        "course_id": "CS3540",
+        "delay": {
+          "max": 4.0,
+          "mean": 3.5824701195219153,
+          "median": 3.5824701195219153,
+          "min": 3.0,
+          "q1": 3.0893183382354223,
+          "q3": 4.0,
+          "std_dev": 0.493151781286493
+        },
+        "plan_count": 2510
+      },
+      "name": "Game Programming",
+      "number": "3540",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS2100",
+          "CS2510"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS3650": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 6.0,
+          "mean": 2.4357407592907947,
+          "median": 2.4357407592907947,
+          "min": 0.0,
+          "q1": 1.1903132736193023,
+          "q3": 3.6811682449622873,
+          "std_dev": 1.2454274856714924
+        },
+        "centrality": {
+          "max": 27.0,
+          "mean": 10.787338475408253,
+          "median": 10.787338475408253,
+          "min": 0.0,
+          "q1": 5.224087037491433,
+          "q3": 16.350589913325074,
+          "std_dev": 5.56325143791682
+        },
+        "complexity": {
+          "max": 12.0,
+          "mean": 7.729139537213263,
+          "median": 8.0,
+          "min": 4.0,
+          "q1": 7.0,
+          "q3": 9.0,
+          "std_dev": 1.6675991240366803
+        },
+        "course_id": "CS3650",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.293398777922485,
+          "median": 5.293398777922485,
+          "min": 4.0,
+          "q1": 4.717440936943386,
+          "q3": 5.869356618901585,
+          "std_dev": 0.5759578409790997
+        },
+        "plan_count": 9983
+      },
+      "name": "Computer Systems",
+      "number": "3650",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS3100",
+          "CS3500"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS3800": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 0.24832214765100696,
+          "median": 0.24832214765100696,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.6803617970317059,
+          "std_dev": 0.4320396493806989
+        },
+        "centrality": {
+          "max": 7.0,
+          "mean": 1.738255033557052,
+          "median": 1.738255033557052,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 4.762532579221951,
+          "std_dev": 3.0242775456648983
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 3.4966442953020067,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.8640792987613973
+        },
+        "course_id": "CS3800",
+        "delay": {
+          "max": 4.0,
+          "mean": 3.248322147651014,
+          "median": 3.248322147651014,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.6803617970317126,
+          "std_dev": 0.4320396493806988
+        },
+        "plan_count": 9983
+      },
+      "name": "Theory of Computation",
+      "number": "3800",
+      "prefix": "CS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "CS1800",
+              "MATH1365"
+            ]
+          },
+          {
+            "or": [
+              "CS2100",
+              "CS2510"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS3950": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 2.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 0.5614661044437232,
+          "median": 0.5614661044437232,
+          "min": 0.0,
+          "q1": 0.06525856922835244,
+          "q3": 1.0,
+          "std_dev": 0.4962075352153708
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 3.0,
+          "mean": 2.1229322088874496,
+          "median": 3.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 3.0,
+          "std_dev": 0.9924150704307414
+        },
+        "course_id": "CS3950",
+        "delay": {
+          "max": 2.0,
+          "mean": 1.5614661044437248,
+          "median": 1.5614661044437248,
+          "min": 1.0,
+          "q1": 1.065258569228354,
+          "q3": 2.0,
+          "std_dev": 0.4962075352153707
+        },
+        "plan_count": 3083
+      },
+      "name": "Introduction to Computer Science Research",
+      "number": "3950",
+      "prefix": "CS",
+      "strict_corequisites": []
+    },
+    "CS4097": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4097",
+        "delay": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1462
+      },
+      "name": "Special Topics in Computer Science",
+      "number": "4097",
+      "prefix": "CS",
+      "prerequisites": "CS3540",
+      "strict_corequisites": []
+    },
+    "CS4100": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 0.17268351383874858,
+          "median": 0.17268351383874858,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.5506569492638476,
+          "std_dev": 0.37797343542509904
+        },
+        "centrality": {
+          "max": 5.0,
+          "mean": 0.8634175691937414,
+          "median": 0.8634175691937414,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 2.7532847463192356,
+          "std_dev": 1.889867177125494
+        },
+        "complexity": {
+          "max": 6.0,
+          "mean": 4.345367027677499,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.7559468708501982
+        },
+        "course_id": "CS4100",
+        "delay": {
+          "max": 5.0,
+          "mean": 4.172683513838747,
+          "median": 4.172683513838747,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.550656949263846,
+          "std_dev": 0.37797343542509904
+        },
+        "plan_count": 3324
+      },
+      "name": "Artificial Intelligence",
+      "number": "4100",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS3100",
+          "CS3500",
+          "DS3500"
+        ]
+      },
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4120": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4120",
+        "delay": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1705
+      },
+      "name": "Natural Language Processing",
+      "number": "4120",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS3100",
+          "CS3500"
+        ]
+      },
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4150": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4150",
+        "delay": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1784
+      },
+      "name": "Game Artificial Intelligence",
+      "number": "4150",
+      "prefix": "CS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "CS3100",
+              "CS3500"
+            ]
+          },
+          "CS3520"
+        ]
+      },
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4180": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 4.94819962097283,
+          "median": 5.0,
+          "min": 4.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.22162377977059636
+        },
+        "course_id": "CS4180",
+        "delay": {
+          "max": 5.0,
+          "mean": 4.94819962097283,
+          "median": 4.94819962097283,
+          "min": 4.0,
+          "q1": 4.726575841202234,
+          "q3": 5.0,
+          "std_dev": 0.22162377977059636
+        },
+        "plan_count": 1583
+      },
+      "name": "Reinforcement Learning",
+      "number": "4180",
+      "prefix": "CS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "CS3000",
+              "CS4800"
+            ]
+          },
+          {
+            "or": [
+              "CS2810",
+              "DS3000",
+              "MATH3081"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4220": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4220",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1552
+      },
+      "name": "Information Retrieval",
+      "number": "4220",
+      "prefix": "CS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "CS3100",
+              "CS3500"
+            ]
+          },
+          "DS3000"
+        ]
+      },
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4300": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4300",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 2030
+      },
+      "name": "Computer Graphics",
+      "number": "4300",
+      "prefix": "CS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "CS3100",
+              "CS3500"
+            ]
+          },
+          {
+            "or": [
+              "DS3000",
+              "MATH2331"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS4350": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4350",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1622
+      },
+      "name": "Empirical Research Methods",
+      "number": "4350",
+      "prefix": "CS",
+      "prerequisites": "DS3000",
+      "strict_corequisites": []
+    },
+    "CS4360": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4360",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 2265
+      },
+      "name": "Non-Interactive Computer Graphics",
+      "number": "4360",
+      "prefix": "CS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "DS3000",
+              "MATH2331"
+            ]
+          },
+          {
+            "or": [
+              "CS3100",
+              "CS3500"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS4400": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 0.44751180530330636,
+          "median": 0.44751180530330636,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.9447491625256719,
+          "std_dev": 0.49723735722236556
+        },
+        "centrality": {
+          "max": 15.0,
+          "mean": 6.324010170722843,
+          "median": 6.324010170722843,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 13.354352352854686,
+          "std_dev": 7.030342182131842
+        },
+        "complexity": {
+          "max": 7.0,
+          "mean": 5.006538321830731,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 6.0,
+          "std_dev": 1.0601047707796625
+        },
+        "course_id": "CS4400",
+        "delay": {
+          "max": 6.0,
+          "mean": 4.559026516527436,
+          "median": 4.559026516527436,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 5.162521059418903,
+          "std_dev": 0.6034945428914665
+        },
+        "plan_count": 2753
+      },
+      "name": "Programming Languages",
+      "number": "4400",
+      "prefix": "CS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "CS3100",
+              "CS3500"
+            ]
+          },
+          {
+            "or": [
+              "CS3000",
+              "CS4800"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS4410": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 6.0,
+          "mean": 5.1314935064935,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.33793929076617996
+        },
+        "course_id": "CS4410",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.1314935064935,
+          "median": 5.1314935064935,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.46943279725968,
+          "std_dev": 0.33793929076617996
+        },
+        "plan_count": 1232
+      },
+      "name": "Compilers",
+      "number": "4410",
+      "prefix": "CS",
+      "prerequisites": "CS4400",
+      "strict_corequisites": []
+    },
+    "CS4520": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4520",
+        "delay": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1727
+      },
+      "name": "Mobile Application Development",
+      "number": "4520",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS3100",
+          "CS3500"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS4530": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4530",
+        "delay": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 9983
+      },
+      "name": "Fundamentals of Software Engineering",
+      "number": "4530",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS3100",
+          "CS3500"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS4535": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4535",
+        "delay": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1372
+      },
+      "name": "Professional Practicum Capstone",
+      "number": "4535",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS3100",
+          "CS3500"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS4550": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4550",
+        "delay": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1658
+      },
+      "name": "Web Development",
+      "number": "4550",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS3100",
+          "CS3500"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS4610": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4610",
+        "delay": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 2615
+      },
+      "name": "Robotic Science and Systems",
+      "number": "4610",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS3100",
+          "CS3500"
+        ]
+      },
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4700": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4700",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 6028
+      },
+      "name": "Network Fundamentals",
+      "number": "4700",
+      "prefix": "CS",
+      "prerequisites": "CS3650",
+      "strict_corequisites": []
+    },
+    "CS4730": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4730",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 2258
+      },
+      "name": "Distributed Systems",
+      "number": "4730",
+      "prefix": "CS",
+      "prerequisites": "CS3650",
+      "strict_corequisites": []
+    },
+    "CS4800": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 5.0,
+          "mean": 0.9166023166023177,
+          "median": 0.9166023166023177,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 1.8828245306630582,
+          "std_dev": 0.9662222140607406
+        },
+        "centrality": {
+          "max": 34.0,
+          "mean": 6.582239382239395,
+          "median": 6.582239382239395,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 13.321337055979523,
+          "std_dev": 6.739097673740128
+        },
+        "complexity": {
+          "max": 11.0,
+          "mean": 5.6239382239382305,
+          "median": 6.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 7.0,
+          "std_dev": 1.5929036440882867
+        },
+        "course_id": "CS4800",
+        "delay": {
+          "max": 6.0,
+          "mean": 4.707335907335908,
+          "median": 4.707335907335908,
+          "min": 4.0,
+          "q1": 4.031166644708387,
+          "q3": 5.3835051699634295,
+          "std_dev": 0.6761692626275211
+        },
+        "plan_count": 1295
+      },
+      "name": "Algorithms and Data",
+      "number": "4800",
+      "prefix": "CS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "CS1800",
+              "MATH1365"
+            ]
+          },
+          {
+            "or": [
+              "CS3100",
+              "CS3500"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS4805": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4805",
+        "delay": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 2479
+      },
+      "name": "Fundamentals of Complexity Theory",
+      "number": "4805",
+      "prefix": "CS",
+      "prerequisites": "CS3800",
+      "strict_corequisites": []
+    },
+    "CS4810": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 4.0829199149539335,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.27576113333456864
+        },
+        "course_id": "CS4810",
+        "delay": {
+          "max": 5.0,
+          "mean": 4.0829199149539335,
+          "median": 4.0829199149539335,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.358681048288502,
+          "std_dev": 0.27576113333456864
+        },
+        "plan_count": 1411
+      },
+      "name": "Advanced Algorithms",
+      "number": "4810",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS3000",
+          "CS4800"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS4820": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 4.111111111111117,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.3142696805273543
+        },
+        "course_id": "CS4820",
+        "delay": {
+          "max": 5.0,
+          "mean": 4.111111111111117,
+          "median": 4.111111111111117,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.425380791638471,
+          "std_dev": 0.3142696805273543
+        },
+        "plan_count": 1701
+      },
+      "name": "Computer-Aided Reasoning",
+      "number": "4820",
+      "prefix": "CS",
+      "prerequisites": {
+        "and": [
+          "CS2800",
+          {
+            "or": [
+              "CS3000",
+              "CS4800"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS4830": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 4.128310771041796,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.33443552005797866
+        },
+        "course_id": "CS4830",
+        "delay": {
+          "max": 5.0,
+          "mean": 4.128310771041796,
+          "median": 4.128310771041796,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.462746291099775,
+          "std_dev": 0.33443552005797866
+        },
+        "plan_count": 1699
+      },
+      "name": "System Specification, Verification, and Synthesis",
+      "number": "4830",
+      "prefix": "CS",
+      "prerequisites": {
+        "or": [
+          "CS3000",
+          "CS4800"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CS4950": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "max_repeat_credits": 2.0,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 2.0,
+          "mean": 2.0,
+          "median": 2.0,
+          "min": 2.0,
+          "q1": 2.0,
+          "q3": 2.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CS4950",
+        "delay": {
+          "max": 2.0,
+          "mean": 2.0,
+          "median": 2.0,
+          "min": 2.0,
+          "q1": 2.0,
+          "q3": 2.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1731
+      },
+      "name": "Computer Science Research Seminar",
+      "number": "4950",
+      "prefix": "CS",
+      "prerequisites": "CS3950",
+      "repeatable": true,
+      "strict_corequisites": []
+    },
+    "CY2550": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 0.25494233937397065,
+          "median": 0.25494233937397065,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.690771139441724,
+          "std_dev": 0.43582880006775326
+        },
+        "centrality": {
+          "max": 4.0,
+          "mean": 1.0197693574958826,
+          "median": 1.0197693574958826,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 2.763084557766896,
+          "std_dev": 1.743315200271013
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 3.5098846787479467,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 5.0,
+          "std_dev": 0.8716576001355067
+        },
+        "course_id": "CY2550",
+        "delay": {
+          "max": 4.0,
+          "mean": 3.254942339373963,
+          "median": 3.254942339373963,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.6907711394417166,
+          "std_dev": 0.4358288000677535
+        },
+        "plan_count": 4856
+      },
+      "name": "Foundations of Cybersecurity",
+      "number": "2550",
+      "prefix": "CY",
+      "prerequisites": {
+        "or": [
+          "CS2100",
+          "CS2500",
+          "DS2000",
+          "DS2500"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CY3740": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 2.0,
+          "mean": 0.2472139381572751,
+          "median": 0.2472139381572751,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.7205888685638702,
+          "std_dev": 0.47337493040659506
+        },
+        "centrality": {
+          "max": 12.0,
+          "mean": 1.4832836289436528,
+          "median": 1.4832836289436528,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 4.323533211383225,
+          "std_dev": 2.8402495824395717
+        },
+        "complexity": {
+          "max": 8.0,
+          "mean": 5.475435567414865,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.8841996848934773
+        },
+        "course_id": "CY3740",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.228221629257581,
+          "median": 5.228221629257581,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.647907842036357,
+          "std_dev": 0.4196862127787768
+        },
+        "plan_count": 6371
+      },
+      "name": "Systems Security",
+      "number": "3740",
+      "prefix": "CY",
+      "prerequisites": "CS3650",
+      "strict_corequisites": []
+    },
+    "CY4100": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 6.0,
+          "mean": 5.611967921036386,
+          "median": 6.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 6.0,
+          "std_dev": 0.48730194403345767
+        },
+        "course_id": "CY4100",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.611967921036386,
+          "median": 5.611967921036386,
+          "min": 5.0,
+          "q1": 5.124665977002928,
+          "q3": 6.0,
+          "std_dev": 0.48730194403345767
+        },
+        "plan_count": 1621
+      },
+      "name": "AI Security and Privacy",
+      "number": "4100",
+      "prefix": "CY",
+      "prerequisites": {
+        "or": [
+          "CS4100",
+          "DS4400"
+        ]
+      },
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CY4170": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CY4170",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1248
+      },
+      "name": "The Law, Ethics, and Policy of Data and Digital Technologies",
+      "number": "4170",
+      "prefix": "CY",
+      "strict_corequisites": []
+    },
+    "CY4740": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 2.0,
+          "mean": 0.39403345404380063,
+          "median": 0.39403345404380063,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.9453543619476875,
+          "std_dev": 0.5513209079038869
+        },
+        "centrality": {
+          "max": 12.0,
+          "mean": 2.3642007242628016,
+          "median": 2.3642007242628016,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 5.672126171686125,
+          "std_dev": 3.307925447423324
+        },
+        "complexity": {
+          "max": 8.0,
+          "mean": 5.755475081910691,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 7.0,
+          "std_dev": 1.0188145282455412
+        },
+        "course_id": "CY4740",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.361441627866888,
+          "median": 5.361441627866888,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.841859755659563,
+          "std_dev": 0.4804181277926743
+        },
+        "plan_count": 5799
+      },
+      "name": "Network Security",
+      "number": "4740",
+      "prefix": "CY",
+      "prerequisites": "CS3650",
+      "strict_corequisites": []
+    },
+    "CY4760": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CY4760",
+        "delay": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 2285
+      },
+      "name": "Security of Wireless and Mobile Systems",
+      "number": "4760",
+      "prefix": "CY",
+      "prerequisites": {
+        "or": [
+          "CY3740",
+          "CY4740"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CY4770": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CY4770",
+        "delay": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1575
+      },
+      "name": "Foundations of Cryptography",
+      "number": "4770",
+      "prefix": "CY",
+      "prerequisites": {
+        "or": [
+          "CY3740",
+          "CY4740"
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "CY5240": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "CY5240",
+        "delay": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1238
+      },
+      "name": "Cyberlaw: Privacy, Ethics, and Digital Rights",
+      "number": "5240",
+      "prefix": "CY",
+      "prerequisites": "CY2550",
+      "strict_corequisites": []
+    },
+    "DS1300": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "cross_listed_as": [
+        "PHIL1300"
+      ],
+      "csv_id": null,
+      "id": null,
+      "name": "Knowledge in a Digital World",
+      "number": "1300",
+      "prefix": "DS",
+      "strict_corequisites": []
+    },
+    "DS2000": {
+      "canonical_name": null,
+      "corequisites": [
+        "DS2001"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Programming with Data",
+      "number": "2000",
+      "prefix": "DS",
+      "strict_corequisites": [
+        "DS2001"
+      ]
+    },
+    "DS2001": {
+      "canonical_name": null,
+      "corequisites": [
+        "DS2000"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Data Science Programming Practicum",
+      "number": "2001",
+      "prefix": "DS",
+      "strict_corequisites": [
+        "DS2000"
+      ]
+    },
+    "DS2500": {
+      "canonical_name": null,
+      "corequisites": [
+        "DS2501"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 0.49368686868686856,
+          "median": 0.49368686868686856,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.9936470114712936,
+          "std_dev": 0.49996014278442513
+        },
+        "centrality": {
+          "max": 4.0,
+          "mean": 1.9747474747474743,
+          "median": 1.9747474747474743,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 3.9745880458851746,
+          "std_dev": 1.9998405711377005
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 3.9873737373737357,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 5.0,
+          "std_dev": 0.9999202855688503
+        },
+        "course_id": "DS2500",
+        "delay": {
+          "max": 4.0,
+          "mean": 3.4936868686868636,
+          "median": 3.4936868686868636,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.993647011471289,
+          "std_dev": 0.4999601427844254
+        },
+        "plan_count": 2376
+      },
+      "name": "Intermediate Programming with Data",
+      "number": "2500",
+      "prefix": "DS",
+      "prerequisites": {
+        "or": [
+          "DS2000",
+          "CS2100"
+        ]
+      },
+      "strict_corequisites": [
+        "DS2501"
+      ]
+    },
+    "DS2501": {
+      "canonical_name": null,
+      "corequisites": [
+        "DS2500"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "DS2501",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1270
+      },
+      "name": "Lab for DS 2500",
+      "number": "2501",
+      "prefix": "DS",
+      "strict_corequisites": [
+        "DS2500"
+      ]
+    },
+    "DS3000": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 7.0,
+          "mean": 1.94170089151557,
+          "median": 1.94170089151557,
+          "min": 0.0,
+          "q1": 0.5478897141306454,
+          "q3": 3.3355120689004947,
+          "std_dev": 1.3938111773849247
+        },
+        "centrality": {
+          "max": 74.0,
+          "mean": 15.623459881799075,
+          "median": 15.623459881799075,
+          "min": 0.0,
+          "q1": 4.2689131134554135,
+          "q3": 26.97800665014274,
+          "std_dev": 11.354546768343662
+        },
+        "complexity": {
+          "max": 13.0,
+          "mean": 7.12160673144345,
+          "median": 7.0,
+          "min": 4.0,
+          "q1": 6.0,
+          "q3": 9.0,
+          "std_dev": 2.0114459968639187
+        },
+        "course_id": "DS3000",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.179905839927867,
+          "median": 5.179905839927867,
+          "min": 4.0,
+          "q1": 4.480534396518924,
+          "q3": 5.879277283336809,
+          "std_dev": 0.6993714434089429
+        },
+        "plan_count": 9983
+      },
+      "name": "Foundations of Data Science",
+      "number": "3000",
+      "prefix": "DS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "CS2100",
+              "CS2510",
+              "DS2500"
+            ]
+          },
+          {
+            "or": [
+              "CS2810",
+              "DS2000",
+              "MATH2280"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": []
+    },
+    "DS3500": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "DS3500",
+        "delay": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1173
+      },
+      "name": "Advanced Programming with Data",
+      "number": "3500",
+      "prefix": "DS",
+      "prerequisites": "DS2500",
+      "strict_corequisites": []
+    },
+    "DS4200": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "DS4200",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1492
+      },
+      "name": "Information Presentation and Visualization",
+      "number": "4200",
+      "prefix": "DS",
+      "prerequisites": "DS3000",
+      "strict_corequisites": []
+    },
+    "DS4400": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 3.0,
+          "mean": 0.9527394395650374,
+          "median": 0.9527394395650374,
+          "min": 0.0,
+          "q1": 0.28795973131092767,
+          "q3": 1.617519147819147,
+          "std_dev": 0.6647797082541097
+        },
+        "centrality": {
+          "max": 63.0,
+          "mean": 15.444165621079055,
+          "median": 15.444165621079055,
+          "min": 0.0,
+          "q1": 4.597330818984547,
+          "q3": 26.291000423173564,
+          "std_dev": 10.846834802094508
+        },
+        "complexity": {
+          "max": 9.0,
+          "mean": 6.678377248013384,
+          "median": 7.0,
+          "min": 4.0,
+          "q1": 6.0,
+          "q3": 7.0,
+          "std_dev": 1.0433257844417962
+        },
+        "course_id": "DS4400",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.725637808448341,
+          "median": 5.725637808448341,
+          "min": 4.0,
+          "q1": 5.265145826010389,
+          "q3": 6.0,
+          "std_dev": 0.46049198243795125
+        },
+        "plan_count": 4782
+      },
+      "name": "Machine Learning and Data Mining 1",
+      "number": "4400",
+      "prefix": "DS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "CS2810",
+              "DS3000"
+            ]
+          },
+          {
+            "or": [
+              "CS3100",
+              "CS3500"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "DS4420": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 6.0,
+          "mean": 5.944540727902941,
+          "median": 6.0,
+          "min": 5.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.22887450979853294
+        },
+        "course_id": "DS4420",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.944540727902941,
+          "median": 5.944540727902941,
+          "min": 5.0,
+          "q1": 5.715666218104409,
+          "q3": 6.0,
+          "std_dev": 0.22887450979853294
+        },
+        "plan_count": 1731
+      },
+      "name": "Machine Learning and Data Mining 2",
+      "number": "4420",
+      "prefix": "DS",
+      "prerequisites": "DS4400",
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "DS4440": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 6.0,
+          "mean": 5.966254218222725,
+          "median": 6.0,
+          "min": 5.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.18057409556610868
+        },
+        "course_id": "DS4440",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.966254218222725,
+          "median": 5.966254218222725,
+          "min": 5.0,
+          "q1": 5.785680122656617,
+          "q3": 6.0,
+          "std_dev": 0.18057409556610868
+        },
+        "plan_count": 1778
+      },
+      "name": "Practical Neural Networks",
+      "number": "4440",
+      "prefix": "DS",
+      "prerequisites": "DS4400",
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "EECE2310": {
+      "canonical_name": null,
+      "corequisites": [
+        "EECE2311"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "EECE2310",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 9983
+      },
+      "name": "Introduction to Digital Design and Computer Architecture",
+      "number": "2310",
+      "prefix": "EECE",
+      "strict_corequisites": [
+        "EECE2311"
+      ]
+    },
+    "EECE2311": {
+      "canonical_name": null,
+      "corequisites": [
+        "EECE2310"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "EECE2311",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 9983
+      },
+      "name": "Lab for EECE 2310",
+      "number": "2311",
+      "prefix": "EECE",
+      "strict_corequisites": [
+        "EECE2310"
+      ]
+    },
+    "ENGW1111": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "First-Year Writing",
+      "number": "1111",
+      "prefix": "ENGW",
+      "strict_corequisites": []
+    },
+    "ENGW3302": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Advanced Writing in the Technical Professions",
+      "number": "3302",
+      "prefix": "ENGW",
+      "prerequisites": "ENGW1111",
+      "strict_corequisites": []
+    },
+    "ENGW3315": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Interdisciplinary Advanced Writing in the Disciplines",
+      "number": "3315",
+      "prefix": "ENGW",
+      "prerequisites": "ENGW1111",
+      "strict_corequisites": []
+    },
+    "ENVR1200": {
+      "canonical_name": null,
+      "corequisites": [
+        "ENVR1201"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Dynamic Earth",
+      "number": "1200",
+      "prefix": "ENVR",
+      "strict_corequisites": [
+        "ENVR1201"
+      ]
+    },
+    "ENVR1201": {
+      "canonical_name": null,
+      "corequisites": [
+        "ENVR1200"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for ENVR 1200",
+      "number": "1201",
+      "prefix": "ENVR",
+      "strict_corequisites": [
+        "ENVR1200"
+      ]
+    },
+    "ENVR2310": {
+      "canonical_name": null,
+      "corequisites": [
+        "ENVR2311"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Earth Materials",
+      "number": "2310",
+      "prefix": "ENVR",
+      "strict_corequisites": [
+        "ENVR2311"
+      ]
+    },
+    "ENVR2311": {
+      "canonical_name": null,
+      "corequisites": [
+        "ENVR2310"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for ENVR 2310",
+      "number": "2311",
+      "prefix": "ENVR",
+      "strict_corequisites": [
+        "ENVR2310"
+      ]
+    },
+    "ENVR2340": {
+      "canonical_name": null,
+      "corequisites": [
+        "ENVR2341"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Earth Landforms and Processes",
+      "number": "2340",
+      "prefix": "ENVR",
+      "strict_corequisites": [
+        "ENVR2341"
+      ]
+    },
+    "ENVR2341": {
+      "canonical_name": null,
+      "corequisites": [
+        "ENVR2340"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for ENVR 2340",
+      "number": "2341",
+      "prefix": "ENVR",
+      "strict_corequisites": [
+        "ENVR2340"
+      ]
+    },
+    "ENVR3300": {
+      "canonical_name": null,
+      "corequisites": [
+        "ENVR3301"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Geographic Information Systems",
+      "number": "3300",
+      "prefix": "ENVR",
+      "strict_corequisites": [
+        "ENVR3301"
+      ]
+    },
+    "ENVR3301": {
+      "canonical_name": null,
+      "corequisites": [
+        "ENVR3300"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for ENVR 3300",
+      "number": "3301",
+      "prefix": "ENVR",
+      "strict_corequisites": [
+        "ENVR3300"
+      ]
+    },
+    "ENVR4500": {
+      "canonical_name": null,
+      "corequisites": [
+        "ENVR4501"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Applied Hydrogeology",
+      "number": "4500",
+      "prefix": "ENVR",
+      "strict_corequisites": [
+        "ENVR4501"
+      ]
+    },
+    "ENVR4501": {
+      "canonical_name": null,
+      "corequisites": [
+        "ENVR4500"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for ENVR 4500",
+      "number": "4501",
+      "prefix": "ENVR",
+      "strict_corequisites": [
+        "ENVR4500"
+      ]
+    },
+    "HINF5300": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "HINF5300",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 330
+      },
+      "name": "Personal Health Interface Design and Development",
+      "number": "5300",
+      "prefix": "HINF",
+      "strict_corequisites": []
+    },
+    "HIST2220": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "History of Technology",
+      "number": "2220",
+      "prefix": "HIST",
+      "strict_corequisites": []
+    },
+    "INSH2102": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Bostonography",
+      "number": "2102",
+      "prefix": "INSH",
+      "strict_corequisites": []
+    },
+    "JRNL3700": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Data Storytelling",
+      "number": "3700",
+      "prefix": "JRNL",
+      "strict_corequisites": []
+    },
+    "MATH1341": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 10.0,
+          "mean": 4.75448262045479,
+          "median": 4.75448262045479,
+          "min": 2.0,
+          "q1": 3.2482354238356828,
+          "q3": 6.260729817073898,
+          "std_dev": 1.5062471966191073
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 16.0,
+          "mean": 9.809876790543873,
+          "median": 10.0,
+          "min": 5.0,
+          "q1": 9.0,
+          "q3": 11.0,
+          "std_dev": 2.2786270548246117
+        },
+        "course_id": "MATH1341",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.055394170089154,
+          "median": 5.055394170089154,
+          "min": 3.0,
+          "q1": 4.205414821686099,
+          "q3": 5.905373518492209,
+          "std_dev": 0.8499793484030549
+        },
+        "plan_count": 9983
+      },
+      "name": "Calculus 1 for Science and Engineering",
+      "number": "1341",
+      "prefix": "MATH",
+      "strict_corequisites": []
+    },
+    "MATH1342": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 9.0,
+          "mean": 3.754482620454765,
+          "median": 3.754482620454765,
+          "min": 1.0,
+          "q1": 2.2482354238356574,
+          "q3": 5.260729817073873,
+          "std_dev": 1.5062471966191078
+        },
+        "centrality": {
+          "max": 33.0,
+          "mean": 8.630672142642462,
+          "median": 8.630672142642462,
+          "min": 3.0,
+          "q1": 3.572765566678923,
+          "q3": 13.688578718606001,
+          "std_dev": 5.057906575963539
+        },
+        "complexity": {
+          "max": 15.0,
+          "mean": 8.809876790543873,
+          "median": 9.0,
+          "min": 4.0,
+          "q1": 8.0,
+          "q3": 11.0,
+          "std_dev": 2.2786270548246117
+        },
+        "course_id": "MATH1342",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.055394170089154,
+          "median": 5.055394170089154,
+          "min": 3.0,
+          "q1": 4.205414821686099,
+          "q3": 5.905373518492209,
+          "std_dev": 0.8499793484030549
+        },
+        "plan_count": 9983
+      },
+      "name": "Calculus 2 for Science and Engineering",
+      "number": "1342",
+      "prefix": "MATH",
+      "prerequisites": "MATH1341",
+      "strict_corequisites": []
+    },
+    "MATH1365": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "MATH1365",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 9983
+      },
+      "name": "Introduction to Mathematical Reasoning",
+      "number": "1365",
+      "prefix": "MATH",
+      "strict_corequisites": []
+    },
+    "MATH1465": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Intensive Mathematical Reasoning",
+      "number": "1465",
+      "prefix": "MATH",
+      "strict_corequisites": []
+    },
+    "MATH2280": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 8.0,
+          "mean": 2.754482620454765,
+          "median": 2.754482620454765,
+          "min": 0.0,
+          "q1": 1.2482354238356574,
+          "q3": 4.260729817073873,
+          "std_dev": 1.5062471966191078
+        },
+        "centrality": {
+          "max": 33.0,
+          "mean": 8.4425523389763,
+          "median": 8.4425523389763,
+          "min": 0.0,
+          "q1": 3.1293733322414328,
+          "q3": 13.755731345711169,
+          "std_dev": 5.313179006734868
+        },
+        "complexity": {
+          "max": 14.0,
+          "mean": 7.809876790543939,
+          "median": 8.0,
+          "min": 3.0,
+          "q1": 7.0,
+          "q3": 10.0,
+          "std_dev": 2.278627054824612
+        },
+        "course_id": "MATH2280",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.055394170089154,
+          "median": 5.055394170089154,
+          "min": 3.0,
+          "q1": 4.205414821686099,
+          "q3": 5.905373518492209,
+          "std_dev": 0.8499793484030549
+        },
+        "plan_count": 9983
+      },
+      "name": "Statistics and Software",
+      "number": "2280",
+      "prefix": "MATH",
+      "prerequisites": "MATH1342",
+      "strict_corequisites": []
+    },
+    "MATH2310": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Mathematical Reasoning",
+      "number": "2310",
+      "prefix": "MATH",
+      "strict_corequisites": []
+    },
+    "MATH2331": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Linear Algebra",
+      "number": "2331",
+      "prefix": "MATH",
+      "prerequisites": "MATH1342",
+      "strict_corequisites": []
+    },
+    "MATH3081": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Probability and Statistics",
+      "number": "3081",
+      "prefix": "MATH",
+      "prerequisites": "MATH1342",
+      "strict_corequisites": []
+    },
+    "MKTG4606": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "MKTG4606",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1290
+      },
+      "name": "Digital Marketing and Web Analytics",
+      "number": "4606",
+      "prefix": "MKTG",
+      "strict_corequisites": []
+    },
+    "PHIL1145": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Technology and Human Values",
+      "number": "1145",
+      "prefix": "PHIL",
+      "strict_corequisites": []
+    },
+    "PHIL1300": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "cross_listed_as": [
+        "DS1300"
+      ],
+      "csv_id": null,
+      "id": null,
+      "name": "Knowledge in a Digital World",
+      "number": "1300",
+      "prefix": "PHIL",
+      "strict_corequisites": []
+    },
+    "PHYS1145": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS1146"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Physics for Life Sciences 1",
+      "number": "1145",
+      "prefix": "PHYS",
+      "strict_corequisites": [
+        "PHYS1146"
+      ]
+    },
+    "PHYS1146": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS1145"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for PHYS 1145",
+      "number": "1146",
+      "prefix": "PHYS",
+      "strict_corequisites": [
+        "PHYS1145"
+      ]
+    },
+    "PHYS1147": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS1148"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Physics for Life Sciences 2",
+      "number": "1147",
+      "prefix": "PHYS",
+      "prerequisites": "PHYS1145",
+      "strict_corequisites": [
+        "PHYS1148"
+      ]
+    },
+    "PHYS1148": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS1147"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for PHYS 1147",
+      "number": "1148",
+      "prefix": "PHYS",
+      "strict_corequisites": [
+        "PHYS1147"
+      ]
+    },
+    "PHYS1151": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS1152"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Physics for Engineering 1",
+      "number": "1151",
+      "prefix": "PHYS",
+      "prerequisites": "MATH1341",
+      "strict_corequisites": [
+        "PHYS1152"
+      ]
+    },
+    "PHYS1152": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS1151"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for PHYS 1151",
+      "number": "1152",
+      "prefix": "PHYS",
+      "strict_corequisites": [
+        "PHYS1151"
+      ]
+    },
+    "PHYS1155": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS1156"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Physics for Engineering 2",
+      "number": "1155",
+      "prefix": "PHYS",
+      "prerequisites": "PHYS1151",
+      "strict_corequisites": [
+        "PHYS1156"
+      ]
+    },
+    "PHYS1156": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS1155"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for PHYS 1155",
+      "number": "1156",
+      "prefix": "PHYS",
+      "strict_corequisites": [
+        "PHYS1155"
+      ]
+    },
+    "PHYS1161": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS1162"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Physics 1",
+      "number": "1161",
+      "prefix": "PHYS",
+      "strict_corequisites": [
+        "PHYS1162"
+      ]
+    },
+    "PHYS1162": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS1161"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for PHYS 1161",
+      "number": "1162",
+      "prefix": "PHYS",
+      "strict_corequisites": [
+        "PHYS1161"
+      ]
+    },
+    "PHYS1165": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS1166"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Physics 2",
+      "number": "1165",
+      "prefix": "PHYS",
+      "prerequisites": "PHYS1161",
+      "strict_corequisites": [
+        "PHYS1166"
+      ]
+    },
+    "PHYS1166": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS1165"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Lab for PHYS 1165",
+      "number": "1166",
+      "prefix": "PHYS",
+      "strict_corequisites": [
+        "PHYS1165"
+      ]
+    },
+    "SOCL1280": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "The Twenty-First-Century Workplace",
+      "number": "1280",
+      "prefix": "SOCL",
+      "strict_corequisites": []
+    },
+    "SOCL2485": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Environment, Technology, and Society",
+      "number": "2485",
+      "prefix": "SOCL",
+      "strict_corequisites": []
+    },
+    "SOCL4528": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Technology and Society",
+      "number": "4528",
+      "prefix": "SOCL",
+      "strict_corequisites": []
+    },
+    "THTR1125": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "THTR1125",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1254
+      },
+      "name": "Improvisation",
+      "number": "1125",
+      "prefix": "THTR",
+      "strict_corequisites": []
+    },
+    "THTR1130": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "THTR1130",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1263
+      },
+      "name": "Introduction to Acting",
+      "number": "1130",
+      "prefix": "THTR",
+      "strict_corequisites": []
+    },
+    "THTR1180": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "THTR1180",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1245
+      },
+      "name": "Dynamic Presence: Theatre Training for Effective Interpersonal Interactions",
+      "number": "1180",
+      "prefix": "THTR",
+      "strict_corequisites": []
+    },
+    "THTR2345": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "THTR2345",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1234
+      },
+      "name": "Acting for the Camera",
+      "number": "2345",
+      "prefix": "THTR",
+      "strict_corequisites": []
+    }
+  }
+}

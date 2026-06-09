@@ -1,0 +1,5488 @@
+{
+  "degree": {
+    "allow_double_counting": false,
+    "catalog_year": "2024-2025",
+    "cip_code": null,
+    "degree_type": "BS",
+    "gpa_minimum": 2.0,
+    "grade_minimum": "C",
+    "grade_minimum_note": "C means C (2.0), not C- (1.7). Grade of B required in ICS 111 for progression to ICS 211.",
+    "id": "university-of-hawaii-at-manoa-bachelor-of-science-in-computer-science",
+    "in_major_credits": 57,
+    "institution": "University of Hawaiʻi at Mānoa",
+    "major_subjects": [
+      "ICS"
+    ],
+    "name": "Bachelor of Science in Computer Science - General Track",
+    "source_url": "https://manoa.hawaii.edu/catalog/schools-colleges/nat-sci/ics/",
+    "system_type": "semester",
+    "total_credits": 120,
+    "upper_division_credits": 45
+  },
+  "analysis": {
+    "metrics": {
+      "complexity": {
+        "max": 349.0,
+        "mean": 298.81580271766467,
+        "median": 298.0,
+        "min": 250.0,
+        "q1": 286.75,
+        "q3": 310.0,
+        "std_dev": 17.117773217826056
+      },
+      "credits": {
+        "max": 143.0,
+        "mean": 132.00251635631597,
+        "median": 132.00251635631597,
+        "min": 125.0,
+        "q1": 128.9556184215682,
+        "q3": 135.04941429106373,
+        "std_dev": 3.0468979347477685
+      },
+      "delay": {
+        "max": 6.0,
+        "mean": 5.490689481630587,
+        "median": 5.0,
+        "min": 5.0,
+        "q1": 5.0,
+        "q3": 6.0,
+        "std_dev": 0.4999133067319703
+      }
+    },
+    "sample_type": "shuffled",
+    "variations_run": 7948
+  },
+  "requirements": {
+    "breadth_requirements": {
+      "category": "major",
+      "from": {
+        "groups": [
+          {
+            "courses": [
+              "ICS312",
+              "ICS331"
+            ],
+            "id": "systems_hardware",
+            "name": "Systems and Hardware"
+          },
+          {
+            "courses": [
+              "ICS313",
+              "ICS361"
+            ],
+            "id": "languages_ai",
+            "name": "Languages and AI"
+          },
+          {
+            "courses": [
+              "ICS351",
+              "ICS451"
+            ],
+            "id": "networking",
+            "name": "Networking"
+          }
+        ],
+        "groups_required": 2,
+        "per_group": 1
+      },
+      "name": "Breadth Requirements (Two of Three Areas)",
+      "type": "select"
+    },
+    "calculus": {
+      "category": "supporting",
+      "courses": [
+        "{MATH215, MATH241, MATH251A}",
+        "{MATH216, MATH242, MATH252A}"
+      ],
+      "name": "Calculus Sequence",
+      "type": "all"
+    },
+    "capstone": {
+      "category": "major",
+      "courses": [
+        "ICS496"
+      ],
+      "name": "Capstone Project",
+      "type": "all"
+    },
+    "core_courses": {
+      "category": "major",
+      "courses": [
+        "ICS311",
+        "ICS314",
+        "ICS321",
+        "ICS332",
+        "ICS355"
+      ],
+      "name": "Computer Science Core",
+      "type": "all"
+    },
+    "discrete_math": {
+      "category": "major",
+      "name": "Discrete Mathematics Requirement",
+      "options": [
+        {
+          "id": "ics_path",
+          "name": "ICS Discrete Math Sequence",
+          "requirements": [
+            {
+              "courses": [
+                "ICS141",
+                "ICS241"
+              ],
+              "type": "all"
+            }
+          ]
+        },
+        {
+          "id": "math_substitution",
+          "name": "Math Department Substitution",
+          "requirements": [
+            {
+              "courses": [
+                "MATH301",
+                "MATH372"
+              ],
+              "type": "all"
+            }
+          ]
+        }
+      ],
+      "type": "one_of"
+    },
+    "free_electives": {
+      "category": "elective",
+      "credits": 6,
+      "from": {
+        "pattern": "*:*"
+      },
+      "name": "Free Electives",
+      "type": "select"
+    },
+    "gen_ed_arts_humanities": {
+      "category": "gen_ed",
+      "credits": 6,
+      "from": {
+        "pattern": "*:*"
+      },
+      "name": "Arts, Humanities, and Literature (DA/DH/DL)",
+      "type": "select"
+    },
+    "gen_ed_biological": {
+      "category": "gen_ed",
+      "credits": 3,
+      "from": {
+        "pattern": "*:*"
+      },
+      "name": "Biological Sciences (DB)",
+      "type": "select"
+    },
+    "gen_ed_global": {
+      "category": "gen_ed",
+      "credits": 6,
+      "from": {
+        "pattern": "*:*"
+      },
+      "name": "Global and Multicultural Perspectives (FG)",
+      "type": "select"
+    },
+    "gen_ed_quantitative": {
+      "category": "gen_ed",
+      "count": 1,
+      "from": {
+        "courses": [
+          "MATH215",
+          "MATH241",
+          "MATH251A",
+          "ICS141"
+        ]
+      },
+      "name": "Quantitative Reasoning (FQ)",
+      "type": "select"
+    },
+    "gen_ed_social_sciences": {
+      "category": "gen_ed",
+      "credits": 6,
+      "from": {
+        "pattern": "*:*"
+      },
+      "name": "Social Sciences (DS)",
+      "type": "select"
+    },
+    "gen_ed_written": {
+      "category": "gen_ed",
+      "count": 1,
+      "from": {
+        "courses": [
+          "ENG100"
+        ]
+      },
+      "name": "Written Communication (FW)",
+      "type": "select"
+    },
+    "intro_sequence": {
+      "category": "major",
+      "constraints": {
+        "grade_minimum": "B"
+      },
+      "courses": [
+        "ICS111",
+        "ICS211"
+      ],
+      "name": "Introductory Computer Science Sequence",
+      "type": "all"
+    },
+    "math_elective": {
+      "category": "major",
+      "count": 1,
+      "from": {
+        "courses": [
+          "MATH307",
+          "MATH372"
+        ]
+      },
+      "name": "Mathematics or Statistics Elective",
+      "type": "select"
+    },
+    "program_structure": {
+      "category": "major",
+      "courses": [
+        "ICS212"
+      ],
+      "name": "Program Structure",
+      "type": "all"
+    },
+    "science_sequence": {
+      "category": "supporting",
+      "name": "Natural Science Sequence with Labs",
+      "options": [
+        {
+          "id": "physics_calc",
+          "name": "Physics (Calculus-Based)",
+          "requirements": [
+            {
+              "courses": [
+                "[PHYS170, PHYS170L]",
+                "[PHYS272, PHYS272L]"
+              ],
+              "type": "all"
+            }
+          ]
+        },
+        {
+          "id": "physics_algebra",
+          "name": "Physics (Algebra-Based)",
+          "requirements": [
+            {
+              "courses": [
+                "[PHYS151, PHYS151L]",
+                "[PHYS152, PHYS152L]"
+              ],
+              "type": "all"
+            }
+          ]
+        },
+        {
+          "id": "chemistry",
+          "name": "Chemistry",
+          "requirements": [
+            {
+              "courses": [
+                "[CHEM161, CHEM161L]",
+                "[CHEM162, CHEM162L]"
+              ],
+              "type": "all"
+            }
+          ]
+        }
+      ],
+      "type": "one_of"
+    },
+    "second_language": {
+      "category": "gen_ed",
+      "credits": 12,
+      "from": {
+        "pattern": "*:*"
+      },
+      "name": "Hawaiian/Second Language (HSL)",
+      "type": "select"
+    },
+    "upper_electives": {
+      "category": "major",
+      "constraints": {
+        "exclude_used": true
+      },
+      "count": 4,
+      "from": {
+        "exclude": [
+          "ICS496"
+        ],
+        "pattern": "ICS:400+"
+      },
+      "name": "400-Level Electives",
+      "type": "select"
+    }
+  },
+  "selected_plans": [
+    {
+      "category": "Shortest Path",
+      "course_count": 42,
+      "credits": 125.0,
+      "critical_path": [
+        "MATH215",
+        "MATH216",
+        "MATH372",
+        "ICS355",
+        "ICS426"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 5,
+      "schedule": [
+        {
+          "courses": [
+            "MATH215",
+            "ICS111",
+            "GEB01",
+            "GESS02",
+            "SL04"
+          ],
+          "credits": 17.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "ICS141",
+            "MATH216",
+            "ICS211",
+            "PHYS170",
+            "PHYS170L"
+          ],
+          "credits": 15.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "ICS241",
+            "MATH372",
+            "ICS212",
+            "PHYS272",
+            "PHYS272L",
+            "ICS499",
+            "SL01"
+          ],
+          "credits": 16.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "ICS355",
+            "ICS311",
+            "ICS314",
+            "GESS01",
+            "SL02"
+          ],
+          "credits": 16.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "ICS312",
+            "ICS313",
+            "ICS321",
+            "ICS331",
+            "SL03"
+          ],
+          "credits": 16.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "ICS332",
+            "ICS351",
+            "ICS361",
+            "ICS426",
+            "ICS451"
+          ],
+          "credits": 15.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "ICS496",
+            "FE01",
+            "GEAH01",
+            "GEG01",
+            "ICS452"
+          ],
+          "credits": 15.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "ENG100",
+            "FE02",
+            "GEAH02",
+            "GEG02",
+            "ICS495"
+          ],
+          "credits": 15.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 250
+    },
+    {
+      "category": "Longest Path",
+      "course_count": 45,
+      "credits": 137.0,
+      "critical_path": [
+        "MATH215",
+        "MATH216",
+        "MATH372",
+        "ICS314",
+        "ICS481",
+        "ICS488"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 6,
+      "schedule": [
+        {
+          "courses": [
+            "MATH215",
+            "ICS111",
+            "FE02",
+            "GEAH02",
+            "GESS02"
+          ],
+          "credits": 17.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "ICS141",
+            "MATH216",
+            "ICS211",
+            "MATH301",
+            "GEB01",
+            "SL04"
+          ],
+          "credits": 19.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "ICS241",
+            "MATH372",
+            "ICS212",
+            "PHYS170",
+            "PHYS170L",
+            "SL01"
+          ],
+          "credits": 17.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "ICS311",
+            "ICS314",
+            "ICS355",
+            "MATH307",
+            "GEG01"
+          ],
+          "credits": 16.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "ICS321",
+            "ICS331",
+            "ICS481",
+            "ICS312",
+            "GEG02"
+          ],
+          "credits": 16.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "ICS431",
+            "ICS438",
+            "ICS488",
+            "ICS313",
+            "ICS332",
+            "SL02"
+          ],
+          "credits": 18.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "ICS351",
+            "ICS361",
+            "ICS415",
+            "ICS451",
+            "ICS496",
+            "SL03"
+          ],
+          "credits": 18.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "PHYS272",
+            "PHYS272L",
+            "ENG100",
+            "FE01",
+            "GEAH01",
+            "GESS01"
+          ],
+          "credits": 16.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 349
+    },
+    {
+      "category": "Random Sample",
+      "course_count": 43,
+      "credits": 131.0,
+      "critical_path": [
+        "MATH215",
+        "MATH216",
+        "MATH372",
+        "ICS314",
+        "ICS496"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 5,
+      "schedule": [
+        {
+          "courses": [
+            "MATH215",
+            "ICS111",
+            "GEAH02",
+            "GEG02",
+            "SL01"
+          ],
+          "credits": 17.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "ICS141",
+            "MATH216",
+            "ICS211",
+            "MATH301",
+            "ICS452"
+          ],
+          "credits": 16.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "ICS241",
+            "MATH372",
+            "ICS212",
+            "PHYS170",
+            "PHYS170L",
+            "SL02"
+          ],
+          "credits": 17.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "ICS311",
+            "ICS314",
+            "ICS355",
+            "PHYS272",
+            "PHYS272L",
+            "SL03"
+          ],
+          "credits": 17.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "ICS312",
+            "ICS313",
+            "ICS321",
+            "ICS331",
+            "ICS491"
+          ],
+          "credits": 16.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "ICS332",
+            "ICS351",
+            "ICS361",
+            "ICS451",
+            "ICS469",
+            "SL04"
+          ],
+          "credits": 18.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "ICS485",
+            "ICS496",
+            "FE02",
+            "GEB01",
+            "GESS01"
+          ],
+          "credits": 15.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "ENG100",
+            "FE01",
+            "GEAH01",
+            "GEG01",
+            "GESS02"
+          ],
+          "credits": 15.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 280
+    },
+    {
+      "category": "Random Sample",
+      "course_count": 43,
+      "credits": 131.0,
+      "critical_path": [
+        "MATH215",
+        "MATH216",
+        "MATH372",
+        "ICS314",
+        "ICS496"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 5,
+      "schedule": [
+        {
+          "courses": [
+            "MATH215",
+            "ICS111",
+            "GEAH02",
+            "GEG02",
+            "SL02"
+          ],
+          "credits": 17.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "ICS141",
+            "MATH216",
+            "ICS211",
+            "MATH301",
+            "GESS02"
+          ],
+          "credits": 16.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "ICS241",
+            "MATH372",
+            "ICS212",
+            "PHYS170",
+            "PHYS170L",
+            "SL03"
+          ],
+          "credits": 17.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "ICS311",
+            "ICS314",
+            "ICS355",
+            "ICS434",
+            "ICS452"
+          ],
+          "credits": 16.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "ICS312",
+            "ICS313",
+            "ICS321",
+            "ICS331",
+            "ICS495"
+          ],
+          "credits": 16.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "ICS332",
+            "ICS351",
+            "ICS361",
+            "ICS424",
+            "ICS451",
+            "SL04"
+          ],
+          "credits": 18.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "ICS496",
+            "PHYS272",
+            "PHYS272L",
+            "GEAH01",
+            "GEG01",
+            "SL01"
+          ],
+          "credits": 16.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "ENG100",
+            "FE01",
+            "FE02",
+            "GEB01",
+            "GESS01"
+          ],
+          "credits": 15.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 270
+    },
+    {
+      "category": "Random Sample",
+      "course_count": 44,
+      "credits": 134.0,
+      "critical_path": [
+        "MATH215",
+        "MATH216",
+        "MATH372",
+        "ICS314",
+        "ICS432"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 6,
+      "schedule": [
+        {
+          "courses": [
+            "MATH215",
+            "ICS111",
+            "GEAH01",
+            "GEB01",
+            "SL01"
+          ],
+          "credits": 17.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "ICS141",
+            "MATH216",
+            "ICS211",
+            "MATH301",
+            "GEG02"
+          ],
+          "credits": 16.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "ICS241",
+            "MATH372",
+            "ICS212",
+            "PHYS170",
+            "PHYS170L",
+            "SL02"
+          ],
+          "credits": 17.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "ICS311",
+            "ICS314",
+            "ICS355",
+            "MATH307",
+            "GESS01"
+          ],
+          "credits": 16.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "ICS332",
+            "ICS312",
+            "ICS313",
+            "ICS321",
+            "ICS351",
+            "SL03"
+          ],
+          "credits": 18.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "ICS432",
+            "ICS331",
+            "ICS361",
+            "ICS451",
+            "GESS02"
+          ],
+          "credits": 16.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "ICS461",
+            "ICS462",
+            "ICS496",
+            "PHYS272",
+            "PHYS272L",
+            "ICS452"
+          ],
+          "credits": 16.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "ENG100",
+            "FE01",
+            "FE02",
+            "GEAH02",
+            "GEG01",
+            "SL04"
+          ],
+          "credits": 18.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 314
+    },
+    {
+      "category": "Random Sample",
+      "course_count": 43,
+      "credits": 131.0,
+      "critical_path": [
+        "MATH215",
+        "MATH216",
+        "MATH372",
+        "ICS355",
+        "ICS455"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 5,
+      "schedule": [
+        {
+          "courses": [
+            "MATH215",
+            "ICS111",
+            "GEAH02",
+            "GEG02",
+            "SL01"
+          ],
+          "credits": 17.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "ICS141",
+            "MATH216",
+            "ICS211",
+            "PHYS170",
+            "PHYS170L",
+            "SL03"
+          ],
+          "credits": 18.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "ICS241",
+            "MATH372",
+            "ICS212",
+            "ICS434",
+            "MATH307",
+            "SL04"
+          ],
+          "credits": 18.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "ICS355",
+            "ICS311",
+            "ICS314",
+            "PHYS272",
+            "PHYS272L",
+            "SL02"
+          ],
+          "credits": 17.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "ICS312",
+            "ICS313",
+            "ICS321",
+            "ICS331",
+            "ICS452"
+          ],
+          "credits": 16.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "ICS332",
+            "ICS351",
+            "ICS361",
+            "ICS451",
+            "ICS455"
+          ],
+          "credits": 15.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "ICS461",
+            "ICS496",
+            "FE02",
+            "GEB01",
+            "GESS01"
+          ],
+          "credits": 15.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "ENG100",
+            "FE01",
+            "GEAH01",
+            "GEG01",
+            "GESS02"
+          ],
+          "credits": 15.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 271
+    },
+    {
+      "category": "Random Sample",
+      "course_count": 43,
+      "credits": 131.0,
+      "critical_path": [
+        "MATH215",
+        "MATH216",
+        "MATH372",
+        "ICS314",
+        "ICS321",
+        "ICS421"
+      ],
+      "is_calc_ready": false,
+      "longest_delay": 6,
+      "schedule": [
+        {
+          "courses": [
+            "MATH215",
+            "ICS111",
+            "GEAH01",
+            "GEB01",
+            "SL01"
+          ],
+          "credits": 17.0,
+          "term": 1
+        },
+        {
+          "courses": [
+            "ICS141",
+            "MATH216",
+            "ICS211",
+            "MATH301",
+            "GESS01"
+          ],
+          "credits": 16.0,
+          "term": 2
+        },
+        {
+          "courses": [
+            "ICS241",
+            "MATH372",
+            "ICS212",
+            "PHYS170",
+            "PHYS170L",
+            "SL02"
+          ],
+          "credits": 17.0,
+          "term": 3
+        },
+        {
+          "courses": [
+            "ICS311",
+            "ICS314",
+            "ICS355",
+            "PHYS272",
+            "PHYS272L",
+            "SL03"
+          ],
+          "credits": 17.0,
+          "term": 4
+        },
+        {
+          "courses": [
+            "ICS321",
+            "ICS312",
+            "ICS313",
+            "ICS331",
+            "GESS02"
+          ],
+          "credits": 16.0,
+          "term": 5
+        },
+        {
+          "courses": [
+            "ICS421",
+            "ICS332",
+            "ICS351",
+            "ICS361",
+            "ICS422",
+            "SL04"
+          ],
+          "credits": 18.0,
+          "term": 6
+        },
+        {
+          "courses": [
+            "ICS425",
+            "ICS451",
+            "ICS469",
+            "ICS496",
+            "GEG01"
+          ],
+          "credits": 15.0,
+          "term": 7
+        },
+        {
+          "courses": [
+            "ENG100",
+            "FE01",
+            "FE02",
+            "GEAH02",
+            "GEG02"
+          ],
+          "credits": 15.0,
+          "term": 8
+        }
+      ],
+      "terms_required": 8,
+      "total_complexity": 316
+    }
+  ],
+  "courses": {
+    "CHEM161": {
+      "canonical_name": null,
+      "corequisites": [
+        "CHEM161L"
+      ],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "DP"
+      ],
+      "id": null,
+      "name": "General Chemistry I",
+      "number": "161",
+      "prefix": "CHEM",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "CHEM161L": {
+      "canonical_name": null,
+      "corequisites": [
+        "CHEM161"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "DY"
+      ],
+      "id": null,
+      "name": "General Chemistry I Lab",
+      "number": "161L",
+      "prefix": "CHEM",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "CHEM162": {
+      "canonical_name": null,
+      "corequisites": [
+        "CHEM162L"
+      ],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "name": "General Chemistry II",
+      "number": "162",
+      "prefix": "CHEM",
+      "prerequisites": "CHEM161",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "CHEM162L": {
+      "canonical_name": null,
+      "corequisites": [
+        "CHEM162"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "id": null,
+      "name": "General Chemistry II Lab",
+      "number": "162L",
+      "prefix": "CHEM",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "DATA235": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "ICS235"
+      ],
+      "csv_id": null,
+      "id": null,
+      "name": "Machine Learning Methods",
+      "number": "235",
+      "prefix": "DATA",
+      "prerequisites": {
+        "or": [
+          "MATH241",
+          "MATH203",
+          "MATH215",
+          "MATH251A"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "DATA422": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "ICS422"
+      ],
+      "csv_id": null,
+      "id": null,
+      "name": "Data Processing",
+      "number": "422",
+      "prefix": "DATA",
+      "prerequisites": {
+        "or": [
+          "ICS311",
+          "ECE367"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "DATA434": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "ICS434"
+      ],
+      "csv_id": null,
+      "id": null,
+      "name": "Data Science Fundamentals",
+      "number": "434",
+      "prefix": "DATA",
+      "prerequisites": "ICS211",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "DATA435": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "ICS435"
+      ],
+      "csv_id": null,
+      "id": null,
+      "name": "Machine Learning Fundamentals",
+      "number": "435",
+      "prefix": "DATA",
+      "prerequisites": "ICS235",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "DATA438": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "ICS438"
+      ],
+      "csv_id": null,
+      "id": null,
+      "name": "Big Data Analytics",
+      "number": "438",
+      "prefix": "DATA",
+      "prerequisites": "ICS321",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "DATA484": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "ICS484",
+        "CINE484"
+      ],
+      "csv_id": null,
+      "id": null,
+      "name": "Data Visualization",
+      "number": "484",
+      "prefix": "DATA",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ECE160": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Programming for Engineers",
+      "number": "160",
+      "prefix": "ECE",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ECE205": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Object-Oriented Programming",
+      "number": "205",
+      "prefix": "ECE",
+      "prerequisites": "ECE160",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ECE260": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Introduction to Circuits",
+      "number": "260",
+      "prefix": "ECE",
+      "prerequisites": {
+        "and": [
+          "MATH242",
+          "PHYS272"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ECE361": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Digital Systems and Computer Design",
+      "number": "361",
+      "prefix": "ECE",
+      "prerequisites": {
+        "and": [
+          "ECE205",
+          "ECE260"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ECE362": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Discrete Mathematics for Computer Engineers",
+      "number": "362",
+      "prefix": "ECE",
+      "prerequisites": {
+        "and": [
+          "ECE160",
+          "ECE260",
+          "MATH242"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ECE367": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Algorithms",
+      "number": "367",
+      "prefix": "ECE",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ECE205",
+              "ICS212"
+            ]
+          },
+          {
+            "or": [
+              "ECE362",
+              "ICS241"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ENG100": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "FW"
+      ],
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ENG100",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 7948
+      },
+      "name": "Composition I",
+      "number": "100",
+      "prefix": "ENG",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS110D": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Introduction to Programming Through Animations",
+      "number": "110D",
+      "prefix": "ICS",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS111": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 19.0,
+          "mean": 15.919979869149456,
+          "median": 15.919979869149456,
+          "min": 13.0,
+          "q1": 14.839830762218748,
+          "q3": 17.000128976080163,
+          "std_dev": 1.0801491069307083
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 24.0,
+          "mean": 20.410669350780026,
+          "median": 20.0,
+          "min": 17.0,
+          "q1": 19.0,
+          "q3": 21.0,
+          "std_dev": 1.33718710571623
+        },
+        "course_id": "ICS111",
+        "delay": {
+          "max": 5.0,
+          "mean": 4.490689481630587,
+          "median": 4.490689481630587,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.9906027883625566,
+          "std_dev": 0.4999133067319703
+        },
+        "plan_count": 7948
+      },
+      "name": "Introduction to Computer Science I",
+      "number": "111",
+      "prefix": "ICS",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS141": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "FQ"
+      ],
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 19.0,
+          "mean": 15.01862103673882,
+          "median": 15.01862103673882,
+          "min": 11.0,
+          "q1": 13.417270477269291,
+          "q3": 16.619971596208348,
+          "std_dev": 1.601350559469529
+        },
+        "centrality": {
+          "max": 138.0,
+          "mean": 86.41545042778067,
+          "median": 86.41545042778067,
+          "min": 45.0,
+          "q1": 55.70707533577885,
+          "q3": 117.12382551978249,
+          "std_dev": 30.708375092001816
+        },
+        "complexity": {
+          "max": 25.0,
+          "mean": 20.509310518369297,
+          "median": 21.0,
+          "min": 16.0,
+          "q1": 19.0,
+          "q3": 22.0,
+          "std_dev": 1.7676534642593809
+        },
+        "course_id": "ICS141",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.490689481630587,
+          "median": 5.490689481630587,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.9906027883625566,
+          "std_dev": 0.4999133067319703
+        },
+        "plan_count": 7948
+      },
+      "name": "Discrete Mathematics for Computer Science I",
+      "number": "141",
+      "prefix": "ICS",
+      "prerequisites": {
+        "or": [
+          "MATH215",
+          "MATH241",
+          "MATH251A"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS211": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 17.0,
+          "mean": 14.677403120281793,
+          "median": 14.677403120281793,
+          "min": 12.0,
+          "q1": 13.663107864114354,
+          "q3": 15.691698376449233,
+          "std_dev": 1.01429525616744
+        },
+        "centrality": {
+          "max": 134.0,
+          "mean": 110.39003522898851,
+          "median": 110.39003522898851,
+          "min": 92.0,
+          "q1": 102.39164829116073,
+          "q3": 118.38842216681628,
+          "std_dev": 7.998386937827774
+        },
+        "complexity": {
+          "max": 22.0,
+          "mean": 19.168092601912516,
+          "median": 19.0,
+          "min": 16.0,
+          "q1": 18.0,
+          "q3": 20.0,
+          "std_dev": 1.3011274331761224
+        },
+        "course_id": "ICS211",
+        "delay": {
+          "max": 5.0,
+          "mean": 4.490689481630587,
+          "median": 4.490689481630587,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.9906027883625566,
+          "std_dev": 0.4999133067319703
+        },
+        "plan_count": 7948
+      },
+      "name": "Introduction to Computer Science II",
+      "number": "211",
+      "prefix": "ICS",
+      "prerequisites": "ICS111",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS212": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 7.0,
+          "mean": 5.359838953195775,
+          "median": 5.359838953195775,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.9009124395143076,
+          "std_dev": 0.5410734863185326
+        },
+        "centrality": {
+          "max": 28.0,
+          "mean": 21.092098641167517,
+          "median": 21.092098641167517,
+          "min": 20.0,
+          "q1": 20.0,
+          "q3": 22.93058803615838,
+          "std_dev": 1.8384893949908632
+        },
+        "complexity": {
+          "max": 12.0,
+          "mean": 9.47559134373429,
+          "median": 9.0,
+          "min": 9.0,
+          "q1": 9.0,
+          "q3": 10.0,
+          "std_dev": 0.7619427200860007
+        },
+        "course_id": "ICS212",
+        "delay": {
+          "max": 5.0,
+          "mean": 4.1157523905385025,
+          "median": 4.1157523905385025,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.435680155234102,
+          "std_dev": 0.3199277646955995
+        },
+        "plan_count": 7948
+      },
+      "name": "Program Structure",
+      "number": "212",
+      "prefix": "ICS",
+      "prerequisites": "ICS211",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS215": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Introduction to Scripting",
+      "number": "215",
+      "prefix": "ICS",
+      "prerequisites": "ICS111",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS222": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS222",
+        "delay": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 860
+      },
+      "name": "Basic Concepts of Computer Science",
+      "number": "222",
+      "prefix": "ICS",
+      "prerequisites": "ICS141",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS235": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "DATA235"
+      ],
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS235",
+        "delay": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 976
+      },
+      "name": "Machine Learning Methods",
+      "number": "235",
+      "prefix": "ICS",
+      "prerequisites": {
+        "or": [
+          "MATH241",
+          "MATH203",
+          "MATH215",
+          "MATH251A"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS241": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 17.0,
+          "mean": 13.856316054353284,
+          "median": 13.856316054353284,
+          "min": 10.0,
+          "q1": 12.245851059231606,
+          "q3": 15.466781049474962,
+          "std_dev": 1.6104649951216772
+        },
+        "centrality": {
+          "max": 138.0,
+          "mean": 85.98263714141939,
+          "median": 85.98263714141939,
+          "min": 45.0,
+          "q1": 55.25651527151433,
+          "q3": 116.70875901132445,
+          "std_dev": 30.72612186990506
+        },
+        "complexity": {
+          "max": 23.0,
+          "mean": 19.347005535983907,
+          "median": 20.0,
+          "min": 15.0,
+          "q1": 18.0,
+          "q3": 21.0,
+          "std_dev": 1.7909406427847938
+        },
+        "course_id": "ICS241",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.490689481630587,
+          "median": 5.490689481630587,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.9906027883625566,
+          "std_dev": 0.4999133067319703
+        },
+        "plan_count": 7948
+      },
+      "name": "Discrete Mathematics for Computer Science II",
+      "number": "241",
+      "prefix": "ICS",
+      "prerequisites": "ICS141",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS311": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 14.0,
+          "mean": 11.561147458480129,
+          "median": 11.561147458480129,
+          "min": 9.0,
+          "q1": 10.540642885146625,
+          "q3": 12.581652031813633,
+          "std_dev": 1.020504573333505
+        },
+        "centrality": {
+          "max": 242.0,
+          "mean": 201.97382989431227,
+          "median": 201.97382989431227,
+          "min": 162.0,
+          "q1": 185.03974353268288,
+          "q3": 218.90791625594167,
+          "std_dev": 16.934086361629387
+        },
+        "complexity": {
+          "max": 20.0,
+          "mean": 17.051836940110608,
+          "median": 17.0,
+          "min": 14.0,
+          "q1": 16.0,
+          "q3": 18.0,
+          "std_dev": 1.3114916948310291
+        },
+        "course_id": "ICS311",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.490689481630587,
+          "median": 5.490689481630587,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.9906027883625566,
+          "std_dev": 0.4999133067319703
+        },
+        "plan_count": 7948
+      },
+      "name": "Algorithms",
+      "number": "311",
+      "prefix": "ICS",
+      "prerequisites": {
+        "or": [
+          {
+            "and": [
+              "ICS211",
+              {
+                "or": [
+                  "ICS241",
+                  "ECE362"
+                ]
+              },
+              {
+                "or": [
+                  "MATH216",
+                  "MATH242",
+                  "MATH252A"
+                ]
+              }
+            ]
+          },
+          {
+            "and": [
+              "MATH301",
+              "MATH372"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS312": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS312",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 7948
+      },
+      "name": "Machine-Level and Systems Programming",
+      "number": "312",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS212",
+              "ECE205"
+            ]
+          },
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS313": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS313",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 7948
+      },
+      "name": "Programming Language Theory",
+      "number": "313",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS212",
+              "ECE205"
+            ]
+          },
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS314": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 14.0,
+          "mean": 11.323603422244611,
+          "median": 11.323603422244611,
+          "min": 9.0,
+          "q1": 10.271148530961105,
+          "q3": 12.376058313528118,
+          "std_dev": 1.0524548912835068
+        },
+        "centrality": {
+          "max": 188.0,
+          "mean": 148.27352793155478,
+          "median": 148.27352793155478,
+          "min": 117.0,
+          "q1": 134.35327483813722,
+          "q3": 162.19378102497234,
+          "std_dev": 13.920253093417555
+        },
+        "complexity": {
+          "max": 20.0,
+          "mean": 16.814292903875113,
+          "median": 17.0,
+          "min": 14.0,
+          "q1": 16.0,
+          "q3": 18.0,
+          "std_dev": 1.3572808902221476
+        },
+        "course_id": "ICS314",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.490689481630587,
+          "median": 5.490689481630587,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.9906027883625566,
+          "std_dev": 0.4999133067319703
+        },
+        "plan_count": 7948
+      },
+      "name": "Software Engineering I",
+      "number": "314",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS211",
+              "ECE205"
+            ]
+          },
+          {
+            "or": [
+              "ICS241",
+              "ECE362",
+              {
+                "and": [
+                  "MATH301",
+                  "MATH372"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS321": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 2.0,
+          "mean": 0.2511323603422245,
+          "median": 0.2511323603422245,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.7139876332063585,
+          "std_dev": 0.46285527286413397
+        },
+        "centrality": {
+          "max": 78.0,
+          "mean": 9.668595873175628,
+          "median": 9.668595873175628,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 27.490468943352184,
+          "std_dev": 17.821873070176558
+        },
+        "complexity": {
+          "max": 8.0,
+          "mean": 5.489179667840973,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.8822231842245942
+        },
+        "course_id": "ICS321",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.238047307498725,
+          "median": 5.238047307498725,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.663935540361927,
+          "std_dev": 0.4258882328632024
+        },
+        "plan_count": 7948
+      },
+      "name": "Database Systems I",
+      "number": "321",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS331": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 0.1157523905385002,
+          "median": 0.1157523905385002,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.4356801552341001,
+          "std_dev": 0.3199277646955999
+        },
+        "centrality": {
+          "max": 44.0,
+          "mean": 5.035228988424754,
+          "median": 5.035228988424754,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 18.953126391705126,
+          "std_dev": 13.917897403280373
+        },
+        "complexity": {
+          "max": 7.0,
+          "mean": 5.231504781077005,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.6398555293912
+        },
+        "course_id": "ICS331",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.1157523905385025,
+          "median": 5.1157523905385025,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.435680155234102,
+          "std_dev": 0.3199277646955995
+        },
+        "plan_count": 7948
+      },
+      "name": "Logic Design and Microprocessors",
+      "number": "331",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS212",
+              "ECE205"
+            ]
+          },
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS332": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 0.11273276295923498,
+          "median": 0.11273276295923498,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.4289986117554845,
+          "std_dev": 0.3162658487962495
+        },
+        "centrality": {
+          "max": 39.0,
+          "mean": 4.3402113739305275,
+          "median": 4.3402113739305275,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 16.517603800746294,
+          "std_dev": 12.177392426815766
+        },
+        "complexity": {
+          "max": 7.0,
+          "mean": 5.225465525918484,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.6325316975924992
+        },
+        "course_id": "ICS332",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.112732762959234,
+          "median": 5.112732762959234,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.428998611755484,
+          "std_dev": 0.3162658487962493
+        },
+        "plan_count": 7948
+      },
+      "name": "Operating Systems",
+      "number": "332",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS351": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS351",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 7948
+      },
+      "name": "Network Design and Management",
+      "number": "351",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS355": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 3.0,
+          "mean": 0.5903371917463537,
+          "median": 0.5903371917463537,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 1.2870598648247045,
+          "std_dev": 0.6967226730783509
+        },
+        "centrality": {
+          "max": 30.0,
+          "mean": 5.608203321590303,
+          "median": 5.608203321590303,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 12.242798955682147,
+          "std_dev": 6.634595634091845
+        },
+        "complexity": {
+          "max": 8.0,
+          "mean": 5.067941620533472,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 6.0,
+          "std_dev": 1.1626263331580708
+        },
+        "course_id": "ICS355",
+        "delay": {
+          "max": 5.0,
+          "mean": 4.477604428787111,
+          "median": 4.477604428787111,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.977102615360444,
+          "std_dev": 0.4994981865733332
+        },
+        "plan_count": 7948
+      },
+      "name": "Security and Trust I - Resource Protections",
+      "number": "355",
+      "prefix": "ICS",
+      "prerequisites": {
+        "or": [
+          "ICS241",
+          {
+            "and": [
+              "MATH301",
+              "MATH372"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS361": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS361",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 7948
+      },
+      "name": "Introduction to Artificial Intelligence Programming",
+      "number": "361",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS215",
+              "ICS212",
+              "ECE205"
+            ]
+          },
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS369": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "ECE369"
+      ],
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 4.0,
+          "mean": 4.0,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS369",
+        "delay": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 964
+      },
+      "name": "Computational Media Systems",
+      "number": "369",
+      "prefix": "ICS",
+      "prerequisites": {
+        "or": [
+          "ICS111",
+          "ECE160"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS414": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS414",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1032
+      },
+      "name": "Software Engineering II",
+      "number": "414",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS415": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS415",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1028
+      },
+      "name": "Introduction to Programming for the Web",
+      "number": "415",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS421": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS421",
+        "delay": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 972
+      },
+      "name": "Database Systems II",
+      "number": "421",
+      "prefix": "ICS",
+      "prerequisites": "ICS321",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS422": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "DATA422"
+      ],
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS422",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 912
+      },
+      "name": "Data Processing",
+      "number": "422",
+      "prefix": "ICS",
+      "prerequisites": {
+        "or": [
+          "ICS311",
+          "ECE367"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS423": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS423",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 860
+      },
+      "name": "Data Security and Cryptography I",
+      "number": "423",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          "ICS222",
+          "ICS355"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS424": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS424",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 968
+      },
+      "name": "Application Frameworks",
+      "number": "424",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS425": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS425",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1008
+      },
+      "name": "Computer Security and Ethics",
+      "number": "425",
+      "prefix": "ICS",
+      "prerequisites": "ICS355",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS426": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS426",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 908
+      },
+      "name": "Computer System Security",
+      "number": "426",
+      "prefix": "ICS",
+      "prerequisites": "ICS355",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS428": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS428",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 972
+      },
+      "name": "Digital Forensics",
+      "number": "428",
+      "prefix": "ICS",
+      "prerequisites": "ICS355",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS431": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS431",
+        "delay": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 920
+      },
+      "name": "Computer Architecture",
+      "number": "431",
+      "prefix": "ICS",
+      "prerequisites": {
+        "or": [
+          "ICS331",
+          "ECE361"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS432": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS432",
+        "delay": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 896
+      },
+      "name": "Concurrent and High-Performance Programming",
+      "number": "432",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS212",
+              "ECE205"
+            ]
+          },
+          "ICS332",
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS434": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "DATA434"
+      ],
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS434",
+        "delay": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 924
+      },
+      "name": "Data Science Fundamentals",
+      "number": "434",
+      "prefix": "ICS",
+      "prerequisites": "ICS211",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS435": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "DATA435"
+      ],
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS435",
+        "delay": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 976
+      },
+      "name": "Machine Learning Fundamentals",
+      "number": "435",
+      "prefix": "ICS",
+      "prerequisites": "ICS235",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS438": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "DATA438"
+      ],
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS438",
+        "delay": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1024
+      },
+      "name": "Big Data Analytics",
+      "number": "438",
+      "prefix": "ICS",
+      "prerequisites": "ICS321",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS441": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS441",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 864
+      },
+      "name": "Theory of Computation",
+      "number": "441",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS442": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS442",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1044
+      },
+      "name": "Analytical Models and Methods",
+      "number": "442",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS443": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS443",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1008
+      },
+      "name": "Parallel Algorithms",
+      "number": "443",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS451": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS451",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 7948
+      },
+      "name": "Data Networks",
+      "number": "451",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS212",
+              "ECE205"
+            ]
+          },
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS452": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS452",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1736
+      },
+      "name": "Software Design for Robotics",
+      "number": "452",
+      "prefix": "ICS",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS455": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS455",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 944
+      },
+      "name": "Security and Trust II - Information Assurance",
+      "number": "455",
+      "prefix": "ICS",
+      "prerequisites": "ICS355",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS461": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS461",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 976
+      },
+      "name": "Artificial Intelligence",
+      "number": "461",
+      "prefix": "ICS",
+      "prerequisites": {
+        "or": [
+          "ICS311",
+          "ECE367"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS462": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS462",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1044
+      },
+      "name": "Artificial Intelligence for Games",
+      "number": "462",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS212",
+              "ECE205"
+            ]
+          },
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314",
+          {
+            "or": [
+              "PHYS151",
+              "PHYS170"
+            ]
+          }
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS464": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS464",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 924
+      },
+      "name": "Human Computer Interaction I",
+      "number": "464",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS466": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS466",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 952
+      },
+      "name": "Design for Mobile Devices",
+      "number": "466",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS469": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS469",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1076
+      },
+      "name": "Cognitive Science",
+      "number": "469",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS481": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 1.0,
+          "mean": 0.5348314606741579,
+          "median": 0.5348314606741579,
+          "min": 0.0,
+          "q1": 0.036046166837917726,
+          "q3": 1.0,
+          "std_dev": 0.49878529383624015
+        },
+        "centrality": {
+          "max": 39.0,
+          "mean": 20.591011235955055,
+          "median": 20.591011235955055,
+          "min": 0.0,
+          "q1": 1.3842963494834422,
+          "q3": 39.0,
+          "std_dev": 19.206714886471612
+        },
+        "complexity": {
+          "max": 7.0,
+          "mean": 6.06966292134831,
+          "median": 7.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 7.0,
+          "std_dev": 0.9975705876724803
+        },
+        "course_id": "ICS481",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.534831460674153,
+          "median": 5.534831460674153,
+          "min": 5.0,
+          "q1": 5.036046166837912,
+          "q3": 6.0,
+          "std_dev": 0.49878529383624015
+        },
+        "plan_count": 1780
+      },
+      "name": "Introduction to Computer Graphics",
+      "number": "481",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS484": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "cross_listed_as": [
+        "DATA484",
+        "CINE484"
+      ],
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS484",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 992
+      },
+      "name": "Data Visualization",
+      "number": "484",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS485": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS485",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 992
+      },
+      "name": "Video Game Design and Development",
+      "number": "485",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS487": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS487",
+        "delay": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 964
+      },
+      "name": "Digital Content Creation I (VR/AR)",
+      "number": "487",
+      "prefix": "ICS",
+      "prerequisites": "ICS369",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "ICS488": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS488",
+        "delay": {
+          "max": 6.0,
+          "mean": 6.0,
+          "median": 6.0,
+          "min": 6.0,
+          "q1": 6.0,
+          "q3": 6.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 952
+      },
+      "name": "Digital Content Creation II (Advanced VFX)",
+      "number": "488",
+      "prefix": "ICS",
+      "prerequisites": "ICS481",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "ICS491": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "max_repeat_credits": 6.0,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS491",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1068
+      },
+      "name": "Special Topics",
+      "number": "491",
+      "prefix": "ICS",
+      "repeatable": true,
+      "strict_corequisites": []
+    },
+    "ICS495": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "max_repeat_credits": 9.0,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS495",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 932
+      },
+      "name": "Special Topics in Security",
+      "number": "495",
+      "prefix": "ICS",
+      "repeatable": true,
+      "strict_corequisites": []
+    },
+    "ICS496": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS496",
+        "delay": {
+          "max": 5.0,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 7948
+      },
+      "name": "Capstone Project",
+      "number": "496",
+      "prefix": "ICS",
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "ICS311",
+              "ECE367"
+            ]
+          },
+          "ICS314"
+        ]
+      },
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "ICS499": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 0.0,
+      "credit_range": {
+        "max": 3,
+        "min": 1
+      },
+      "csv_id": null,
+      "id": null,
+      "max_repeat_credits": 6.0,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "ICS499",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 1012
+      },
+      "name": "Directed Reading/Research",
+      "number": "499",
+      "prefix": "ICS",
+      "repeatable": true,
+      "strict_corequisites": []
+    },
+    "MATH203": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "FQ"
+      ],
+      "id": null,
+      "name": "Calculus for Business and Social Sciences",
+      "number": "203",
+      "prefix": "MATH",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "MATH215": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "FQ"
+      ],
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 27.0,
+          "mean": 22.505284348263714,
+          "median": 22.505284348263714,
+          "min": 18.0,
+          "q1": 21.27322752192687,
+          "q3": 23.73734117460056,
+          "std_dev": 1.2320568263368439
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 33.0,
+          "mean": 27.995973829894318,
+          "median": 28.0,
+          "min": 23.0,
+          "q1": 27.0,
+          "q3": 29.0,
+          "std_dev": 1.4091275878900287
+        },
+        "course_id": "MATH215",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.490689481630587,
+          "median": 5.490689481630587,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.9906027883625566,
+          "std_dev": 0.4999133067319703
+        },
+        "plan_count": 7948
+      },
+      "name": "Applied Calculus I",
+      "number": "215",
+      "prefix": "MATH",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "MATH216": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 19.0,
+          "mean": 16.65148465022647,
+          "median": 16.65148465022647,
+          "min": 13.0,
+          "q1": 15.631267990218541,
+          "q3": 17.6717013102344,
+          "std_dev": 1.0202166600079303
+        },
+        "centrality": {
+          "max": 195.0,
+          "mean": 139.90286864620123,
+          "median": 139.90286864620123,
+          "min": 94.0,
+          "q1": 115.05264034083658,
+          "q3": 164.75309695156588,
+          "std_dev": 24.850228305364656
+        },
+        "complexity": {
+          "max": 25.0,
+          "mean": 22.14217413185707,
+          "median": 22.0,
+          "min": 18.0,
+          "q1": 21.0,
+          "q3": 23.0,
+          "std_dev": 1.260953180286196
+        },
+        "course_id": "MATH216",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.490689481630587,
+          "median": 5.490689481630587,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.9906027883625566,
+          "std_dev": 0.4999133067319703
+        },
+        "plan_count": 7948
+      },
+      "name": "Applied Calculus II",
+      "number": "216",
+      "prefix": "MATH",
+      "prerequisites": "MATH215",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "MATH241": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "FQ"
+      ],
+      "id": null,
+      "name": "Calculus I",
+      "number": "241",
+      "prefix": "MATH",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "MATH242": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Calculus II",
+      "number": "242",
+      "prefix": "MATH",
+      "prerequisites": "MATH241",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "MATH251A": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "FQ"
+      ],
+      "id": null,
+      "name": "Accelerated Calculus I",
+      "number": "251A",
+      "prefix": "MATH",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall"
+      ]
+    },
+    "MATH252A": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "id": null,
+      "name": "Accelerated Calculus II",
+      "number": "252A",
+      "prefix": "MATH",
+      "prerequisites": "MATH251A",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "spring"
+      ]
+    },
+    "MATH301": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 17.0,
+          "mean": 15.151484650226466,
+          "median": 15.151484650226466,
+          "min": 12.0,
+          "q1": 14.262191653876142,
+          "q3": 16.040777646576792,
+          "std_dev": 0.8892929963503247
+        },
+        "centrality": {
+          "max": 111.0,
+          "mean": 92.87770508303976,
+          "median": 92.87770508303976,
+          "min": 75.0,
+          "q1": 86.06349502986363,
+          "q3": 99.69191513621588,
+          "std_dev": 6.814210053176121
+        },
+        "complexity": {
+          "max": 22.0,
+          "mean": 19.642174131857146,
+          "median": 20.0,
+          "min": 16.0,
+          "q1": 19.0,
+          "q3": 20.0,
+          "std_dev": 1.1575849527675588
+        },
+        "course_id": "MATH301",
+        "delay": {
+          "max": 5.0,
+          "mean": 4.490689481630592,
+          "median": 4.490689481630592,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.990602788362562,
+          "std_dev": 0.49991330673197026
+        },
+        "plan_count": 3974
+      },
+      "name": "Introduction to Discrete Mathematics",
+      "number": "301",
+      "prefix": "MATH",
+      "prerequisites": "MATH241",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "MATH307": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "course_id": "MATH307",
+        "delay": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 3974
+      },
+      "name": "Linear Algebra and Differential Equations",
+      "number": "307",
+      "prefix": "MATH",
+      "prerequisites": "MATH242",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "MATH372": {
+      "canonical_name": null,
+      "corequisites": [],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 17.0,
+          "mean": 15.151484650226479,
+          "median": 15.151484650226479,
+          "min": 12.0,
+          "q1": 14.262191653876153,
+          "q3": 16.040777646576803,
+          "std_dev": 0.8892929963503252
+        },
+        "centrality": {
+          "max": 138.0,
+          "mean": 115.9280322093608,
+          "median": 115.9280322093608,
+          "min": 94.0,
+          "q1": 107.40355640298436,
+          "q3": 124.45250801573722,
+          "std_dev": 8.52447580637643
+        },
+        "complexity": {
+          "max": 23.0,
+          "mean": 20.64217413185702,
+          "median": 21.0,
+          "min": 17.0,
+          "q1": 20.0,
+          "q3": 21.0,
+          "std_dev": 1.157584952767557
+        },
+        "course_id": "MATH372",
+        "delay": {
+          "max": 6.0,
+          "mean": 5.490689481630587,
+          "median": 5.490689481630587,
+          "min": 5.0,
+          "q1": 5.0,
+          "q3": 5.9906027883625566,
+          "std_dev": 0.4999133067319703
+        },
+        "plan_count": 7948
+      },
+      "name": "Elementary Probability and Statistics",
+      "number": "372",
+      "prefix": "MATH",
+      "prerequisites": "MATH242",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "PHYS151": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS151L"
+      ],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "DP"
+      ],
+      "id": null,
+      "name": "College Physics I",
+      "number": "151",
+      "prefix": "PHYS",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "PHYS151L": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS151"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "DY"
+      ],
+      "id": null,
+      "name": "College Physics I Lab",
+      "number": "151L",
+      "prefix": "PHYS",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "PHYS152": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS152L"
+      ],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "DP"
+      ],
+      "id": null,
+      "name": "College Physics II",
+      "number": "152",
+      "prefix": "PHYS",
+      "prerequisites": "PHYS151",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "PHYS152L": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS152"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "DY"
+      ],
+      "id": null,
+      "name": "College Physics II Lab",
+      "number": "152L",
+      "prefix": "PHYS",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "PHYS170": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS170L"
+      ],
+      "credit_hours": 4.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "DP"
+      ],
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 2.0,
+          "mean": 1.1313537996980374,
+          "median": 1.1313537996980374,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.4691406836987713,
+          "std_dev": 0.337786884000734
+        },
+        "centrality": {
+          "max": 6.0,
+          "mean": 3.394061399094123,
+          "median": 3.394061399094123,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 4.407422051096326,
+          "std_dev": 1.0133606520022034
+        },
+        "complexity": {
+          "max": 5.0,
+          "mean": 4.1313537996980285,
+          "median": 4.0,
+          "min": 4.0,
+          "q1": 4.0,
+          "q3": 4.0,
+          "std_dev": 0.3377868840007337
+        },
+        "course_id": "PHYS170",
+        "delay": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 7948
+      },
+      "name": "General Physics I (Calculus)",
+      "number": "170",
+      "prefix": "PHYS",
+      "prerequisites": "MATH241",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "PHYS170L": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS170"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "DY"
+      ],
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "PHYS170L",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 7948
+      },
+      "name": "General Physics I Lab",
+      "number": "170L",
+      "prefix": "PHYS",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "PHYS272": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS272L"
+      ],
+      "credit_hours": 3.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "DP"
+      ],
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "course_id": "PHYS272",
+        "delay": {
+          "max": 3.0,
+          "mean": 3.0,
+          "median": 3.0,
+          "min": 3.0,
+          "q1": 3.0,
+          "q3": 3.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 7948
+      },
+      "name": "General Physics II (Calculus)",
+      "number": "272",
+      "prefix": "PHYS",
+      "prerequisites": "PHYS170",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    },
+    "PHYS272L": {
+      "canonical_name": null,
+      "corequisites": [
+        "PHYS272"
+      ],
+      "credit_hours": 1.0,
+      "csv_id": null,
+      "gen_ed_attributes": [
+        "DY"
+      ],
+      "id": null,
+      "metrics": {
+        "blocking": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "centrality": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "std_dev": 0.0
+        },
+        "complexity": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "course_id": "PHYS272L",
+        "delay": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "q1": 1.0,
+          "q3": 1.0,
+          "std_dev": 0.0
+        },
+        "plan_count": 7948
+      },
+      "name": "General Physics II Lab",
+      "number": "272L",
+      "prefix": "PHYS",
+      "strict_corequisites": [],
+      "typically_offered": [
+        "fall",
+        "spring"
+      ]
+    }
+  }
+}
