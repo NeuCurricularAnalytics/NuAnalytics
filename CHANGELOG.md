@@ -4,6 +4,68 @@ All notable changes to NuAnalytics are recorded here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the
 project uses semantic versioning.
 
+## [Unreleased]
+
+Adds database-backed degree storage: a normalized, queryable projection of
+imported degree programs alongside the lossless source document, plus the CLI,
+MCP, and analyze paths that write to and read from it. Additive — no breaking
+changes.
+
+### Added
+
+- **Normalized program storage schema** (`docs/database/programs-schema.sql`,
+  seeded by `docs/database/program-lookup-seed.sql`). Eight new tables:
+  `degree_types` (lookup), `programs` (one row per program, with the lossless
+  unified-JSON `document` JSONB as the source of truth plus a queryable scalar
+  projection), `courses` (shared per-institution catalog), `program_courses`
+  (M:N junction with per-program credit/name overrides), `program_requirements`
+  (the requirement tree flattened by `req_path`/`parent_path`, with JSONB
+  `selection_spec`/`req_constraints` and `is_impossible`/`allow_double_count`
+  flags), `analysis_runs` (one per `degree analyze` run: `variant`, `trimmed`,
+  `variations_run`, `sample_type`, the `degree_metrics` JSONB plus promoted
+  `complexity_mean`/`delay_mean`/`credits_mean`), `analysis_course_metrics`
+  (per run × course), and `analysis_plans` (per run × selected plan). Design is
+  hybrid (lossless document + normalized projection) with FK-free natural keys
+  (`program_key`, `(institution_ref, course_code)`) matching the existing
+  `degrees`/`completions` convention, RLS gated on
+  `auth.role() = 'authenticated'` for every read and write, and idempotent
+  re-sync via a per-import `generation` stamp. Apply with
+  `nuanalytics db exec-sql docs/database/programs-schema.sql` then
+  `nuanalytics db exec-sql docs/database/program-lookup-seed.sql`.
+
+- **`db import <FILES>...`** — import degree-first analysis reports
+  (`*_report.json`) or plain unified/ai-landscape/YAML degrees into the
+  normalized program tables. One report populates the program projection
+  (`programs`, `courses`, `program_courses`, `program_requirements`) and, when
+  it carries an `analysis` block, one analysis run with its course metrics and
+  selected plans. Resolves the institution (`degree.unitid` fast-path → name+CIP
+  lookup → name slug; an ambiguous name lists candidate institutions and writes
+  nothing). `program_key` includes `catalog_year`, so different years coexist;
+  overwriting an existing program needs `--replace` (unverified) or `--force`
+  (verified). Flags: `--variant`, `--unitid`, `--institution`, `--cip`,
+  `--catalog`, `--degree-id`, `--force`, `--replace`, `--skip-existing`,
+  `--dry-run`, `-j/--jobs`. A single file prints a detailed outcome; a
+  directory/batch isolates per-file failures to `import_failures.log` with a
+  summary.
+
+- **`import_degree` MCP tool** — the same import core over MCP. Takes
+  `json_content` or `json_path` (exactly one) plus the import overrides; returns
+  a structured result tag (`created`/`updated`/`skipped`/`needs_confirmation`/
+  `institution_ambiguous`/`rejected`) with the row counts, and attaches
+  `institution_candidates`/`reason`/`errors` on the blocked variants. DB-gated
+  (registered only with a logged-in session); `dry_run` previews without
+  writing.
+
+- **`degree analyze --from-db <NAME>`** — analyze a stored program pulled from
+  the database instead of a file. Resolves by exact `program_key`, then exact
+  `degree_id`, then a `name` substring; an ambiguous name lists the candidates
+  and stops. Mutually exclusive with positional `FILES`; single-program only
+  (no worker pool).
+
+- **`degree.unitid` field** — optional IPEDS unit id on the degree model, set in
+  a degree file's `degree:` block, used to link an imported program to its
+  institution.
+
 ## [0.4.1] — 2026-06-04
 
 This release is additive — no breaking changes from 0.4.0. It introduces a

@@ -43,8 +43,9 @@ CREATE TABLE IF NOT EXISTS degree_types (
 -- programs — one row per degree program
 --
 -- program_key is the deterministic idempotency key (ON CONFLICT target):
---   "id:<degree.id>"  |  "nat:<unitid>|<cip>|<catalog_year>|<degree_type>"
---   |  "fp:<sha256(institution_raw|name|degree_type|catalog_year|source_url)>"
+--   "prog:<unitid>|<cip>|<catalog_year>|<degree_type>"  (when the unitid resolved)
+--   "prog:<degree.id>|<catalog_year>"                   (else, when degree.id is present)
+--   "fp:<sha256(institution_raw|name|degree_type|catalog_year|source_url)>"  (fallback)
 --
 -- No FK on unitid / cip_code / degree_type: LEFT JOIN institutions / cip_codes /
 -- degree_types (IPEDS cross-survey coverage isn't guaranteed; degree_type may be

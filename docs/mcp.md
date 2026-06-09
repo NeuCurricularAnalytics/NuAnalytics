@@ -499,6 +499,79 @@ picks the right tool and call shape automatically. The descriptions on
 each tool's `#[tool]` attribute in `src/mcp/server.rs` are the
 authoritative source — Claude reads them at handshake time.
 
+> **Resolving a UNITID.** `search_institutions(name=…)` returns the
+> `unitid` to pass to `import_degree` (or the CLI `db import --unitid`). The
+> name match is a case-insensitive substring, so narrow an ambiguous name with
+> `state` (e.g. `search_institutions(name="Boston", state="MA")`).
+
+### `import_degree`
+
+Imports a degree-first analysis report (or a plain unified degree) into the
+normalized program tables — the MCP counterpart of the CLI `db import` command.
+One report populates the program projection (`programs`, `courses`,
+`program_courses`, `program_requirements`) plus, when it carries an `analysis`
+block, one analysis run with its course metrics and selected plans. The
+institution is resolved against IPEDS (the report's `unitid`, then a name + CIP
+lookup); an ambiguous institution name returns the candidate `(unitid, name)`
+pairs so the agent can re-call with an explicit `unitid`.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `json_content` | string | One of `json_content` / `json_path` | Inline degree-first report (or unified degree) JSON |
+| `json_path` | string | One of `json_content` / `json_path` | Path to a report JSON file on the MCP server's filesystem |
+| `variant` | string | No | Analysis-run variant label (default `"full"`). `"full"` writes the program projection; a non-full variant only attaches an analysis run |
+| `unitid` | integer | No | Override the resolved IPEDS UNITID — set this to disambiguate after an `institution_ambiguous` result |
+| `institution` | string | No | Override the institution name used for resolution / display |
+| `cip` | string | No | Override the CIP code (part of the natural program key) |
+| `catalog` | string | No | Override the catalog year (part of the program identity) |
+| `degree_id` | string | No | Override the degree id |
+| `force` | boolean | No | Overwrite a verified program / skip the confirmation gate |
+| `replace` | boolean | No | Replace an existing (unverified) program |
+| `skip_existing` | boolean | No | Skip the program entirely if it already exists |
+| `dry_run` | boolean | No | Preview the import (report counts) without writing anything |
+
+**Response Format:**
+```json
+{
+  "result": "created",
+  "program_key": "prog:167358|11.0701|2025-2026|BS",
+  "resolved_unitid": 167358,
+  "institution": "Northeastern University",
+  "variant": "full",
+  "variations_run": 10000,
+  "sample_type": "shuffled",
+  "courses_written": 82,
+  "requirements_written": 32,
+  "run_written": true,
+  "plans_written": 7,
+  "course_metrics_written": 72,
+  "conversion_warnings": [],
+  "messages": ["..."]
+}
+```
+
+`result` is a stable lowercase tag: `created` | `updated` | `skipped` |
+`needs_confirmation` | `institution_ambiguous` | `rejected`. The blocked
+variants attach an extra payload:
+
+- `institution_ambiguous` → `institution_candidates: [{ "unitid": …, "name": … }]`
+  (re-call with one as `unitid`)
+- `needs_confirmation` → `reason` (the program exists / is verified; re-call
+  with `replace` or `force`)
+- `rejected` → `errors` (the report could not be turned into a valid plan)
+
+**Notes:**
+- DB-gated — registered only with a logged-in session, like the other
+  database-backed tools.
+- `dry_run: true` runs the full resolution + plan build and returns the row
+  counts, but writes nothing.
+
+**Example Prompts:**
+- "Import this analysis report into the database" → calls with `json_path: "…"`
+- "Preview importing this degree without writing" → calls with `dry_run: true`
+- "That matched two schools — use UNITID 167358" → re-calls with `unitid: 167358`
+
 ## Testing
 
 ### Using MCP Inspector (Recommended)
