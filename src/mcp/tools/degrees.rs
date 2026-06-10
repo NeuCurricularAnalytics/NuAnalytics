@@ -1,4 +1,9 @@
 //! `search_degrees`, `get_degree`, `compare_degrees`, and `store_degree` MCP tools
+//!
+//! `search_degrees` / `get_degree` / `compare_degrees` read the normalized
+//! `programs` table written by `import_degree` (the unified-JSON `document` is
+//! the lossless source of truth). The legacy `store_degree` still targets the
+//! old `degrees` yaml-blob table and is retained only for back-compat.
 
 use std::sync::Arc;
 
@@ -8,8 +13,11 @@ use crate::mcp::tools::shared::{self, error_json, parse_first, parse_json_array,
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
-const DEGREE_SUMMARY_COLS: &str = "degree_id,unitid,cip_code,catalog_year,created_at";
-const DEGREE_DETAIL_COLS: &str = "degree_id,unitid,cip_code,catalog_year,yaml_content";
+/// Lightweight projection for `search_degrees` results.
+const PROGRAM_SUMMARY_COLS: &str = "program_key,name,unitid,cip_code,catalog_year,degree_type,program_kind,discipline,verified,institution_resolved,has_impossible_requirements";
+/// Full projection for `get_degree` — the summary fields plus provenance and
+/// the lossless `document` (unified-JSON degree) for downstream analysis.
+const PROGRAM_DETAIL_COLS: &str = "program_key,name,unitid,cip_code,catalog_year,degree_type,program_kind,discipline,verified,institution_resolved,has_impossible_requirements,degree_id,institution_raw,total_credits,source_url,document";
 
 // ============================================================================
 // Request types
@@ -28,6 +36,19 @@ pub struct SearchDegreesRequest {
     /// Catalog year string (e.g. `\"2024-2025\"`)
     #[schemars(description = "Catalog year (e.g. \"2024-2025\")")]
     pub catalog_year: Option<String>,
+    /// Normalized degree-type code (e.g. `\"BS\"`, `\"BA\"`, `\"MS\"`, `\"MINOR\"`)
+    #[schemars(
+        description = "Normalized degree type code (e.g. \"BS\", \"BA\", \"MS\", \"MINOR\")"
+    )]
+    pub degree_type: Option<String>,
+    /// Program kind (e.g. `\"major\"`, `\"minor\"`, `\"concentration\"`, `\"certificate\"`)
+    #[schemars(
+        description = "Program kind (e.g. \"major\", \"minor\", \"concentration\", \"certificate\")"
+    )]
+    pub program_kind: Option<String>,
+    /// Discipline tag (e.g. `\"cs\"`, `\"ai\"`, `\"ds\"`, `\"cy\"`)
+    #[schemars(description = "Discipline (e.g. \"cs\", \"ai\", \"ds\", \"cy\")")]
+    pub discipline: Option<String>,
     /// Maximum results to return (default 20, max 50)
     #[schemars(description = "Maximum results (default 20, max 50)")]
     #[serde(default, deserialize_with = "shared::deserialize_opt_usize")]
@@ -36,14 +57,21 @@ pub struct SearchDegreesRequest {
 
 /// Request parameters for `get_degree`
 ///
-/// Lookup by natural key `(unitid, cip_code, catalog_year)` or by `degree_id`.
-/// If multiple degrees match, returns a list of summaries — narrow with more filters.
+/// Lookup precedence: `program_key` (unique) → `degree_id` → natural key
+/// `(unitid, cip_code, catalog_year)`. If multiple programs match, returns a
+/// list of summaries — narrow with more filters.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetDegreeRequest {
-    /// Direct lookup by unique degree identifier (e.g. `\"neu-khoury-bscs-2024\"`).
-    /// Takes priority over natural-key fields if provided.
+    /// Deterministic program key (the strongest, unique lookup). Takes priority
+    /// over every other field.
     #[schemars(
-        description = "Unique degree ID (fastest lookup). Takes priority over other fields."
+        description = "Stored program_key (unique, strongest lookup). Takes priority over other fields."
+    )]
+    pub program_key: Option<String>,
+    /// Lookup by `Degree.id` slug (e.g. `\"neu-khoury-bscs-2024\"`). May match
+    /// several programs across catalog years. Used when `program_key` is absent.
+    #[schemars(
+        description = "Degree id slug. May match multiple catalog years; prefer program_key when known."
     )]
     pub degree_id: Option<String>,
     /// IPEDS UNITID of the institution
@@ -155,23 +183,48 @@ pub struct StoreDegreeRequest {
 // Response types
 // ============================================================================
 
-/// Lightweight degree record for search results (no YAML content).
+/// Lightweight program record for search results (no `document`).
 #[derive(Debug, Serialize, Deserialize)]
-struct DegreeSummary {
-    degree_id: String,
+struct ProgramSummary {
+    program_key: String,
+    name: String,
     unitid: Option<i32>,
     cip_code: Option<String>,
     catalog_year: Option<String>,
-    created_at: Option<String>,
+    degree_type: Option<String>,
+    program_kind: Option<String>,
+    discipline: Option<String>,
+    #[serde(default)]
+    verified: bool,
+    #[serde(default)]
+    institution_resolved: bool,
+    #[serde(default)]
+    has_impossible_requirements: bool,
 }
 
+/// Full program record for `get_degree`, including the lossless unified-JSON
+/// `document` that downstream tools (`analyze_degree`, `cache_yaml`) accept.
 #[derive(Debug, Serialize, Deserialize)]
-struct DegreeDetail {
-    degree_id: String,
+struct ProgramDetail {
+    program_key: String,
+    name: String,
     unitid: Option<i32>,
     cip_code: Option<String>,
     catalog_year: Option<String>,
-    yaml_content: String,
+    degree_type: Option<String>,
+    program_kind: Option<String>,
+    discipline: Option<String>,
+    #[serde(default)]
+    verified: bool,
+    #[serde(default)]
+    institution_resolved: bool,
+    #[serde(default)]
+    has_impossible_requirements: bool,
+    degree_id: Option<String>,
+    institution_raw: Option<String>,
+    total_credits: Option<i32>,
+    source_url: Option<String>,
+    document: serde_json::Value,
 }
 
 // ============================================================================
@@ -179,90 +232,102 @@ struct DegreeDetail {
 // ============================================================================
 
 /// Execute `search_degrees` and return JSON.
+///
+/// Reads the normalized `programs` table, so the new queryable dimensions
+/// (`degree_type`, `program_kind`, `discipline`) filter alongside the legacy
+/// `unitid` / `cip_prefix`.
 pub async fn execute_search_json(client: &Arc<DbClient>, req: SearchDegreesRequest) -> String {
     let limit = req.limit.unwrap_or(20).min(50);
 
     let filters = QueryFilters::new()
         .eq("unitid", req.unitid)
         .eq("catalog_year", req.catalog_year.as_deref())
+        .eq("degree_type", req.degree_type.as_deref())
+        .eq("program_kind", req.program_kind.as_deref())
+        .eq("discipline", req.discipline.as_deref())
         .starts_with("cip_code", req.cip_prefix.as_deref());
 
     let result = match client
-        .select(tables::DEGREES, DEGREE_SUMMARY_COLS, &filters, Some(limit))
+        .select(
+            tables::PROGRAMS,
+            PROGRAM_SUMMARY_COLS,
+            &filters,
+            Some(limit),
+        )
         .await
     {
         Ok(v) => v,
         Err(e) => return error_json(e),
     };
 
-    let summaries: Vec<DegreeSummary> = parse_json_array(&result);
+    let programs: Vec<ProgramSummary> = parse_json_array(&result);
 
     to_json_pretty(&serde_json::json!({
-        "count": summaries.len(),
-        "degrees": summaries
+        "count": programs.len(),
+        "programs": programs
     }))
 }
 
-/// Execute `get_degree` and return JSON (includes full YAML content).
+/// Execute `get_degree` and return JSON (includes the full unified-JSON
+/// `document`).
 ///
-/// - If `degree_id` provided: direct fetch by ID.
-/// - Otherwise: filter by `unitid`, `cip_code`, `catalog_year` (any combination).
-/// - If exactly 1 result: return full YAML.
-/// - If >1 results: return list of summaries with disambiguation message.
+/// Lookup precedence: `program_key` (unique) → `degree_id` → natural key
+/// `(unitid, cip_code, catalog_year)`. Exactly 1 match → full detail; >1 →
+/// disambiguation summaries.
 pub async fn execute_get_json(client: &Arc<DbClient>, req: GetDegreeRequest) -> String {
-    // Direct lookup by degree_id takes priority
-    if let Some(ref id) = req.degree_id {
-        return fetch_by_id(client, id).await;
-    }
-
-    // Natural-key lookup — need at least one filter
-    if req.unitid.is_none() && req.cip_code.is_none() && req.catalog_year.is_none() {
+    let filters = if let Some(pk) = req.program_key.as_deref() {
+        QueryFilters::new().eq("program_key", Some(pk))
+    } else if let Some(id) = req.degree_id.as_deref() {
+        QueryFilters::new().eq("degree_id", Some(id))
+    } else if req.unitid.is_some() || req.cip_code.is_some() || req.catalog_year.is_some() {
+        QueryFilters::new()
+            .eq("unitid", req.unitid)
+            .eq("cip_code", req.cip_code.as_deref())
+            .eq("catalog_year", req.catalog_year.as_deref())
+    } else {
         return serde_json::json!({
-            "error": "Provide at least one of: degree_id, unitid, cip_code, or catalog_year",
-            "tip": "Use search_degrees to browse available degrees first"
+            "error": "Provide at least one of: program_key, degree_id, unitid, cip_code, or catalog_year",
+            "tip": "Use search_degrees to browse available programs first"
         })
         .to_string();
-    }
+    };
 
-    let filters = QueryFilters::new()
-        .eq("unitid", req.unitid)
-        .eq("cip_code", req.cip_code.as_deref())
-        .eq("catalog_year", req.catalog_year.as_deref());
-
-    // Fetch up to 2 to detect ambiguity without fetching everything
+    // Fetch up to 10 to detect ambiguity without fetching everything.
     let result = match client
-        .select(tables::DEGREES, DEGREE_DETAIL_COLS, &filters, Some(10))
+        .select(tables::PROGRAMS, PROGRAM_DETAIL_COLS, &filters, Some(10))
         .await
     {
         Ok(v) => v,
         Err(e) => return error_json(e),
     };
 
-    let degrees: Vec<DegreeDetail> = parse_json_array(&result);
+    let programs: Vec<ProgramDetail> = parse_json_array(&result);
 
-    match degrees.len() {
+    match programs.len() {
         0 => serde_json::json!({
-            "error": "No degree found matching the given filters",
+            "error": "No program found matching the given filters",
             "tip": "Use search_degrees to see what is available"
         })
         .to_string(),
-        1 => to_json_pretty(&degrees[0]),
+        1 => to_json_pretty(&programs[0]),
         _ => {
-            // Return summaries and ask to narrow
-            let summaries: Vec<_> = degrees
+            // Return summaries and ask to narrow.
+            let summaries: Vec<_> = programs
                 .iter()
-                .map(|d| {
+                .map(|p| {
                     serde_json::json!({
-                        "degree_id": d.degree_id,
-                        "unitid": d.unitid,
-                        "cip_code": d.cip_code,
-                        "catalog_year": d.catalog_year
+                        "program_key": p.program_key,
+                        "name": p.name,
+                        "unitid": p.unitid,
+                        "cip_code": p.cip_code,
+                        "catalog_year": p.catalog_year,
+                        "degree_type": p.degree_type
                     })
                 })
                 .collect();
             serde_json::json!({
-                "message": "Multiple degrees match — provide degree_id or more filters to narrow",
-                "count": degrees.len(),
+                "message": "Multiple programs match — provide program_key or more filters to narrow",
+                "count": programs.len(),
                 "matches": summaries
             })
             .to_string()
@@ -303,7 +368,7 @@ pub async fn execute_compare_json(client: &Arc<DbClient>, req: CompareDegreesReq
             .filter(|s| !s.is_empty())
             .collect();
         for id in ids {
-            match fetch_detail_by_id(client, id).await {
+            match fetch_program_detail(client, id).await {
                 Some(detail) => resolved.push(ResolvedDegree::from_detail(None, detail)),
                 None => not_found.push(id.to_string()),
             }
@@ -321,14 +386,16 @@ pub async fn execute_compare_json(client: &Arc<DbClient>, req: CompareDegreesReq
         .map(|rd| {
             let mut record = serde_json::json!({
                 "label": rd.label,
+                "program_key": rd.program_key,
+                "name": rd.name,
                 "degree_id": rd.degree_id,
                 "unitid": rd.unitid,
                 "cip_code": rd.cip_code,
                 "catalog_year": rd.catalog_year,
-                "yaml_content": rd.yaml_content,
+                "source": rd.source,
             });
             if include_metrics {
-                record["metrics"] = compute_compare_metrics(&rd.yaml_content, max_plans);
+                record["metrics"] = compute_compare_metrics(&rd.source, max_plans);
             }
             record
         })
@@ -342,35 +409,43 @@ pub async fn execute_compare_json(client: &Arc<DbClient>, req: CompareDegreesReq
 }
 
 /// Internal: an already-resolved degree ready to fold into the response.
+/// `source` holds the degree's source text — unified JSON for a stored program,
+/// raw YAML for an inline/filesystem source.
 struct ResolvedDegree {
     label: Option<String>,
+    program_key: Option<String>,
+    name: Option<String>,
     degree_id: Option<String>,
     unitid: Option<i32>,
     cip_code: Option<String>,
     catalog_year: Option<String>,
-    yaml_content: String,
+    source: String,
 }
 
 impl ResolvedDegree {
-    fn from_detail(label: Option<String>, detail: DegreeDetail) -> Self {
+    fn from_detail(label: Option<String>, detail: ProgramDetail) -> Self {
         Self {
             label,
-            degree_id: Some(detail.degree_id),
+            program_key: Some(detail.program_key),
+            name: Some(detail.name),
+            degree_id: detail.degree_id,
             unitid: detail.unitid,
             cip_code: detail.cip_code,
             catalog_year: detail.catalog_year,
-            yaml_content: detail.yaml_content,
+            source: serde_json::to_string(&detail.document).unwrap_or_default(),
         }
     }
 
-    const fn from_inline(label: Option<String>, yaml_content: String) -> Self {
+    const fn from_inline(label: Option<String>, source: String) -> Self {
         Self {
             label,
+            program_key: None,
+            name: None,
             degree_id: None,
             unitid: None,
             cip_code: None,
             catalog_year: None,
-            yaml_content,
+            source,
         }
     }
 }
@@ -397,10 +472,10 @@ async fn resolve_source(
     }
 
     if let Some(id) = source.degree_id.as_deref() {
-        return fetch_detail_by_id(client, id)
+        return fetch_program_detail(client, id)
             .await
             .map(|detail| ResolvedDegree::from_detail(source.label.clone(), detail))
-            .ok_or_else(|| format!("{label}: degree_id {id:?} not found in database"));
+            .ok_or_else(|| format!("{label}: stored id {id:?} not found in database"));
     }
     if let Some(yaml) = source.yaml_content.clone() {
         return Ok(ResolvedDegree::from_inline(source.label.clone(), yaml));
@@ -433,16 +508,22 @@ fn validate_source_count(source: &DegreeSource) -> Result<(), &'static str> {
     }
 }
 
-/// Fetch a stored degree's full detail by id; returns `None` if missing or
-/// the row fails to deserialize. Wraps the JSON-string helper used elsewhere
-/// in this module.
-async fn fetch_detail_by_id(client: &Arc<DbClient>, id: &str) -> Option<DegreeDetail> {
-    let result_str = fetch_by_id(client, id).await;
-    let parsed: serde_json::Value = serde_json::from_str(&result_str).ok()?;
-    if parsed.get("error").is_some() {
-        return None;
+/// Fetch a stored program's full detail by `id`, trying `program_key` (unique)
+/// first and then `degree_id`. Returns `None` if neither matches or the row
+/// fails to deserialize.
+async fn fetch_program_detail(client: &Arc<DbClient>, id: &str) -> Option<ProgramDetail> {
+    for col in ["program_key", "degree_id"] {
+        let filters = QueryFilters::new().eq(col, Some(id));
+        if let Ok(value) = client
+            .select(tables::PROGRAMS, PROGRAM_DETAIL_COLS, &filters, Some(1))
+            .await
+        {
+            if let Some(detail) = parse_first::<ProgramDetail>(&value) {
+                return Some(detail);
+            }
+        }
     }
-    serde_json::from_value::<DegreeDetail>(parsed).ok()
+    None
 }
 
 /// Run the analyze pipeline on a degree's YAML and pluck the side-by-side
@@ -495,40 +576,70 @@ pub async fn execute_store_json(client: &Arc<DbClient>, req: StoreDegreeRequest)
     }
 }
 
-// ============================================================================
-// Internal helpers
-// ============================================================================
-
-/// Fetch a single degree by its `degree_id` and return full YAML detail JSON.
-/// Returns an error JSON object if not found or the query fails.
-async fn fetch_by_id(client: &Arc<DbClient>, id: &str) -> String {
-    let filters = QueryFilters::new().eq("degree_id", Some(id));
-
-    let result = match client
-        .select(tables::DEGREES, DEGREE_DETAIL_COLS, &filters, Some(1))
-        .await
-    {
-        Ok(v) => v,
-        Err(e) => return error_json(e),
-    };
-
-    let degree: Option<DegreeDetail> = parse_first(&result);
-
-    degree.map_or_else(
-        || {
-            serde_json::json!({
-                "error": "Degree not found",
-                "degree_id": id
-            })
-            .to_string()
-        },
-        |d| to_json_pretty(&d),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Guards the `PROGRAM_SUMMARY_COLS` → `ProgramSummary` contract: a row
+    /// shaped like a `PostgREST` `programs` select must deserialize cleanly. A
+    /// typo'd column name (the original Issue A failure mode) would break this.
+    #[test]
+    fn test_program_summary_deserializes_from_programs_row() {
+        let row = serde_json::json!({
+            "program_key": "prog:126818|11.0701|2025-2026|BS",
+            "name": "Computer Science, BS",
+            "unitid": 126_818,
+            "cip_code": "11.0701",
+            "catalog_year": "2025-2026",
+            "degree_type": "BS",
+            "program_kind": "concentration",
+            "discipline": "cs",
+            "verified": false,
+            "institution_resolved": true,
+            "has_impossible_requirements": false
+        });
+        let summary: ProgramSummary =
+            serde_json::from_value(row).expect("programs summary row must deserialize");
+        assert_eq!(summary.program_key, "prog:126818|11.0701|2025-2026|BS");
+        assert_eq!(summary.unitid, Some(126_818));
+        assert_eq!(summary.degree_type.as_deref(), Some("BS"));
+        assert!(summary.institution_resolved);
+    }
+
+    /// Guards the `PROGRAM_DETAIL_COLS` → `ProgramDetail` contract, including
+    /// the lossless `document` JSONB that downstream tools consume. Nullable
+    /// columns (`cip_code`, `degree_id`) must tolerate JSON `null`.
+    #[test]
+    fn test_program_detail_deserializes_with_document_and_nulls() {
+        let row = serde_json::json!({
+            "program_key": "prog:141574||2024-2025|BS",
+            "name": "BS in Computer Science - General Track",
+            "unitid": 141_574,
+            "cip_code": null,
+            "catalog_year": "2024-2025",
+            "degree_type": "BS",
+            "program_kind": null,
+            "discipline": null,
+            "verified": false,
+            "institution_resolved": true,
+            "has_impossible_requirements": false,
+            "degree_id": null,
+            "institution_raw": "University of Hawaii at Manoa",
+            "total_credits": 120,
+            "source_url": null,
+            "document": { "degree": { "institution": "University of Hawaii at Manoa" } }
+        });
+        let detail: ProgramDetail =
+            serde_json::from_value(row).expect("programs detail row must deserialize");
+        assert_eq!(detail.cip_code, None);
+        assert_eq!(detail.degree_id, None);
+        assert_eq!(detail.total_credits, Some(120));
+        assert_eq!(
+            detail.document["degree"]["institution"],
+            serde_json::json!("University of Hawaii at Manoa"),
+            "the lossless document must survive deserialization intact"
+        );
+    }
 
     #[test]
     fn test_compute_compare_metrics_returns_metrics_for_valid_yaml() {

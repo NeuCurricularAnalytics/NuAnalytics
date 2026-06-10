@@ -508,7 +508,7 @@ impl NuAnalyticsMcpServer {
     /// Search stored degree programs in the database
     #[cfg(feature = "database")]
     #[tool(
-        description = "Search stored degree programs in the database. Filter by institution UNITID, CIP code prefix (\"11.\" for CS), or catalog year. Returns matching degrees with metadata. Use get_degree to retrieve the full YAML content."
+        description = "Search stored programs in the database (the normalized `programs` table written by import_degree). Filter by institution UNITID, CIP code prefix (\"11.\" for CS), catalog year, and the queryable dimensions degree_type (\"BS\"/\"BA\"/\"MS\"/\"MINOR\"), program_kind (\"major\"/\"minor\"/\"concentration\"/…), and discipline (\"cs\"/\"ai\"/\"ds\"/…). Returns matching programs with metadata (program_key, name, verified, has_impossible_requirements, …). Use get_degree to retrieve the full unified-JSON document."
     )]
     fn search_degrees(&self, Parameters(req): Parameters<SearchDegreesRequest>) -> String {
         self.call_db("search_degrees", |db| async move {
@@ -519,7 +519,7 @@ impl NuAnalyticsMcpServer {
     /// Retrieve a stored degree program by ID or natural key
     #[cfg(feature = "database")]
     #[tool(
-        description = "Retrieve a full degree program YAML. Lookup by degree_id (fastest) or by natural key: unitid + cip_code + catalog_year. If multiple degrees match the natural key, returns a list of summaries — narrow with more filters or use degree_id. Returns full YAML content usable with validate_degree / analyze_degree."
+        description = "Retrieve a full stored program from the `programs` table. Lookup precedence: program_key (unique, strongest) → degree_id → natural key (unitid + cip_code + catalog_year). If multiple programs match, returns a list of summaries — narrow with program_key or more filters. On a single match, returns the program metadata plus its `document` (the lossless unified-JSON degree) directly usable with validate_degree / analyze_degree / cache_yaml."
     )]
     fn get_degree(&self, Parameters(req): Parameters<GetDegreeRequest>) -> String {
         self.call_db("get_degree", |db| async move {
@@ -530,7 +530,7 @@ impl NuAnalyticsMcpServer {
     /// Compare multiple stored degree programs (and/or inline YAMLs)
     #[cfg(feature = "database")]
     #[tool(
-        description = "Compare multiple degrees side-by-side. Provide `sources` (structured list of {label?, degree_id?|yaml_content?|yaml_path?}, exactly one source per entry) and/or `degree_ids` (legacy comma-separated stored-IDs form). `sources` lets you benchmark an in-progress inline YAML against a stored peer without storing it first. Returns metadata + YAML content per entry, plus (default) analyze-style metrics (complexity, longest_delay, total_credits, plans_analyzed). Set include_metrics=false to skip the analysis pass."
+        description = "Compare multiple degrees side-by-side. Provide `sources` (structured list of {label?, degree_id?|yaml_content?|yaml_path?}, exactly one source per entry) and/or `degree_ids` (legacy comma-separated stored-IDs form; each id is matched against program_key then degree_id in the `programs` table). `sources` lets you benchmark an in-progress inline YAML against a stored peer without storing it first. Returns per entry: program_key, name, the degree `source` text (unified JSON for stored programs, raw YAML for inline), plus (default) analyze-style metrics (complexity, longest_delay, total_credits, plans_analyzed). Set include_metrics=false to skip the analysis pass."
     )]
     fn compare_degrees(&self, Parameters(req): Parameters<CompareDegreesRequest>) -> String {
         self.call_db("compare_degrees", |db| async move {
@@ -823,9 +823,10 @@ impl ServerHandler for NuAnalyticsMcpServer {
             \t→ per-school CS demographics for all R1 schools >1000 students (3 DB calls, not 130)\n\
             - get_completion_demographics(carnegie_class=15, award_level=5, year=2024) → aggregate across all matched schools\n\
             \n\
-            Degree programs:\n\
-            - search_degrees(unitid=167358) / get_degree(unitid=167358, cip_code=\"11.0101\") → retrieve stored degrees\n\
-            - search_degrees + get_degree → read-only DB access; storage of new degrees is not yet provisioned"
+            Degree programs (normalized `programs` table):\n\
+            - search_degrees(unitid=167358) / search_degrees(degree_type=\"BS\", discipline=\"cs\") → browse stored programs\n\
+            - get_degree(unitid=167358, cip_code=\"11.0101\", catalog_year=\"2025-2026\") or get_degree(program_key=…) → full program + its unified-JSON document\n\
+            - import_degree(json_path=…) → write a program (and optional analysis run) from a report/degree JSON"
         } else {
             "\n\nDatabase tools: Not available (database not configured or disabled)"
         };
