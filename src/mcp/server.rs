@@ -311,7 +311,7 @@ impl NuAnalyticsMcpServer {
 
     /// Cache an inline YAML body and return a degree_id-style handle
     #[tool(
-        description = "Cache an inline degree YAML body in the server and return a handle (\"cache:{hex}\") that any other tool accepts as a `degree_id`. Removes the per-call repaste tax for hosted MCP clients whose filesystem the server can't see (yaml_path returns ENOENT in that setup). Handle is content-hashed and idempotent — caching the same body twice returns the same handle. TTL is about 1 hour. After caching: pass the handle as `degree_id` on validate_degree / audit_degree / analyze_degree / generate_degree_report / get_course_detail / render_plan_graph / find_courses_matching / degree_pipeline / compare_degrees."
+        description = "Cache an inline degree YAML body in the server and return a handle (\"cache:{hex}\") that any other tool accepts as a `degree_id`. Removes the per-call repaste tax for hosted MCP clients whose filesystem the server can't see (yaml_path returns ENOENT in that setup). Handle is content-hashed and idempotent — caching the same body twice returns the same handle. TTL is 24 hours (handles live only in this server process — a restart invalidates them). After caching: pass the handle as `degree_id` on validate_degree / audit_degree / analyze_degree / generate_degree_report / get_course_detail / render_plan_graph / find_courses_matching / degree_pipeline / compare_degrees."
     )]
     #[allow(clippy::unused_self)]
     fn cache_yaml(&self, Parameters(req): Parameters<CacheYamlRequest>) -> String {
@@ -592,19 +592,27 @@ impl NuAnalyticsMcpServer {
         id: &str,
     ) -> Result<(String, Option<CacheMeta>), String> {
         if id.starts_with(crate::mcp::cache::YAML_CACHE_PREFIX) {
-            let cache = crate::mcp::cache::YAML_CACHE
+            use crate::mcp::cache::CacheLookup;
+            // Resolve under the lock, then drop the guard before returning so we
+            // don't hold the cache mutex across the (owned) result construction.
+            let lookup = crate::mcp::cache::YAML_CACHE
                 .lock()
-                .expect("yaml cache mutex poisoned");
-            return cache.get(id).map_or_else(
-                || {
-                    Err(serde_json::json!({
-                        "error": "Unknown or expired YAML cache handle",
-                        "degree_id": id,
-                        "hint": "Call cache_yaml(yaml_content=...) to mint a fresh handle. Cache TTL is 24 hours.",
-                    })
-                    .to_string())
-                },
-                |(arc, remaining)| {
+                .expect("yaml cache mutex poisoned")
+                .lookup(id);
+            return match lookup {
+                CacheLookup::Expired => Err(serde_json::json!({
+                    "error": "YAML cache handle expired",
+                    "degree_id": id,
+                    "hint": "This handle was valid but aged out (TTL is 24 hours). Call cache_yaml(yaml_content=...) to mint a fresh one.",
+                })
+                .to_string()),
+                CacheLookup::Unknown => Err(serde_json::json!({
+                    "error": "Unknown YAML cache handle",
+                    "degree_id": id,
+                    "hint": "No such handle was minted in this server process (a typo, or the server was restarted). Call cache_yaml(yaml_content=...) to mint one.",
+                })
+                .to_string()),
+                CacheLookup::Hit(arc, remaining) => {
                     Ok((
                         (*arc).to_string(),
                         Some(CacheMeta {
@@ -612,8 +620,8 @@ impl NuAnalyticsMcpServer {
                             ttl_remaining_seconds: remaining.as_secs(),
                         }),
                     ))
-                },
-            );
+                }
+            };
         }
 
         if let Some(yaml) = crate::mcp::tools::samples::yaml_for_key(id) {
