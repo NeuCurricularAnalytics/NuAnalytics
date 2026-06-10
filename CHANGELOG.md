@@ -4,6 +4,44 @@ All notable changes to NuAnalytics are recorded here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the
 project uses semantic versioning.
 
+## [0.5.1] — 2026-06-10
+
+Bug-fix release addressing issues found while live-testing the MCP server
+against the v0.5.0 stored-program schema. Additive — no breaking changes.
+
+### Fixed
+
+- **Stored-program read tools now query the `programs` table.** `search_degrees`,
+  `get_degree`, and `compare_degrees` were still reading the legacy `degrees`
+  yaml-blob table, so they returned zero results even after `import_degree` had
+  written programs. They now read the normalized `programs` table:
+  `search_degrees` gained `degree_type` / `program_kind` / `discipline` filters,
+  `get_degree` resolves by `program_key` → `degree_id` → natural key and returns
+  the lossless unified-JSON `document`.
+- **MCP server JWT auto-refresh.** `DbClient` held a single access token for the
+  life of the process, so every database tool started failing ~1 hour in (a
+  client re-login didn't help — only a server restart). The client now keeps the
+  full session behind a lock and refreshes the token per request: proactively
+  when it has expired (re-reading the on-disk auth file, so a fresh
+  `nuanalytics db login` is picked up without a restart) and reactively once on a
+  `401`. HTTP requests also gained explicit timeouts so a stalled call fails fast
+  instead of hanging.
+- **`render_plan_graph` no longer hangs** on `plan_category="sample"` /
+  `plan_index ≥ 2`. Prerequisite DNF expansion (`parse_to_dnf`) of a pathological
+  AND-of-ORs grew as `2^n`; it is now bounded so per-plan graph rendering stays
+  fast for every selected plan.
+- **`yaml_content` starting with `@`** is rejected fast with a directive error
+  (use `yaml_path` / `degree_id`) instead of stalling the YAML parser.
+- **Cache-handle errors distinguish expired from unknown**, and the `cache_yaml`
+  description's stale "about 1 hour" TTL is corrected to 24 hours.
+
+### Added
+
+- **`analyze_degree` returns `recommended_max_plans`** — a machine-readable
+  companion to the truncation follow-up (the current cap when complexity is
+  CV-stable, otherwise the doubled-and-capped next value; omitted for a
+  full-population run).
+
 ## [0.5.0] — 2026-06-09
 
 Adds database-backed degree storage: a normalized, queryable projection of
