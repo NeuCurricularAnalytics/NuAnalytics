@@ -9,7 +9,7 @@ Run NuAnalytics on a curriculum file and surface the results.
 
 ## Tool selection
 
-- **Degree YAML** (`degrees/*.yaml`) → use the `analyze_degree` MCP tool. If the user wants only validation, use `validate_degree`; for structural issues only, `audit_degree`.
+- **Degree file** (`degrees/*.unified.json` or `degrees/*.yaml`) → use the `analyze_degree` MCP tool. If the user wants only validation, use `validate_degree`; for structural issues only, `audit_degree`.
 - **Curriculum CSV plan** (`plans/*.csv`) → run `nuanalytics planner <file>` from the shell. Use `--no-report` for CSV-only metrics or `--no-csv` for HTML/MD/PDF reports only.
 
 ## Workflow

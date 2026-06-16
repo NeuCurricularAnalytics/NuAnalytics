@@ -9,7 +9,7 @@ Validate and critique an existing degree YAML.
 
 ## Workflow
 
-1. Read the target YAML file.
+1. Read the target file (`degrees/*.unified.json` or `degrees/*.yaml`).
 2. Call the `validate_degree` MCP tool. Report every error.
 3. Call the `audit_degree` MCP tool. Group warnings by category (prerequisite chains, cross-listings, credit totals, structural).
 4. Cross-check against the source catalog if the user provided one.
