@@ -22,11 +22,14 @@ const BIN_NAME: &str = "nuanalytics";
 const MCP_SUBCOMMAND: &str = "mcp";
 
 const SETTINGS_TEMPLATE: &str = include_str!("../../assets/init/settings.json.tmpl");
+const MCP_JSON_TEMPLATE: &str = include_str!("../../assets/init/mcp.json.tmpl");
 const NUANALYTICS_TOML: &str = include_str!("../../assets/init/nuanalytics.toml");
 const PROJECT_README: &str = include_str!("../../assets/init/README.md");
 
 const SKILL_DEGREE_AUTHOR: &str = include_str!("../../assets/init/skills/degree-author/SKILL.md");
 const SKILL_DEGREE_REVIEW: &str = include_str!("../../assets/init/skills/degree-review/SKILL.md");
+const SKILL_DEGREE_UPDATE: &str = include_str!("../../assets/init/skills/degree-update/SKILL.md");
+const SKILL_DEGREE_FETCH: &str = include_str!("../../assets/init/skills/degree-fetch/SKILL.md");
 const SKILL_PLAN_ANALYZE: &str = include_str!("../../assets/init/skills/plan-analyze/SKILL.md");
 
 // Schema reference is shared with the MCP server's `get_degree_schema` tool —
@@ -54,13 +57,18 @@ const STATIC_FILES: &[(&str, &str)] = &[
         REF_EXAMPLE,
     ),
     (".claude/skills/degree-review/SKILL.md", SKILL_DEGREE_REVIEW),
+    (".claude/skills/degree-update/SKILL.md", SKILL_DEGREE_UPDATE),
+    (".claude/skills/degree-fetch/SKILL.md", SKILL_DEGREE_FETCH),
     (".claude/skills/plan-analyze/SKILL.md", SKILL_PLAN_ANALYZE),
     ("degrees/.gitkeep", ""),
     ("plans/.gitkeep", ""),
 ];
 
-/// Path (relative to the target directory) of the templated MCP config.
+/// Path (relative to the target directory) of the templated Claude Code MCP config.
 const SETTINGS_REL: &str = ".claude/settings.json";
+
+/// Path (relative to the target directory) of the project-root MCP config.
+const MCP_JSON_REL: &str = ".mcp.json";
 
 /// Scaffold a `NuAnalytics` research project at `dir`.
 ///
@@ -74,8 +82,10 @@ pub fn run(dir: &Path, force: bool) -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(dir)?;
 
     let (mcp_command, mcp_args) = detect_mcp_command();
-    let settings_json = render_settings(&mcp_command, &mcp_args)?;
+    let settings_json = render_mcp_config(SETTINGS_TEMPLATE, &mcp_command, &mcp_args)?;
+    let mcp_json = render_mcp_config(MCP_JSON_TEMPLATE, &mcp_command, &mcp_args)?;
     let settings_path = dir.join(SETTINGS_REL);
+    let mcp_json_path = dir.join(MCP_JSON_REL);
 
     if !force {
         let mut conflicts: Vec<PathBuf> = STATIC_FILES
@@ -85,6 +95,9 @@ pub fn run(dir: &Path, force: bool) -> Result<(), Box<dyn std::error::Error>> {
             .collect();
         if settings_path.exists() {
             conflicts.push(settings_path.clone());
+        }
+        if mcp_json_path.exists() {
+            conflicts.push(mcp_json_path.clone());
         }
         if !conflicts.is_empty() {
             let mut msg =
@@ -100,6 +113,7 @@ pub fn run(dir: &Path, force: bool) -> Result<(), Box<dyn std::error::Error>> {
         write_file(&dir.join(rel), content.as_bytes())?;
     }
     write_file(&settings_path, settings_json.as_bytes())?;
+    write_file(&mcp_json_path, mcp_json.as_bytes())?;
 
     println!(
         "\n✓ scaffolded NuAnalytics research project at {}",
@@ -121,13 +135,12 @@ fn write_file(path: &Path, content: &[u8]) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
-/// Render the `.claude/settings.json` body by substituting the MCP command
-/// and args into the embedded template. Values are JSON-encoded so quoting
-/// and escaping are handled correctly.
-fn render_settings(command: &str, args: &[String]) -> Result<String, serde_json::Error> {
+/// Render an MCP config template by substituting the command and args.
+/// Values are JSON-encoded so quoting and escaping are handled correctly.
+fn render_mcp_config(template: &str, command: &str, args: &[String]) -> Result<String, serde_json::Error> {
     let command_json = serde_json::to_string(command)?;
     let args_json = serde_json::to_string(args)?;
-    Ok(SETTINGS_TEMPLATE
+    Ok(template
         .replace("{{MCP_COMMAND}}", &command_json)
         .replace("{{MCP_ARGS}}", &args_json))
 }
@@ -170,6 +183,7 @@ mod tests {
     const EXPECTED_FILES: &[&str] = &[
         "nuanalytics.toml",
         "README.md",
+        ".mcp.json",
         ".claude/settings.json",
         ".claude/skills/degree-author/SKILL.md",
         ".claude/skills/degree-author/schema-v5.2.yaml",
@@ -177,6 +191,8 @@ mod tests {
         ".claude/skills/degree-author/quick-reference.md",
         ".claude/skills/degree-author/example-bscs-general.yaml",
         ".claude/skills/degree-review/SKILL.md",
+        ".claude/skills/degree-update/SKILL.md",
+        ".claude/skills/degree-fetch/SKILL.md",
         ".claude/skills/plan-analyze/SKILL.md",
         "degrees/.gitkeep",
         "plans/.gitkeep",
@@ -223,17 +239,17 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let target = tmp.path().join("proj");
         fs::create_dir_all(target.join(".claude")).expect("mkdir");
-        fs::write(target.join(".claude/settings.json"), "pre-existing\n").expect("seed");
+        fs::write(target.join(".mcp.json"), "pre-existing\n").expect("seed");
 
         let err = run(&target, false).expect_err("must refuse to overwrite without --force");
         let msg = err.to_string();
         assert!(msg.contains("already exist"), "unexpected error: {msg}");
         assert!(
-            msg.contains("settings.json"),
+            msg.contains(".mcp.json"),
             "should name the conflict: {msg}"
         );
 
-        let body = fs::read_to_string(target.join(".claude/settings.json")).expect("read");
+        let body = fs::read_to_string(target.join(".mcp.json")).expect("read");
         assert_eq!(body, "pre-existing\n");
     }
 
@@ -265,13 +281,14 @@ mod tests {
     }
 
     #[test]
-    fn render_settings_escapes_quotes_and_backslashes_in_command() {
+    fn render_mcp_config_escapes_quotes_and_backslashes_in_command() {
         // A Windows-style path with backslashes plus a literal double quote
-        // would corrupt the JSON if `render_settings` used naive interpolation
+        // would corrupt the JSON if `render_mcp_config` used naive interpolation
         // instead of `serde_json::to_string`.
         let weird = r#"C:\Program Files\Nu"Analytics\nuanalytics.exe"#;
         let rendered =
-            render_settings(weird, &[MCP_SUBCOMMAND.to_string()]).expect("render_settings");
+            render_mcp_config(SETTINGS_TEMPLATE, weird, &[MCP_SUBCOMMAND.to_string()])
+                .expect("render_mcp_config");
 
         let v: Value = serde_json::from_str(&rendered)
             .expect("rendered settings must be valid JSON even for odd command paths");
@@ -280,6 +297,34 @@ mod tests {
             Some(weird),
             "command round-trips through JSON unchanged"
         );
+    }
+
+    #[test]
+    fn mcp_json_is_valid_with_stdio_type() {
+        let tmp = TempDir::new().expect("tempdir");
+        let target = tmp.path().join("proj");
+
+        run(&target, false).expect("init succeeds");
+
+        let body = fs::read_to_string(target.join(".mcp.json")).expect("read .mcp.json");
+        let v: Value = serde_json::from_str(&body).expect(".mcp.json parses as JSON");
+
+        let server = &v["mcpServers"]["nuanalytics"];
+        assert_eq!(
+            server.get("type").and_then(Value::as_str),
+            Some("stdio"),
+            "mcpServers.nuanalytics.type must be \"stdio\"; got {server}"
+        );
+        assert!(
+            server.get("command").and_then(Value::as_str).is_some(),
+            "mcpServers.nuanalytics.command must be a string; got {server}"
+        );
+        let args = server
+            .get("args")
+            .and_then(Value::as_array)
+            .expect("args array");
+        assert_eq!(args.len(), 1);
+        assert_eq!(args[0].as_str(), Some("mcp"));
     }
 
     #[test]

@@ -21,7 +21,7 @@ You are an expert academic catalog analyst building NuAnalytics-compatible degre
 3. Extract metadata (institution, program, total credits, effective catalog year).
 4. Map each requirement to the schema's requirement types — verify against `quick-reference.md`.
 5. Build the catalog (course list) with prerequisites; trace chains the user mentioned.
-6. Write the YAML to `degrees/<institution>-<program>.yaml`.
+6. Write to `degrees/<institution>-<program>.yaml` (or `.unified.json` if the user requests the combined format).
 7. Validate via the `validate_degree` MCP tool. Fix every error before declaring done.
 8. Audit via `audit_degree`. Address warnings the user cares about.
 9. *(Optional)* If the user wants a simplified single-path view of the YAML
