@@ -364,6 +364,43 @@ pub enum DegreeSubcommand {
         #[arg(short, long, value_name = "PATH")]
         out: Option<PathBuf>,
     },
+
+    /// Normalize degree file(s) to a flat, format-agnostic course set.
+    ///
+    /// Accepts unified JSON, YAML, or raw ai-landscape cluster pipeline files
+    /// (the same three formats as `degree convert`). Each input produces one
+    /// `<stem>.normalized.json` file per program with courses keyed by
+    /// normalized code and prerequisites in AND-of-OR list form.
+    ///
+    /// Intended as the common representation for test-suite comparisons between
+    /// automated fetchers (e.g. `degree-author` vs. the ai-landscape pipeline).
+    ///
+    /// # Examples
+    /// ```sh
+    /// # Normalize a cluster pipeline file (one output per program)
+    /// nuanalytics degree normalize Northeastern_University.json -o out/
+    ///
+    /// # Normalize a unified JSON (single output)
+    /// nuanalytics degree normalize neu__bscs.unified.json -o out/
+    ///
+    /// # Normalize a degree-author YAML
+    /// nuanalytics degree normalize neu-khoury-bscs-boston.yaml -o out/
+    /// ```
+    Normalize {
+        /// Source file(s). Shell wildcards are expanded by the shell.
+        #[arg(value_name = "FILES", num_args = 1..)]
+        files: Vec<PathBuf>,
+
+        /// Output destination. Without `-o`, each normalized file is written
+        /// next to its input as `<stem>.normalized.json`. With `-o`, the value
+        /// is a file (single non-cluster input only) or a directory.
+        #[arg(short, long, value_name = "PATH")]
+        out: Option<PathBuf>,
+
+        /// Pretty-print the JSON output (default is compact, one line).
+        #[arg(long)]
+        pretty: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

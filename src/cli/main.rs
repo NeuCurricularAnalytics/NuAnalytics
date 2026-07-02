@@ -170,6 +170,9 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
         DegreeSubcommand::Schema { out } => {
             commands::degree::run_schema(out.as_deref());
         }
+        DegreeSubcommand::Normalize { files, out, pretty } => {
+            commands::degree::run_normalize(&files, out.as_deref(), pretty, verbose);
+        }
     }
 }
 
