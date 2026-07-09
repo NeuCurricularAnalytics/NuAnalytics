@@ -1,6 +1,6 @@
 # NuAnalytics
 
-**Version 0.5.1**
+**Version 0.5.4**
 
 NuAnalytics is a Rust-based tool for analyzing computer science curricula. It computes detailed metrics about curriculum structure including complexity, blocking relationships, delay paths, and centrality measures to help understand how courses are organized and their impact on students.
 
