@@ -566,6 +566,7 @@ mod tests {
                 blocking: 1,
                 complexity: 2,
                 centrality: 1,
+                chain_length: 1,
             },
         );
         metrics.insert(
@@ -575,6 +576,7 @@ mod tests {
                 blocking: 0,
                 complexity: 2,
                 centrality: 0,
+                chain_length: 2,
             },
         );
 
@@ -640,6 +642,7 @@ mod tests {
                 blocking: 5,
                 complexity: 8,
                 centrality: 1,
+                chain_length: 2,
             },
         );
 
@@ -696,6 +699,7 @@ mod tests {
                 blocking: 0,
                 complexity: 1,
                 centrality: 0,
+                chain_length: 1,
             },
         );
 
@@ -843,6 +847,7 @@ mod tests {
                 blocking: 4,
                 complexity: 6,
                 centrality: 0,
+                chain_length: 1,
             },
         );
 
@@ -861,6 +866,7 @@ mod tests {
                 longest_delay: 2,
                 longest_delay_chain: vec!["CS101".to_string()],
                 is_calc_ready: false,
+                avg_chain_length: 1.0,
             },
             schedule,
             course_metrics: course_metrics.clone(),

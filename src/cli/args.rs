@@ -272,6 +272,23 @@ pub enum DegreeSubcommand {
         /// metrics across the programs. The value is the school name.
         #[arg(long, value_name = "NAME")]
         school: Option<String>,
+
+        /// Compute earliest-semester stats for a specific target course and
+        /// print them as JSON to stdout. When set alongside `--no-report
+        /// --no-csv`, this is the fastest way to query a single course's
+        /// first-semester number without generating full reports.
+        ///
+        /// Example: --target-course CSE475
+        #[arg(long, value_name = "COURSE_ID")]
+        target_course: Option<String>,
+
+        /// When `--target-course` is set, write the full analysis JSON
+        /// (course complexity, plan stats, target_course_stats, etc.) to
+        /// this path in addition to printing `target_course_stats` to stdout.
+        ///
+        /// Example: --metrics-out metrics/Tulane__CMPS2200.json
+        #[arg(long, value_name = "PATH", requires = "target_course")]
+        metrics_out: Option<PathBuf>,
     },
 
     /// Trim a degree program to a single entry path per course.

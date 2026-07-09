@@ -233,6 +233,7 @@ fn test_plan_score_comparison() {
         longest_delay: 6,
         longest_delay_chain: Vec::new(),
         is_calc_ready: false,
+        avg_chain_length: 2.5,
     };
 
     let score2 = PlanScore {
@@ -241,6 +242,7 @@ fn test_plan_score_comparison() {
         longest_delay: 7,
         longest_delay_chain: Vec::new(),
         is_calc_ready: false,
+        avg_chain_length: 3.0,
     };
 
     let score3 = PlanScore {
@@ -249,6 +251,7 @@ fn test_plan_score_comparison() {
         longest_delay: 5,
         longest_delay_chain: Vec::new(),
         is_calc_ready: false,
+        avg_chain_length: 2.0,
     };
 
     // Basic comparison

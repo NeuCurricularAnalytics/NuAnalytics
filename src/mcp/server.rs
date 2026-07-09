@@ -165,6 +165,7 @@ impl NuAnalyticsMcpServer {
         let random_seed = req.random_seed;
         let analysis_timeout_seconds = req.analysis_timeout_seconds;
         let max_plans = req.max_plans;
+        let target_course = req.target_course;
         let plan_indices: Option<Vec<usize>> = req
             .plan_indices
             .as_deref()
@@ -185,6 +186,7 @@ impl NuAnalyticsMcpServer {
                 include_placeholder_metrics,
                 random_seed,
                 analysis_timeout_seconds,
+                target_course.as_deref(),
             )
         })
     }

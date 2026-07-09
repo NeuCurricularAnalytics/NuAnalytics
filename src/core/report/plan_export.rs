@@ -879,6 +879,7 @@ mod tests {
                 centrality: 5,
                 delay: 3,
                 blocking: 2,
+                chain_length: 2,
             },
         );
 
@@ -890,6 +891,7 @@ mod tests {
                 longest_delay: 5,
                 longest_delay_chain: Vec::new(),
                 is_calc_ready: false,
+                avg_chain_length: 0.0,
             },
             schedule: TermPlan::new(8, false, 15.0),
             course_metrics: metrics,
@@ -1001,6 +1003,7 @@ mod tests {
                 centrality: 5,
                 delay: 3,
                 blocking: 2,
+                chain_length: 2,
             },
         );
         agg.add_plan(&metrics, 120.0);

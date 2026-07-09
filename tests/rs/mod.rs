@@ -1,5 +1,7 @@
 //! Rust integration test modules
 
+pub mod asu_target_course;
+pub mod first_sem_cases;
 pub mod cli_degree;
 pub mod course_graph;
 pub mod course_syntax;

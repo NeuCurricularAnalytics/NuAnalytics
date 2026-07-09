@@ -391,7 +391,8 @@ courses:
 
     # Scheduling
     prerequisites: "prereq_expr | null" # Boolean expression (see syntax below)
-    corequisites: "[string] | null"     # Courses that must be taken concurrently
+    corequisites: "[string] | null"        # Courses that must be taken concurrently or before
+    strict_corequisites: "[string] | null" # Courses that must be taken in the exact same term
     typically_offered: "[string] | null" # ["fall", "spring", "summer"]
 
     # Grade requirements
