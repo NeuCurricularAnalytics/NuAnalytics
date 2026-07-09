@@ -108,6 +108,8 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
             include,
             jobs,
             school,
+            target_course,
+            metrics_out,
         } => {
             let options = commands::degree::AnalyzeOptions {
                 calc_strategy: calc_strategy.map(|s| s.to_string()),
@@ -123,6 +125,8 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
                 include_courses: include,
                 jobs,
                 school,
+                target_course,
+                metrics_out,
             };
             // Exactly one of {files, --from-db} must be provided. The DB path
             // is single-program (no worker pool); the file path is unchanged.
@@ -169,6 +173,9 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
         }
         DegreeSubcommand::Schema { out } => {
             commands::degree::run_schema(out.as_deref());
+        }
+        DegreeSubcommand::Normalize { files, out, pretty } => {
+            commands::degree::run_normalize(&files, out.as_deref(), pretty, verbose);
         }
     }
 }

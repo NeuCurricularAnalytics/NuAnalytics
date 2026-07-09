@@ -14,6 +14,7 @@ use crate::core::degree::{
 };
 use crate::core::metrics::compute_all_metrics;
 use crate::core::models::{Course, CourseGraph, School, DAG};
+use crate::core::report::term_scheduler::TermScheduler;
 use crate::core::report::visualization::{spec_from_scored_plan, CurriculumGraphSpec};
 use crate::core::report::SchedulerConfig;
 use crate::core::statistics::{AggregatorConfig, MetricStats, MetricsAggregator};
@@ -131,6 +132,19 @@ pub struct AnalyzeDegreeRequest {
     )]
     pub include_placeholder_metrics: Option<bool>,
 
+    /// Course ID to compute earliest-semester statistics for (e.g. `"CS4100"`).
+    ///
+    /// When set, the response gains a `target_course_stats` object with the
+    /// minimum and average semester (chain length) at which the course appears
+    /// across all generated plans, split by all plans vs calc-ready plans.
+    /// Plans that do not contain the target course are silently skipped.
+    /// If the course appears in no plans at all, `target_course_stats.error`
+    /// is set instead.
+    #[schemars(
+        description = "Course ID to compute earliest-semester stats for (e.g. \"CS4100\"). Returns min/avg semester across all plans, split by calc-ready vs all."
+    )]
+    pub target_course: Option<String>,
+
     /// Seed for the random-sample reservoir. When `None` the seed is
     /// derived from the YAML body so a given `(yaml, max_plans,
     /// include_courses)` tuple always returns the same Random Sample plan
@@ -159,6 +173,41 @@ pub struct AnalyzeDegreeRequest {
         deserialize_with = "crate::mcp::tools::shared::deserialize_opt_u64"
     )]
     pub analysis_timeout_seconds: Option<u64>,
+}
+
+/// Term-reach statistics for one slice of plans (all plans, or calc-ready only).
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct TargetTermStats {
+    /// Number of plans that contained the target course.
+    pub plans_containing: usize,
+    /// Minimum chain-length (semesters) seen across all containing plans.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub earliest_term: Option<usize>,
+    /// Mean chain-length across all containing plans.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_term: Option<f64>,
+    /// How many plans landed on each term number. Sorted by term for readability.
+    pub term_distribution: std::collections::BTreeMap<usize, usize>,
+}
+
+/// Earliest-semester statistics for a specific target course.
+///
+/// Populated on `analyze_degree` responses when `target_course` is set.
+/// `all_plans` covers every plan that contained the course. `calc_ready_plans`
+/// is the subset of those where the plan also includes a recognised calculus
+/// course — i.e., plans where calc is part of the degree track and a
+/// calc-ready student would reach the target faster.
+#[derive(Debug, Clone, Serialize)]
+pub struct TargetCourseStats {
+    /// The course ID that was looked up.
+    pub course_id: String,
+    /// Set when the target course did not appear in any generated plan.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Stats across all plans that contained the target course.
+    pub all_plans: TargetTermStats,
+    /// Stats restricted to plans that also include a calculus course.
+    pub calc_ready_plans: TargetTermStats,
 }
 
 /// Serializable metric statistics (includes quartiles for box plots).
@@ -236,6 +285,8 @@ pub struct CourseMetricsJson {
     pub delay: MetricStatsJson,
     /// Blocking factor — number of downstream courses gated by this one.
     pub blocking: MetricStatsJson,
+    /// Chain length — longest incoming prerequisite chain including this course.
+    pub chain_length: MetricStatsJson,
     /// `true` when this entry is a synthetic placeholder course (`ELEC_*`,
     /// `FE*`). Placeholders are filtered out by default; the field is only
     /// emitted when `include_placeholder_metrics=true` brings them back.
@@ -313,6 +364,10 @@ pub struct AnalysisResponse {
     pub longest_delay: Option<MetricStatsJson>,
     /// Aggregate total credits statistics
     pub total_credits: Option<MetricStatsJson>,
+    /// Aggregate average chain length per plan (mean of per-course chain lengths)
+    pub avg_chain_length: Option<MetricStatsJson>,
+    /// Aggregate minimum chain length per plan (shortest chain in each plan)
+    pub min_chain_length: Option<MetricStatsJson>,
 
     /// Selected special plans
     pub selected_plans: Vec<PlanSummaryJson>,
@@ -323,6 +378,11 @@ pub struct AnalysisResponse {
     /// typical CS degree and most callers don't need it.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub per_course_metrics: Vec<CourseMetricsJson>,
+
+    /// Earliest-semester stats for the requested target course.
+    /// Only present when `target_course` was set on the request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_course_stats: Option<TargetCourseStats>,
 
     /// Structured hints about the next MCP call worth making, based on the
     /// analyze outcome (truncation, long critical path, small full
@@ -406,6 +466,7 @@ pub fn execute(
     include_placeholder_metrics: bool,
     random_seed: Option<u64>,
     analysis_timeout_seconds: Option<u64>,
+    target_course: Option<&str>,
 ) -> AnalysisResponse {
     match crate::mcp::cache::cached_artifacts(
         yaml_content,
@@ -413,6 +474,7 @@ pub fn execute(
         include_courses,
         random_seed,
         analysis_timeout_seconds,
+        target_course,
     ) {
         Ok(artifacts) => build_response(
             &artifacts,
@@ -462,6 +524,8 @@ pub(crate) struct AnalysisArtifacts {
     pub time_limit_reached: bool,
     /// Wall-clock duration of the plan-generation phase in milliseconds.
     pub time_elapsed_ms: u64,
+    /// Earliest-semester stats for the target course, if one was requested.
+    pub target_course_stats: Option<TargetCourseStats>,
 }
 
 impl AnalysisArtifacts {
@@ -502,6 +566,7 @@ pub(crate) fn build_artifacts(
     include_courses: Option<&[String]>,
     random_seed: Option<u64>,
     analysis_timeout_seconds: Option<u64>,
+    target_course: Option<&str>,
 ) -> Result<AnalysisArtifacts, String> {
     let max = max_plans.unwrap_or(DEFAULT_MAX_PLANS);
     let include = include_courses.map(<[String]>::to_vec).unwrap_or_default();
@@ -559,6 +624,8 @@ pub(crate) fn build_artifacts(
     // setup are cheap and fixed-cost; what the caller cares about budgeting
     // is the loop below.
     let loop_start = Instant::now();
+    let mut target_all_terms: Vec<usize> = Vec::new();
+    let mut target_calc_ready_terms: Vec<usize> = Vec::new();
     let selected = {
         let mut selector = PlanSelector::new(&school, &dag, selector_config);
         let ctx = AnalysisCtx {
@@ -575,6 +642,9 @@ pub(crate) fn build_artifacts(
             deadline,
             &mut aggregator,
             &mut selector,
+            target_course,
+            &mut target_all_terms,
+            &mut target_calc_ready_terms,
         );
         plans_processed = processed;
         time_limit_reached = hit_limit;
@@ -584,6 +654,26 @@ pub(crate) fn build_artifacts(
     // ≤ 600,000 ms, far below u64::MAX. Saturating fallback is purely a
     // belt-and-braces guard against future clamp loosening.
     let time_elapsed_ms = u64::try_from(loop_start.elapsed().as_millis()).unwrap_or(u64::MAX);
+
+    let target_course_stats = target_course.map(|course_id| {
+        if target_all_terms.is_empty() {
+            TargetCourseStats {
+                course_id: course_id.to_string(),
+                error: Some(format!(
+                    "Course '{course_id}' did not appear in any of the {plans_processed} generated plans."
+                )),
+                all_plans: TargetTermStats::default(),
+                calc_ready_plans: TargetTermStats::default(),
+            }
+        } else {
+            TargetCourseStats {
+                course_id: course_id.to_string(),
+                error: None,
+                all_plans: build_target_term_stats(&target_all_terms),
+                calc_ready_plans: build_target_term_stats(&target_calc_ready_terms),
+            }
+        }
+    });
 
     Ok(AnalysisArtifacts {
         program,
@@ -598,7 +688,28 @@ pub(crate) fn build_artifacts(
         seed_used,
         time_limit_reached,
         time_elapsed_ms,
+        target_course_stats,
     })
+}
+
+/// Compute `TargetTermStats` from a collected list of per-plan chain lengths.
+fn build_target_term_stats(terms: &[usize]) -> TargetTermStats {
+    if terms.is_empty() {
+        return TargetTermStats::default();
+    }
+    let mut dist = std::collections::BTreeMap::new();
+    for &t in terms {
+        *dist.entry(t).or_insert(0usize) += 1;
+    }
+    let earliest = terms.iter().copied().min();
+    #[allow(clippy::cast_precision_loss)]
+    let avg = terms.iter().sum::<usize>() as f64 / terms.len() as f64;
+    TargetTermStats {
+        plans_containing: terms.len(),
+        earliest_term: earliest,
+        avg_term: Some(avg),
+        term_distribution: dist,
+    }
 }
 
 /// Stable seed derived from the YAML body.
@@ -633,8 +744,11 @@ fn parse_error_response(error: &str) -> AnalysisResponse {
         complexity: None,
         longest_delay: None,
         total_credits: None,
+        avg_chain_length: None,
+        min_chain_length: None,
         selected_plans: vec![],
         per_course_metrics: vec![],
+        target_course_stats: None,
         tool_followups: vec![ToolFollowup {
             tool: TOOL_VALIDATE_DEGREE,
             reason: "analyze_degree couldn't parse the YAML; validate_degree surfaces the parse error in a more structured form.".to_string(),
@@ -671,6 +785,9 @@ fn run_plan_analysis(
     deadline: Option<Instant>,
     aggregator: &mut MetricsAggregator,
     selector: &mut PlanSelector<'_>,
+    target_course: Option<&str>,
+    target_all_terms: &mut Vec<usize>,
+    target_calc_ready_terms: &mut Vec<usize>,
 ) -> (usize, bool) {
     let mut plans_processed = 0;
     let mut time_limit_reached = false;
@@ -707,6 +824,29 @@ fn run_plan_analysis(
 
         let expanded_variant =
             build_expanded_variant(&variant, &expanded, ctx.school, ctx.target_credits);
+
+        // Accumulate the actual scheduled term for the target course.
+        // Must use expanded_variant.courses (includes prerequisite courses)
+        // to match the scheduler input used by the plan selector — otherwise
+        // courses without prerequisites get placed in wrong terms.
+        if let Some(target) = target_course {
+            if expanded_variant.courses.contains(&target.to_string()) {
+                let scheduler =
+                    TermScheduler::new(ctx.school, &plan_dag, SchedulerConfig::default());
+                let schedule = scheduler.schedule(&expanded_variant.courses);
+                let term = schedule
+                    .terms
+                    .iter()
+                    .find(|t| t.courses.contains(&target.to_string()))
+                    .map(|t| t.number);
+                if let Some(t) = term {
+                    target_all_terms.push(t);
+                    if selector.is_calc_ready_plan(&variant) {
+                        target_calc_ready_terms.push(t);
+                    }
+                }
+            }
+        }
 
         aggregator.add_plan(&course_metrics, f64::from(expanded_variant.total_credits));
         selector.process_plan(&expanded_variant, &course_metrics, &plan_dag);
@@ -840,8 +980,11 @@ fn build_response(
         complexity: Some(complexity_stats),
         longest_delay: Some(metric_stats_json(&degree_stats.longest_delay)),
         total_credits: Some(metric_stats_json(&degree_stats.total_credits)),
+        avg_chain_length: Some(metric_stats_json(&degree_stats.avg_chain_length)),
+        min_chain_length: Some(metric_stats_json(&degree_stats.min_chain_length)),
         selected_plans,
         per_course_metrics,
+        target_course_stats: artifacts.target_course_stats.clone(),
         tool_followups,
         notes,
         time_limit_reached: artifacts.time_limit_reached,
@@ -878,6 +1021,7 @@ fn build_per_course_metrics(
                     centrality: metric_stats_json(&s.centrality),
                     delay: metric_stats_json(&s.delay),
                     blocking: metric_stats_json(&s.blocking),
+                    chain_length: metric_stats_json(&s.chain_length),
                     placeholder,
                 })
         })
@@ -1047,6 +1191,7 @@ pub fn execute_json(
     include_placeholder_metrics: bool,
     random_seed: Option<u64>,
     analysis_timeout_seconds: Option<u64>,
+    target_course: Option<&str>,
 ) -> String {
     let response = execute(
         yaml_content,
@@ -1058,6 +1203,7 @@ pub fn execute_json(
         include_placeholder_metrics,
         random_seed,
         analysis_timeout_seconds,
+        target_course,
     );
     serde_json::to_string_pretty(&response)
         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
@@ -1407,6 +1553,7 @@ courses:
             false,
             None,
             None,
+            None,
         );
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
@@ -1459,6 +1606,7 @@ courses:
             false,
             None,
             None,
+            None,
         );
         assert!(capped.success, "error: {:?}", capped.error);
         assert!(
@@ -1481,6 +1629,7 @@ courses:
             false,
             None,
             None,
+            None,
         );
         assert!(full.success, "error: {:?}", full.error);
         assert!(
@@ -1498,7 +1647,7 @@ courses:
         // Direct coverage of the shared pipeline entry point. Every artifact
         // field must be populated so sibling tools (the HTML report) don't
         // have to defensively check for empty/None state.
-        let artifacts = build_artifacts(TEST_YAML, Some(10), None, None, None)
+        let artifacts = build_artifacts(TEST_YAML, Some(10), None, None, None, None)
             .expect("build_artifacts on valid YAML");
         assert_eq!(artifacts.program.degree.name, "Test Program");
         assert_eq!(
@@ -1519,7 +1668,7 @@ courses:
         // AnalysisArtifacts deliberately doesn't derive Debug (it owns a
         // MetricsAggregator that wouldn't print usefully anyway), so use a
         // match instead of `unwrap_err` to interrogate the failure.
-        let result = build_artifacts("not: valid: yaml: {{", Some(10), None, None, None);
+        let result = build_artifacts("not: valid: yaml: {{", Some(10), None, None, None, None);
         let Err(err) = result else {
             panic!("expected parse failure for malformed YAML");
         };
@@ -1536,6 +1685,7 @@ courses:
             TEST_YAML,
             Some(10),
             Some(&["CS101".to_string()]),
+            None,
             None,
             None,
         )
@@ -1562,6 +1712,7 @@ courses:
             false,
             None,
             None,
+            None,
         );
         assert!(response.success);
         assert!(response.is_full_population);
@@ -1578,7 +1729,7 @@ courses:
     #[test]
     fn test_artifacts_is_full_population_when_under_cap() {
         // TEST_YAML has only one valid plan; max=500 means we never hit the cap.
-        let artifacts = build_artifacts(TEST_YAML, Some(500), None, None, None).unwrap();
+        let artifacts = build_artifacts(TEST_YAML, Some(500), None, None, None, None).unwrap();
         assert!(artifacts.is_full_population());
         assert_eq!(artifacts.population_size(), artifacts.plans_processed);
     }
@@ -1593,6 +1744,7 @@ courses:
             None,
             false,
             false,
+            None,
             None,
             None,
         );
@@ -1612,6 +1764,7 @@ courses:
             false,
             None,
             None,
+            None,
         );
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["success"].as_bool().unwrap());
@@ -1628,6 +1781,7 @@ courses:
             None,
             false,
             false,
+            None,
             None,
             None,
         );
@@ -1652,6 +1806,7 @@ courses:
             None,
             false,
             false,
+            None,
             None,
             None,
         );
@@ -1688,6 +1843,7 @@ courses:
             false,
             None,
             None,
+            None,
         );
         assert!(response.success);
         assert!(!response.selected_plans.is_empty());
@@ -1706,6 +1862,7 @@ courses:
             None,
             false,
             false,
+            None,
             None,
             None,
         ))
@@ -1728,6 +1885,7 @@ courses:
             None,
             false,
             false,
+            None,
             None,
             None,
         );
@@ -1760,6 +1918,7 @@ courses:
             false,
             None,
             None,
+            None,
         );
         assert!(response.success);
         let mut plans = response.selected_plans.into_iter();
@@ -1790,6 +1949,7 @@ courses:
             false,
             None,
             None,
+            None,
         );
         assert!(response.success);
         for plan in &response.selected_plans {
@@ -1811,6 +1971,7 @@ courses:
             Some(&[999]),
             false,
             false,
+            None,
             None,
             None,
         );
@@ -1839,6 +2000,7 @@ courses:
             false,
             None,
             None,
+            None,
         );
         assert!(response.success);
         assert!(!response.was_truncated);
@@ -1860,6 +2022,7 @@ courses:
             false,
             None,
             None,
+            None,
         );
         assert!(off.per_course_metrics.is_empty());
         let off_json = serde_json::to_string(&off).unwrap();
@@ -1878,6 +2041,7 @@ courses:
             None,
             true,
             false,
+            None,
             None,
             None,
         );
@@ -1937,6 +2101,7 @@ courses:
                 centrality: MetricStatsJson::default(),
                 delay: MetricStatsJson::default(),
                 blocking: MetricStatsJson::default(),
+                chain_length: MetricStatsJson::default(),
                 placeholder: false,
             },
             CourseMetricsJson {
@@ -1946,6 +2111,7 @@ courses:
                 centrality: MetricStatsJson::default(),
                 delay: MetricStatsJson::default(),
                 blocking: MetricStatsJson::default(),
+                chain_length: MetricStatsJson::default(),
                 placeholder: true,
             },
         ]
@@ -1977,7 +2143,7 @@ courses:
         // Exercise via the CSU sample which exercises the full pipeline.
         let yaml = crate::mcp::tools::samples::yaml_for_key("csu")
             .expect("csu sample key must resolve to embedded YAML");
-        let off = execute(yaml, Some(10), None, false, None, true, false, None, None);
+        let off = execute(yaml, Some(10), None, false, None, true, false, None, None, None);
         assert!(off.success, "error: {:?}", off.error);
         for entry in &off.per_course_metrics {
             assert!(
@@ -1988,7 +2154,7 @@ courses:
             assert!(!entry.placeholder);
         }
 
-        let on = execute(yaml, Some(10), None, false, None, true, true, None, None);
+        let on = execute(yaml, Some(10), None, false, None, true, true, None, None, None);
         assert!(on.success);
         for entry in &on.per_course_metrics {
             assert_eq!(
@@ -2035,6 +2201,7 @@ courses:
             false,
             Some(seed),
             None,
+            None,
         );
         assert_eq!(response.seed_used, seed);
     }
@@ -2045,7 +2212,7 @@ courses:
             .expect("csu sample key must resolve to embedded YAML");
         // build_artifacts directly so cache-eviction races don't muddy the
         // assertion — same path the cached_artifacts wrapper uses on miss.
-        let artifacts = build_artifacts(csu, Some(50), None, None, None)
+        let artifacts = build_artifacts(csu, Some(50), None, None, None, None)
             .expect("csu sample must analyze cleanly");
         assert_eq!(artifacts.seed_used, default_seed_for_yaml(csu));
     }
@@ -2063,6 +2230,7 @@ courses:
             false,
             None,
             None,
+            None,
         );
         assert!(response.is_full_population);
         assert_eq!(response.sampling_method, "exhaustive");
@@ -2078,6 +2246,7 @@ courses:
             None,
             false,
             false,
+            None,
             None,
             None,
         );
@@ -2101,6 +2270,7 @@ courses:
             false,
             None,
             None,
+            None,
         );
         assert!(!response.time_limit_reached);
         assert!(
@@ -2122,7 +2292,7 @@ courses:
 
     #[test]
     fn test_artifact_records_time_metrics() {
-        let artifacts = build_artifacts(TEST_YAML, Some(10), None, None, None).unwrap();
+        let artifacts = build_artifacts(TEST_YAML, Some(10), None, None, None, None).unwrap();
         assert!(!artifacts.time_limit_reached);
         // Clock granularity isn't guaranteed — `time_elapsed_ms == 0` is
         // legitimate on very fast machines. Just assert non-saturating.
@@ -2150,6 +2320,7 @@ courses:
             false,
             None,
             Some(1),
+            None,
         );
         assert!(response.success, "error: {:?}", response.error);
         assert!(
@@ -2191,7 +2362,7 @@ courses:
         // `0` clamps up to MIN_ANALYSIS_TIMEOUT_SECS (1 s) — would otherwise
         // build a deadline equal to `Instant::now()` and trip on iteration 0.
         // Just confirm we get artifacts back (i.e. no panic from `Duration`).
-        let artifacts_zero = build_artifacts(TEST_YAML, Some(10), None, None, Some(0))
+        let artifacts_zero = build_artifacts(TEST_YAML, Some(10), None, None, Some(0), None)
             .expect("0 must clamp up to 1 s and analyze cleanly");
         assert!(
             artifacts_zero.time_elapsed_ms < 2_000,
@@ -2202,7 +2373,7 @@ courses:
         // TEST_YAML completes in milliseconds, the budget is irrelevant —
         // we just need the call to succeed without overflow on the deadline
         // construction.
-        let artifacts_huge = build_artifacts(TEST_YAML, Some(10), None, None, Some(100_000))
+        let artifacts_huge = build_artifacts(TEST_YAML, Some(10), None, None, Some(100_000), None)
             .expect("100_000 must clamp down to 600 s and analyze cleanly");
         assert!(
             !artifacts_huge.time_limit_reached,
@@ -2217,9 +2388,9 @@ courses:
         // cache entries (otherwise a long-deadline retry would see the
         // earlier short-deadline truncated result).
         use std::sync::Arc;
-        let a = crate::mcp::cache::cached_artifacts(TEST_YAML, Some(10), None, None, Some(30))
+        let a = crate::mcp::cache::cached_artifacts(TEST_YAML, Some(10), None, None, Some(30), None)
             .expect("first build");
-        let b = crate::mcp::cache::cached_artifacts(TEST_YAML, Some(10), None, None, Some(60))
+        let b = crate::mcp::cache::cached_artifacts(TEST_YAML, Some(10), None, None, Some(60), None)
             .expect("second build");
         assert!(
             !Arc::ptr_eq(&a, &b),

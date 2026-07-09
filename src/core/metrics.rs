@@ -15,6 +15,15 @@ pub type ComplexityByCourse = HashMap<String, usize>;
 /// Centrality per course keyed by course code (e.g., "CS2510").
 pub type CentralityByCourse = HashMap<String, usize>;
 
+/// Chain length per course keyed by course code (e.g., "CS2510").
+///
+/// Chain length is the number of courses in the longest incoming prerequisite
+/// chain up to and including the course itself. A standalone course has a
+/// chain length of 1; a course with one prerequisite has a chain length of 2,
+/// and so on. This answers "how many semesters deep into the program is this
+/// course?" independent of what comes after it.
+pub type ChainLengthByCourse = HashMap<String, usize>;
+
 /// Metrics for a single course
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CourseMetrics {
@@ -26,6 +35,8 @@ pub struct CourseMetrics {
     pub complexity: usize,
     /// Centrality (sum of path lengths through this course)
     pub centrality: usize,
+    /// Chain length (longest incoming prerequisite chain, including this course)
+    pub chain_length: usize,
 }
 
 impl CourseMetrics {
@@ -52,6 +63,7 @@ pub fn compute_all_metrics(dag: &DAG) -> Result<CurriculumMetrics, String> {
     let blocking = compute_blocking(dag)?;
     let complexity = compute_complexity(&delay, &blocking)?;
     let centrality = compute_centrality(dag)?;
+    let chain_length = compute_chain_length(dag)?;
 
     let mut metrics = CurriculumMetrics::new();
 
@@ -60,6 +72,7 @@ pub fn compute_all_metrics(dag: &DAG) -> Result<CurriculumMetrics, String> {
         let blocking_val = blocking.get(course).copied().unwrap_or(0);
         let complexity_val = complexity.get(course).copied().unwrap_or(0);
         let centrality_val = centrality.get(course).copied().unwrap_or(0);
+        let chain_length_val = chain_length.get(course).copied().unwrap_or(1);
 
         metrics.insert(
             course.clone(),
@@ -68,6 +81,7 @@ pub fn compute_all_metrics(dag: &DAG) -> Result<CurriculumMetrics, String> {
                 blocking: blocking_val,
                 complexity: complexity_val,
                 centrality: centrality_val,
+                chain_length: chain_length_val,
             },
         );
     }
@@ -218,6 +232,38 @@ pub fn compute_centrality(dag: &DAG) -> Result<CentralityByCourse, String> {
     }
 
     Ok(centrality)
+}
+
+/// Compute the chain length for every course in the requisite graph.
+///
+/// Chain length is the number of courses in the longest incoming prerequisite
+/// chain ending at (and including) the course. A standalone course with no
+/// prerequisites has a chain length of 1; a course one step deep has 2; etc.
+///
+/// This differs from delay factor, which measures the longest *full* path
+/// through the course (both incoming prerequisites and outgoing dependents).
+/// Chain length only looks backwards — it answers "how far into the program
+/// must a student get before they can take this course?"
+///
+/// # Errors
+///
+/// Returns an error if the graph contains a cycle.
+pub fn compute_chain_length(dag: &DAG) -> Result<ChainLengthByCourse, String> {
+    let outgoing = build_outgoing_edges(dag);
+    let indegree = build_indegree_counts(dag);
+    let topo_order = topological_order(&dag.courses, &outgoing, &indegree)?;
+    let longest_to = longest_paths_to(&topo_order, dag);
+
+    let chain_lengths = dag
+        .courses
+        .iter()
+        .map(|course| {
+            let incoming_edges = longest_to.get(course).copied().unwrap_or(0);
+            (course.clone(), incoming_edges + 1)
+        })
+        .collect();
+
+    Ok(chain_lengths)
 }
 
 /// Enumerate all paths from source to sink and update centrality counts.
@@ -770,6 +816,7 @@ mod tests {
         assert_eq!(a_metrics.blocking, 2);
         assert_eq!(a_metrics.complexity, 5);
         assert_eq!(a_metrics.centrality, 0);
+        assert_eq!(a_metrics.chain_length, 1);
 
         // Check B
         let b_metrics = all_metrics.get("B").expect("B metrics");
@@ -777,6 +824,7 @@ mod tests {
         assert_eq!(b_metrics.blocking, 1);
         assert_eq!(b_metrics.complexity, 4);
         assert_eq!(b_metrics.centrality, 3);
+        assert_eq!(b_metrics.chain_length, 2);
 
         // Check C
         let c_metrics = all_metrics.get("C").expect("C metrics");
@@ -784,6 +832,61 @@ mod tests {
         assert_eq!(c_metrics.blocking, 0);
         assert_eq!(c_metrics.complexity, 3);
         assert_eq!(c_metrics.centrality, 0);
+        assert_eq!(c_metrics.chain_length, 3);
+    }
+
+    #[test]
+    fn computes_chain_length_on_simple_chain() {
+        // CS1 -> CS2 -> CS3: lengths should be 1, 2, 3
+        let mut dag = DAG::new();
+        dag.add_prerequisite("CS2".to_string(), "CS1");
+        dag.add_prerequisite("CS3".to_string(), "CS2");
+
+        let chain = compute_chain_length(&dag).expect("chain lengths");
+
+        assert_eq!(chain.get("CS1"), Some(&1));
+        assert_eq!(chain.get("CS2"), Some(&2));
+        assert_eq!(chain.get("CS3"), Some(&3));
+    }
+
+    #[test]
+    fn chain_length_standalone_course_is_one() {
+        let mut dag = DAG::new();
+        dag.add_course("A".to_string());
+
+        let chain = compute_chain_length(&dag).expect("chain lengths");
+        assert_eq!(chain.get("A"), Some(&1));
+    }
+
+    #[test]
+    fn chain_length_diamond_uses_longest_incoming_path() {
+        // A -> B, A -> C, B -> D, C -> D
+        // D has two paths from A: length 3 via either B or C
+        let mut dag = DAG::new();
+        dag.add_prerequisite("B".to_string(), "A");
+        dag.add_prerequisite("C".to_string(), "A");
+        dag.add_prerequisite("D".to_string(), "B");
+        dag.add_prerequisite("D".to_string(), "C");
+
+        let chain = compute_chain_length(&dag).expect("chain lengths");
+
+        assert_eq!(chain.get("A"), Some(&1));
+        assert_eq!(chain.get("B"), Some(&2));
+        assert_eq!(chain.get("C"), Some(&2));
+        assert_eq!(chain.get("D"), Some(&3));
+    }
+
+    #[test]
+    fn chain_length_counts_corequisites_as_edges() {
+        let mut dag = DAG::new();
+        dag.add_corequisite("B".to_string(), "A");
+        dag.add_prerequisite("C".to_string(), "B");
+
+        let chain = compute_chain_length(&dag).expect("chain lengths");
+
+        assert_eq!(chain.get("A"), Some(&1));
+        assert_eq!(chain.get("B"), Some(&2));
+        assert_eq!(chain.get("C"), Some(&3));
     }
 
     #[test]
@@ -854,6 +957,7 @@ mod tests {
             blocking: 3,
             complexity: 8,
             centrality: 10,
+            chain_length: 4,
         };
 
         let (complexity, blocking, delay, centrality) = metrics.as_export_tuple();

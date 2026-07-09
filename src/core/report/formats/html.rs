@@ -235,6 +235,7 @@ mod tests {
                 blocking: 1,
                 delay: 1,
                 centrality: 1,
+                chain_length: 1,
             },
         );
         metrics.insert(
@@ -244,6 +245,7 @@ mod tests {
                 blocking: 0,
                 delay: 2,
                 centrality: 1,
+                chain_length: 2,
             },
         );
 

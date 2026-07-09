@@ -207,6 +207,7 @@ fn test_metrics_aggregation_integration() {
                 centrality: 3 + (plan_num % 3),
                 delay: 2 + (plan_num % 4),
                 blocking: 3 + (plan_num % 3),
+                chain_length: 1,
             },
         );
 
@@ -218,6 +219,7 @@ fn test_metrics_aggregation_integration() {
                 centrality: 5 + (plan_num % 5),
                 delay: 4 + (plan_num % 3),
                 blocking: 4 + (plan_num % 4),
+                chain_length: 2,
             },
         );
 
@@ -229,6 +231,7 @@ fn test_metrics_aggregation_integration() {
                 centrality: 8 + (plan_num % 4),
                 delay: 6 + (plan_num % 5),
                 blocking: 6 + (plan_num % 6),
+                chain_length: 3,
             },
         );
 

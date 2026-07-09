@@ -322,6 +322,7 @@ mod tests {
                     centrality: c / 2,
                     delay: c / 5,
                     blocking: c / 3,
+                    chain_length: 1,
                 },
             );
             agg.add_plan(&cm, 4.0);

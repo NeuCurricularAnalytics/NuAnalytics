@@ -272,6 +272,23 @@ pub enum DegreeSubcommand {
         /// metrics across the programs. The value is the school name.
         #[arg(long, value_name = "NAME")]
         school: Option<String>,
+
+        /// Compute earliest-semester stats for a specific target course and
+        /// print them as JSON to stdout. When set alongside `--no-report
+        /// --no-csv`, this is the fastest way to query a single course's
+        /// first-semester number without generating full reports.
+        ///
+        /// Example: --target-course CSE475
+        #[arg(long, value_name = "COURSE_ID")]
+        target_course: Option<String>,
+
+        /// When `--target-course` is set, write the full analysis JSON
+        /// (course complexity, plan stats, target_course_stats, etc.) to
+        /// this path in addition to printing `target_course_stats` to stdout.
+        ///
+        /// Example: --metrics-out metrics/Tulane__CMPS2200.json
+        #[arg(long, value_name = "PATH", requires = "target_course")]
+        metrics_out: Option<PathBuf>,
     },
 
     /// Trim a degree program to a single entry path per course.
@@ -363,6 +380,43 @@ pub enum DegreeSubcommand {
         /// Write the schema to this file instead of stdout.
         #[arg(short, long, value_name = "PATH")]
         out: Option<PathBuf>,
+    },
+
+    /// Normalize degree file(s) to a flat, format-agnostic course set.
+    ///
+    /// Accepts unified JSON, YAML, or raw ai-landscape cluster pipeline files
+    /// (the same three formats as `degree convert`). Each input produces one
+    /// `<stem>.normalized.json` file per program with courses keyed by
+    /// normalized code and prerequisites in AND-of-OR list form.
+    ///
+    /// Intended as the common representation for test-suite comparisons between
+    /// automated fetchers (e.g. `degree-author` vs. the ai-landscape pipeline).
+    ///
+    /// # Examples
+    /// ```sh
+    /// # Normalize a cluster pipeline file (one output per program)
+    /// nuanalytics degree normalize Northeastern_University.json -o out/
+    ///
+    /// # Normalize a unified JSON (single output)
+    /// nuanalytics degree normalize neu__bscs.unified.json -o out/
+    ///
+    /// # Normalize a degree-author YAML
+    /// nuanalytics degree normalize neu-khoury-bscs-boston.yaml -o out/
+    /// ```
+    Normalize {
+        /// Source file(s). Shell wildcards are expanded by the shell.
+        #[arg(value_name = "FILES", num_args = 1..)]
+        files: Vec<PathBuf>,
+
+        /// Output destination. Without `-o`, each normalized file is written
+        /// next to its input as `<stem>.normalized.json`. With `-o`, the value
+        /// is a file (single non-cluster input only) or a directory.
+        #[arg(short, long, value_name = "PATH")]
+        out: Option<PathBuf>,
+
+        /// Pretty-print the JSON output (default is compact, one line).
+        #[arg(long)]
+        pretty: bool,
     },
 }
 

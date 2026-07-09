@@ -51,6 +51,8 @@ pub struct CourseAggregator {
     pub delay: WelfordAccumulator,
     /// Blocking factor accumulator
     pub blocking: WelfordAccumulator,
+    /// Chain length accumulator
+    pub chain_length: WelfordAccumulator,
     /// Reservoir for complexity quantiles
     pub complexity_reservoir: QuantileReservoir,
 }
@@ -64,6 +66,7 @@ impl CourseAggregator {
             centrality: WelfordAccumulator::new(),
             delay: WelfordAccumulator::new(),
             blocking: WelfordAccumulator::new(),
+            chain_length: WelfordAccumulator::new(),
             complexity_reservoir: QuantileReservoir::new(reservoir_size),
         }
     }
@@ -75,6 +78,7 @@ impl CourseAggregator {
         self.centrality.push(metrics.centrality as f64);
         self.delay.push(metrics.delay as f64);
         self.blocking.push(metrics.blocking as f64);
+        self.chain_length.push(metrics.chain_length as f64);
         self.complexity_reservoir.push(metrics.complexity as f64);
     }
 
@@ -91,6 +95,7 @@ impl CourseAggregator {
         self.centrality.merge(&other.centrality);
         self.delay.merge(&other.delay);
         self.blocking.merge(&other.blocking);
+        self.chain_length.merge(&other.chain_length);
         self.complexity_reservoir.merge(&other.complexity_reservoir);
     }
 }
@@ -116,6 +121,8 @@ pub struct AggregatedCourseStats {
     pub delay: MetricStats,
     /// Blocking factor statistics
     pub blocking: MetricStats,
+    /// Chain length statistics
+    pub chain_length: MetricStats,
 }
 
 /// Statistics for a single metric
@@ -210,6 +217,10 @@ pub struct AggregatedDegreeStats {
     pub longest_delay: MetricStats,
     /// Total credits statistics
     pub total_credits: MetricStats,
+    /// Average chain length per plan (mean of per-course chain lengths)
+    pub avg_chain_length: MetricStats,
+    /// Minimum chain length per plan (shortest chain in each plan)
+    pub min_chain_length: MetricStats,
 }
 
 /// Quantile storage mode - either exact or approximate
@@ -291,6 +302,10 @@ pub struct MetricsAggregator {
     degree_delay: WelfordAccumulator,
     /// Degree-level credits accumulator
     degree_credits: WelfordAccumulator,
+    /// Degree-level average chain length accumulator
+    degree_avg_chain_length: WelfordAccumulator,
+    /// Degree-level minimum chain length accumulator
+    degree_min_chain_length: WelfordAccumulator,
     /// Storage for degree complexity quantiles
     degree_complexity_quantiles: QuantileStorage,
     /// Storage for degree delay quantiles
@@ -311,6 +326,8 @@ impl MetricsAggregator {
             degree_complexity: WelfordAccumulator::new(),
             degree_delay: WelfordAccumulator::new(),
             degree_credits: WelfordAccumulator::new(),
+            degree_avg_chain_length: WelfordAccumulator::new(),
+            degree_min_chain_length: WelfordAccumulator::new(),
             degree_complexity_quantiles: QuantileStorage::new(exact_mode, reservoir_size),
             degree_delay_quantiles: QuantileStorage::new(exact_mode, reservoir_size),
             plan_count: 0,
@@ -332,11 +349,25 @@ impl MetricsAggregator {
         // Compute degree-level metrics
         let total_complexity: usize = course_metrics.values().map(|m| m.complexity).sum();
         let longest_delay: usize = course_metrics.values().map(|m| m.delay).max().unwrap_or(0);
+        let n = course_metrics.len();
+        let chain_len_sum: usize = course_metrics.values().map(|m| m.chain_length).sum();
+        let avg_chain_length = if n > 0 {
+            chain_len_sum as f64 / n as f64
+        } else {
+            0.0
+        };
+        let min_chain_length: usize = course_metrics
+            .values()
+            .map(|m| m.chain_length)
+            .min()
+            .unwrap_or(0);
 
         // Update Welford accumulators for mean/stddev
         self.degree_complexity.push(total_complexity as f64);
         self.degree_delay.push(longest_delay as f64);
         self.degree_credits.push(total_credits);
+        self.degree_avg_chain_length.push(avg_chain_length);
+        self.degree_min_chain_length.push(min_chain_length as f64);
 
         // Update quantile storage
         self.degree_complexity_quantiles
@@ -375,6 +406,8 @@ impl MetricsAggregator {
                 &self.degree_delay_quantiles,
             ),
             total_credits: MetricStats::from_welford_only(&self.degree_credits),
+            avg_chain_length: MetricStats::from_welford_only(&self.degree_avg_chain_length),
+            min_chain_length: MetricStats::from_welford_only(&self.degree_min_chain_length),
         }
     }
 
@@ -393,6 +426,7 @@ impl MetricsAggregator {
                 centrality: MetricStats::from_welford_only(&agg.centrality),
                 delay: MetricStats::from_welford_only(&agg.delay),
                 blocking: MetricStats::from_welford_only(&agg.blocking),
+                chain_length: MetricStats::from_welford_only(&agg.chain_length),
             })
     }
 
@@ -410,6 +444,10 @@ impl MetricsAggregator {
         self.degree_complexity.merge(&other.degree_complexity);
         self.degree_delay.merge(&other.degree_delay);
         self.degree_credits.merge(&other.degree_credits);
+        self.degree_avg_chain_length
+            .merge(&other.degree_avg_chain_length);
+        self.degree_min_chain_length
+            .merge(&other.degree_min_chain_length);
         self.degree_complexity_quantiles
             .merge(&other.degree_complexity_quantiles);
         self.degree_delay_quantiles
@@ -450,6 +488,7 @@ mod tests {
             centrality: 5,
             delay: 3,
             blocking: 7,
+            chain_length: 2,
         }
     }
 
@@ -462,6 +501,7 @@ mod tests {
             centrality: 10,
             delay: 6,
             blocking: 14,
+            chain_length: 3,
         });
 
         assert_eq!(agg.plan_count(), 2);
@@ -494,6 +534,7 @@ mod tests {
                     centrality: i * 5,
                     delay: i * 2,
                     blocking: i * 3,
+                    chain_length: i,
                 },
             );
             agg.add_plan(&course_metrics, (i * 4) as f64);
@@ -535,6 +576,7 @@ mod tests {
                     centrality: i / 2,
                     delay: i % 10 + 1,
                     blocking: i / 3,
+                    chain_length: 1,
                 },
             );
             course_metrics.insert(
@@ -544,6 +586,7 @@ mod tests {
                     centrality: i,
                     delay: (i % 10) + 2,
                     blocking: i / 2,
+                    chain_length: 2,
                 },
             );
             agg.add_plan(&course_metrics, 8.0);

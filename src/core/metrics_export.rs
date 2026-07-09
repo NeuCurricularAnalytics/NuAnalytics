@@ -375,7 +375,7 @@ fn write_csv_header(
     writeln!(file, "Courses")?;
     writeln!(
         file,
-        "Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality"
+        "Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality,Chain Length"
     )?;
 
     Ok(())
@@ -407,9 +407,10 @@ fn write_csv_courses(
         let coreqs = format_course_keys_as_csv(course.corequisites.iter(), school);
         let strict_coreqs = format_course_keys_as_csv(course.strict_corequisites.iter(), school);
 
-        let (complexity, blocking, delay, centrality) = metrics_data.map_or((0, 0, 0, 0), |m| {
-            (m.complexity, m.blocking, m.delay, m.centrality)
-        });
+        let (complexity, blocking, delay, centrality, chain_length) =
+            metrics_data.map_or((0, 0, 0, 0, 0), |m| {
+                (m.complexity, m.blocking, m.delay, m.centrality, m.chain_length)
+            });
 
         // Scale complexity for quarter systems
         #[allow(clippy::cast_precision_loss)]
@@ -417,7 +418,7 @@ fn write_csv_courses(
 
         writeln!(
             file,
-            "{},{},\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",{},\"{}\",\"{}\",{:.1},{},{},{}",
+            "{},{},\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",{},\"{}\",\"{}\",{:.1},{},{},{},{}",
             csv_id,
             course.name,
             course.prefix,
@@ -431,7 +432,8 @@ fn write_csv_courses(
             scaled_complexity,
             blocking,
             delay,
-            centrality
+            centrality,
+            chain_length
         )?;
     }
 

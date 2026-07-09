@@ -119,7 +119,6 @@ pub fn print_graph(degree_path: &Path, verbose: bool) -> Result<(), String> {
 
     Ok(())
 }
-
 /// Load degree program and build course graph
 fn load_and_build_graph(
     degree_path: &Path,
@@ -483,6 +482,12 @@ pub struct AnalyzeOptions {
     /// When set, treat the inputs as programs of one school and also emit a
     /// combined `<school>_school_report.json` rolling up degree-level metrics.
     pub school: Option<String>,
+    /// When set, compute and print earliest-semester stats for this course as
+    /// JSON to stdout. Pair with `--no-report --no-csv` for a fast query.
+    pub target_course: Option<String>,
+    /// When set alongside `target_course`, write the full analysis JSON
+    /// (course complexity, plan stats, target_course_stats) to this path.
+    pub metrics_out: Option<PathBuf>,
 }
 
 /// Run `degree validate` over one or more files.
@@ -954,7 +959,12 @@ fn analyze_child_flags(o: &AnalyzeOptions) -> Vec<String> {
 fn run_analyze_inprocess(files: &[PathBuf], options: &AnalyzeOptions, config: &Config) {
     let Some(school_name) = options.school.clone() else {
         run_batch(files, |path| {
-            analyze_degree(path, options, config).map(|_| ())
+            match analyze_degree(path, options, config) {
+                Ok(_) => Ok(()),
+                // Sentinel used by --target-course fast path: not a real error.
+                Err(ref e) if e.starts_with("__target_course_done__") => Ok(()),
+                Err(e) => Err(e),
+            }
         });
         return;
     };
@@ -1662,6 +1672,42 @@ fn analyze_degree(
     options: &AnalyzeOptions,
     config: &Config,
 ) -> Result<nu_analytics::core::report::unified_report::ProgramRollup, String> {
+    // Fast path: when --target-course is set, call execute_json directly and
+    // print target_course_stats as JSON to stdout, then exit. This avoids
+    // generating full reports and is the intended interface for the testsuite.
+    if let Some(ref course_id) = options.target_course {
+        let raw = std::fs::read_to_string(degree_path)
+            .map_err(|e| format!("Failed to read {}: {e}", degree_path.display()))?;
+        let json_out = nu_analytics::mcp::tools::analyze::execute_json(
+            &raw,
+            options.max_plans,
+            options.include_courses.as_deref(),
+            false,
+            None,
+            false,
+            false,
+            None,
+            None,
+            Some(course_id.as_str()),
+        );
+        let response: serde_json::Value =
+            serde_json::from_str(&json_out).unwrap_or(serde_json::json!({"error": json_out}));
+        let stats = &response["target_course_stats"];
+        println!(
+            "{}",
+            serde_json::to_string_pretty(stats).unwrap_or_default()
+        );
+        // Optionally save the full analysis JSON to disk.
+        if let Some(ref out_path) = options.metrics_out {
+            if let Some(parent) = out_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(out_path, &json_out);
+        }
+        // Return a minimal rollup — caller ignores it in this mode.
+        return Err(format!("__target_course_done__{course_id}"));
+    }
+
     // Load and validate the degree program, then run the shared single-degree
     // analysis on it. This is the in-process, non-worker-pool seam shared with
     // the `--from-db` path (which supplies an already-loaded program).
@@ -1784,6 +1830,139 @@ pub fn run_schema(out: Option<&Path>) {
     } else {
         print!("{UNIFIED_DEGREE_SCHEMA}");
     }
+}
+
+/// Run `degree normalize` over one or more inputs, emitting a flat normalized
+/// course set per program as `<stem>.normalized.json`.
+///
+/// Accepts the same three input shapes as `degree convert`:
+/// - Cluster pipeline JSON (`course_verifier` / `course_scraper`) → one file per program
+/// - Unified degree JSON → one file
+/// - Degree YAML → one file
+pub fn run_normalize(files: &[PathBuf], out: Option<&Path>, pretty: bool, verbose: bool) {
+    let dir_mode = out.map_or(false, |p| {
+        p.is_dir() || p.to_string_lossy().ends_with(std::path::MAIN_SEPARATOR)
+    }) || files.len() > 1;
+
+    let mut total_programs: usize = 0;
+    let mut total_warnings: usize = 0;
+
+    for file in files {
+        match normalize_file(file, out, dir_mode, pretty, verbose) {
+            Ok((programs, warnings)) => {
+                total_programs += programs;
+                total_warnings += warnings;
+            }
+            Err(e) => eprintln!("✗ {}: {e}", file.display()),
+        }
+    }
+
+    if files.len() > 1 {
+        println!("Normalized {total_programs} program(s) with {total_warnings} warning(s)");
+    }
+}
+
+/// Normalize one input file. Returns `(programs_written, warnings)`.
+fn normalize_file(
+    input: &Path,
+    out: Option<&Path>,
+    dir_mode: bool,
+    pretty: bool,
+    verbose: bool,
+) -> Result<(usize, usize), String> {
+    use nu_analytics::core::degree::{
+        convert_landscape, extract_cluster_programs, normalize_program,
+    };
+
+    let contents = std::fs::read_to_string(input)
+        .map_err(|e| format!("Failed to read {}: {e}", input.display()))?;
+
+    if is_json_path(input) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) {
+            if let Some(cluster_programs) = extract_cluster_programs(&value) {
+                let out_dir = cluster_out_dir(input, out);
+                let stem = file_stem_or(input, "degree");
+                let mut warnings = 0usize;
+                for (prog_name, landscape_prog) in &cluster_programs {
+                    let result = convert_landscape(landscape_prog);
+                    warnings += result.warnings.len();
+                    let normalized = normalize_program(&result.program, None, Some(prog_name));
+                    let out_path = out_dir.join(format!(
+                        "{stem}{}{}.normalized.json",
+                        CLUSTER_NAME_SEP,
+                        slug_filename(prog_name),
+                    ));
+                    write_normalized(&normalized, &out_path, pretty, verbose)?;
+                }
+                println!(
+                    "✓ {}: {} program(s), {} warning(s)",
+                    input.display(),
+                    cluster_programs.len(),
+                    warnings,
+                );
+                return Ok((cluster_programs.len(), warnings));
+            }
+        }
+    }
+
+    // Single-program path: unified JSON or YAML.
+    let program =
+        load_degree_auto(input).map_err(|e| format!("Failed to load {}: {e}", input.display()))?;
+    let normalized = normalize_program(&program, None, None);
+    let out_path = resolve_normalize_output(input, out, dir_mode);
+    write_normalized(&normalized, &out_path, pretty, verbose)?;
+    println!("✓ {} -> {}", input.display(), out_path.display());
+    Ok((1, 0))
+}
+
+/// Output path for a single-program normalize: `<stem>.normalized.json`.
+fn resolve_normalize_output(input: &Path, out: Option<&Path>, dir_mode: bool) -> PathBuf {
+    let stem = file_stem_or(input, "degree");
+    resolve_output_path(input, out, dir_mode, &format!("{stem}.normalized.json"))
+}
+
+/// Serialize a [`NormalizedProgram`] and write it to `path`.
+fn write_normalized(
+    normalized: &nu_analytics::core::degree::NormalizedProgram,
+    path: &Path,
+    pretty: bool,
+    verbose: bool,
+) -> Result<(), String> {
+    let json = if pretty {
+        serde_json::to_string_pretty(normalized)
+    } else {
+        serde_json::to_string(normalized)
+    }
+    .map_err(|e| format!("Failed to serialize normalized output: {e}"))?;
+
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+        }
+    }
+    std::fs::write(path, &json).map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+
+    if verbose {
+        eprintln!("  wrote {}", path.display());
+    }
+    Ok(())
+}
+
+/// Build a filesystem-safe slug from an arbitrary program name for use in
+/// cluster output filenames (mirrors the slug logic in `convert_cluster`).
+fn slug_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string()
 }
 
 /// Run `degree convert` over one or more inputs, emitting unified JSON.

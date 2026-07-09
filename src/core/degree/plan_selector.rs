@@ -29,6 +29,9 @@ pub struct PlanScore {
 
     /// Whether this plan assumes calculus readiness
     pub is_calc_ready: bool,
+
+    /// Average chain length across all courses in the plan
+    pub avg_chain_length: f64,
 }
 
 impl PlanScore {
@@ -309,6 +312,13 @@ impl<'a> PlanSelector<'a> {
 
         let total_complexity: usize = course_metrics.values().map(|m| m.complexity).sum();
         let longest_delay = course_metrics.values().map(|m| m.delay).max().unwrap_or(0);
+        let n = course_metrics.len();
+        #[allow(clippy::cast_precision_loss)]
+        let avg_chain_length = if n > 0 {
+            course_metrics.values().map(|m| m.chain_length).sum::<usize>() as f64 / n as f64
+        } else {
+            0.0
+        };
 
         // Find the course(s) with the longest delay and trace back to find the chain
         // Use plan_dag for chain computation too
@@ -325,6 +335,7 @@ impl<'a> PlanSelector<'a> {
             longest_delay,
             longest_delay_chain,
             is_calc_ready: false,
+            avg_chain_length,
         };
 
         ScoredPlan {
@@ -438,7 +449,7 @@ impl<'a> PlanSelector<'a> {
     ///
     /// A plan is calc-ready if it contains calculus courses.
     /// All such plans are considered calc-ready candidates.
-    fn is_calc_ready_plan(&self, variant: &PlanVariant) -> bool {
+    pub fn is_calc_ready_plan(&self, variant: &PlanVariant) -> bool {
         // Check if any course matches calculus course codes or patterns
         variant.courses.iter().any(|course| {
             // Direct match with calculus courses
@@ -677,6 +688,7 @@ mod tests {
                         centrality: 3 + i,
                         delay: 2 + i,
                         blocking: 1 + i,
+                        chain_length: 1 + i,
                     },
                 )
             })
@@ -691,6 +703,7 @@ mod tests {
             longest_delay: 6,
             longest_delay_chain: Vec::new(),
             is_calc_ready: false,
+            avg_chain_length: 2.5,
         };
         let score2 = PlanScore {
             terms_required: 9,
@@ -698,6 +711,7 @@ mod tests {
             longest_delay: 7,
             longest_delay_chain: Vec::new(),
             is_calc_ready: false,
+            avg_chain_length: 3.0,
         };
 
         assert!(score1.is_shorter_than(&score2));
@@ -795,6 +809,7 @@ mod tests {
                 longest_delay: 0,
                 longest_delay_chain: vec![],
                 is_calc_ready: false,
+                avg_chain_length: 0.0,
             },
             schedule: {
                 use crate::core::report::term_scheduler::Term;
@@ -835,6 +850,7 @@ mod tests {
                 longest_delay: 2,
                 longest_delay_chain: vec![],
                 is_calc_ready: is_calc,
+                avg_chain_length: 0.0,
             },
             schedule: TermPlan {
                 terms: vec![Term {

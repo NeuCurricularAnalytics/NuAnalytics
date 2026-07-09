@@ -531,7 +531,7 @@ async fn fetch_program_detail(client: &Arc<DbClient>, id: &str) -> Option<Progra
 /// payload so a single bad YAML doesn't fail the whole compare call.
 fn compute_compare_metrics(yaml: &str, max_plans: Option<usize>) -> serde_json::Value {
     let response = crate::mcp::tools::analyze::execute(
-        yaml, max_plans, None, false, None, false, false, None, None,
+        yaml, max_plans, None, false, None, false, false, None, None, None,
     );
     if !response.success {
         return serde_json::json!({

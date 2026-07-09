@@ -27,6 +27,7 @@ pub mod course_reference;
 pub mod gen_ed_tracker;
 pub mod json_parser;
 pub mod landscape_convert;
+pub mod normalize;
 pub mod plan_generator;
 pub mod plan_selector;
 pub mod plan_validation;
@@ -98,3 +99,6 @@ pub use plan_validation::{
 
 // Re-export gen-ed tracking types
 pub use gen_ed_tracker::{GenEdSummary, GenEdTracker};
+
+// Re-export normalize types
+pub use normalize::{normalize_program, NormalizedCourse, NormalizedProgram};
