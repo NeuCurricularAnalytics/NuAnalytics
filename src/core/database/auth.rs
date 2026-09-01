@@ -65,11 +65,13 @@ pub fn load_auth_state(path: &Path) -> Option<AuthState> {
 
 /// Persist an auth state to disk.
 ///
-/// Creates the parent directory if it does not exist.
+/// Creates the parent directory if it does not exist, and restricts the file to
+/// owner-only access — it holds a live access token and refresh token.
 ///
 /// # Errors
 ///
-/// Returns a string describing the failure if the file cannot be written.
+/// Returns a string describing the failure if the file cannot be written or its
+/// permissions cannot be tightened.
 pub fn save_auth_state(path: &Path, state: &AuthState) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -77,7 +79,23 @@ pub fn save_auth_state(path: &Path, state: &AuthState) -> Result<(), String> {
     }
     let content =
         serde_json::to_string_pretty(state).map_err(|e| format!("Serialization error: {e}"))?;
-    std::fs::write(path, content).map_err(|e| format!("Cannot write auth file: {e}"))
+    std::fs::write(path, content).map_err(|e| format!("Cannot write auth file: {e}"))?;
+    restrict_permissions(path)
+}
+
+/// Restrict the auth file to `0600` so other users on the machine cannot read
+/// the tokens it holds.
+#[cfg(unix)]
+fn restrict_permissions(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("Cannot restrict auth file permissions: {e}"))
+}
+
+/// No-op on non-Unix platforms, which have no comparable mode bits.
+#[cfg(not(unix))]
+fn restrict_permissions(_path: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 /// Delete the saved auth state from disk (sign out).
@@ -281,6 +299,39 @@ mod tests {
         assert_eq!(loaded.refresh_token, state.refresh_token);
         assert_eq!(loaded.expires_at, state.expires_at);
         assert_eq!(loaded.user_email, state.user_email);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_save_auth_state_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // The file holds a live access + refresh token, so it must not be
+        // readable by other users on the machine.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("auth.json");
+        save_auth_state(&path, &make_state(3600)).unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "unexpected mode {:o}", mode & 0o777);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_save_auth_state_tightens_an_existing_loose_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // A file written by an older build (or `umask 022`) is already 0644 on
+        // disk; overwriting it must still bring the mode back down.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("auth.json");
+        std::fs::write(&path, "{}").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        save_auth_state(&path, &make_state(3600)).unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "unexpected mode {:o}", mode & 0o777);
     }
 
     #[test]
