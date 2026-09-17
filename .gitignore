@@ -36,3 +36,6 @@ server.log
 node_modules/
 
 ipeds_data/
+
+# Machine-local Claude handoff notes (hostnames, absolute paths) — never commit
+CLAUDE.local.md

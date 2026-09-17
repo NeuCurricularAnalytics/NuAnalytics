@@ -20,14 +20,29 @@ verbose = true
 # ---------------------------------------------------------------------------
 # Database (Supabase)
 # ---------------------------------------------------------------------------
+# SECURITY: `endpoint` and `anon_key` ship BLANK and must stay that way.
+# This file is compiled in with include_str! and tracked in a PUBLIC repo, so any
+# value here is published. It is not merely cosmetic either: merge_defaults()
+# refills an EMPTY endpoint/anon_key from these defaults and load_home_config()
+# then SAVES the result -- so a non-blank value here silently re-points a
+# self-hosted user back at that backend and persists it. `config unset
+# database.endpoint` has the same effect.
+#
+# Each deployment configures its own backend:
+#   nuanalytics config set database.endpoint <url>
+#   nuanalytics config set database.anon_key  <key>
+#
+# Left blank, the tool reports "Database not configured. Set `endpoint` and
+# `anon_key` in [database] config." -- the correct outcome, since every feature
+# except the database ones works with no backend at all.
 [database]
 # Supabase project URL
-endpoint = "https://oaaqxtzkfcjcosilpbwi.supabase.co"
+endpoint = ""
 
 # Supabase anonymous (public) key — identifies the project on every
 # request and bootstraps the OAuth login flow. Does not authorise access
 # on its own; run `nuanalytics db login` once to obtain a user session.
-anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9hYXF4dHprZmNqY29zaWxwYndpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjQxNTQsImV4cCI6MjA5MDc0MDE1NH0.rJSEZV3-Wvq0uVnCVwduF3xPtnuc6J9ftbftLijiQZU"
+anon_key = ""
 
 # Enable database features (MCP database tools, IPEDS import, db login)
 enabled = true

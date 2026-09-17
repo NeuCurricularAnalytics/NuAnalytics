@@ -18,6 +18,57 @@ models, and `QueryFilters` need no changes at all.
 
 ---
 
+## Start here — make failures legible (NEXT STEP)
+
+The numbered sections below are grouped by **category, not priority**. Do the
+error-surfacing work first.
+
+Why this first: every item in it has already cost real debugging time during the
+migration, the changes are small and mutually independent, and until a failure names its
+own cause, verifying any *later* item is harder than it needs to be. None of it changes
+behaviour on the happy path, so the risk is low.
+
+Order, with the reasoning:
+
+1. **Surface `error_description` on a failed OAuth callback** — §3, `db.rs:294-297`.
+   Best value for effort in the whole document; it is a few lines. The only item that has
+   misdirected debugging *twice*. A precise GoTrue error —
+   `sql: Scan error on column index 3, name "confirmation_token": converting NULL to
+   string is unsupported` — reached the user as *"Check that the provider is enabled in
+   your Supabase project"*, a cause the code cannot know and which was simply wrong. Print
+   `error_description` and `error_code`; stop asserting a cause.
+2. **Branch the `db status` hint on the error variant** — §3. It currently tells a
+   *not-configured* user to run `db login`, when there is no backend to log in to.
+   `Disabled`, `NotConfigured` and `NotAuthenticated` each have a different fix and should
+   each say so.
+3. **Make the forced token refresh actually force** — §3, `client.rs:285`,
+   `auth.rs:214-217`. A stale-but-clock-valid token produces a bare
+   `PostgREST error (401)` with no "run `db login`" hint, and the retry is wasted.
+   Depends on nothing else here.
+4. **Name the endpoint in MCP failures** — §3, `mcp/server.rs:879-891`, `:795-806`.
+   The worst user-facing case: the MCP server builds its client once at startup, so a
+   transient outage makes it blame configuration for the entire process lifetime.
+5. **Fix the `db status` stale-expiry line** — §3. Cosmetic, but it prints
+   `(expired N min ago)` directly above `ping: ✓ authenticated read succeeded`, which
+   undermines trust in everything else the command reports.
+
+§3 holds nine items; the five above are the ones where a failure *reports itself wrongly*.
+The other four — `db whoami` not printing the endpoint, naming the winning config file,
+the wrong `db status` help text, and `db logout` not revoking remotely — are diagnosability
+too, but they are missing information rather than actively misleading output. Do them after,
+or fold them in opportunistically while touching the same files.
+
+**Acceptance criteria for this step.** For each failure mode, the message should name:
+(a) which backend was being talked to, (b) what actually failed, and (c) what the user
+should do next. No message may assert a cause the code has not established — that is the
+specific defect that made items 1 and 2 expensive.
+
+**Decide the test question before starting.** The full suite does not compile (see
+"Blocker for anyone picking up Part B"), and these auth/config paths are exactly the ones
+worth integration-testing. `cargo test --features database --lib --bins` works meanwhile.
+
+---
+
 ## 1. Importer defects [verified]
 
 Found by running `db ipeds-import` for 2022/2023/2024/2025.
@@ -91,6 +142,35 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       (`:795-806`), which blames config or login. It is also intermittent: a fresh token
       starts fine and fails per-call, an hour-old token starts with no database tools at
       all. Name the endpoint and distinguish unreachable / not-configured / not-logged-in.
+- [ ] **`accept_oauth_callback` throws away the only useful part of an OAuth failure**
+      [verified — cost hours]. `db.rs:294-297` keeps the `error` query param and discards
+      `error_description`, so every failed callback collapses to
+      *"Sign in failed — check that the provider is enabled in your Supabase project"*.
+      During the self-hosted cutover the real cause was
+      `sql: Scan error on column index 3, name "confirmation_token": converting NULL to
+      string is unsupported` — a malformed `auth.users` row, nothing to do with the
+      provider being enabled. GoTrue had sent it in `?error_description=`; it was only
+      recoverable by reading the browser's address bar.
+      **Fix:** print `error_description` (and `error_code` when present) in both the
+      terminal message and the browser page, and stop asserting a cause the code cannot
+      know. The current wording actively misdirects: it sent us to audit GoTrue config and
+      the GitHub OAuth app registration twice.
+- [ ] **`db status` reports a stale expiry next to a successful ping** [verified]. It
+      renders the auth-file line from the on-disk `expires_at` *before* the ping refreshes
+      the token, so a session that refreshes fine prints
+      `✓ (expired 29827635 min ago as …)` immediately above
+      `ping: ✓ authenticated read succeeded`. Harmless but it reads like a bug in the tool
+      and undermines trust in the rest of the output. Render the line after the refresh, or
+      label it "token age (auto-refreshes)".
+- [ ] **No `db logout --remote`, and `db login` cannot re-auth a live session.** Offboarding
+      is server-side only (delete the `auth.users` row); `clear_auth_state` is local
+      (`auth.rs:104-106`). Worth a note in `db logout`'s help that it revokes nothing.
+- [ ] **`db status` tells a not-configured user to log in** [verified]. On a fresh install
+      with blank defaults (post-B6) it prints `endpoint (unset) ✗`, `anon key (unset) ✗`,
+      `ping: ✗ Database not configured...` and then `→ run \`nuanalytics db login\``.
+      There is nothing to log in to. The hint should branch: not-configured -> point at
+      `config set database.endpoint/anon_key` (or `db bootstrap`, B9); not-authenticated ->
+      `db login`.
 
 ## 4. Making self-hosting reproducible
 
@@ -141,6 +221,22 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       the row, so collaboration is preserved. Translate `23505` on these four tables into
       "program_key / degree_id X is owned by another user", because "duplicate key" gives
       the user no hint that ownership is involved.
+
+### Blocker for anyone picking up Part B
+
+`cargo test` **cannot compile** the integration target, independently of any change here:
+`tests/rs/first_sem_cases.rs` has 29 `include_str!("/tmp/first_sem_unified/*.unified.json")`
+calls -- absolute paths into `/tmp` that no longer exist, so the fixtures are gone and
+unreproducible.
+
+    error: couldn't read `/tmp/first_sem_unified/Syracuse_University_...unified.json`:
+           No such file or directory (os error 2)
+
+`cargo test --lib --bins` is clean (880 + 81 passing), so unit tests are usable today, but
+nobody can run the full suite. Fix by vendoring those fixtures under `tests/fixtures/` and
+switching to a path relative to `CARGO_MANIFEST_DIR`. Worth doing before Part B lands
+non-trivial changes, since the integration tests are where a backend-portability
+regression would surface.
 
 ## Notes
 

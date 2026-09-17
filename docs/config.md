@@ -228,7 +228,7 @@ file = "$NU_ANALYTICS/nuanalytics.log"
 verbose = false
 
 [database]
-endpoint = "https://oaaqxtzkfcjcosilpbwi.supabase.co"
+endpoint = "https://your-project.supabase.co"
 anon_key = "eyJhbGciOiJIUzI1NiI..."   # JWT-format anon key — see below
 enabled = true
 auth_file = "$NU_ANALYTICS/auth.json"
@@ -258,7 +258,7 @@ file = ".debug/nuanalytics.debug.log"
 verbose = true
 
 [database]
-endpoint = "https://oaaqxtzkfcjcosilpbwi.supabase.co"
+endpoint = "https://your-project.supabase.co"
 anon_key = "eyJhbGciOiJIUzI1NiI..."
 enabled = true
 auth_file = ".debug/dauth.json"        # separate from any active release session
