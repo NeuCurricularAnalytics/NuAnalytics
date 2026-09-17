@@ -1,0 +1,621 @@
+{
+  "degree": {
+    "cip_code": "11.0102",
+    "degree_type": "BS",
+    "id": "rhode-island-college-bachelor-of-science-in-artificial-intelligence-major",
+    "institution": "Rhode Island College",
+    "unitid": 217420,
+    "name": "Bachelor of Science in Artificial Intelligence",
+    "source_url": "https://ric.smartcatalogiq.com/en/2024-2025/2024-2025/school-of-business/artificial-intelligence/artificial-intelligence-bs/",
+    "system_type": "semester",
+    "catalog_year": "2024-2025",
+    "total_credits": 120,
+    "major_subjects": [
+      "CSCI",
+      "DATA",
+      "CIS",
+      "MATH"
+    ],
+    "tags": [
+      "ai",
+      "ai-major"
+    ]
+  },
+  "requirements": {
+    "cognates": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Required Cognates (Mathematics)",
+      "courses": [
+        "MATH212",
+        "MATH240"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "natural_science_sequence": {
+      "type": "one_of",
+      "category": "supporting",
+      "name": "Natural Science Sequence (one two-course sequence)",
+      "options": [
+        {
+          "id": "biology",
+          "name": "Biology Sequence",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "Introductory Biology I & II",
+              "courses": [
+                "BIOL111",
+                "BIOL112"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "chemistry",
+          "name": "Chemistry Sequence",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "General Chemistry I & II",
+              "courses": [
+                "CHEM103",
+                "CHEM104"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "physics",
+          "name": "Physics Sequence",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "Physics for Science and Mathematics I & II",
+              "courses": [
+                "PHYS101",
+                "PHYS102"
+              ]
+            }
+          ]
+        }
+      ],
+      "tags": [
+        "required"
+      ]
+    },
+    "core_courses": {
+      "type": "all",
+      "category": "major",
+      "name": "Core Courses",
+      "courses": [
+        "BUSI100",
+        "CSCI141",
+        "CSCI209",
+        "CSCI211",
+        "CSCI212W"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "additional_required": {
+      "type": "all",
+      "category": "major",
+      "name": "Additional Required Courses",
+      "courses": [
+        "CSCI342W",
+        "CSCI427",
+        "CSCI428"
+      ],
+      "tags": [
+        "ai",
+        "required"
+      ]
+    },
+    "ai_electives": {
+      "type": "select",
+      "category": "major",
+      "name": "AI Electives (three courses from)",
+      "count": 3,
+      "from": {
+        "courses": [
+          "CSCI348",
+          "CSCI443",
+          "CSCI444",
+          "CSCI445",
+          "CSCI446"
+        ]
+      },
+      "tags": [
+        "ai",
+        "elective"
+      ]
+    },
+    "data_analytics_elective": {
+      "type": "select",
+      "category": "major",
+      "name": "Data/Analytics Elective (one course from)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CIS470",
+          "CIS472",
+          "DATA245",
+          "DATA345",
+          "DATA445"
+        ]
+      },
+      "tags": [
+        "elective"
+      ]
+    },
+    "general_education": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Education (9 categories: First Year Seminar, First Year Writing, Mathematics, Natural Science, Arts, History/Philosophy, Literature/Language, Social & Behavioral Sciences, Connections)",
+      "credits": 32,
+      "from": {
+        "pattern": "*:*"
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "free_electives": {
+      "type": "select",
+      "category": "elective",
+      "name": "Free Electives (to reach 120 credits)",
+      "credits": 26,
+      "from": {
+        "pattern": "*:*"
+      },
+      "tags": [
+        "elective"
+      ]
+    }
+  },
+  "courses": {
+    "MATH212": {
+      "name": "Calculus I",
+      "prefix": "MATH",
+      "number": "212",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "MATH240": {
+      "name": "Statistical Methods I",
+      "prefix": "MATH",
+      "number": "240",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "BIOL111": {
+      "name": "Introductory Biology I",
+      "prefix": "BIOL",
+      "number": "111",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "BIOL112": {
+      "name": "Introductory Biology II",
+      "prefix": "BIOL",
+      "number": "112",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "BIOL111"
+    },
+    "CHEM103": {
+      "name": "General Chemistry I",
+      "prefix": "CHEM",
+      "number": "103",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "CHEM104": {
+      "name": "General Chemistry II",
+      "prefix": "CHEM",
+      "number": "104",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CHEM103"
+    },
+    "PHYS101": {
+      "name": "Physics for Science and Mathematics I",
+      "prefix": "PHYS",
+      "number": "101",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "PHYS102": {
+      "name": "Physics for Science and Mathematics II",
+      "prefix": "PHYS",
+      "number": "102",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "PHYS101"
+    },
+    "BUSI100": {
+      "name": "Introduction to Business at RIC",
+      "prefix": "BUSI",
+      "number": "100",
+      "credit_hours": 2.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "CSCI141": {
+      "name": "Application and Impact of Artificial Intelligence",
+      "prefix": "CSCI",
+      "number": "141",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null,
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI157": {
+      "name": "Introduction to Algorithmic Thinking in Python",
+      "prefix": "CSCI",
+      "number": "157",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "CSCI102": {
+      "name": "Computer Fundamentals for Cyber Security",
+      "prefix": "CSCI",
+      "number": "102",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "CSCI209": {
+      "name": "Programming Implementations Using Discrete Structures",
+      "prefix": "CSCI",
+      "number": "209",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "or": [
+          "CSCI157",
+          "CSCI211"
+        ]
+      }
+    },
+    "CSCI211": {
+      "name": "Computer Programming and Design",
+      "prefix": "CSCI",
+      "number": "211",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "CSCI212W": {
+      "name": "Data Structures",
+      "prefix": "CSCI",
+      "number": "212W",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI211"
+    },
+    "CSCI342W": {
+      "name": "Social and Ethical Issues in Technology",
+      "prefix": "CSCI",
+      "number": "342W",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "CSCI348": {
+      "name": "Artificial Intelligence in Gaming",
+      "prefix": "CSCI",
+      "number": "348",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI209",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI427": {
+      "name": "Artificial Intelligence Foundations",
+      "prefix": "CSCI",
+      "number": "427",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CSCI212W",
+          "MATH240"
+        ]
+      },
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI428": {
+      "name": "Machine Learning",
+      "prefix": "CSCI",
+      "number": "428",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CSCI209",
+          "CSCI427",
+          "MATH212"
+        ]
+      },
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI443": {
+      "name": "Natural Language Processing",
+      "prefix": "CSCI",
+      "number": "443",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI428",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI444": {
+      "name": "Computer Vision",
+      "prefix": "CSCI",
+      "number": "444",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI428",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI445": {
+      "name": "Reinforcement Learning and Autonomous Systems",
+      "prefix": "CSCI",
+      "number": "445",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI428",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI446": {
+      "name": "Cognitive Robots",
+      "prefix": "CSCI",
+      "number": "446",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI428",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI423": {
+      "name": "Analysis of Algorithms",
+      "prefix": "CSCI",
+      "number": "423",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          {
+            "or": [
+              "CSCI209",
+              "MATH436"
+            ]
+          },
+          "CSCI212W",
+          "MATH212"
+        ]
+      }
+    },
+    "DATA245": {
+      "name": "Principles of Data Science",
+      "prefix": "DATA",
+      "number": "245",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "or": [
+          "MATH240",
+          "MATH248"
+        ]
+      }
+    },
+    "DATA345": {
+      "name": "Applied Linear Algebra for Statistical Learning",
+      "prefix": "DATA",
+      "number": "345",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "or": [
+          "MATH315",
+          {
+            "and": [
+              "DATA245",
+              "MATH212"
+            ]
+          }
+        ]
+      }
+    },
+    "DATA445": {
+      "name": "Advanced Statistical Methods",
+      "prefix": "DATA",
+      "number": "445",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "or": [
+          {
+            "and": [
+              "DATA245",
+              "MATH212"
+            ]
+          },
+          "MATH315",
+          {
+            "and": [
+              "MATH436",
+              "CSCI423"
+            ]
+          }
+        ]
+      }
+    },
+    "CIS470": {
+      "name": "Introduction to Data Analytics",
+      "prefix": "CIS",
+      "number": "470",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CIS252",
+          {
+            "or": [
+              "CIS301",
+              "CSCI157"
+            ]
+          },
+          {
+            "or": [
+              "MATH248",
+              "MATH240"
+            ]
+          }
+        ]
+      }
+    },
+    "CIS472": {
+      "name": "Data Visualization",
+      "prefix": "CIS",
+      "number": "472",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CIS252",
+          {
+            "or": [
+              "CIS301",
+              "CSCI157"
+            ]
+          },
+          {
+            "or": [
+              "MATH248",
+              "MATH240"
+            ]
+          }
+        ]
+      }
+    },
+    "CIS252": {
+      "name": "Introduction to Information Systems",
+      "prefix": "CIS",
+      "number": "252",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "CIS301": {
+      "name": "Introduction to Computer Programming in Business",
+      "prefix": "CIS",
+      "number": "301",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "or": [
+          "CIS252",
+          "CSCI102"
+        ]
+      }
+    },
+    "MATH248": {
+      "name": "Business Statistics I",
+      "prefix": "MATH",
+      "number": "248",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "MATH315": {
+      "name": "Linear Algebra",
+      "prefix": "MATH",
+      "number": "315",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": null
+    },
+    "MATH436": {
+      "name": "Discrete Mathematics",
+      "prefix": "MATH",
+      "number": "436",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH212"
+    }
+  },
+  "conversion_warnings": [
+    "degree_type corrected BA -> BS per catalog (program is the B.S. in Artificial Intelligence, housed in the School of Business).",
+    "Program is housed in the RIC School of Business; CSCI/DATA/CIS subjects supply the technical core, MATH the cognates, and BUSI 100 the business-orientation course (waivable via COLL 101/COLL 150/HONR 150/NURS 100 per catalog note).",
+    "Catalog 'Total Credit Hours: 54' is the MAJOR total NET of an 8-credit overlap: a catalog note states 'Eight credit hours from BIOL 111; CHEM 103; MATH 212, MATH 240; or PHYS 101 may be counted toward the Natural Science and Mathematics categories of General Education.' Gross major credits as modeled = 62 (cognates 8 + science sequence 8 + core 18 + additional required 12 + 3 AI electives 12 + 1 data/analytics elective 4); 62 - 8 shared = 54 unique major credits.",
+    "total_credits=120 set to the RIC institutional graduation minimum (>=120 earned credits, >=45 at RIC, >=15 in major with >=12 at 300/400-level, cumulative GPA >= 2.00); the program page lists only the 54-credit major.",
+    "Credit model to 120 (counting the 8 shared science/math credits exactly once, inside the major blocks): major blocks 62 (gross) + General Education 32 (the 40-credit, 9-category RIC gen-ed reduced by the 8 credits already counted in the major) + free electives 26 = 120. RIC General Education is >=40 credits across 9 categories (3 Core: First Year Seminar, First Year Writing, + one of Math/Natural Science; and 6 Distribution incl. Arts, History/Philosophy, Literature/Language, Social & Behavioral Sciences, Connections).",
+    "General Education and free electives modeled as wildcard '*:*' select pools (no individual gen-ed courses enumerated), per generation guidance for open distribution buckets.",
+    "'ONE OF THE FOLLOWING TWO-COURSE SEQUENCES' (BIOL 111+112 / CHEM 103+104 / PHYS 101+102) modeled as type one_of with three options, each an 'all' 2-course pair.",
+    "Prerequisites traced from the live 2024-2025 RIC course pages (sc_prereqs blocks). Placement/standing prerequisites that are not degree courses were modeled as null: 'Completed college mathematics milestone' / math-placement (CSCI 211, CSCI 342W's '45 credit hours', MATH 240, BIOL 111, CHEM 103, PHYS 101), and the MATH 120 / MATH 209 developmental placement chain (so MATH 212 prereq null, CSCI 209's '... and MATH 120' dropped).",
+    "Non-existent alternative course codes in the 2024-2025 catalog were folded/dropped: 'CSCI 212' (pre-W equivalent) -> CSCI 212W; 'CSCI 221' (does not exist) dropped from CSCI 212W's prereq leaving CSCI 211; 'CIS 352' (does not exist) dropped from CIS 470/472 prereqs leaving CIS 252; 'CSCI 315' (does not exist) dropped from CSCI 423's prereq leaving CSCI 212W.",
+    "Out-of-program prerequisite courses are fully defined so no reference dangles: CSCI 157, CSCI 102, CSCI 423, CIS 252, CIS 301, MATH 248, MATH 315, MATH 436. Their own placement-only prerequisites (MATH 120/177/300, CIS 252's '15 credits') were terminated at null. This corrects the skeletal source, which had 'pruned 21 dangling prerequisite reference(s)'.",
+    "cip_code 11.0102 (Artificial Intelligence) inferred from the program name; not stated in the catalog.",
+    "catalog_year set to 2024-2025 (the working catalog edition); skeletal source omitted it."
+  ]
+}

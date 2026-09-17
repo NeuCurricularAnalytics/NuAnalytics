@@ -1,7 +1,10 @@
 //! Integration tests for logger behavior.
+//!
+//! The logger was briefly a standalone crate (`8991591`) and is now the internal
+//! `nu_analytics::logger` module; the macros are `#[macro_export]`ed at the crate root.
 
-use logger::{debug, error, info, warn};
-use logger::{set_level, set_level_from_str, Level};
+use nu_analytics::logger::{set_level, set_level_from_str, Level};
+use nu_analytics::{debug, error, info, warn};
 
 #[test]
 fn level_parse_accepts_valid() {

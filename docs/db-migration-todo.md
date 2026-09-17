@@ -63,9 +63,9 @@ or fold them in opportunistically while touching the same files.
 should do next. No message may assert a cause the code has not established — that is the
 specific defect that made items 1 and 2 expensive.
 
-**Decide the test question before starting.** The full suite does not compile (see
-"Blocker for anyone picking up Part B"), and these auth/config paths are exactly the ones
-worth integration-testing. `cargo test --features database --lib --bins` works meanwhile.
+**Decide the test question before starting.** These auth/config paths are exactly the
+ones worth integration-testing, and `cargo test --features database` now runs the full
+suite (see "Blocker for anyone picking up Part B -- RESOLVED").
 
 ---
 
@@ -222,21 +222,26 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       "program_key / degree_id X is owned by another user", because "duplicate key" gives
       the user no hint that ownership is involved.
 
-### Blocker for anyone picking up Part B
+### Blocker for anyone picking up Part B -- RESOLVED
 
-`cargo test` **cannot compile** the integration target, independently of any change here:
-`tests/rs/first_sem_cases.rs` has 29 `include_str!("/tmp/first_sem_unified/*.unified.json")`
-calls -- absolute paths into `/tmp` that no longer exist, so the fixtures are gone and
-unreproducible.
+`cargo test` used to fail to compile the integration target: the target-course cases
+`include_str!`d absolute `/tmp/first_sem_unified/` paths for fixtures that no longer
+existed. The full suite now builds and runs.
 
-    error: couldn't read `/tmp/first_sem_unified/Syracuse_University_...unified.json`:
-           No such file or directory (os error 2)
+Thirteen real degree builds are vendored under `tests/assets/degrees/` (not
+`tests/fixtures/`, as originally proposed) and referenced by paths relative to the test
+source. `tests/assets/degrees/Readme.md` records which upstream corpus build each file is,
+how the mapping was recovered, and how to refresh one.
 
-`cargo test --lib --bins` is clean (880 + 81 passing), so unit tests are usable today, but
-nobody can run the full suite. Fix by vendoring those fixtures under `tests/fixtures/` and
-switching to a path relative to `CARGO_MANIFEST_DIR`. Worth doing before Part B lands
-non-trivial changes, since the integration tests are where a backend-portability
-regression would surface.
+Two things surfaced while doing it, both fixed:
+
+- The cases asserted nothing -- they printed computed-vs-expected term numbers and always
+  passed. They now assert, and `earliest_term` baselines are recorded per case.
+- `build_artifacts` left `PlanGeneratorConfig.random_seed` at `None` while setting
+  `SamplingStrategy::Shuffled`, so *which* plans were enumerated under a `max_plans` cap
+  came from thread-local entropy and analysis output differed run to run. The seed it
+  already computes is now passed through, making runs reproducible. This changed none of
+  the term-placement baselines.
 
 ## Notes
 

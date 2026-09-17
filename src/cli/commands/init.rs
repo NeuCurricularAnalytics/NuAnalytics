@@ -137,7 +137,11 @@ fn write_file(path: &Path, content: &[u8]) -> Result<(), Box<dyn std::error::Err
 
 /// Render an MCP config template by substituting the command and args.
 /// Values are JSON-encoded so quoting and escaping are handled correctly.
-fn render_mcp_config(template: &str, command: &str, args: &[String]) -> Result<String, serde_json::Error> {
+fn render_mcp_config(
+    template: &str,
+    command: &str,
+    args: &[String],
+) -> Result<String, serde_json::Error> {
     let command_json = serde_json::to_string(command)?;
     let args_json = serde_json::to_string(args)?;
     Ok(template
@@ -244,10 +248,7 @@ mod tests {
         let err = run(&target, false).expect_err("must refuse to overwrite without --force");
         let msg = err.to_string();
         assert!(msg.contains("already exist"), "unexpected error: {msg}");
-        assert!(
-            msg.contains(".mcp.json"),
-            "should name the conflict: {msg}"
-        );
+        assert!(msg.contains(".mcp.json"), "should name the conflict: {msg}");
 
         let body = fs::read_to_string(target.join(".mcp.json")).expect("read");
         assert_eq!(body, "pre-existing\n");
@@ -286,9 +287,8 @@ mod tests {
         // would corrupt the JSON if `render_mcp_config` used naive interpolation
         // instead of `serde_json::to_string`.
         let weird = r#"C:\Program Files\Nu"Analytics\nuanalytics.exe"#;
-        let rendered =
-            render_mcp_config(SETTINGS_TEMPLATE, weird, &[MCP_SUBCOMMAND.to_string()])
-                .expect("render_mcp_config");
+        let rendered = render_mcp_config(SETTINGS_TEMPLATE, weird, &[MCP_SUBCOMMAND.to_string()])
+            .expect("render_mcp_config");
 
         let v: Value = serde_json::from_str(&rendered)
             .expect("rendered settings must be valid JSON even for odd command paths");

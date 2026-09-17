@@ -1,0 +1,578 @@
+{
+  "degree": {
+    "cip_code": "11.0102",
+    "degree_type": "BAS",
+    "id": "bellevue-college-software-development-bas-artificial-intelligence-concentration",
+    "institution": "Bellevue College",
+    "unitid": 234669,
+    "name": "Software Development BAS, Artificial Intelligence Concentration",
+    "source_url": "https://catalog.bellevuecollege.edu/preview_program.php?catoid=15&poid=4911&print=1",
+    "system_type": "quarter",
+    "catalog_year": "2025-2026",
+    "total_credits": 180,
+    "tags": [
+      "ai",
+      "ai-concentration"
+    ]
+  },
+  "requirements": {
+    "bas_ai_core": {
+      "type": "all",
+      "category": "major",
+      "name": "BAS Artificial Intelligence Core",
+      "courses": [
+        "AI260",
+        "AI400",
+        "AI405",
+        "AI410",
+        "DATA320",
+        "MATH341"
+      ],
+      "tags": [
+        "ai",
+        "required"
+      ]
+    },
+    "bas_dev_core": {
+      "type": "all",
+      "category": "major",
+      "name": "BAS Software Development Core",
+      "courses": [
+        "DEV258",
+        "DEV300",
+        "DEV312",
+        "IT231",
+        "SEC328"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "bas_capstone": {
+      "type": "one_of",
+      "category": "major",
+      "name": "Capstone or Experiential Learning Sequence",
+      "options": [
+        {
+          "id": "dev_capstone",
+          "name": "Software Development Capstone (DEV 490 + DEV 491)",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "Capstone sequence",
+              "courses": [
+                "DEV490",
+                "DEV491"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "exprl_capstone",
+          "name": "Experiential Learning Internship (EXPRL 490 + EXPRL 491)",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "Experiential learning sequence",
+              "courses": [
+                "EXPRL490",
+                "EXPRL491"
+              ]
+            }
+          ]
+        }
+      ],
+      "tags": [
+        "required"
+      ]
+    },
+    "ai_prereq_courses": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Prerequisites / Artificial Intelligence (Lower-Division Foundation)",
+      "courses": [
+        "AI240",
+        "BA240",
+        "BUSIT103",
+        "DEV108",
+        "DEV128"
+      ],
+      "tags": [
+        "ai",
+        "required"
+      ]
+    },
+    "ai_prereq_open_credits": {
+      "type": "select",
+      "category": "elective",
+      "name": "Prerequisites / AI: Additional College-Level Credits",
+      "credits": 20,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 20,
+      "external_note": "Any college-level credits (100-level or above) not used for other degree requirements; transferred-in associate-degree foundation.",
+      "tags": [
+        "elective"
+      ]
+    },
+    "gened_writing_composition": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "General Education: English Composition",
+      "courses": [
+        "ENGL101"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_writing_advanced": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Education: Advanced Writing",
+      "count": 1,
+      "from": {
+        "courses": [
+          "ENGL201",
+          "ENGL235",
+          "ENGL271"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_prereq_natural_science": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Education: Natural Science (Prerequisite)",
+      "credits": 5,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 5,
+      "external_note": "Any physical, biological, earth sciences, or math course from the AAS-DTA Natural Science distribution list (5-6 CR).",
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_prereq_math": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Education: Quantitative (Prerequisite)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "MATH138",
+          "MATH141"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_business_core": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "General Education: Business, Communication & Ethics",
+      "courses": [
+        "BUS101",
+        "BUS355",
+        "CMST340",
+        "PHIL375"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_humanities": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Education: Humanities",
+      "credits": 5,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 5,
+      "external_note": "Humanities course from the AAS-DTA transfer distribution list.",
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_natural_science": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Education: Natural Science",
+      "credits": 5,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 5,
+      "external_note": "Any physical, biological, earth sciences, or math course from the AAS-DTA Natural Science distribution list (5-6 CR).",
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_social_science": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Education: Social Science",
+      "credits": 5,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 5,
+      "external_note": "Any 200-level Social Science course from the AAS-DTA transfer distribution list.",
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "free_electives": {
+      "type": "select",
+      "category": "elective",
+      "name": "Electives",
+      "credits": 15,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 15,
+      "external_note": "Any college-level credits (100-level or above) not used for other degree requirements.",
+      "tags": [
+        "elective"
+      ]
+    }
+  },
+  "courses": {
+    "AI240": {
+      "name": "Programming for Machine Learning",
+      "prefix": "AI",
+      "number": "240",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "BA240",
+          "DEV108"
+        ]
+      },
+      "tags": [
+        "ai"
+      ]
+    },
+    "AI260": {
+      "name": "Computer Vision in Control Systems",
+      "prefix": "AI",
+      "number": "260",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "AI240",
+      "tags": [
+        "ai"
+      ]
+    },
+    "AI400": {
+      "name": "Natural Language Processing",
+      "prefix": "AI",
+      "number": "400",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "AI240",
+          "DEV258"
+        ]
+      },
+      "tags": [
+        "ai"
+      ]
+    },
+    "AI405": {
+      "name": "AI Impacts and Applications",
+      "prefix": "AI",
+      "number": "405",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "AI240",
+      "tags": [
+        "ai"
+      ]
+    },
+    "AI410": {
+      "name": "Human-Centered AI Interaction and Design",
+      "prefix": "AI",
+      "number": "410",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "AI240",
+      "tags": [
+        "ai"
+      ]
+    },
+    "BA240": {
+      "name": "Statistical Analysis",
+      "prefix": "BA",
+      "number": "240",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "or": [
+          "MATH138",
+          "MATH141"
+        ]
+      }
+    },
+    "BUSIT103": {
+      "name": "SQL Fundamentals",
+      "prefix": "BUSIT",
+      "number": "103",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "ENGL101"
+    },
+    "DATA320": {
+      "name": "Data Acquisition and Management",
+      "prefix": "DATA",
+      "number": "320",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "BUSIT103",
+      "tags": [
+        "ai"
+      ]
+    },
+    "DEV108": {
+      "name": "Introduction to Python Programming",
+      "prefix": "DEV",
+      "number": "108",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "DEV128": {
+      "name": "Object Oriented Programming with Python",
+      "prefix": "DEV",
+      "number": "128",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "DEV108"
+    },
+    "DEV258": {
+      "name": "Data Structures and Algorithms with Python",
+      "prefix": "DEV",
+      "number": "258",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "DEV128"
+    },
+    "DEV300": {
+      "name": "Problem Solving Strategies",
+      "prefix": "DEV",
+      "number": "300",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "DEV312": {
+      "name": "Project Management for IT",
+      "prefix": "DEV",
+      "number": "312",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "DEV490": {
+      "name": "Capstone I",
+      "prefix": "DEV",
+      "number": "490",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "DEV300"
+    },
+    "DEV491": {
+      "name": "Capstone II",
+      "prefix": "DEV",
+      "number": "491",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "DEV490"
+    },
+    "EXPRL490": {
+      "name": "Experiential Learning Capstone I",
+      "prefix": "EXPRL",
+      "number": "490",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "DEV300"
+    },
+    "EXPRL491": {
+      "name": "Experiential Learning Capstone II",
+      "prefix": "EXPRL",
+      "number": "491",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "EXPRL490"
+    },
+    "IT231": {
+      "name": "Introduction to Cloud Architecture and Services",
+      "prefix": "IT",
+      "number": "231",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "ENGL101"
+    },
+    "MATH341": {
+      "name": "Applied Statistical Methods I",
+      "prefix": "MATH",
+      "number": "341",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "BA240",
+      "tags": [
+        "ai"
+      ]
+    },
+    "SEC328": {
+      "name": "Information Security Essentials",
+      "prefix": "SEC",
+      "number": "328",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "BUS101": {
+      "name": "Introduction to Business",
+      "prefix": "BUS",
+      "number": "101",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "BUS355": {
+      "name": "Business of IT: Legal Regulatory Business Environment",
+      "prefix": "BUS",
+      "number": "355",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "BUS101"
+    },
+    "CMST340": {
+      "name": "Advanced Communication in Business and Technology",
+      "prefix": "CMST",
+      "number": "340",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "PHIL375": {
+      "name": "Ethical Issues in Information Technology",
+      "prefix": "PHIL",
+      "number": "375",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENGL101": {
+      "name": "English Composition I",
+      "prefix": "ENGL",
+      "number": "101",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENGL201": {
+      "name": "The Research Paper",
+      "prefix": "ENGL",
+      "number": "201",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "ENGL101"
+    },
+    "ENGL235": {
+      "name": "Technical Writing",
+      "prefix": "ENGL",
+      "number": "235",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "ENGL101"
+    },
+    "ENGL271": {
+      "name": "Expository Writing I",
+      "prefix": "ENGL",
+      "number": "271",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "ENGL101"
+    },
+    "MATH138": {
+      "name": "College Algebra for Business and Social Science",
+      "prefix": "MATH",
+      "number": "138",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH141": {
+      "name": "Precalculus I",
+      "prefix": "MATH",
+      "number": "141",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    }
+  },
+  "conversion_warnings": [
+    "source_url poid=4911 (catoid=15, 2025-26 catalog) resolves to the correct program: Software Development BAS, Artificial Intelligence concentration. Confirmed via print view; URL returns 200.",
+    "degree_type corrected to BAS (Bachelor of Applied Science); skeletal source labeled it BS.",
+    "total_credits set to 180 (stated graduation minimum; catalog states a 180-182 range because three distribution courses are 5-6 CR). Lower bound used so modeled blocks sum exactly to 180.",
+    "Credit model (180): BAS AI core 30 + BAS Dev core 25 + capstone 10 + AI lower-division prereqs 25 + AI open 100+ credits 20 + ENGL composition 5 + advanced writing 5 + prereq natural science 5 + prereq math 5 + business/comm/ethics 20 + humanities 5 + natural science 5 + social science 5 + free electives 15 = 180.",
+    "Capstone credit fix: DEV 490 (Capstone I) and DEV 491 (Capstone II) are 5 CR EACH (10 CR for the sequence); likewise EXPRL 490/491 are 5 CR each. The skeletal source incorrectly listed each as 10 CR (would double the capstone block).",
+    "Capstone modeled as type one_of: (DEV 490 + DEV 491) OR (EXPRL 490 + EXPRL 491), per the catalog 'Choose one of' two-course sequences. Skeletal source flattened all four into a single count:1 select, losing the paired-sequence and mutual-exclusivity structure.",
+    "'Unrestricted Electives' in the skeletal source was a type:all list of 14 named courses; this was a mis-categorization of program courses/distribution placeholders. Rebuilt the actual catalog structure: named courses placed in their real blocks (BAS core, gen-ed business core, prerequisite writing/math choices) and the open distribution/elective buckets modeled as wildcard pools.",
+    "BA 240 prerequisite corrected from skeletal '(MATH138 & MATH141 & MATH142 & MATH148)' to OR-of-placement (MATH138 | MATH141) per the course catalog; the original AND chain was a mis-parse of placement alternatives.",
+    "DEV 108 prerequisite corrected from skeletal '(MATH130 & MATH98 & MATH78 & ENGL101 & ENGL92 & ENGL93)' to null; the catalog lists placement-by-assessment alternatives (OR), not a required course chain. Modeled as no enforceable course prerequisite to avoid inventing dangling references to remedial/placement courses outside the program.",
+    "BUSIT 103 and IT 231 list ENGL 101 placement; modeled prerequisite as ENGL101 (the one in-scope, defined course).",
+    "Equivalent alternate-prefix prerequisites collapsed to the program's own courses to keep the graph closed: AI 240 prereq '(ROBAI 240 | AI 240)/(PROG 108 | DEV 108)' -> uses DEV108; AI 260/400/405/410 'ROBAI 240 or AI 240' -> AI240; DEV 128/258 'PROG 108/128 or DEV 108/128' -> DEV108/DEV128. 'admission into the BAS concentration' clauses are not course prerequisites and are omitted.",
+    "DEV 490 / EXPRL 490 catalog prerequisite is 'permission of instructor' (last two quarters of program); modeled prereq as DEV300 to anchor the capstone after the core problem-solving course (reasonable sequencing inference, not a verbatim catalog prereq).",
+    "General-education distribution buckets (prerequisite natural science, humanities, natural science, social science) and the two open-elective buckets (AI 'any 100+ credits' 20 CR, free electives 15 CR) are modeled as wildcard pools (from.include ['*:*'] + credits, external_requirement:true) rather than enumerating specific courses, because the catalog points to broad AAS-DTA distribution lists; this is the prompt-specified gen-ed/elective modeling.",
+    "cip_code 11.0102 (Artificial Intelligence) inferred from program name/concentration; not stated in catalog. Program GPA minimum 2.0 with 'C' or better; >=30 upper-division credits; >=45 credits in residence (recorded here, not enforced in the model). system_type set to 'quarter' (Bellevue College runs on quarters; all listed courses are 5-credit quarter courses)."
+  ]
+}

@@ -1,0 +1,640 @@
+{
+  "degree": {
+    "cip_code": "11.0701",
+    "degree_type": "BS",
+    "id": "metropolitan-state-university-of-denver-computer-science-major-b-s",
+    "institution": "Metropolitan State University of Denver",
+    "unitid": 127565,
+    "name": "Computer Science Major, B.S.",
+    "source_url": "https://catalog.msudenver.edu/preview_program.php?catoid=52&poid=12348&print=1",
+    "system_type": "semester",
+    "catalog_year": "2025-2026",
+    "total_credits": 120,
+    "major_subjects": [
+      "CS",
+      "MTH",
+      "DSML"
+    ],
+    "tags": [
+      "cs-major"
+    ]
+  },
+  "requirements": {
+    "cs_major_core": {
+      "type": "all",
+      "category": "major",
+      "name": "Major Core Courses",
+      "courses": [
+        "CS1030",
+        "CS1050",
+        "CS1400",
+        "CS2050",
+        "CS2240",
+        "CS2400",
+        "CS3210",
+        "CS3240",
+        "CS3250",
+        "CS3600",
+        "CS3700",
+        "CS4050"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "cs_upper_division_electives": {
+      "type": "select",
+      "category": "major",
+      "name": "Upper Division Electives",
+      "credits": 12,
+      "from": {
+        "courses": [
+          "DSML3850",
+          "DSML4220",
+          "MTH4480"
+        ],
+        "include": [
+          "CS:3000+"
+        ],
+        "exclude": [
+          "CS3210",
+          "CS3240",
+          "CS3250",
+          "CS3600",
+          "CS3700",
+          "CS4050",
+          "CS4360"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "elective"
+      ]
+    },
+    "senior_experience": {
+      "type": "all",
+      "category": "major",
+      "name": "Senior Experience",
+      "courses": [
+        "CS4360"
+      ],
+      "tags": [
+        "core",
+        "capstone"
+      ]
+    },
+    "required_mathematics": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Required Mathematics Courses",
+      "courses": [
+        "MTH1410",
+        "{MTH3130, MTH3140}",
+        "MTH3210"
+      ],
+      "tags": [
+        "math"
+      ]
+    },
+    "science_requirement": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Science Requirement",
+      "credits": 6,
+      "from": {
+        "courses": [
+          "[BIO1080, BIO1090]",
+          "[BIO1081, BIO1091]",
+          "[CHE1800, CHE1801]",
+          "[CHE1810, CHE1811]",
+          "GEL1010",
+          "[MTR1400, MTR2020]",
+          "[PHY2311, PHY2321]",
+          "[PHY2331, PHY2341]",
+          "ENV1200"
+        ]
+      },
+      "tags": [
+        "science"
+      ]
+    },
+    "professional_presentation": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Professional Presentation Requirement",
+      "count": 1,
+      "from": {
+        "courses": [
+          "COMM1010",
+          "COMM1100"
+        ]
+      },
+      "tags": [
+        "ancillary"
+      ]
+    },
+    "technical_writing": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Technical Writing Requirement",
+      "courses": [
+        "JMP2610"
+      ],
+      "tags": [
+        "ancillary"
+      ]
+    },
+    "cs_ethics": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Computer Science Ethics Requirement",
+      "courses": [
+        "PHI3370"
+      ],
+      "tags": [
+        "ancillary"
+      ]
+    },
+    "general_studies": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Studies Requirements (Written/Oral Communication, Quantitative Literacy, Arts & Humanities, Historical, Natural & Physical Sciences, Social & Behavioral Sciences, Global Diversity) + ESSJ + Unrestricted Electives",
+      "credits": 35,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 35,
+      "external_note": "MSU Denver General Studies (33 cr stated) plus Ethnic Studies & Social Justice (0-3 cr) plus Unrestricted Electives (0-10 cr), pooled as a single open wildcard requirement so the degree reaches its 120-credit graduation minimum. The catalog notes required CS/math/science courses may partially or fully satisfy General Studies and ESSJ (e.g. Quantitative Literacy via MTH 1410, part of Natural & Physical Sciences via the Science Requirement), so only the General-Studies/ESSJ/Unrestricted credits that do NOT overlap the major are pooled here.",
+      "tags": [
+        "gen_ed"
+      ]
+    }
+  },
+  "courses": {
+    "CS1030": {
+      "name": "Computer Science Principles",
+      "prefix": "CS",
+      "number": "1030",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CS1050": {
+      "name": "Computer Science 1",
+      "prefix": "CS",
+      "number": "1050",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CS1400": {
+      "name": "Computer Organization",
+      "prefix": "CS",
+      "number": "1400",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CS2050": {
+      "name": "Computer Science 2",
+      "prefix": "CS",
+      "number": "2050",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS1050"
+    },
+    "CS2240": {
+      "name": "Discrete Structures for Computer Science",
+      "prefix": "CS",
+      "number": "2240",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS2050"
+    },
+    "CS2400": {
+      "name": "Assembly Language Programming and Introduction to High Performance Computing",
+      "prefix": "CS",
+      "number": "2400",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS1050",
+          "CS1400"
+        ]
+      }
+    },
+    "CS3210": {
+      "name": "Principles of Programming Languages",
+      "prefix": "CS",
+      "number": "3210",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2050",
+          "CS2400",
+          "CS3240",
+          "CS3250",
+          "CS2240"
+        ]
+      }
+    },
+    "CS3240": {
+      "name": "Introduction to the Theory of Computation",
+      "prefix": "CS",
+      "number": "3240",
+      "credit_hours": 2.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2050",
+          "CS2240"
+        ]
+      }
+    },
+    "CS3250": {
+      "name": "Software Development Methods and Tools",
+      "prefix": "CS",
+      "number": "3250",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2050",
+          {
+            "or": [
+              "COMM1010",
+              "COMM1100"
+            ]
+          }
+        ]
+      }
+    },
+    "CS3600": {
+      "name": "Operating Systems",
+      "prefix": "CS",
+      "number": "3600",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2050",
+          "CS2400",
+          "CS3250"
+        ]
+      }
+    },
+    "CS3700": {
+      "name": "Networking and Distributed Computing",
+      "prefix": "CS",
+      "number": "3700",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS1400",
+          "CS2050"
+        ]
+      }
+    },
+    "CS4050": {
+      "name": "Algorithms and Algorithm Analysis",
+      "prefix": "CS",
+      "number": "4050",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS3240",
+          "CS3250"
+        ]
+      }
+    },
+    "CS4360": {
+      "name": "Senior Experience in Computer Science",
+      "prefix": "CS",
+      "number": "4360",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS3250",
+          "JMP2610",
+          "PHI3370",
+          {
+            "or": [
+              "COMM1010",
+              "COMM1100"
+            ]
+          }
+        ]
+      }
+    },
+    "DSML3850": {
+      "name": "Cloud Computing",
+      "prefix": "DSML",
+      "number": "3850",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3250"
+    },
+    "DSML4220": {
+      "name": "Deep Learning",
+      "prefix": "DSML",
+      "number": "4220",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "MTH1410": {
+      "name": "Calculus I",
+      "prefix": "MTH",
+      "number": "1410",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MTH3130": {
+      "name": "Applied Methods in Linear Algebra",
+      "prefix": "MTH",
+      "number": "3130",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MTH1410"
+    },
+    "MTH3140": {
+      "name": "Linear Algebra",
+      "prefix": "MTH",
+      "number": "3140",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MTH3210": {
+      "name": "Probability and Statistics",
+      "prefix": "MTH",
+      "number": "3210",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MTH1410"
+    },
+    "MTH4480": {
+      "name": "Numerical Analysis I",
+      "prefix": "MTH",
+      "number": "4480",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "or": [
+          "MTH3130",
+          "MTH3140"
+        ]
+      }
+    },
+    "COMM1010": {
+      "name": "Presentational Speaking",
+      "prefix": "COMM",
+      "number": "1010",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "COMM1100": {
+      "name": "Fundamentals of Oral Communication",
+      "prefix": "COMM",
+      "number": "1100",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "JMP2610": {
+      "name": "Introduction to Technical Writing",
+      "prefix": "JMP",
+      "number": "2610",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "PHI3370": {
+      "name": "Computers, Ethics, and Society",
+      "prefix": "PHI",
+      "number": "3370",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "BIO1080": {
+      "name": "General Biology I",
+      "prefix": "BIO",
+      "number": "1080",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "BIO1090"
+      ],
+      "strict_corequisites": []
+    },
+    "BIO1090": {
+      "name": "General Biology Laboratory I",
+      "prefix": "BIO",
+      "number": "1090",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "BIO1080"
+      ],
+      "strict_corequisites": []
+    },
+    "BIO1081": {
+      "name": "General Biology II",
+      "prefix": "BIO",
+      "number": "1081",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "BIO1091"
+      ],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "BIO1080",
+          "BIO1090"
+        ]
+      }
+    },
+    "BIO1091": {
+      "name": "General Biology Laboratory II",
+      "prefix": "BIO",
+      "number": "1091",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "BIO1081"
+      ],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "BIO1080",
+          "BIO1090"
+        ]
+      }
+    },
+    "CHE1800": {
+      "name": "General Chemistry I",
+      "prefix": "CHE",
+      "number": "1800",
+      "credit_hours": 4.0,
+      "corequisites": [
+        "CHE1801"
+      ],
+      "strict_corequisites": []
+    },
+    "CHE1801": {
+      "name": "General Chemistry I Laboratory",
+      "prefix": "CHE",
+      "number": "1801",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "CHE1800"
+      ],
+      "strict_corequisites": []
+    },
+    "CHE1810": {
+      "name": "General Chemistry II",
+      "prefix": "CHE",
+      "number": "1810",
+      "credit_hours": 4.0,
+      "corequisites": [
+        "CHE1811"
+      ],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CHE1800",
+          "MTH1410"
+        ]
+      }
+    },
+    "CHE1811": {
+      "name": "General Chemistry II Laboratory",
+      "prefix": "CHE",
+      "number": "1811",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "CHE1810"
+      ],
+      "strict_corequisites": [],
+      "prerequisites": "CHE1801"
+    },
+    "GEL1010": {
+      "name": "Physical Geology",
+      "prefix": "GEL",
+      "number": "1010",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MTR1400": {
+      "name": "Weather and Climate",
+      "prefix": "MTR",
+      "number": "1400",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "MTR2020"
+      ],
+      "strict_corequisites": []
+    },
+    "MTR2020": {
+      "name": "Weather and Climate Lab for Scientists",
+      "prefix": "MTR",
+      "number": "2020",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "MTR1400"
+      ],
+      "strict_corequisites": []
+    },
+    "PHY2311": {
+      "name": "General Physics I",
+      "prefix": "PHY",
+      "number": "2311",
+      "credit_hours": 4.0,
+      "corequisites": [
+        "PHY2321"
+      ],
+      "strict_corequisites": [],
+      "prerequisites": "MTH1410"
+    },
+    "PHY2321": {
+      "name": "General Physics I Laboratory",
+      "prefix": "PHY",
+      "number": "2321",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "PHY2311"
+      ],
+      "strict_corequisites": []
+    },
+    "PHY2331": {
+      "name": "General Physics II",
+      "prefix": "PHY",
+      "number": "2331",
+      "credit_hours": 4.0,
+      "corequisites": [
+        "PHY2341"
+      ],
+      "strict_corequisites": [],
+      "prerequisites": "PHY2311"
+    },
+    "PHY2341": {
+      "name": "General Physics II Laboratory",
+      "prefix": "PHY",
+      "number": "2341",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "PHY2331"
+      ],
+      "strict_corequisites": []
+    },
+    "ENV1200": {
+      "name": "Introduction to Environmental Science",
+      "prefix": "ENV",
+      "number": "1200",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    }
+  },
+  "conversion_warnings": [
+    "catalog_year set to 2025-2026 (MSU Denver Undergraduate Catalog, catoid=52); program poid=12348; institution is Metropolitan State University of Denver, COLORADO (msudenver.edu).",
+    "cip_code 11.0701 (Computer Science) inferred from program name; not stated in catalog.",
+    "total_credits=120 (stated graduation minimum). No concentrations/tracks exist in this program.",
+    "Skeletal-source corrections: DSML 3850 corrected to 'Cloud Computing' (4 cr) from bogus 'Data Science and Machine Learning 3850' (3 cr); DSML 4220 corrected to 'Deep Learning' (4 cr); MTH 4480 corrected to 'Numerical Analysis I' (4 cr) from bogus 'Probability and Statistics 4480' (3 cr); MTH 3140 corrected to 'Linear Algebra' (4 cr) from duplicate 'Applied Methods in Linear Algebra'. All credit hours verified against live course pages (every CS/math/DSML course is 4 cr except CS 3240=2 cr and the gen-ed/ancillary 3-cr courses).",
+    "Skeletal source mis-modeled the major as four flat blocks ('Core Courses', a 'Professional Presentation' picklist as elective, a 3-course 'Upper Division Electives' picklist, and an 'Unrestricted Electives' all-block listing MTH/JMP/PHI courses as required). Re-modeled to match the catalog's actual structure: Major Core (46), Upper Division Electives (12-cr select), Senior Experience (CS 4360), Required Mathematics (12), Science Requirement (6, choose-one-sequence), and three Ancillary requirements (Professional Presentation choice, Technical Writing, CS Ethics).",
+    "Upper Division Electives modeled as type:select credits:12 over include 'CS:3000+' plus explicit DSML 3850, DSML 4220, MTH 4480, excluding the seven required CS 3000+/4000-level core courses; constraints.exclude_used:true so the 12 elective credits do not reuse required courses.",
+    "Required Mathematics: '(MTH 3140 may be substituted for MTH 3130)' modeled as choice '{MTH3130, MTH3140}'.",
+    "Science Requirement: 'must include one of the following science sequences' modeled as a 6-credit select over bundled lecture+lab pairs ([BIO1080,BIO1090] etc.), standalone GEL 1010, and ENV 1200 as an additional approved option. Corequisite lab/lecture links set bidirectionally.",
+    "Prerequisites deep-traced from live course pages and reduced to courses defined in this degree: dropped non-major placement/dev-math prereqs (CS 2050's MTH 1110; CS 2240's MTH 1110/1120/1400; CS 3250's ENG 1020) and 'permission of instructor' bypasses; CS 4050 and CS 4360 'N additional upper-division CS credits' narrative clauses are satisfied structurally by the electives block and are not encoded as course prereqs. DSML 4220's stated prereq CS 3120 (not in this degree) was dropped to avoid a dangling reference.",
+    "General Studies (33 cr stated) + ESSJ (0-3 cr) + Unrestricted Electives (0-10 cr) modeled as a single external wildcard pool (from.include '*:*', external_requirement:true, external_credits 35). Catalog explicitly notes required CS/math/science courses may partially or fully satisfy General Studies and ESSJ, so the non-overlapping gen-ed/free credits needed to reach the 120-credit minimum are pooled here rather than enumerated; the stated-vs-modeled gen-ed differences and the unrestricted-elective range are absorbed into this pool and documented in its external_note.",
+    "Distinct required-course blocks: Major Core 46 + UD Electives 12 + Senior 4 + Required Mathematics 12 + Science 6 + Ancillary 9 (Professional Presentation 3 + Technical Writing 3 + CS Ethics 3). The external General Studies/ESSJ/Unrestricted pool fills the remainder up to total_credits 120."
+  ]
+}

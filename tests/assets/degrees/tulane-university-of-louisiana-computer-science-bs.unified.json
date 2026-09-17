@@ -1,0 +1,782 @@
+{
+  "degree": {
+    "cip_code": "11.0701",
+    "degree_type": "BS",
+    "id": "tulane-university-of-louisiana-bachelor-of-science-in-computer-science",
+    "institution": "Tulane University of Louisiana",
+    "unitid": 160755,
+    "name": "Bachelor of Science in Computer Science",
+    "source_url": "https://catalog.tulane.edu/science-engineering/computer-science/computer-science-bs/",
+    "system_type": "semester",
+    "catalog_year": "2026-2027",
+    "total_credits": 120,
+    "major_subjects": [
+      "CMPS",
+      "MATH",
+      "ENGP"
+    ],
+    "tags": [
+      "ai",
+      "ai-elective"
+    ]
+  },
+  "requirements": {
+    "calculus": {
+      "type": "one_of",
+      "category": "supporting",
+      "name": "Mathematics 1: Calculus",
+      "options": [
+        {
+          "id": "calc_1210",
+          "name": "Calculus I (MATH 1210)",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "Calculus I",
+              "courses": [
+                "MATH1210"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "calc_long",
+          "name": "Long Calculus I + II (MATH 1150 + 1160)",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "Long Calculus sequence",
+              "courses": [
+                "MATH1150",
+                "MATH1160"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "calc_1310",
+          "name": "Consolidated Calculus (MATH 1310)",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "Consolidated Calculus",
+              "courses": [
+                "MATH1310"
+              ]
+            }
+          ]
+        }
+      ],
+      "tags": [
+        "required"
+      ]
+    },
+    "discrete_math": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Discrete Mathematics",
+      "courses": [
+        "CMPS2170"
+      ],
+      "tags": [
+        "required"
+      ]
+    },
+    "linear_algebra": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Linear Algebra",
+      "courses": [
+        "MATH3090"
+      ],
+      "tags": [
+        "required"
+      ]
+    },
+    "probability_statistics": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Probability and Statistics (choose one)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "MATH1110",
+          "MATH1230",
+          "MATH3070"
+        ]
+      },
+      "tags": [
+        "required"
+      ]
+    },
+    "cs_first_second_year": {
+      "type": "all",
+      "category": "major",
+      "name": "Required First- and Second-Year Computer Science Courses",
+      "courses": [
+        "CMPS1500",
+        "CMPS1600",
+        "CMPS2200",
+        "CMPS2300"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "systems_requirement": {
+      "type": "select",
+      "category": "major",
+      "name": "Systems Requirement (choose one)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CMPS3510",
+          "CMPS4750",
+          "CMPS4770",
+          "ENGP3140"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "required"
+      ]
+    },
+    "ai_algorithms_requirement": {
+      "type": "select",
+      "category": "major",
+      "name": "AI/Algorithms Requirement (choose one)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CMPS3140",
+          "CMPS3240",
+          "CMPS3340",
+          "CMPS3250",
+          "CMPS3260",
+          "CMPS3130",
+          "CMPS3210",
+          "ENGP3730"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "ai",
+        "required"
+      ]
+    },
+    "cs_electives": {
+      "type": "select",
+      "category": "major",
+      "name": "Computer Science Electives (five CMPS courses at 3000-level or above)",
+      "credits": 15,
+      "from": {
+        "include": [
+          "CMPS:3000+"
+        ],
+        "courses": [
+          "ENGP3140",
+          "ENGP3730"
+        ],
+        "exclude": [
+          "CMPS4010",
+          "CMPS4020",
+          "CMPS4990",
+          "CMPS5000"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "elective"
+      ]
+    },
+    "capstone": {
+      "type": "one_of",
+      "category": "major",
+      "name": "Capstone",
+      "options": [
+        {
+          "id": "capstone_project",
+          "name": "Capstone Project (CMPS 4010 + 4020)",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "Capstone Project I and II",
+              "courses": [
+                "CMPS4010",
+                "CMPS4020"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "honors_thesis",
+          "name": "Honors Thesis (CMPS 4990 + 5000)",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "Honors Thesis sequence",
+              "courses": [
+                "CMPS4990",
+                "CMPS5000"
+              ]
+            }
+          ]
+        }
+      ],
+      "tags": [
+        "required"
+      ]
+    },
+    "core_curriculum": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Newcomb-Tulane College Core Curriculum (TIDES, writing, public service, distribution)",
+      "credits": 30,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "free_electives": {
+      "type": "select",
+      "category": "elective",
+      "name": "Free Electives (to reach 120 total credits)",
+      "credits": 35,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "elective"
+      ]
+    }
+  },
+  "courses": {
+    "MATH1210": {
+      "name": "Calculus I",
+      "prefix": "MATH",
+      "number": "1210",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH1150": {
+      "name": "Long Calculus I",
+      "prefix": "MATH",
+      "number": "1150",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH1160": {
+      "name": "Long Calculus II",
+      "prefix": "MATH",
+      "number": "1160",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH1150"
+    },
+    "MATH1310": {
+      "name": "Consolidated Calculus",
+      "prefix": "MATH",
+      "number": "1310",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH1110": {
+      "name": "Probability & Statistics I",
+      "prefix": "MATH",
+      "number": "1110",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH1230": {
+      "name": "Statistics For Scientists",
+      "prefix": "MATH",
+      "number": "1230",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH1210 | (MATH1150 & MATH1160) | MATH1310"
+    },
+    "MATH3070": {
+      "name": "Intro To Probability",
+      "prefix": "MATH",
+      "number": "3070",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH3090": {
+      "name": "Linear Algebra",
+      "prefix": "MATH",
+      "number": "3090",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH2170": {
+      "name": "Intro to Discrete Math",
+      "prefix": "MATH",
+      "number": "2170",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH1210 | MATH1310 | MATH1150 | MATH1110"
+    },
+    "CMPS1500": {
+      "name": "Intro to Computer Science I",
+      "prefix": "CMPS",
+      "number": "1500",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS1600": {
+      "name": "Intro to Computer Science II",
+      "prefix": "CMPS",
+      "number": "1600",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS1500"
+    },
+    "CMPS2170": {
+      "name": "Intro to Discrete Math",
+      "prefix": "CMPS",
+      "number": "2170",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH1210 | MATH1310 | MATH1150 | MATH1110"
+    },
+    "CMPS2200": {
+      "name": "Intro to Algorithms",
+      "prefix": "CMPS",
+      "number": "2200",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS1600 & (MATH2170 | CMPS2170)"
+    },
+    "CMPS2300": {
+      "name": "Intro to Comp Sys & Networking",
+      "prefix": "CMPS",
+      "number": "2300",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS1600"
+    },
+    "CMPS3130": {
+      "name": "Intro Computational Geometry",
+      "prefix": "CMPS",
+      "number": "3130",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS2200"
+    },
+    "CMPS3140": {
+      "name": "Intro Artificial Intelligence",
+      "prefix": "CMPS",
+      "number": "3140",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS2200",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS3160": {
+      "name": "Introduction to Data Science",
+      "prefix": "CMPS",
+      "number": "3160",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS3190": {
+      "name": "Introduction to AI Engineering",
+      "prefix": "CMPS",
+      "number": "3190",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS3210": {
+      "name": "Algs Comp Struct Bio",
+      "prefix": "CMPS",
+      "number": "3210",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS2200"
+    },
+    "CMPS3240": {
+      "name": "Intro to Machine Learning",
+      "prefix": "CMPS",
+      "number": "3240",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS2200",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS3250": {
+      "name": "Theory of Computation",
+      "prefix": "CMPS",
+      "number": "3250",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2170 | CMPS2170"
+    },
+    "CMPS3260": {
+      "name": "Advanced Algorithms",
+      "prefix": "CMPS",
+      "number": "3260",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS2200"
+    },
+    "CMPS3280": {
+      "name": "Information Theory",
+      "prefix": "CMPS",
+      "number": "3280",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS3300": {
+      "name": "Software Studio",
+      "prefix": "CMPS",
+      "number": "3300",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS3310": {
+      "name": "Logic in Computer Science",
+      "prefix": "CMPS",
+      "number": "3310",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS3340": {
+      "name": "Introduction to Deep Learning",
+      "prefix": "CMPS",
+      "number": "3340",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS3160 | CMPS3240 | CMPS4720",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS3350": {
+      "name": "Intro to Computer Graphics",
+      "prefix": "CMPS",
+      "number": "3350",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS3360": {
+      "name": "Data Visualization",
+      "prefix": "CMPS",
+      "number": "3360",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS3370": {
+      "name": "Digital Image Processing",
+      "prefix": "CMPS",
+      "number": "3370",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS3510": {
+      "name": "Computer Organization",
+      "prefix": "CMPS",
+      "number": "3510",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS2300 | ENGP3140"
+    },
+    "CMPS4010": {
+      "name": "Capstone Project I",
+      "prefix": "CMPS",
+      "number": "4010",
+      "credit_hours": 2.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS2200 & CMPS2300"
+    },
+    "CMPS4020": {
+      "name": "Capstone Project II",
+      "prefix": "CMPS",
+      "number": "4020",
+      "credit_hours": 2.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS4010"
+    },
+    "CMPS4150": {
+      "name": "Multi-agent Systems",
+      "prefix": "CMPS",
+      "number": "4150",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS4250": {
+      "name": "Math Found Comp Security",
+      "prefix": "CMPS",
+      "number": "4250",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS4330": {
+      "name": "Human-Computer Interaction",
+      "prefix": "CMPS",
+      "number": "4330",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS4410": {
+      "name": "Information Security",
+      "prefix": "CMPS",
+      "number": "4410",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS4610": {
+      "name": "Algorithms",
+      "prefix": "CMPS",
+      "number": "4610",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS4620": {
+      "name": "Artificial Intelligence",
+      "prefix": "CMPS",
+      "number": "4620",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS4630": {
+      "name": "Computational Biology & Bioinformatics",
+      "prefix": "CMPS",
+      "number": "4630",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS4640": {
+      "name": "Advanced Computational Geometry",
+      "prefix": "CMPS",
+      "number": "4640",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS4710": {
+      "name": "Computational Complexity",
+      "prefix": "CMPS",
+      "number": "4710",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS4720": {
+      "name": "Machine Learning",
+      "prefix": "CMPS",
+      "number": "4720",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS4730": {
+      "name": "Natural Language Processing",
+      "prefix": "CMPS",
+      "number": "4730",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS4740": {
+      "name": "Reinforcement Learning",
+      "prefix": "CMPS",
+      "number": "4740",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS4750": {
+      "name": "Computer Networks",
+      "prefix": "CMPS",
+      "number": "4750",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "(CMPS2170 | MATH2170) & CMPS2200"
+    },
+    "CMPS4760": {
+      "name": "Distributed Systems",
+      "prefix": "CMPS",
+      "number": "4760",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS4770": {
+      "name": "Operating Systems",
+      "prefix": "CMPS",
+      "number": "4770",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS2300"
+    },
+    "CMPS4780": {
+      "name": "Computer Architecture",
+      "prefix": "CMPS",
+      "number": "4780",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS4790": {
+      "name": "Data Science",
+      "prefix": "CMPS",
+      "number": "4790",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS4820": {
+      "name": "Deep Learning",
+      "prefix": "CMPS",
+      "number": "4820",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS4830": {
+      "name": "Computer Vision",
+      "prefix": "CMPS",
+      "number": "4830",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CMPS4990": {
+      "name": "Honors Thesis in Computer Science",
+      "prefix": "CMPS",
+      "number": "4990",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CMPS5000": {
+      "name": "Honors Thesis in Computer Science",
+      "prefix": "CMPS",
+      "number": "5000",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CMPS4990"
+    },
+    "ENGP3140": {
+      "name": "Digital Logic Systems",
+      "prefix": "ENGP",
+      "number": "3140",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENGP3730": {
+      "name": "Signals and Systems",
+      "prefix": "ENGP",
+      "number": "3730",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    }
+  },
+  "conversion_warnings": [
+    "total_credits=120 per Newcomb-Tulane College graduation minimum; major block is 55-58 c.h. (modeled at the 55 c.h. minimum) + 30 c.h. core curriculum + free electives.",
+    "Mathematics 1 (Calculus) modeled as one_of: MATH 1210 (4) | MATH 1150+1160 long sequence (3+3=6) | MATH 1310 (4); catalog lists range 4-6 c.h. Modeled minimum path = 4 c.h.",
+    "Probability/Statistics is choose-one of MATH 1110 (3), MATH 1230 (4), or MATH 3070 (3); catalog range 3-4 c.h. Modeled minimum = 3 c.h.",
+    "Systems Requirement and AI/Algorithms Requirement re-categorized from skeletal 'elective' to major 'select' (choose one each), per catalog area-requirement structure.",
+    "CS Electives pool = five CMPS courses at 3000-level or above (15 c.h.); modeled as include 'CMPS:3000+' plus ENGP 3140 / ENGP 3730 (catalog permits these as electives), excluding capstone/thesis courses (CMPS 4010/4020/4990/5000). exclude_used:true enforces the catalog rule that a course may not count for both an area requirement and the elective requirement.",
+    "Capstone modeled as one_of: CMPS 4010+4020 (Capstone Project, 4 c.h.) OR CMPS 4990+5000 (Honors Thesis, 3+4=7 c.h.; requires GPA 3.4 overall / 3.5 in major).",
+    "Course credit_hours corrected vs skeletal source per live ribbit course data: MATH 1150=3 (was 4), MATH 1160=3 (was 4), MATH 1110=3 (was 2), MATH 1230=4 (was 2), MATH 3070=3 (was 2), CMPS 5000=4 (was assumed 3).",
+    "Prerequisites corrected/added vs skeletal per live catalog: CMPS 4770 prereq CMPS 2300 (skeletal had none); CMPS 3340 prereq 'CMPS 3160 | 3240 | 4720'; removed skeletal's ENGP 3140/ENGP 3730 as systems-prereq fabrication where not in catalog.",
+    "Removed skeletal pseudo-course 'CMPS3000+' (a fake catalog entry with 15 credits) and replaced it with a real select pool over CMPS:3000+ defined courses.",
+    "Newcomb-Tulane College Core Curriculum (TIDES first-year seminar, first-year writing, public-service requirement, and the distribution/proficiency requirements) modeled as a 30 c.h. gen_ed wildcard pool ('*:*'); individual core courses are not enumerated.",
+    "Free Electives = 35 c.h. wildcard pool to reach the 120-credit minimum (120 - 55 major-minimum - 30 core = 35). Overlap between core-curriculum credit and major/free-elective credit is not separately modeled.",
+    "cip_code 11.0701 (Computer Science) inferred from program name; not stated in catalog.",
+    "Per-course recitation corequisites (e.g. MATH 1211, CMPS 1501) are administrative co-enrollments bundled with the lecture credit and are not modeled as separate courses.",
+    "catalog_year 2026-2027 per live catalog header."
+  ]
+}

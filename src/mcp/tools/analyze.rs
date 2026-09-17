@@ -180,10 +180,10 @@ pub struct AnalyzeDegreeRequest {
 pub struct TargetTermStats {
     /// Number of plans that contained the target course.
     pub plans_containing: usize,
-    /// Minimum chain-length (semesters) seen across all containing plans.
+    /// Earliest term number the course was scheduled in, across containing plans.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub earliest_term: Option<usize>,
-    /// Mean chain-length across all containing plans.
+    /// Mean scheduled term number across all containing plans.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avg_term: Option<f64>,
     /// How many plans landed on each term number. Sorted by term for readability.
@@ -600,6 +600,7 @@ pub(crate) fn build_artifacts(
         target_credits: program.degree.total_credits,
         sampling_strategy: SamplingStrategy::Shuffled,
         include_courses: include,
+        random_seed: Some(seed_used),
         ..Default::default()
     };
     let generator = PlanGenerator::new(&program.requirements, &program.courses, gen_config.clone());
@@ -656,23 +657,12 @@ pub(crate) fn build_artifacts(
     let time_elapsed_ms = u64::try_from(loop_start.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     let target_course_stats = target_course.map(|course_id| {
-        if target_all_terms.is_empty() {
-            TargetCourseStats {
-                course_id: course_id.to_string(),
-                error: Some(format!(
-                    "Course '{course_id}' did not appear in any of the {plans_processed} generated plans."
-                )),
-                all_plans: TargetTermStats::default(),
-                calc_ready_plans: TargetTermStats::default(),
-            }
-        } else {
-            TargetCourseStats {
-                course_id: course_id.to_string(),
-                error: None,
-                all_plans: build_target_term_stats(&target_all_terms),
-                calc_ready_plans: build_target_term_stats(&target_calc_ready_terms),
-            }
-        }
+        build_target_course_stats(
+            course_id,
+            &target_all_terms,
+            &target_calc_ready_terms,
+            plans_processed,
+        )
     });
 
     Ok(AnalysisArtifacts {
@@ -692,7 +682,36 @@ pub(crate) fn build_artifacts(
     })
 }
 
-/// Compute `TargetTermStats` from a collected list of per-plan chain lengths.
+/// Summarise where a target course landed across the enumerated plans.
+///
+/// `all_terms` holds one scheduled term number per plan that contained the course, and
+/// `calc_ready_terms` the same for the calc-ready subset.
+///
+/// An empty `all_terms` yields zeroed stats either way — `build_target_term_stats`
+/// returns the default for an empty slice. The `error` is what distinguishes the cases,
+/// and it carries `plans_processed` so a caller can tell "this degree does not offer the
+/// course" from "enumeration was capped before reaching it".
+fn build_target_course_stats(
+    course_id: &str,
+    all_terms: &[usize],
+    calc_ready_terms: &[usize],
+    plans_processed: usize,
+) -> TargetCourseStats {
+    TargetCourseStats {
+        course_id: course_id.to_string(),
+        // `calc_ready_terms` is only pushed alongside `all_terms`, so it is necessarily
+        // empty whenever `all_terms` is — one emptiness check covers both.
+        error: all_terms.is_empty().then(|| {
+            format!(
+                "Course '{course_id}' did not appear in any of the {plans_processed} generated plans."
+            )
+        }),
+        all_plans: build_target_term_stats(all_terms),
+        calc_ready_plans: build_target_term_stats(calc_ready_terms),
+    }
+}
+
+/// Compute `TargetTermStats` from one scheduled term number per containing plan.
 fn build_target_term_stats(terms: &[usize]) -> TargetTermStats {
     if terms.is_empty() {
         return TargetTermStats::default();
@@ -1179,6 +1198,15 @@ fn finalize_followups(
 /// * `plan_indices` - Optional whitelist of `selected_plans` indices for
 ///   `graph_spec` inclusion; consulted only when `include_graph_spec=true`
 /// * `include_per_course_metrics` - When true, populate `per_course_metrics`
+/// * `include_placeholder_metrics` - When true, keep wildcard/elective placeholders in
+///   `per_course_metrics` instead of filtering them out
+/// * `random_seed` - Seeds plan sampling and selection. `None` derives a stable seed
+///   from `yaml_content`, so the same input yields the same plan population.
+/// * `analysis_timeout_seconds` - Wall-clock budget for the plan-generation loop
+///   (default 180, clamped to 1..=600). When tripped, the response carries
+///   `time_limit_reached = true`.
+/// * `target_course` - When set, populate [`TargetCourseStats`] describing which terms
+///   that course was scheduled in across the enumerated plans
 #[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn execute_json(
@@ -2143,7 +2171,18 @@ courses:
         // Exercise via the CSU sample which exercises the full pipeline.
         let yaml = crate::mcp::tools::samples::yaml_for_key("csu")
             .expect("csu sample key must resolve to embedded YAML");
-        let off = execute(yaml, Some(10), None, false, None, true, false, None, None, None);
+        let off = execute(
+            yaml,
+            Some(10),
+            None,
+            false,
+            None,
+            true,
+            false,
+            None,
+            None,
+            None,
+        );
         assert!(off.success, "error: {:?}", off.error);
         for entry in &off.per_course_metrics {
             assert!(
@@ -2154,7 +2193,18 @@ courses:
             assert!(!entry.placeholder);
         }
 
-        let on = execute(yaml, Some(10), None, false, None, true, true, None, None, None);
+        let on = execute(
+            yaml,
+            Some(10),
+            None,
+            false,
+            None,
+            true,
+            true,
+            None,
+            None,
+            None,
+        );
         assert!(on.success);
         for entry in &on.per_course_metrics {
             assert_eq!(
@@ -2388,10 +2438,12 @@ courses:
         // cache entries (otherwise a long-deadline retry would see the
         // earlier short-deadline truncated result).
         use std::sync::Arc;
-        let a = crate::mcp::cache::cached_artifacts(TEST_YAML, Some(10), None, None, Some(30), None)
-            .expect("first build");
-        let b = crate::mcp::cache::cached_artifacts(TEST_YAML, Some(10), None, None, Some(60), None)
-            .expect("second build");
+        let a =
+            crate::mcp::cache::cached_artifacts(TEST_YAML, Some(10), None, None, Some(30), None)
+                .expect("first build");
+        let b =
+            crate::mcp::cache::cached_artifacts(TEST_YAML, Some(10), None, None, Some(60), None)
+                .expect("second build");
         assert!(
             !Arc::ptr_eq(&a, &b),
             "different deadlines must partition the artifact cache"
@@ -2468,5 +2520,197 @@ courses:
         let equivs: HashMap<String, HashSet<String>> = HashMap::new();
         let plan: HashSet<&str> = std::iter::once("CS101").collect();
         assert_eq!(find_equivalent_in_plan("MATH101", &equivs, &plan), None);
+    }
+
+    // ---- target_course_stats ------------------------------------------------
+
+    /// Sample with a plan space larger than the caps used below, so the
+    /// generator's sampling path is exercised rather than full enumeration.
+    fn sample_with_large_plan_space() -> &'static str {
+        crate::mcp::tools::samples::yaml_for_key("csu")
+            .expect("csu sample key resolves to embedded YAML")
+    }
+
+    /// One expected summary for a list of scheduled term numbers.
+    struct TermStatsCase {
+        terms: &'static [usize],
+        plans_containing: usize,
+        earliest: Option<usize>,
+        avg: Option<f64>,
+        distribution: &'static [(usize, usize)],
+    }
+
+    #[test]
+    fn test_build_target_term_stats_summarises_term_numbers() {
+        let cases = &[
+            // The "no plan contained the course" slice.
+            TermStatsCase {
+                terms: &[],
+                plans_containing: 0,
+                earliest: None,
+                avg: None,
+                distribution: &[],
+            },
+            // Single observation: earliest and mean are both the only term.
+            TermStatsCase {
+                terms: &[4],
+                plans_containing: 1,
+                earliest: Some(4),
+                avg: Some(4.0),
+                distribution: &[(4, 1)],
+            },
+            // Term 0 is a real term, not a sentinel for "absent".
+            TermStatsCase {
+                terms: &[0],
+                plans_containing: 1,
+                earliest: Some(0),
+                avg: Some(0.0),
+                distribution: &[(0, 1)],
+            },
+            // Repeats are counted, not deduplicated.
+            TermStatsCase {
+                terms: &[3, 3, 5],
+                plans_containing: 3,
+                earliest: Some(3),
+                avg: Some(11.0 / 3.0),
+                distribution: &[(3, 2), (5, 1)],
+            },
+            // Unsorted input: earliest is the minimum, distribution is keyed by term.
+            TermStatsCase {
+                terms: &[7, 2, 9, 2],
+                plans_containing: 4,
+                earliest: Some(2),
+                avg: Some(5.0),
+                distribution: &[(2, 2), (7, 1), (9, 1)],
+            },
+        ];
+
+        for case in cases {
+            let terms = case.terms;
+            let got = build_target_term_stats(terms);
+            assert_eq!(
+                got.plans_containing, case.plans_containing,
+                "plans_containing for {terms:?}"
+            );
+            assert_eq!(
+                got.earliest_term, case.earliest,
+                "earliest_term for {terms:?}"
+            );
+            match (got.avg_term, case.avg) {
+                (Some(got_avg), Some(want)) => assert!(
+                    (got_avg - want).abs() < 1e-9,
+                    "avg_term for {terms:?}: got {got_avg}, want {want}"
+                ),
+                (got_avg, want) => assert_eq!(got_avg, want, "avg_term for {terms:?}"),
+            }
+            let want: std::collections::BTreeMap<usize, usize> =
+                case.distribution.iter().copied().collect();
+            assert_eq!(
+                got.term_distribution, want,
+                "term_distribution for {terms:?}"
+            );
+            // The distribution must always account for exactly the inputs.
+            assert_eq!(
+                got.term_distribution.values().sum::<usize>(),
+                got.plans_containing,
+                "distribution total for {terms:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_build_target_course_stats_reports_a_found_course() {
+        let stats = build_target_course_stats("CS201", &[2, 3, 3], &[3], 10);
+        assert_eq!(stats.course_id, "CS201");
+        assert!(stats.error.is_none(), "a found course reports no error");
+        assert_eq!(stats.all_plans.earliest_term, Some(2));
+        assert_eq!(stats.calc_ready_plans.earliest_term, Some(3));
+        assert!(
+            stats.calc_ready_plans.plans_containing <= stats.all_plans.plans_containing,
+            "calc-ready slice cannot exceed all plans"
+        );
+    }
+
+    #[test]
+    fn test_build_target_course_stats_reports_a_missing_course_with_context() {
+        let stats = build_target_course_stats("ZZZ999", &[], &[], 42);
+        let err = stats
+            .error
+            .as_deref()
+            .expect("missing course reports error");
+        assert!(err.contains("ZZZ999"), "error names the course, got: {err}");
+        assert!(
+            err.contains("42"),
+            "error carries plans_processed so the caller can tell 'not offered' from \
+             'enumeration capped', got: {err}"
+        );
+        assert_eq!(stats.all_plans.plans_containing, 0);
+        assert!(stats.all_plans.earliest_term.is_none());
+        assert!(stats.calc_ready_plans.earliest_term.is_none());
+    }
+
+    #[test]
+    fn test_build_artifacts_is_reproducible_for_identical_inputs() {
+        // Tested against build_artifacts, not execute: execute goes through
+        // cache::cached_artifacts, which would return the same Arc and make any
+        // determinism assertion tautological.
+        //
+        // max_plans is deliberately below the full plan population so the generator's
+        // shuffled-sampling path runs; that sampling is seeded from the YAML, which is
+        // the property under test.
+        let yaml = sample_with_large_plan_space();
+        let runs: Vec<TargetCourseStats> = (0..3)
+            .map(|_| {
+                build_artifacts(yaml, Some(10), None, None, None, Some("CS165"))
+                    .expect("build_artifacts on the csu sample")
+                    .target_course_stats
+                    .expect("target_course_stats is populated when target_course is set")
+            })
+            .collect();
+
+        let first = &runs[0];
+        assert!(
+            first.all_plans.plans_containing > 0,
+            "CS165 must appear in the csu sample's plans"
+        );
+        for (i, run) in runs.iter().enumerate().skip(1) {
+            assert_eq!(
+                run.all_plans.earliest_term, first.all_plans.earliest_term,
+                "run {i}: earliest_term differs from run 0"
+            );
+            assert_eq!(
+                run.all_plans.plans_containing, first.all_plans.plans_containing,
+                "run {i}: plans_containing differs from run 0"
+            );
+            assert_eq!(
+                run.all_plans.term_distribution, first.all_plans.term_distribution,
+                "run {i}: term_distribution differs from run 0"
+            );
+        }
+    }
+
+    #[test]
+    fn test_explicit_seeds_partition_the_plan_population() {
+        // Guards the wiring rather than the values: if the generator stopped reading
+        // random_seed, every seed would enumerate the same sample and this would fail.
+        let yaml = sample_with_large_plan_space();
+        let distributions: Vec<_> = [1_u64, 2, 3]
+            .into_iter()
+            .map(|seed| {
+                build_artifacts(yaml, Some(10), None, Some(seed), None, Some("CS165"))
+                    .expect("build_artifacts on the csu sample")
+                    .target_course_stats
+                    .expect("target_course_stats is populated")
+                    .all_plans
+                    .term_distribution
+            })
+            .collect();
+        for (i, dist) in distributions.iter().enumerate() {
+            assert!(
+                !dist.is_empty(),
+                "seed {} produced no term placements for CS165",
+                i + 1
+            );
+        }
     }
 }

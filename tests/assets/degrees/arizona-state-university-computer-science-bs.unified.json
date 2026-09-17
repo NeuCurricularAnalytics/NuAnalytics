@@ -1,0 +1,997 @@
+{
+  "degree": {
+    "cip_code": "11.0701",
+    "degree_type": "BS",
+    "id": "arizona-state-university-bachelor-of-science-in-computer-science-major",
+    "institution": "Arizona State University",
+    "unitid": 104151,
+    "name": "Bachelor of Science in Computer Science",
+    "source_url": "https://degrees.apps.asu.edu/major-map/ASU00/ESCSEBS/null/ALL/2024?init=false&nopassive=true",
+    "system_type": "semester",
+    "catalog_year": "2026-2027",
+    "total_credits": 120,
+    "upper_division_credits": 54,
+    "gpa_minimum": 2.0,
+    "gpa_major": 2.0,
+    "grade_minimum": "C",
+    "grade_minimum_note": "Minimum grade of C required in all required Computer Science (CSE), supporting math, and FSE/IEE courses per the ASU checksheet.",
+    "major_subjects": [
+      "CSE",
+      "MAT",
+      "EEE",
+      "FSE",
+      "IEE"
+    ],
+    "tags": [
+      "ai",
+      "ai-elective"
+    ]
+  },
+  "requirements": {
+    "lower_division_core": {
+      "type": "all",
+      "category": "major",
+      "name": "Computer Science, BS - Lower Division Core Requirements",
+      "courses": [
+        "CSE110",
+        "CSE205",
+        "CSE230",
+        "CSE240",
+        "EEE120",
+        "FSE100"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "upper_division_core": {
+      "type": "all",
+      "category": "major",
+      "name": "Computer Science, BS - Upper Division Core Requirements",
+      "courses": [
+        "CSE300",
+        "CSE310",
+        "CSE330",
+        "CSE340",
+        "CSE355",
+        "CSE360",
+        "CSE485",
+        "CSE486",
+        "IEE380",
+        "MAT343"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "cs_elective_information_assurance": {
+      "type": "all",
+      "category": "major",
+      "name": "Computer Science Electives - Information Assurance",
+      "courses": [
+        "CSE365"
+      ],
+      "tags": [
+        "required"
+      ]
+    },
+    "cs_elective_advanced_choice": {
+      "type": "select",
+      "category": "major",
+      "name": "Computer Science Elective - Advanced Choice",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CSE412",
+          "CSE434",
+          "CSE445",
+          "CSE471",
+          "CSE475"
+        ]
+      },
+      "tags": [
+        "ai",
+        "elective"
+      ]
+    },
+    "cs_400_elective": {
+      "type": "select",
+      "category": "major",
+      "name": "400-Level CSE Elective",
+      "credits": 12,
+      "from": {
+        "include": [
+          "CSE:400-499"
+        ],
+        "exclude": [
+          "CSE485",
+          "CSE486"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "elective"
+      ]
+    },
+    "upper_division_technical_electives": {
+      "type": "select",
+      "category": "major",
+      "name": "Upper Division Technical Electives (approved 300-/400-level list)",
+      "credits": 6,
+      "from": {
+        "courses": [
+          "CSE320",
+          "CSE325",
+          "CSE335",
+          "CIS415",
+          "CPI311",
+          "CPI350",
+          "CPI360",
+          "CPI411",
+          "CPI460",
+          "CPI462",
+          "DAT300",
+          "DAT301",
+          "DAT401",
+          "DAT402",
+          "SER421",
+          "SER422",
+          "SER423",
+          "STP421",
+          "STP425",
+          "STP427",
+          "STP429",
+          "FSE301",
+          "FSE404"
+        ],
+        "include": [
+          "CSE:400-499"
+        ],
+        "exclude": [
+          "CSE485",
+          "CSE486"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true,
+        "min_upper_division": 1
+      },
+      "tags": [
+        "elective"
+      ]
+    },
+    "math_discrete": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Mathematics - Discrete Mathematical Structures",
+      "courses": [
+        "MAT243"
+      ],
+      "tags": [
+        "required"
+      ]
+    },
+    "math_calculus_i": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Mathematics - Calculus I (MATH)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "MAT265",
+          "MAT270"
+        ]
+      },
+      "tags": [
+        "required"
+      ]
+    },
+    "math_calculus_ii": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Mathematics - Calculus II (MATH)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "MAT266",
+          "MAT271"
+        ]
+      },
+      "tags": [
+        "required"
+      ]
+    },
+    "math_calculus_iii_choice": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Mathematics - Calculus III or Logic (MATH)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "MAT267",
+          "MAT272",
+          "CSE259"
+        ]
+      },
+      "tags": [
+        "required"
+      ]
+    },
+    "lab_science": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Scientific Thinking in Natural Sciences (SCIT) Lab Sciences",
+      "credits": 11,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "science"
+      ]
+    },
+    "first_year_seminar": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "ASU 101 or College-Specific First-Year Seminar",
+      "courses": [
+        "ASU101"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_first_year_composition": {
+      "type": "one_of",
+      "category": "gen_ed",
+      "name": "First-Year Composition",
+      "options": [
+        {
+          "id": "eng_101_102",
+          "name": "ENG 101 and ENG 102",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "ENG 101 + ENG 102",
+              "courses": [
+                "ENG101",
+                "ENG102"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "eng_105",
+          "name": "ENG 105 Advanced First-Year Composition (plus 3 cr elective)",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "ENG 105",
+              "courses": [
+                "ENG105"
+              ]
+            },
+            {
+              "type": "select",
+              "name": "Composition credit balance",
+              "credits": 3,
+              "from": {
+                "include": [
+                  "*:*"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "eng_107_108",
+          "name": "ENG 107 and ENG 108 (International)",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "ENG 107 + ENG 108",
+              "courses": [
+                "ENG107",
+                "ENG108"
+              ]
+            }
+          ]
+        }
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_humanities_arts_design": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Studies Gold - Humanities, Arts and Design (HUAD)",
+      "credits": 6,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_social_behavioral_sciences": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Studies Gold - Social and Behavioral Sciences (SOBE)",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_american_institutions": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Studies Gold - American Institutions (AMIT)",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_global_communities": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Studies Gold - Global Communities, Societies and Individuals (GCSI)",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "university_electives": {
+      "type": "select",
+      "category": "elective",
+      "name": "University Electives",
+      "credits": 4,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "elective"
+      ]
+    }
+  },
+  "courses": {
+    "CSE110": {
+      "name": "Principles of Programming",
+      "prefix": "CSE",
+      "number": "110",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSE205": {
+      "name": "Object-Oriented Programming and Data Structures",
+      "prefix": "CSE",
+      "number": "205",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE110"
+    },
+    "CSE230": {
+      "name": "Computer Organization and Assembly Language Programming",
+      "prefix": "CSE",
+      "number": "230",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE110 & EEE120"
+    },
+    "CSE240": {
+      "name": "Introduction to Programming Languages",
+      "prefix": "CSE",
+      "number": "240",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE205"
+    },
+    "CSE259": {
+      "name": "Logic in Computer Science",
+      "prefix": "CSE",
+      "number": "259",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE205"
+    },
+    "CSE300": {
+      "name": "Ethics for the Information Age",
+      "prefix": "CSE",
+      "number": "300",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSE310": {
+      "name": "Data Structures and Algorithms",
+      "prefix": "CSE",
+      "number": "310",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE240 & MAT243"
+    },
+    "CSE320": {
+      "name": "Design and Synthesis of Digital Hardware",
+      "prefix": "CSE",
+      "number": "320",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE230"
+    },
+    "CSE325": {
+      "name": "Embedded Microprocessor Systems",
+      "prefix": "CSE",
+      "number": "325",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE230"
+    },
+    "CSE330": {
+      "name": "Operating Systems",
+      "prefix": "CSE",
+      "number": "330",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE230 & CSE310"
+    },
+    "CSE335": {
+      "name": "Principles of Mobile Application Development",
+      "prefix": "CSE",
+      "number": "335",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE310"
+    },
+    "CSE340": {
+      "name": "Principles of Programming Languages",
+      "prefix": "CSE",
+      "number": "340",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE230 & CSE310"
+    },
+    "CSE355": {
+      "name": "Introduction to Theoretical Computer Science",
+      "prefix": "CSE",
+      "number": "355",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE310"
+    },
+    "CSE360": {
+      "name": "Introduction to Software Engineering",
+      "prefix": "CSE",
+      "number": "360",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE240"
+    },
+    "CSE365": {
+      "name": "Information Assurance",
+      "prefix": "CSE",
+      "number": "365",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE230 & CSE240"
+    },
+    "CSE412": {
+      "name": "Database Management",
+      "prefix": "CSE",
+      "number": "412",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE310"
+    },
+    "CSE434": {
+      "name": "Computer Networks",
+      "prefix": "CSE",
+      "number": "434",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE230 & CSE310"
+    },
+    "CSE445": {
+      "name": "Distributed Software Development",
+      "prefix": "CSE",
+      "number": "445",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE360"
+    },
+    "CSE446": {
+      "name": "Software Integration and Engineering",
+      "prefix": "CSE",
+      "number": "446",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE445"
+    },
+    "CSE460": {
+      "name": "Software Analysis and Design",
+      "prefix": "CSE",
+      "number": "460",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE360"
+    },
+    "CSE463": {
+      "name": "Introduction to Human Computer Interaction",
+      "prefix": "CSE",
+      "number": "463",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE310"
+    },
+    "CSE464": {
+      "name": "Software Quality Assurance and Testing",
+      "prefix": "CSE",
+      "number": "464",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE360"
+    },
+    "CSE467": {
+      "name": "Theoretical Foundations of Machine Learning",
+      "prefix": "CSE",
+      "number": "467",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE310 & MAT343",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSE469": {
+      "name": "Computer and Network Forensics",
+      "prefix": "CSE",
+      "number": "469",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE365"
+    },
+    "CSE471": {
+      "name": "Introduction to Artificial Intelligence",
+      "prefix": "CSE",
+      "number": "471",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE310",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSE475": {
+      "name": "Foundations of Machine Learning",
+      "prefix": "CSE",
+      "number": "475",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE310",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSE476": {
+      "name": "Introduction to Natural Language Processing",
+      "prefix": "CSE",
+      "number": "476",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE310",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSE485": {
+      "name": "Computer Science Capstone Project I",
+      "prefix": "CSE",
+      "number": "485",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE300 & CSE330 & CSE340 & CSE355 & CSE360"
+    },
+    "CSE486": {
+      "name": "Computer Science Capstone Project II",
+      "prefix": "CSE",
+      "number": "486",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE485"
+    },
+    "EEE120": {
+      "name": "Digital Design Fundamentals",
+      "prefix": "EEE",
+      "number": "120",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "FSE100": {
+      "name": "Introduction to Engineering",
+      "prefix": "FSE",
+      "number": "100",
+      "credit_hours": 2.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "FSE301": {
+      "name": "Entrepreneurship and Value Creation",
+      "prefix": "FSE",
+      "number": "301",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "FSE404": {
+      "name": "EPICS Gold: EPICS in Action",
+      "prefix": "FSE",
+      "number": "404",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "IEE380": {
+      "name": "Probability and Statistics for Engineering Problem Solving",
+      "prefix": "IEE",
+      "number": "380",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT266 | MAT271"
+    },
+    "MAT243": {
+      "name": "Discrete Mathematical Structures",
+      "prefix": "MAT",
+      "number": "243",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT265 | MAT270"
+    },
+    "MAT265": {
+      "name": "Calculus for Engineers I",
+      "prefix": "MAT",
+      "number": "265",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MAT266": {
+      "name": "Calculus for Engineers II",
+      "prefix": "MAT",
+      "number": "266",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT265 | MAT270"
+    },
+    "MAT267": {
+      "name": "Calculus for Engineers III",
+      "prefix": "MAT",
+      "number": "267",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT266 | MAT271"
+    },
+    "MAT270": {
+      "name": "Calculus with Analytic Geometry I",
+      "prefix": "MAT",
+      "number": "270",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MAT271": {
+      "name": "Calculus with Analytic Geometry II",
+      "prefix": "MAT",
+      "number": "271",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT265 | MAT270"
+    },
+    "MAT272": {
+      "name": "Calculus with Analytic Geometry III",
+      "prefix": "MAT",
+      "number": "272",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT266 | MAT271"
+    },
+    "MAT343": {
+      "name": "Applied Linear Algebra",
+      "prefix": "MAT",
+      "number": "343",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT266 | MAT271"
+    },
+    "CIS415": {
+      "name": "Big Data and AI in Business",
+      "prefix": "CIS",
+      "number": "415",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CPI311": {
+      "name": "Game Engine Development",
+      "prefix": "CPI",
+      "number": "311",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CPI350": {
+      "name": "Evaluation of Informatics Systems",
+      "prefix": "CPI",
+      "number": "350",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CPI360": {
+      "name": "Decision Making and Problem Solving",
+      "prefix": "CPI",
+      "number": "360",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE205"
+    },
+    "CPI411": {
+      "name": "Graphics for Games",
+      "prefix": "CPI",
+      "number": "411",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CPI460": {
+      "name": "Intelligent Interactive Instructional Systems",
+      "prefix": "CPI",
+      "number": "460",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CPI462": {
+      "name": "Design for Learning in Virtual Worlds",
+      "prefix": "CPI",
+      "number": "462",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "DAT300": {
+      "name": "Mathematical Tools for Data Science",
+      "prefix": "DAT",
+      "number": "300",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "DAT301": {
+      "name": "Exploring Data in R and Python",
+      "prefix": "DAT",
+      "number": "301",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "DAT401": {
+      "name": "Statistical Modeling and Inference for Data Science",
+      "prefix": "DAT",
+      "number": "401",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "DAT402": {
+      "name": "Machine Learning for Data Science",
+      "prefix": "DAT",
+      "number": "402",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "SER421": {
+      "name": "Web-Based Applications",
+      "prefix": "SER",
+      "number": "421",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE310"
+    },
+    "SER422": {
+      "name": "Web Application Programming",
+      "prefix": "SER",
+      "number": "422",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE310"
+    },
+    "SER423": {
+      "name": "Mobile Systems",
+      "prefix": "SER",
+      "number": "423",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE310"
+    },
+    "STP421": {
+      "name": "Probability",
+      "prefix": "STP",
+      "number": "421",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT266 | MAT271"
+    },
+    "STP425": {
+      "name": "Stochastic Processes",
+      "prefix": "STP",
+      "number": "425",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "STP421"
+    },
+    "STP427": {
+      "name": "Mathematical Statistics",
+      "prefix": "STP",
+      "number": "427",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "STP421"
+    },
+    "STP429": {
+      "name": "Applied Regression",
+      "prefix": "STP",
+      "number": "429",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "IEE380 | STP421"
+    },
+    "ASU101": {
+      "name": "The ASU Experience",
+      "prefix": "ASU",
+      "number": "101",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENG101": {
+      "name": "First-Year Composition",
+      "prefix": "ENG",
+      "number": "101",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENG102": {
+      "name": "First-Year Composition",
+      "prefix": "ENG",
+      "number": "102",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "ENG101"
+    },
+    "ENG105": {
+      "name": "Advanced First-Year Composition",
+      "prefix": "ENG",
+      "number": "105",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENG107": {
+      "name": "First-Year Composition",
+      "prefix": "ENG",
+      "number": "107",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENG108": {
+      "name": "First-Year Composition",
+      "prefix": "ENG",
+      "number": "108",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "ENG107"
+    }
+  },
+  "conversion_warnings": [
+    "DUPLICATE RESOLUTION (verified vs live catalog 2026-06): two corpus files described the same single program (ASU Computer Science, BS; Plan Code ESCSEBS; CIP 11.0701; degree.id arizona-state-university-bachelor-of-science-in-computer-science-major) -- the descriptive 'arizona-state-university-computer-science-bs' build (catalog 2024-2025, 33 courses, upper_division_credits=45) and the 'asu-cs' stub build (catalog 2026-2027, 66 courses, upper_division_credits=54). Confirmed same program via the SCAI 2025-26 CS BS flowchart (scai.engineering.asu.edu) and the 2024/2026 ESCSEBS major-map + checksheet. The 'asu-cs' build matched the live catalog far better (54 UD credits per checksheet header; FSE 100 in the lower-division core; MAT 343 + IEE 380 in the upper-division core; CSE 365 Information Assurance as a required course; CSE 330 Operating Systems; advanced-choice pool incl. CSE 471/475; named technical-elective approved list) whereas the descriptive build was stale (45 UD credits, FSE 100 mis-grouped with ASU 101, MAT 343/IEE 380 left in supporting math, CSE 365 only inside an elective pool). The 'asu-cs' content was therefore kept and written into the canonical descriptive filename arizona-state-university-computer-science-bs.unified.json; the stale descriptive build and the asu-cs stub (full + trimmed) were archived to _audit/merged_duplicates/. NOTE: the live SCAI 2025-26 flowchart still lists CSE 301 (1 cr, Computing Ethics) while the forward 2026-2027 checksheet (this file's basis) lists CSE 300 (3 cr, Ethics for the Information Age) -- CSE 300 retained as the current/forward catalog value, consistent with the CSE485 prerequisite chain.",
+    "Rebuilt from the live ASU Degree Search Major Map (degrees.apps.asu.edu/major-map/ASU00/ESCSEBS/null/ALL/2024) and the structured Program Requirements checksheet (degrees.apps.asu.edu/checksheet/2026/CES/ESCSEBS/null, catalog year 2026-2027, title 'Computer Science, BS', Plan Code ESCSEBS, Ira A. Fulton Schools of Engineering, General Studies Gold). The checksheet renders the full requirement table server-side; fetched via curl + browser UA (WebFetch/the catalog SPA at catalog.apps.asu.edu return an empty JS shell). The ASU catalog course-detail pages are a JS SPA with no reachable JSON API, so prerequisites were taken from the major-map course chain, the skeletal source, and the already-rebuilt ASU CS BA (ESCSEBA) and verified against the checksheet sequencing.",
+    "degree_type confirmed BS (distinct from the previously-rebuilt ASU Campus-Immersion CS BA, ESCSEBA). This BS is the more math/theory/science-intensive variant: it adds a 3-course calculus sequence (Calc I/II + Calc III-or-Logic), MAT 343 Linear Algebra, CSE 355 Theory of Computation, CSE 340 Programming Languages, EEE 120 Digital Design, and 11 cr of SCIT lab science, none of which are required in the BA.",
+    "total_credits=120, upper_division_credits=54 per the checksheet header ('120 minimum credit hours' / '54 Upper division minimum credit hours'). cip_code 11.0701 (Computer Science) inferred from program name; not stated in catalog.",
+    "Skeletal source corrections: (1) id changed from '...-program' to '...-major' and name normalized to 'Bachelor of Science in Computer Science'; (2) the skeletal file flattened the entire program into one type:all 'Core Courses' list that wrongly merged the lower-division core, upper-division core, MAT 265/266 calculus, MAT 343, and capstone -- re-split into Lower Division Core (incl. FSE 100, which the skeleton omitted), Upper Division Core (incl. IEE 380 statistics + MAT 343, which the skeleton mislabeled), CS Electives, 400-level CSE elective pool, Technical Electives, and the Mathematics sequence; (3) the skeletal 'Picklist 1' (MAT267/CSE259) was actually the Calculus III-or-Logic choice and is re-typed as a supporting math select; (4) the skeletal 'Picklist 2' (CSE412/434/445) is the 'CS Elective - Advanced Choice' and was un-clamped to the full checksheet option set adding CSE 471 (AI) and CSE 475 (ML).",
+    "Lower Division Core = 17 cr: CSE 110, 205, 230, 240 + EEE 120 (Digital Design) + FSE 100 (Intro to Engineering, 2 cr). Upper Division Core = 30 cr: CSE 300, 310, 330, 340, 355, 360, 485, 486 + IEE 380 (Probability/Statistics, QTRS) + MAT 343 (Linear Algebra).",
+    "Computer Science Electives = 18 cr: CSE 365 Information Assurance (required) + one Advanced Choice from {CSE 412 Database, CSE 434 Networks, CSE 445 Distributed, CSE 471 Intro to AI, CSE 475 Foundations of ML} + 12 cr of 400-level CSE electives (modeled as a CSE:400-499 select pool, excluding the capstone CSE 485/486 and excluding already-used courses). CSE 471 and CSE 475 carry the 'ai' tag.",
+    "Upper Division Technical Electives = 6 cr select pool. The checksheet lists ~110 approved 300-/400-level courses across AEE/AME/BCH/BIO/BME/CEE/CHE/CIS/CPI/CSE/DAT/EEE/FSE/IEE/MAE/MEE/MSE/PHY/SER/STP. To keep the file tractable and avoid PatternMatchesNoCourses errors, the pool is modeled as the CSE:400-499 pattern (matches the defined upper-division CSE courses) PLUS an explicit subset of the catalog's named approved options that are most relevant to CS students (CSE 320/325/335, CIS 415, CPI 311/350/360/411/460/462, DAT 300/301/401/402, SER 421/422/423, STP 421/425/427/429, FSE 301/404). The full ~110-course interdisciplinary list (heavy aerospace/civil/chemical/mechanical engineering courses with deep external prereq chains) is not enumerated in courses{}; this is the only modeled-vs-catalog simplification and does not affect the 6-credit requirement.",
+    "Mathematics = 12-15 cr: MAT 243 Discrete (required) + Calc I {MAT 265 (3cr) | MAT 270 (4cr)} + Calc II {MAT 266 (3cr) | MAT 271 (4cr)} + Calc III-or-Logic {MAT 267 (3cr) | MAT 272 (4cr) | CSE 259 Logic (3cr)}. Modeled with count:1 selects; the analyzer floors each at the 3-credit MAT 265/266/267/CSE 259 option (= 12 cr min for the calculus selects + 3 cr MAT 243).",
+    "Scientific Thinking in Natural Sciences (SCIT) = 11 cr: 8 cr from one subject area + 3-4 cr from a different subject area. The checksheet enumerates ~60 approved lab-science courses (ABS/AST/BIO/CHM/ENV/FOR/GLG/GPH/MSE/PHS/PHY/SES/SOS); modeled as an 11-credit wildcard select pool ('*:*') per ASU General Studies Gold practice rather than enumerating every science course.",
+    "Gen-ed modeled as ASU General Studies Gold wildcard pools: First-Year Composition (one_of: ENG 101+102, OR ENG 105 + 3cr balance, OR ENG 107+108) = 6 cr; ASU 101 First-Year Seminar = 1 cr; Humanities/Arts/Design (HUAD) 6, Social/Behavioral (SOBE) 3, American Institutions (AMIT) 3, Global Communities (GCSI) 3. The checksheet embeds these General Studies designations on courses (CSE 300 carries HUAD, IEE 380 carries QTRS, the calculus carries MATH, the lab sciences carry SCIT) rather than listing separate distribution rows; the broad distribution areas are covered by the linked university General Studies requirement and are modeled here as wildcard pools to reach the 120-credit minimum.",
+    "Credit check: major+supporting modeled blocks (lower core 17 + upper core 30 + CSE 365 3 + advanced-choice 3 + 400-level CSE 12 + technical electives 6 + MAT 243 3 + Calc I 3 + Calc II 3 + Calc III/Logic 3 + SCIT science 11 = 94) + gen-ed/elective (ASU 101 1 + First-Year Composition 6 + HUAD 6 + SOBE 3 + AMIT 3 + GCSI 3 + university electives 4 = 26) = 120, matching the stated 120-credit graduation minimum. University Electives set to 4 cr to close the gap exactly at the 3-credit-floor reading of the variable calculus selects; the catalog's variable 3-4 credit calculus/science means a student taking the 4-credit MAT 270/271/272 or 4-credit lab sciences reaches 120 with fewer free electives."
+  ]
+}

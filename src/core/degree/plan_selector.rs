@@ -315,7 +315,11 @@ impl<'a> PlanSelector<'a> {
         let n = course_metrics.len();
         #[allow(clippy::cast_precision_loss)]
         let avg_chain_length = if n > 0 {
-            course_metrics.values().map(|m| m.chain_length).sum::<usize>() as f64 / n as f64
+            course_metrics
+                .values()
+                .map(|m| m.chain_length)
+                .sum::<usize>() as f64
+                / n as f64
         } else {
             0.0
         };
@@ -445,19 +449,20 @@ impl<'a> PlanSelector<'a> {
         })
     }
 
-    /// Check if a plan is eligible for calc-ready consideration
+    /// Whether a plan is eligible for calc-ready consideration.
     ///
-    /// A plan is calc-ready if it contains calculus courses.
-    /// All such plans are considered calc-ready candidates.
+    /// Matches each plan course against `config.calculus_courses` and
+    /// `config.calculus_patterns`. Both are matched against course *codes*, so a
+    /// `calculus_patterns` entry only fires when the code itself contains it.
+    #[must_use]
     pub fn is_calc_ready_plan(&self, variant: &PlanVariant) -> bool {
-        // Check if any course matches calculus course codes or patterns
         variant.courses.iter().any(|course| {
-            // Direct match with calculus courses
             self.config
                 .calculus_courses
                 .iter()
                 .any(|calc| course.contains(calc))
-                // Pattern match with calculus patterns (e.g., "Calculus" in course name)
+                // Against the course code, not its name: a `calculus_patterns` entry
+                // like "Calculus" can never match, only one like "CALC" can.
                 || self
                     .config
                     .calculus_patterns
@@ -797,6 +802,74 @@ mod tests {
         let config = PlanSelectorConfig::default();
         assert_eq!(config.sample_count, 5);
         assert!(!config.calculus_courses.is_empty());
+    }
+
+    #[test]
+    fn test_is_calc_ready_plan_matches_configured_course_codes() {
+        let (school, dag) = (create_test_school(), create_test_dag());
+        let selector = PlanSelector::new(&school, &dag, PlanSelectorConfig::default());
+
+        // (courses, expected, why)
+        let cases: &[(&[&str], bool, &str)] = &[
+            (
+                &["MATH160", "CS150"],
+                true,
+                "MATH160 is in the default list",
+            ),
+            (&["MATH1341"], true, "MATH1341 is in the default list"),
+            (
+                &["MATH1601"],
+                true,
+                "matching is by substring, so a longer code containing a listed one matches",
+            ),
+            (&[], false, "an empty plan contains no calculus course"),
+            (&["CS150", "CS163"], false, "no mathematics course at all"),
+            (
+                &["MAT266"],
+                false,
+                "Arizona State numbers calculus MAT265/266, which the default list omits",
+            ),
+            (
+                &["MATH241", "MATH242"],
+                false,
+                "Hawaii numbers calculus MATH241/242, which the default list omits",
+            ),
+        ];
+        for (courses, expected, why) in cases {
+            let variant = create_test_variant(courses);
+            assert_eq!(
+                selector.is_calc_ready_plan(&variant),
+                *expected,
+                "{courses:?}: {why}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_calculus_patterns_cannot_match_a_course_name() {
+        // Documents a live limitation rather than desired behaviour: the default
+        // `calculus_patterns` are matched against course *ids*, so the "Calculus" entry
+        // can never fire — only an id-shaped entry like "CALC" can. Any fix that starts
+        // matching course titles should make this test fail.
+        let (school, dag) = (create_test_school(), create_test_dag());
+        let config = PlanSelectorConfig::default();
+        assert!(
+            config
+                .calculus_patterns
+                .iter()
+                .any(|p| p.eq_ignore_ascii_case("calculus")),
+            "the default patterns still include the name-shaped entry this test is about"
+        );
+        let selector = PlanSelector::new(&school, &dag, config);
+
+        assert!(
+            !selector.is_calc_ready_plan(&create_test_variant(&["MATH241"])),
+            "a course whose title is Calculus I is not matched, because only its id is seen"
+        );
+        assert!(
+            selector.is_calc_ready_plan(&create_test_variant(&["CALC1"])),
+            "the id-shaped CALC pattern does match an id containing it"
+        );
     }
 
     #[test]

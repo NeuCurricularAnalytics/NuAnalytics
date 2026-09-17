@@ -505,8 +505,9 @@ mod tests {
         // most recent ones survive.
         let yaml = crate::mcp::tools::samples::yaml_for_key("csu")
             .expect("csu sample key must resolve to embedded YAML");
-        let sample = crate::mcp::tools::analyze::build_artifacts(yaml, Some(10), None, None, None, None)
-            .expect("build");
+        let sample =
+            crate::mcp::tools::analyze::build_artifacts(yaml, Some(10), None, None, None, None)
+                .expect("build");
         let shared = Arc::new(sample);
 
         let mut cache = ArtifactCache::default();

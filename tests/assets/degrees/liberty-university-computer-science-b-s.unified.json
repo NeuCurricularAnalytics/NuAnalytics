@@ -1,0 +1,962 @@
+{
+  "degree": {
+    "cip_code": "11.0701",
+    "degree_type": "BS",
+    "id": "liberty-university-bachelor-of-science-in-computer-science-general-resident",
+    "institution": "Liberty University",
+    "unitid": 232557,
+    "name": "Bachelor of Science in Computer Science - General (Resident)",
+    "source_url": "https://catalog.liberty.edu/undergraduate/colleges-schools/business/computer-science-major-bs/general-resident/",
+    "system_type": "semester",
+    "catalog_year": "2024-2025",
+    "total_credits": 120,
+    "major_subjects": [
+      "CSCN",
+      "CSIS",
+      "MATH"
+    ],
+    "tags": [
+      "cs-major"
+    ]
+  },
+  "requirements": {
+    "major_foundational": {
+      "type": "all",
+      "category": "major",
+      "name": "Major Foundational Courses",
+      "courses": [
+        "BUSI240",
+        "CSCN110",
+        "CSCN111",
+        "ENGR270",
+        "MATH131",
+        "PHYS201"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "major_core": {
+      "type": "all",
+      "category": "major",
+      "name": "Major Courses (Computer Science Core)",
+      "courses": [
+        "CSCN112",
+        "CSCN215",
+        "CSCN230",
+        "CSCN326",
+        "CSCN340",
+        "CSCN342",
+        "CSCN345",
+        "CSCN352",
+        "CSCN355",
+        "CSCN434",
+        "CSCN443",
+        "CSCN471",
+        "CSCN481",
+        "CSCN482"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "quantitative_studies_core": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Quantitative Studies Courses (Required)",
+      "courses": [
+        "MATH211",
+        "MATH250",
+        "MATH350"
+      ],
+      "tags": [
+        "supporting"
+      ]
+    },
+    "math_elective": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Math Elective",
+      "count": 1,
+      "from": {
+        "courses": [
+          "MATH132",
+          "MATH221",
+          "MATH301",
+          "MATH302",
+          "MATH307"
+        ]
+      },
+      "tags": [
+        "supporting",
+        "elective"
+      ]
+    },
+    "lab_science_elective": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Lab Science Elective",
+      "count": 1,
+      "from": {
+        "courses": [
+          "[PHYS202, PHYS202L]"
+        ]
+      },
+      "tags": [
+        "supporting",
+        "elective"
+      ]
+    },
+    "technical_elective": {
+      "type": "select",
+      "category": "major",
+      "name": "Technical Elective (7 credits, approved BUSI/CSCN/ENGR/advanced MATH)",
+      "credits": 7,
+      "from": {
+        "courses": [
+          "BUSI300",
+          "BUSI301"
+        ],
+        "include": [
+          "CSCN:200+",
+          "ENGR:200+",
+          "MATH:132+"
+        ]
+      },
+      "tags": [
+        "elective"
+      ]
+    },
+    "cognate_required": {
+      "type": "all",
+      "category": "major",
+      "name": "General Cognate: Required Course",
+      "courses": [
+        "CSCN354"
+      ],
+      "tags": [
+        "cognate"
+      ]
+    },
+    "cognate_cs_electives": {
+      "type": "select",
+      "category": "major",
+      "name": "General Cognate: Computer Science Electives (300-400 level CSCN)",
+      "count": 2,
+      "from": {
+        "include": [
+          "CSCN:300-400"
+        ]
+      },
+      "tags": [
+        "cognate",
+        "elective"
+      ]
+    },
+    "cognate_programming_language_elective": {
+      "type": "select",
+      "category": "major",
+      "name": "General Cognate: Computer Science Programming Language Elective",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CSIS209",
+          "CSIS212",
+          "CSIS244",
+          "CSIS312",
+          "CSIS315",
+          "CSIS316",
+          "CSIS354",
+          "BMIT212"
+        ]
+      },
+      "tags": [
+        "cognate",
+        "elective"
+      ]
+    },
+    "gened_composition": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Liberty Core: Composition & Rhetoric (ENGL 101)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "ENGL101"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_communications": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Liberty Core: Communications Elective",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 3,
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_information_literacy": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Liberty Core: Information Literacy Electives (2 courses)",
+      "credits": 6,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 6,
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_univ_seminar": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "Liberty Core: Foundational Skills Seminar (UNIV 101)",
+      "courses": [
+        "UNIV101"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_critical_thinking": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Liberty Core: Critical Thinking Elective",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 3,
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_cultural_studies": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Liberty Core: Cultural Studies Elective",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 3,
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_social_science": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Liberty Core: Social Science Elective",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 3,
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gened_biblical_worldview": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "Liberty Core: Christianity & Contexts (Bible/Theology)",
+      "courses": [
+        "RLGN105",
+        "EVAN101",
+        "BIBL105",
+        "BIBL110",
+        "THEO201",
+        "THEO202"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    }
+  },
+  "courses": {
+    "BUSI240": {
+      "name": "Organizational Behavior and Management",
+      "prefix": "BUSI",
+      "number": "240",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "BUSI105"
+    },
+    "BUSI105": {
+      "name": "Foundations of Business",
+      "prefix": "BUSI",
+      "number": "105",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "BUSI300": {
+      "name": "Business Technical Elective",
+      "prefix": "BUSI",
+      "number": "300",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "BUSI301": {
+      "name": "Business Technical Elective",
+      "prefix": "BUSI",
+      "number": "301",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCN110": {
+      "name": "Introduction to Computer Sciences",
+      "prefix": "CSCN",
+      "number": "110",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH131 | MATH132 | MATH250"
+    },
+    "CSCN111": {
+      "name": "Programming in C++ Beginner",
+      "prefix": "CSCN",
+      "number": "111",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCN110 | CSIS110"
+    },
+    "CSCN112": {
+      "name": "Programming in C++ Advanced",
+      "prefix": "CSCN",
+      "number": "112",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCN111 | CSIS111"
+    },
+    "CSCN215": {
+      "name": "Data Structures and Algorithms using C++",
+      "prefix": "CSCN",
+      "number": "215",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "(CSCN112 | CSIS112) & MATH250"
+    },
+    "CSCN230": {
+      "name": "Business Data Communications and Networks",
+      "prefix": "CSCN",
+      "number": "230",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCN326": {
+      "name": "Database Design and Management",
+      "prefix": "CSCN",
+      "number": "326",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCN215 | CSIS215"
+    },
+    "CSCN340": {
+      "name": "Information Security Concepts and Principles",
+      "prefix": "CSCN",
+      "number": "340",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCN342": {
+      "name": "Computer Architecture",
+      "prefix": "CSCN",
+      "number": "342",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCN215 | CSIS215"
+    },
+    "CSCN345": {
+      "name": "Linux Operating System",
+      "prefix": "CSCN",
+      "number": "345",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCN111 | CSIS111 | CSIS212 | BMIT212"
+    },
+    "CSCN352": {
+      "name": "Windows System Administration",
+      "prefix": "CSCN",
+      "number": "352",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCN345 | CSIS345 | BMIT220 | BMIS320"
+    },
+    "CSCN354": {
+      "name": "Fundamentals of Distributed Systems",
+      "prefix": "CSCN",
+      "number": "354",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCN342 | CSIS342 | CSIS320 | BMIT220"
+    },
+    "CSCN355": {
+      "name": "Network Architecture, Protocols, and Theory",
+      "prefix": "CSCN",
+      "number": "355",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "(CSCN345 | CSIS345) & (CSCN112 | CSIS112)"
+    },
+    "CSCN434": {
+      "name": "Programming Language Design and Compiler Theory",
+      "prefix": "CSCN",
+      "number": "434",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "(CSCN342 | CSIS342) & MATH350"
+    },
+    "CSCN443": {
+      "name": "Operating Systems Design",
+      "prefix": "CSCN",
+      "number": "443",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCN342 | CSIS342"
+    },
+    "CSCN471": {
+      "name": "Software Engineering Management",
+      "prefix": "CSCN",
+      "number": "471",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCN215 | CSIS215"
+    },
+    "CSCN481": {
+      "name": "Computer Sciences Practicum I",
+      "prefix": "CSCN",
+      "number": "481",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "(CSCN471 | CSIS471) & (CSCN326 | CSIS326)"
+    },
+    "CSCN482": {
+      "name": "Computer Sciences Practicum II",
+      "prefix": "CSCN",
+      "number": "482",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCN481 | CSIS481"
+    },
+    "CSCN300": {
+      "name": "Computer Science Elective (300-level placeholder pool)",
+      "prefix": "CSCN",
+      "number": "300",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCN310": {
+      "name": "Computer Science Elective (300-level placeholder pool)",
+      "prefix": "CSCN",
+      "number": "310",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCN400": {
+      "name": "Computer Science Elective (400-level placeholder pool)",
+      "prefix": "CSCN",
+      "number": "400",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENGR270": {
+      "name": "Technical Communication",
+      "prefix": "ENGR",
+      "number": "270",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "ENGL101"
+    },
+    "ENGR200": {
+      "name": "Engineering Technical Elective",
+      "prefix": "ENGR",
+      "number": "200",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENGR210": {
+      "name": "Engineering Technical Elective",
+      "prefix": "ENGR",
+      "number": "210",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH131": {
+      "name": "Calculus and Analytic Geometry I",
+      "prefix": "MATH",
+      "number": "131",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH128 | MATH121"
+    },
+    "MATH128": {
+      "name": "Precalculus with Trigonometry",
+      "prefix": "MATH",
+      "number": "128",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH121": {
+      "name": "College Algebra",
+      "prefix": "MATH",
+      "number": "121",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH132": {
+      "name": "Calculus and Analytic Geometry II",
+      "prefix": "MATH",
+      "number": "132",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH131 | ENGR131"
+    },
+    "MATH211": {
+      "name": "Introduction to Statistical Analysis",
+      "prefix": "MATH",
+      "number": "211",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH131"
+    },
+    "MATH221": {
+      "name": "Applied Linear Algebra",
+      "prefix": "MATH",
+      "number": "221",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH131"
+    },
+    "MATH250": {
+      "name": "Introduction to Discrete Mathematics",
+      "prefix": "MATH",
+      "number": "250",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH121 | MATH128 | MATH131 | ENGR131"
+    },
+    "MATH301": {
+      "name": "Methods of Operations Research",
+      "prefix": "MATH",
+      "number": "301",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH211 | MATH311 | ENGR210"
+    },
+    "MATH302": {
+      "name": "Introduction to Experimental Design in Statistics",
+      "prefix": "MATH",
+      "number": "302",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH211 | MATH311 | ENGR210"
+    },
+    "MATH307": {
+      "name": "Introductory Number Theory",
+      "prefix": "MATH",
+      "number": "307",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH200 | MATH250"
+    },
+    "MATH350": {
+      "name": "Discrete Mathematics",
+      "prefix": "MATH",
+      "number": "350",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH200 | MATH250"
+    },
+    "MATH200": {
+      "name": "Introduction to Mathematical Reasoning",
+      "prefix": "MATH",
+      "number": "200",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH122": {
+      "name": "Applied Calculus",
+      "prefix": "MATH",
+      "number": "122",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH126": {
+      "name": "Precalculus",
+      "prefix": "MATH",
+      "number": "126",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH311": {
+      "name": "Probability and Statistics",
+      "prefix": "MATH",
+      "number": "311",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENGR131": {
+      "name": "Engineering Calculus and Analysis I",
+      "prefix": "ENGR",
+      "number": "131",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "PHYS201": {
+      "name": "General Physics I",
+      "prefix": "PHYS",
+      "number": "201",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH121 | MATH122 | MATH126 | MATH128 | MATH131"
+    },
+    "PHYS202": {
+      "name": "General Physics II",
+      "prefix": "PHYS",
+      "number": "202",
+      "credit_hours": 4.0,
+      "corequisites": [
+        "PHYS202L"
+      ],
+      "strict_corequisites": [],
+      "prerequisites": "PHYS201"
+    },
+    "PHYS202L": {
+      "name": "General Physics Lab II",
+      "prefix": "PHYS",
+      "number": "202L",
+      "credit_hours": 0.0,
+      "corequisites": [
+        "PHYS202"
+      ],
+      "strict_corequisites": []
+    },
+    "CSIS110": {
+      "name": "Introduction to Computer Science",
+      "prefix": "CSIS",
+      "number": "110",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSIS111": {
+      "name": "Programming in C++ Beginner",
+      "prefix": "CSIS",
+      "number": "111",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSIS112": {
+      "name": "Programming in C++ Advanced",
+      "prefix": "CSIS",
+      "number": "112",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSIS215": {
+      "name": "Data Structures and Algorithms using C++",
+      "prefix": "CSIS",
+      "number": "215",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSIS320": {
+      "name": "Web Programming",
+      "prefix": "CSIS",
+      "number": "320",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSIS326": {
+      "name": "Database Design and Management",
+      "prefix": "CSIS",
+      "number": "326",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSIS342": {
+      "name": "Computer Architecture",
+      "prefix": "CSIS",
+      "number": "342",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSIS345": {
+      "name": "Linux Operating System",
+      "prefix": "CSIS",
+      "number": "345",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSIS471": {
+      "name": "Software Engineering Management",
+      "prefix": "CSIS",
+      "number": "471",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSIS481": {
+      "name": "Computer Sciences Practicum I",
+      "prefix": "CSIS",
+      "number": "481",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSIS209": {
+      "name": "C# Programming",
+      "prefix": "CSIS",
+      "number": "209",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSIS208 | CSIS111 | CSIS212 | BMIS212"
+    },
+    "CSIS208": {
+      "name": "Introduction to Programming",
+      "prefix": "CSIS",
+      "number": "208",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSIS212": {
+      "name": "Object-Oriented Programming",
+      "prefix": "CSIS",
+      "number": "212",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSIS110 | CSIS208 | MATH131"
+    },
+    "CSIS244": {
+      "name": "Assembly Language",
+      "prefix": "CSIS",
+      "number": "244",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSIS111"
+    },
+    "CSIS312": {
+      "name": "Advanced Object-Oriented Programming",
+      "prefix": "CSIS",
+      "number": "312",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSIS212 | BMIS212"
+    },
+    "CSIS315": {
+      "name": "Front-end Programming",
+      "prefix": "CSIS",
+      "number": "315",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSIS212 | CSIS111 | CSIS208"
+    },
+    "CSIS316": {
+      "name": "Back-end Programming",
+      "prefix": "CSIS",
+      "number": "316",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSIS111 | CSIS208 | CSIS212"
+    },
+    "CSIS354": {
+      "name": "Integrative Programming and Technologies",
+      "prefix": "CSIS",
+      "number": "354",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSIS320 | CSIS342"
+    },
+    "BMIT212": {
+      "name": "Visual Basic Programming",
+      "prefix": "BMIT",
+      "number": "212",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "BMIT220": {
+      "name": "Networking Infrastructure",
+      "prefix": "BMIT",
+      "number": "220",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "BMIS212": {
+      "name": "Introduction to Programming Concepts",
+      "prefix": "BMIS",
+      "number": "212",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "BMIS320": {
+      "name": "Information Systems Management",
+      "prefix": "BMIS",
+      "number": "320",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENGL101": {
+      "name": "Composition and Rhetoric",
+      "prefix": "ENGL",
+      "number": "101",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "UNIV101": {
+      "name": "Foundational Skills",
+      "prefix": "UNIV",
+      "number": "101",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "RLGN105": {
+      "name": "Introduction to Biblical Worldview",
+      "prefix": "RLGN",
+      "number": "105",
+      "credit_hours": 2.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "EVAN101": {
+      "name": "Evangelism and the Christian Life",
+      "prefix": "EVAN",
+      "number": "101",
+      "credit_hours": 2.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "BIBL105": {
+      "name": "Old Testament Survey",
+      "prefix": "BIBL",
+      "number": "105",
+      "credit_hours": 2.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "BIBL110": {
+      "name": "New Testament Survey",
+      "prefix": "BIBL",
+      "number": "110",
+      "credit_hours": 2.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "THEO201": {
+      "name": "Theology Survey I",
+      "prefix": "THEO",
+      "number": "201",
+      "credit_hours": 2.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "THEO202": {
+      "name": "Theology Survey II",
+      "prefix": "THEO",
+      "number": "202",
+      "credit_hours": 2.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    }
+  },
+  "conversion_warnings": [
+    "Rebuilt from the live CourseLeaf catalog (catalog.liberty.edu) for the General cognate, Resident track; course detail/prereqs verified via the /ribbit getcourse.rjs endpoint. Skeletal source had ~200 auto-generated placeholder CSCN courses (CSCN200-CSCN400 'CSCN nnn Course') and miscategorized blocks; these were discarded and replaced with the catalog's real requirement structure.",
+    "Liberty offers CS as both CSCN (this resident/major-of-record sequence) and CSIS prefixes; nearly every CSCN course prereq is stated as '(CSIS nnn or CSCN nnn)'. Both prefix variants are defined in courses{} so the OR prerequisites resolve; major_subjects=[CSCN,CSIS,MATH].",
+    "cip_code 11.0701 (Computer Science) inferred from program name; not stated in catalog. degree_type BS confirmed.",
+    "catalog_year set to 2024-2025 (the 'general-resident' page is the current effective catalog; year not explicitly printed on the program page).",
+    "Quantitative Studies modeled as 12 cr: MATH 211 + MATH 250 + MATH 350 (required, 9 cr) + 1 Math Elective (3 cr from MATH 132/221/301/302/307). Catalog states 12-13 cr (the elective may be 4 cr if MATH 132 is chosen); modeled at the 12-cr minimum.",
+    "Lab Science Elective modeled as PHYS 202 + PHYS 202L bundle (4 cr; PHYS 202L is 0 cr, bundled with the 4-cr lecture) per the skeletal source's PHYS 202/202L pairing.",
+    "Technical Elective (7 cr) modeled as a select pool using include patterns CSCN:200+, ENGR:200+, MATH:132+ plus explicit BUSI 300/301 placeholders; the catalog's approved list is 'BUSI, CSCN, ENGR, or advanced MATH courses'. Representative ENGR/BUSI/CSCN courses are defined so the pattern pool is non-empty.",
+    "General Cognate CS Electives (2 courses, 300-400 level CSCN) modeled with include pattern CSCN:300-400; CSCN300/CSCN310/CSCN400 placeholder courses are defined so the pattern matches real entries (catalog lists these as advisor-approved upper-level CSCN, not enumerated individually).",
+    "Programming-language elective option list (CSIS 209/212/244/312/315/316/354, BMIT 212) carried over from the skeletal source and verified against the catalog; BMIT 212 returned an empty ribbit record, so its title 'Visual Basic Programming' is inferred (credits 3 confirmed by program structure).",
+    "Liberty University Core (General Education / Foundational Skills, stated 42-45 cr) modeled as: defined Bible/Theology/seminar courses (UNIV 101, RLGN 105, EVAN 101, BIBL 105, BIBL 110, THEO 201, THEO 202 = 15 cr) + ENGL 101 (3 cr) + wildcard '*:*' pools (Communications 3, Information Literacy 6, Critical Thinking 3, Cultural Studies 3, Social Science 3 = 18 cr). The MATH (4 cr) and Natural Science (4 cr) Core slots are fulfilled by the major's MATH 131 and PHYS 201 (catalog: 'foundational courses may fulfill select general education requirements'); they are NOT double-counted here.",
+    "Credit-overlap note: the catalog reconciles Gen Ed 42-45 + Major 65-66 + Cognate 12 to a 120-hour total via shared foundational courses, and its own Plan of Study Grid totals 119-123. Modeled requirement blocks sum to ~133 cr because the MATH/Natural-Science gen-ed overlap and the catalog's elective flex range are not collapsed; this overlap is documented rather than modeled, matching the gold-file approach."
+  ]
+}

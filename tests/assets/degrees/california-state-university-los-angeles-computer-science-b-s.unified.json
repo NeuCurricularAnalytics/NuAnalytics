@@ -1,0 +1,625 @@
+{
+  "degree": {
+    "cip_code": "11.0701",
+    "degree_type": "BS",
+    "id": "california-state-university-los-angeles-bachelor-of-science-in-computer-science",
+    "institution": "California State University, Los Angeles",
+    "unitid": 110592,
+    "name": "Bachelor of Science in Computer Science",
+    "source_url": "https://ecatalog.calstatela.edu/preview_program.php?catoid=75&poid=34312&returnto=10865&print=1",
+    "system_type": "semester",
+    "catalog_year": "2025-2026",
+    "total_credits": 120,
+    "major_subjects": [
+      "CS",
+      "MATH",
+      "PHYS",
+      "EE",
+      "ENGL"
+    ],
+    "tags": [
+      "ai",
+      "ai-elective"
+    ]
+  },
+  "requirements": {
+    "lower_division_core": {
+      "type": "all",
+      "category": "major",
+      "name": "Lower Division Core Courses (43 units)",
+      "courses": [
+        "CS1222",
+        "CS2011",
+        "CS2012",
+        "CS2013",
+        "CS2148",
+        "CS2445",
+        "CS2470",
+        "ENGL2030",
+        "MATH2110",
+        "MATH2120",
+        "MATH2740",
+        "PHYS2100"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "upper_division_core": {
+      "type": "all",
+      "category": "major",
+      "name": "Upper Division Core Courses (32 units)",
+      "courses": [
+        "CS3035",
+        "CS3112",
+        "CS3186",
+        "CS3220",
+        "CS3337",
+        "CS3338",
+        "CS3801",
+        "CS4440",
+        "CS4961",
+        "CS4962",
+        "CS4963"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "upper_division_electives": {
+      "type": "select",
+      "category": "major",
+      "name": "Upper Division Electives (18 units)",
+      "credits": 18,
+      "from": {
+        "courses": [
+          "CS4075",
+          "CS4188",
+          "CS4220",
+          "CS4222",
+          "CS4470",
+          "CS4471",
+          "CS4472",
+          "CS4540",
+          "CS4550",
+          "CS4551",
+          "CS4555",
+          "CS4635",
+          "CS4660",
+          "CS4661",
+          "CS4662",
+          "CS4665",
+          "CS4780",
+          "CS4875",
+          "EE3445"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "ai",
+        "elective"
+      ]
+    },
+    "general_education": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "CSU General Education-Breadth (43 units, 21 met by major)",
+      "credits": 22,
+      "external_requirement": true,
+      "external_credits": 22,
+      "external_note": "CSU GE-Breadth (new structure effective Fall 2025) totals 43 units across Area 1 (English Communication & Critical Thinking, 9), Area 2 (Mathematics/Quantitative Reasoning, 3), Area 3 (Arts & Humanities, 6), Area 4 (Social Sciences, 6), Area 5 (Physical & Biological Sciences, 7), Area 6 (Ethnic Studies, 3), plus 9 upper-division GE units. Per the program page, 21 of the 43 GE units are met by required major courses (ENGL 2030 -> Area 1A; MATH 2110 -> Area 2; PHYS 2100 -> Area 5A; CS 3801 plus the upper-division GE block are met in major). The remaining 22 GE units are taken outside the major and modeled here as an external wildcard pool. Also includes the 6-unit American Institutions (US History + US/State Constitution & Government), two diversity (d) courses (one meeting (re)/race & ethnicity), a Civic Learning/Community Engagement course, and Writing-Intensive courses, which CSU GE-Breadth double-counts within the 43 units.",
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "free_electives": {
+      "type": "select",
+      "category": "elective",
+      "name": "Free Electives (to reach 120 units)",
+      "credits": 5,
+      "external_requirement": true,
+      "external_credits": 5,
+      "external_note": "Elective units beyond the 93-unit major and the 22 GE units taken outside the major, needed to reach the 120-unit graduation minimum (93 + 22 + 5 = 120). A minimum of 40 units overall must be upper division.",
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "elective"
+      ]
+    }
+  },
+  "courses": {
+    "CS1222": {
+      "name": "Introduction to Relational Databases",
+      "prefix": "CS",
+      "number": "1222",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CS2011": {
+      "name": "Introduction to Programming I",
+      "prefix": "CS",
+      "number": "2011",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CS2012": {
+      "name": "Introduction to Programming II",
+      "prefix": "CS",
+      "number": "2012",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS2011"
+    },
+    "CS2013": {
+      "name": "Programming with Data Structures",
+      "prefix": "CS",
+      "number": "2013",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS2012"
+    },
+    "CS2148": {
+      "name": "Discrete Structures",
+      "prefix": "CS",
+      "number": "2148",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2011",
+          "MATH2110"
+        ]
+      }
+    },
+    "CS2445": {
+      "name": "Introduction to Computer Systems",
+      "prefix": "CS",
+      "number": "2445",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS2011"
+    },
+    "CS2470": {
+      "name": "Fundamentals of Network Systems and Cybersecurity",
+      "prefix": "CS",
+      "number": "2470",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS2011"
+    },
+    "ENGL2030": {
+      "name": "Introduction to Technical Writing",
+      "prefix": "ENGL",
+      "number": "2030",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH2110": {
+      "name": "Calculus I",
+      "prefix": "MATH",
+      "number": "2110",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH2120": {
+      "name": "Calculus II",
+      "prefix": "MATH",
+      "number": "2120",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2110"
+    },
+    "MATH2740": {
+      "name": "Introduction to Data Science and Statistics",
+      "prefix": "MATH",
+      "number": "2740",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2110"
+    },
+    "PHYS2100": {
+      "name": "General Physics I: Mechanics",
+      "prefix": "PHYS",
+      "number": "2100",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2110"
+    },
+    "CS3035": {
+      "name": "Programming Paradigms",
+      "prefix": "CS",
+      "number": "3035",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS2013"
+    },
+    "CS3112": {
+      "name": "Analysis of Algorithms",
+      "prefix": "CS",
+      "number": "3112",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2013",
+          "CS2148"
+        ]
+      }
+    },
+    "CS3186": {
+      "name": "Introduction to Automata Theory",
+      "prefix": "CS",
+      "number": "3186",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2013",
+          "CS2148"
+        ]
+      }
+    },
+    "CS3220": {
+      "name": "Web and Internet Programming",
+      "prefix": "CS",
+      "number": "3220",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS1222",
+          "CS2013"
+        ]
+      }
+    },
+    "CS3337": {
+      "name": "Software Engineering",
+      "prefix": "CS",
+      "number": "3337",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "ENGL2030"
+      ],
+      "strict_corequisites": [],
+      "prerequisites": "CS2013"
+    },
+    "CS3338": {
+      "name": "Software Engineering Tools",
+      "prefix": "CS",
+      "number": "3338",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS2013"
+    },
+    "CS3801": {
+      "name": "Societal and Ethical Issues in Computing",
+      "prefix": "CS",
+      "number": "3801",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS2013"
+    },
+    "CS4440": {
+      "name": "Introduction to Operating Systems",
+      "prefix": "CS",
+      "number": "4440",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2013",
+          "CS2445",
+          "CS2470"
+        ]
+      }
+    },
+    "CS4961": {
+      "name": "Software Design Laboratory I",
+      "prefix": "CS",
+      "number": "4961",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS3035",
+          "CS3112",
+          "CS3186",
+          "CS3220",
+          "CS3337",
+          "CS3338",
+          "CS3801",
+          "CS4440"
+        ]
+      }
+    },
+    "CS4962": {
+      "name": "Software Design Laboratory II",
+      "prefix": "CS",
+      "number": "4962",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS4961"
+    },
+    "CS4963": {
+      "name": "Computer Science Recapitulation",
+      "prefix": "CS",
+      "number": "4963",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "CS4962"
+      ],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "MATH2740",
+          "PHYS2100"
+        ]
+      }
+    },
+    "CS4075": {
+      "name": "Concurrent and Distributed Programming",
+      "prefix": "CS",
+      "number": "4075",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS3112",
+          "CS3035"
+        ]
+      }
+    },
+    "CS4188": {
+      "name": "Compilers",
+      "prefix": "CS",
+      "number": "4188",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS3035",
+          "CS3112",
+          "CS3186"
+        ]
+      }
+    },
+    "CS4220": {
+      "name": "Current Trends in Web Design and Development",
+      "prefix": "CS",
+      "number": "4220",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS3112",
+          "CS3220"
+        ]
+      }
+    },
+    "CS4222": {
+      "name": "Principles of Data Base Systems",
+      "prefix": "CS",
+      "number": "4222",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS1222",
+          "CS3112"
+        ]
+      }
+    },
+    "CS4470": {
+      "name": "Computer Networking Protocols",
+      "prefix": "CS",
+      "number": "4470",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2013",
+          "CS2470"
+        ]
+      }
+    },
+    "CS4471": {
+      "name": "Computer Networks Configuration and Management",
+      "prefix": "CS",
+      "number": "4471",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2013",
+          "CS2470"
+        ]
+      }
+    },
+    "CS4472": {
+      "name": "Computer and Cyber Security",
+      "prefix": "CS",
+      "number": "4472",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2470",
+          "CS3112"
+        ]
+      }
+    },
+    "CS4540": {
+      "name": "Topics in Advanced Computer Science",
+      "prefix": "CS",
+      "number": "4540",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "repeatable": true,
+      "max_repeat_credits": 20
+    },
+    "CS4550": {
+      "name": "Computer Graphics",
+      "prefix": "CS",
+      "number": "4550",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3112"
+    },
+    "CS4551": {
+      "name": "Multimedia Software Systems",
+      "prefix": "CS",
+      "number": "4551",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3112"
+    },
+    "CS4555": {
+      "name": "Introduction to 3D Computer Game Programming",
+      "prefix": "CS",
+      "number": "4555",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3112"
+    },
+    "CS4635": {
+      "name": "Modeling and Simulation",
+      "prefix": "CS",
+      "number": "4635",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3112"
+    },
+    "CS4660": {
+      "name": "Artificial Intelligence",
+      "prefix": "CS",
+      "number": "4660",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3112",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4661": {
+      "name": "Introduction to Data Science",
+      "prefix": "CS",
+      "number": "4661",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3112",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4662": {
+      "name": "Advanced Machine Learning and Deep Learning",
+      "prefix": "CS",
+      "number": "4662",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS4661",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4665": {
+      "name": "Introduction to Data Visualization",
+      "prefix": "CS",
+      "number": "4665",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3112",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4780": {
+      "name": "Cryptography and Information Security",
+      "prefix": "CS",
+      "number": "4780",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3112"
+    },
+    "CS4875": {
+      "name": "Human Centered Computing",
+      "prefix": "CS",
+      "number": "4875",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3112"
+    },
+    "EE3445": {
+      "name": "Computer Organization",
+      "prefix": "EE",
+      "number": "3445",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS2013"
+    }
+  },
+  "conversion_warnings": [
+    "catalog_year 2025-2026 confirmed from the live program page (Modern Campus catoid=75).",
+    "degree_type BS confirmed per catalog (Bachelor of Science in Computer Science).",
+    "cip_code 11.0701 (Computer Science) inferred from program name; not stated in catalog.",
+    "Major structure per the live program page: Lower Division Core 43 units (12 courses), Upper Division Core 32 units (11 courses), Upper Division Electives 18 units = 93 major units total, matching the catalog's stated 'Major Units: 93'.",
+    "Upper Division Electives modeled as a type:select pool over all 19 catalog options (18 CS 4xxx courses + EE 3445), credits:18, exclude_used:true. CS 4540 (Topics) is catalog variable 1-3 units, repeatable to 20 units; modeled at 3.0 units for pool purposes.",
+    "Corrected from skeletal source: MATH 2120 listed MATH 2110 as a COREQUISITE in the skeleton, but the live catalog states 'Prerequisite: C or higher in MATH 2110' -> remodeled as a prerequisite. CS 4540 credit_hours corrected 1.0 -> 3.0 (catalog lists 3 units, variable 1-3) and marked repeatable.",
+    "Corrected from skeletal source: the skeleton split CS courses into 'cs_course_core' (all 22 incl. ENGL/MATH/PHYS) and a single 'picklist_upper-division-electives' (count:18, miscategorized as category:elective). Rebuilt into Lower Division Core (43u), Upper Division Core (32u, category:major), and Upper Division Electives (18u, category:major); the elective block now uses credits:18 rather than count:18 (the catalog states '18 units', and CS 4540 can be 1-3 units so a count is inaccurate).",
+    "Prerequisites/corequisites carried from the skeletal source (same source catalog) and spot-verified against the live course catalog: CS 3337 corequisite ENGL 2030 retained; CS 4963 corequisite CS 4962 retained; CS 4961 requires the full upper-division core chain. CS 4540 (Topics) has no fixed prerequisite (consent/varies) and is left without a prereq to avoid a dangling/invalid reference.",
+    "General Education modeled as ONE external wildcard select pool ('*:*', external_requirement:true). CSU GE-Breadth (new structure, Fall 2025) is 43 units; the program page states 21 of those 43 units are met by required major courses (ENGL 2030 -> Area 1A Written Communication; MATH 2110 -> Area 2 Quantitative Reasoning; PHYS 2100 -> Area 5A Physical Science; CS 3801 + the 9 upper-division GE units 'met in major'). Only the 22 GE units taken OUTSIDE the major are counted in requirements to avoid double-counting major credits.",
+    "American Institutions (6u: US History + US/State Constitution & Government), the two diversity (d) courses (one (re)/race-and-ethnicity), Civic Learning/Community Engagement, and the Writing-Intensive requirement are folded into the 22-unit external GE pool because CSU GE-Breadth double-counts them within the 43 GE units.",
+    "Credit reconciliation: Lower Division Core 43 + Upper Division Core 32 + Upper Division Electives 18 + GE-outside-major 22 + Free Electives 5 = 120 = total_credits. Major = 93 (matches catalog). GE = 43 (21 met by major, 22 external). A minimum of 40 units overall must be upper division (not separately modeled).",
+    "Free Electives set to 5 units to close the gap to the 120-unit minimum after major (93) and GE-outside-major (22)."
+  ]
+}

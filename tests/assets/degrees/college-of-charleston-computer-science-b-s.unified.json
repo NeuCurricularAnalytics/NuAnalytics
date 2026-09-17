@@ -1,0 +1,820 @@
+{
+  "degree": {
+    "cip_code": "11.0701",
+    "degree_type": "BS",
+    "id": "college-of-charleston-bachelor-of-science-in-computer-science",
+    "institution": "College of Charleston",
+    "unitid": 217819,
+    "name": "Bachelor of Science in Computer Science",
+    "source_url": "https://catalog.cofc.edu/preview_program.php?catoid=29&poid=5913&print=1",
+    "system_type": "semester",
+    "catalog_year": "2025-2026",
+    "total_credits": 122,
+    "major_subjects": [
+      "CSCI",
+      "MATH"
+    ],
+    "tags": [
+      "ai",
+      "ai-elective"
+    ]
+  },
+  "requirements": {
+    "programming_foundation": {
+      "type": "one_of",
+      "category": "major",
+      "name": "Programming Foundation Sequence",
+      "options": [
+        {
+          "id": "cs_track",
+          "name": "Computer Programming I (CSCI 220)",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "CSCI 220 + Lab",
+              "courses": [
+                "[CSCI220, CSCI220L]"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "eng_track",
+          "name": "Engineering Programming (CSCI 218)",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "CSCI 218 + Lab",
+              "courses": [
+                "[CSCI218, CSCI218L]"
+              ]
+            }
+          ]
+        }
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "cs_core": {
+      "type": "all",
+      "category": "major",
+      "name": "Computer Science Core",
+      "courses": [
+        "CSCI221",
+        "CSCI230",
+        "CSCI250",
+        "CSCI300",
+        "CSCI310",
+        "CSCI320",
+        "CSCI340",
+        "CSCI345",
+        "CSCI350",
+        "CSCI362",
+        "CSCI431",
+        "CSCI495"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "cs_electives": {
+      "type": "select",
+      "category": "major",
+      "name": "Computer Science Electives (300-level or higher CSCI)",
+      "credits": 6,
+      "from": {
+        "include": [
+          "CSCI:300+"
+        ],
+        "exclude": [
+          "CSCI300",
+          "CSCI310",
+          "CSCI320",
+          "CSCI340",
+          "CSCI345",
+          "CSCI350",
+          "CSCI362",
+          "CSCI431",
+          "CSCI495"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "ai",
+        "elective"
+      ]
+    },
+    "math_required": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Required Mathematics",
+      "courses": [
+        "MATH120",
+        "MATH207",
+        "MATH250",
+        "MATH307"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "math_additional": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Additional Mathematics Course",
+      "count": 1,
+      "from": {
+        "courses": [
+          "MATH203",
+          "MATH220",
+          "MATH245",
+          "MATH350",
+          "MATH440"
+        ]
+      },
+      "tags": [
+        "required"
+      ]
+    },
+    "communication": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Communication Requirement",
+      "courses": [
+        "COMM104"
+      ],
+      "tags": [
+        "required"
+      ]
+    },
+    "gen_ed_writing": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "First-Year Writing",
+      "count": 1,
+      "from": {
+        "courses": [
+          "ENGL110",
+          "ENGL111"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_foreign_language": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Foreign Language (202-level proficiency)",
+      "credits": 3,
+      "from": {
+        "courses": [
+          "SPAN202",
+          "FREN202",
+          "GRMN202"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_history": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "History (Pre-Modern + Modern)",
+      "credits": 6,
+      "from": {
+        "groups": [
+          {
+            "id": "premodern",
+            "name": "Pre-Modern Era",
+            "courses": [
+              "HIST103",
+              "HIST115"
+            ]
+          },
+          {
+            "id": "modern",
+            "name": "Modern Era",
+            "courses": [
+              "HIST104",
+              "HIST116"
+            ]
+          }
+        ],
+        "groups_required": 2,
+        "per_group": 1
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_humanities": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Humanities",
+      "credits": 12,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_natural_science": {
+      "type": "one_of",
+      "category": "gen_ed",
+      "name": "Natural Science Sequence with Laboratories",
+      "options": [
+        {
+          "id": "biology",
+          "name": "Biology Sequence",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "Biology I + II with Labs",
+              "courses": [
+                "[BIOL111, BIOL111L]",
+                "[BIOL112, BIOL112L]"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "chemistry",
+          "name": "Chemistry Sequence",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "Chemistry I + II with Labs",
+              "courses": [
+                "[CHEM111, CHEM111L]",
+                "[CHEM112, CHEM112L]"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "physics",
+          "name": "Physics Sequence",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "General Physics I + II with Labs",
+              "courses": [
+                "[PHYS111, PHYS111L]",
+                "[PHYS112, PHYS112L]"
+              ]
+            }
+          ]
+        }
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_social_science": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Social Sciences",
+      "credits": 6,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "free_electives": {
+      "type": "select",
+      "category": "elective",
+      "name": "Free Electives",
+      "credits": 18,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "elective"
+      ]
+    }
+  },
+  "courses": {
+    "CSCI220": {
+      "name": "Computer Programming I",
+      "prefix": "CSCI",
+      "number": "220",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "CSCI220L"
+      ],
+      "strict_corequisites": []
+    },
+    "CSCI220L": {
+      "name": "Programming I Laboratory",
+      "prefix": "CSCI",
+      "number": "220L",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "CSCI220"
+      ],
+      "strict_corequisites": []
+    },
+    "CSCI218": {
+      "name": "Engineering Programming",
+      "prefix": "CSCI",
+      "number": "218",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "CSCI218L"
+      ],
+      "strict_corequisites": []
+    },
+    "CSCI218L": {
+      "name": "Engineering Programming Lab",
+      "prefix": "CSCI",
+      "number": "218L",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "CSCI218"
+      ],
+      "strict_corequisites": []
+    },
+    "CSCI221": {
+      "name": "Computer Programming II",
+      "prefix": "CSCI",
+      "number": "221",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "[CSCI220, CSCI220L] | [CSCI218, CSCI218L]"
+    },
+    "CSCI230": {
+      "name": "Data Structures and Algorithms",
+      "prefix": "CSCI",
+      "number": "230",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI221 & MATH207"
+    },
+    "CSCI250": {
+      "name": "Introduction to Computer Organization and Assembly Language Programming",
+      "prefix": "CSCI",
+      "number": "250",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI221"
+    },
+    "CSCI300": {
+      "name": "Seminar on Computing and Society",
+      "prefix": "CSCI",
+      "number": "300",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI221 & MATH207"
+    },
+    "CSCI310": {
+      "name": "Advanced Algorithms",
+      "prefix": "CSCI",
+      "number": "310",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI230 & MATH207 & MATH120"
+    },
+    "CSCI320": {
+      "name": "Programming Language Concepts",
+      "prefix": "CSCI",
+      "number": "320",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI230 & MATH207"
+    },
+    "CSCI340": {
+      "name": "Operating Systems",
+      "prefix": "CSCI",
+      "number": "340",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI230 & CSCI250 & MATH207"
+    },
+    "CSCI345": {
+      "name": "Computer and Network Security",
+      "prefix": "CSCI",
+      "number": "345",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI230"
+    },
+    "CSCI350": {
+      "name": "Digital Logic and Computer Organization",
+      "prefix": "CSCI",
+      "number": "350",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI250"
+    },
+    "CSCI362": {
+      "name": "Software Engineering",
+      "prefix": "CSCI",
+      "number": "362",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI230"
+    },
+    "CSCI431": {
+      "name": "Database Concepts",
+      "prefix": "CSCI",
+      "number": "431",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI221 & MATH207"
+    },
+    "CSCI495": {
+      "name": "Software Engineering Capstone",
+      "prefix": "CSCI",
+      "number": "495",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "COMM104 & CSCI362 & CSCI431"
+    },
+    "CSCI380": {
+      "name": "User Interface Development",
+      "prefix": "CSCI",
+      "number": "380",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI230"
+    },
+    "CSCI410": {
+      "name": "Automata and Formal Languages",
+      "prefix": "CSCI",
+      "number": "410",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI230 & MATH307"
+    },
+    "CSCI420": {
+      "name": "Principles of Compiler Design",
+      "prefix": "CSCI",
+      "number": "420",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI320"
+    },
+    "CSCI432": {
+      "name": "Concepts of Database Implementation",
+      "prefix": "CSCI",
+      "number": "432",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI431"
+    },
+    "CSCI440": {
+      "name": "Computer Networks",
+      "prefix": "CSCI",
+      "number": "440",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI340"
+    },
+    "CSCI470": {
+      "name": "Principles of Artificial Intelligence",
+      "prefix": "CSCI",
+      "number": "470",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI230 & MATH207",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI480": {
+      "name": "Principles of Computer Graphics",
+      "prefix": "CSCI",
+      "number": "480",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI230 & MATH203"
+    },
+    "MATH120": {
+      "name": "Introductory Calculus",
+      "prefix": "MATH",
+      "number": "120",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH207": {
+      "name": "Discrete Structures I",
+      "prefix": "MATH",
+      "number": "207",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH120"
+    },
+    "MATH250": {
+      "name": "Statistical Methods I",
+      "prefix": "MATH",
+      "number": "250",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH120"
+    },
+    "MATH307": {
+      "name": "Discrete Structures II",
+      "prefix": "MATH",
+      "number": "307",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH207"
+    },
+    "MATH203": {
+      "name": "Linear Algebra",
+      "prefix": "MATH",
+      "number": "203",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH220": {
+      "name": "Calculus II",
+      "prefix": "MATH",
+      "number": "220",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH120"
+    },
+    "MATH245": {
+      "name": "Numerical Methods and Mathematical Computing",
+      "prefix": "MATH",
+      "number": "245",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH350": {
+      "name": "Statistical Methods II",
+      "prefix": "MATH",
+      "number": "350",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH250"
+    },
+    "MATH440": {
+      "name": "Statistical Learning I",
+      "prefix": "MATH",
+      "number": "440",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH250"
+    },
+    "COMM104": {
+      "name": "Public Speaking",
+      "prefix": "COMM",
+      "number": "104",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENGL110": {
+      "name": "Introduction to Academic Writing",
+      "prefix": "ENGL",
+      "number": "110",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENGL111": {
+      "name": "Introduction to Academic Writing - Race, Equity, and Inclusion",
+      "prefix": "ENGL",
+      "number": "111",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "SPAN202": {
+      "name": "Intermediate Spanish through Culture",
+      "prefix": "SPAN",
+      "number": "202",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "FREN202": {
+      "name": "Intermediate French through Culture II",
+      "prefix": "FREN",
+      "number": "202",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "GRMN202": {
+      "name": "Intermediate German",
+      "prefix": "GRMN",
+      "number": "202",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "HIST103": {
+      "name": "World History to 1500",
+      "prefix": "HIST",
+      "number": "103",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "HIST115": {
+      "name": "Pre-modern History",
+      "prefix": "HIST",
+      "number": "115",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "HIST104": {
+      "name": "World History since 1500",
+      "prefix": "HIST",
+      "number": "104",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "HIST116": {
+      "name": "Modern History",
+      "prefix": "HIST",
+      "number": "116",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "BIOL111": {
+      "name": "Introduction to Cell and Molecular Biology",
+      "prefix": "BIOL",
+      "number": "111",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "BIOL111L"
+      ],
+      "strict_corequisites": []
+    },
+    "BIOL111L": {
+      "name": "Introduction to Cell and Molecular Biology Lab",
+      "prefix": "BIOL",
+      "number": "111L",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "BIOL111"
+      ],
+      "strict_corequisites": []
+    },
+    "BIOL112": {
+      "name": "Evolution, Form, and Function of Organisms",
+      "prefix": "BIOL",
+      "number": "112",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "BIOL112L"
+      ],
+      "strict_corequisites": []
+    },
+    "BIOL112L": {
+      "name": "Evolution, Form, and Function of Organisms Lab",
+      "prefix": "BIOL",
+      "number": "112L",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "BIOL112"
+      ],
+      "strict_corequisites": []
+    },
+    "CHEM111": {
+      "name": "Principles of Chemistry I",
+      "prefix": "CHEM",
+      "number": "111",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "CHEM111L"
+      ],
+      "strict_corequisites": []
+    },
+    "CHEM111L": {
+      "name": "Principles of Chemistry I Laboratory",
+      "prefix": "CHEM",
+      "number": "111L",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "CHEM111"
+      ],
+      "strict_corequisites": []
+    },
+    "CHEM112": {
+      "name": "Principles of Chemistry II",
+      "prefix": "CHEM",
+      "number": "112",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "CHEM112L"
+      ],
+      "strict_corequisites": [],
+      "prerequisites": "CHEM111"
+    },
+    "CHEM112L": {
+      "name": "Principles of Chemistry II Laboratory",
+      "prefix": "CHEM",
+      "number": "112L",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "CHEM112"
+      ],
+      "strict_corequisites": []
+    },
+    "PHYS111": {
+      "name": "General Physics I",
+      "prefix": "PHYS",
+      "number": "111",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "PHYS111L"
+      ],
+      "strict_corequisites": []
+    },
+    "PHYS111L": {
+      "name": "General Physics I Lab",
+      "prefix": "PHYS",
+      "number": "111L",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "PHYS111"
+      ],
+      "strict_corequisites": []
+    },
+    "PHYS112": {
+      "name": "General Physics II",
+      "prefix": "PHYS",
+      "number": "112",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "PHYS112L"
+      ],
+      "strict_corequisites": [],
+      "prerequisites": "PHYS111"
+    },
+    "PHYS112L": {
+      "name": "General Physics II Lab",
+      "prefix": "PHYS",
+      "number": "112L",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "PHYS112"
+      ],
+      "strict_corequisites": []
+    }
+  },
+  "conversion_warnings": [
+    "source_url recovered: live acalog print view https://catalog.cofc.edu/preview_program.php?catoid=29&poid=5913&print=1 (WebFetch succeeded; bot-wall fallback via curl with browser UA also confirmed). Skeletal source_url had stale &hl/&returnto query params.",
+    "total_credits=122 is the College of Charleston graduation minimum (program page states 'Major Requirements Credit Hours: 65+'; degree-wide total per Academic Regulations / registrar = 122). Modeled: major 65 + gen-ed 39 + free electives 18 = 122.",
+    "degree id changed from '...-elective' to canonical '...-computer-science'; degree_type confirmed BS.",
+    "cip_code 11.0701 (Computer Science) inferred from program name; not stated in catalog.",
+    "Programming foundation modeled as one_of: [CSCI220+220L] OR [CSCI218+218L] (catalog: 'CSCI 220 ... OR CSCI 218 ...'). Skeletal source wrongly listed all four as required (type:all).",
+    "Required math (MATH120/207/250/307) re-categorized from skeletal 'elective' to 'supporting'; the additional-math choice and COMM 104 likewise moved to supporting/correct types.",
+    "MATH/Logic gen-ed area is satisfied by MATH120 (in the major), so it is NOT modeled as a separate gen-ed block to avoid double-counting; documented here.",
+    "CS electives: 'Complete 6 credit hours from any 300-level or higher CSCI courses.' Modeled as select credits:6 over CSCI:300+ excluding the nine 300+ core courses already required; real 300+/400+ option courses (CSCI 380/410/420/432/440/470/480) defined so the pattern resolves and plans generate.",
+    "Gen-ed wildcard pools (Humanities 12cr, Social Sciences 6cr, Free Electives 18cr) use from.include:['*:*'] per modeling rules; History uses two groups (pre-modern + modern, 1 each = 6cr); Foreign Language at 202-level (3cr) and First-Year Writing (4cr, ENGL110/111) enumerate representative approved courses rather than the full catalog lists.",
+    "Natural Science modeled as one_of over Biology / Chemistry / Physics two-course lab sequences (8cr) per the gen-ed 'Approved Course Sequences' list; representative sequences used (BIOL111/112, CHEM111/112, PHYS111/112).",
+    "Course prerequisites carried from the live catalog course descriptions (CSCI chain rooted at the programming foundation; MATH chain rooted at MATH120). CSCI221 prereq expressed as a bundle-OR over the two programming-foundation sequences.",
+    "Honors substitutions (HONS 115/215/217 for MATH; HONS gen-ed sequences) noted in catalog but not modeled as separate options; they are alternatives, not additional credits."
+  ]
+}

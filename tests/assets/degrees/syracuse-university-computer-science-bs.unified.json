@@ -1,0 +1,824 @@
+{
+  "degree": {
+    "cip_code": "11.0101",
+    "degree_type": "BS",
+    "id": "syracuse-university-computer-science-bs",
+    "institution": "Syracuse University",
+    "unitid": 196413,
+    "name": "Bachelor of Science in Computer Science",
+    "source_url": "https://coursecatalog.syracuse.edu/undergraduate/engineering-computer-science/computer-science-bs/",
+    "system_type": "semester",
+    "catalog_year": "2025-2026",
+    "total_credits": 120,
+    "major_subjects": [
+      "CIS",
+      "CSE",
+      "MAT"
+    ],
+    "tags": [
+      "cs",
+      "cs-major"
+    ]
+  },
+  "requirements": {
+    "intro_major": {
+      "type": "all",
+      "category": "major",
+      "name": "Major Introductory Courses",
+      "courses": [
+        "ECS101",
+        "CIS151"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "cs_core": {
+      "type": "all",
+      "category": "major",
+      "name": "Computer Science Core (34 credits)",
+      "courses": [
+        "CIS252",
+        "CIS341",
+        "CIS351",
+        "CIS352",
+        "CSE384",
+        "CIS375",
+        "CIS453",
+        "CIS454",
+        "CIS473",
+        "CIS477",
+        "CSE486"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "upper_div_technical_electives": {
+      "type": "select",
+      "category": "major",
+      "name": "Upper Division Technical Electives (18 credits; at least 9 credits must be CIS/CSE)",
+      "credits": 18,
+      "from": {
+        "courses": [
+          "PHI378",
+          "PHI451",
+          "PHI551",
+          "PHI552"
+        ],
+        "include": [
+          "CIS:300+",
+          "CSE:300+",
+          "MAT:400+"
+        ],
+        "exclude": [
+          "CIS321",
+          "CIS341",
+          "CIS351",
+          "CIS352",
+          "CIS375",
+          "CIS453",
+          "CIS454",
+          "CIS473",
+          "CIS477",
+          "CSE384",
+          "CSE486",
+          "MAT485",
+          "MAT521"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "elective"
+      ]
+    },
+    "mathematics": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Mathematics Section (at least 15 credits)",
+      "courses": [
+        "MAT295",
+        "MAT296",
+        "{MAT397, MAT331}",
+        "CIS321"
+      ],
+      "tags": [
+        "math"
+      ]
+    },
+    "natural_sciences_physics_core": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Natural Sciences - General Physics I + Lab (4 credits, required)",
+      "courses": [
+        "[PHY211, PHY221]"
+      ],
+      "tags": [
+        "science"
+      ]
+    },
+    "natural_sciences_second_sequence": {
+      "type": "one_of",
+      "category": "supporting",
+      "name": "Natural Sciences - Second Science Sequence (4 credits: select one lecture+lab pair)",
+      "options": [
+        {
+          "id": "physics",
+          "name": "General Physics II + Lab",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "Physics II sequence",
+              "courses": [
+                "[PHY212, PHY222]"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "chemistry",
+          "name": "General Chemistry I + Lab",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "General Chemistry I",
+              "courses": [
+                "[CHE106, CHE107]"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "biology",
+          "name": "General Biology I + Lab",
+          "requirements": [
+            {
+              "type": "all",
+              "name": "General Biology I",
+              "courses": [
+                "[BIO121, BIO122]"
+              ]
+            }
+          ]
+        }
+      ],
+      "tags": [
+        "science"
+      ]
+    },
+    "writing": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "Writing (6 credits)",
+      "courses": [
+        "WRT105",
+        "WRT205"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "presentation_skills": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Presentational Skills (3 credits)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CRS225",
+          "CRS325",
+          "IST344"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "ssh_required": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "Social Science and Humanities - Required Courses",
+      "courses": [
+        "PHI251",
+        "ECS392"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "ssh_electives": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Social Science and Humanities Electives (15 credits, Arts & Sciences / VPA)",
+      "credits": 15,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 15,
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "first_year_seminar": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "First Year Seminar (FYS 101)",
+      "credits": 1,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 1,
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "free_electives": {
+      "type": "select",
+      "category": "elective",
+      "name": "Free Electives (8 credits)",
+      "credits": 8,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 8,
+      "tags": [
+        "elective"
+      ]
+    }
+  },
+  "courses": {
+    "ECS101": {
+      "name": "Introduction to Engineering and Computer Science",
+      "prefix": "ECS",
+      "number": "101",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ECS392": {
+      "name": "Ethical Aspects of Engineering and Computer Science",
+      "prefix": "ECS",
+      "number": "392",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CIS151": {
+      "name": "Fundamentals of Computing and Programming",
+      "prefix": "CIS",
+      "number": "151",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CIS252": {
+      "name": "Elements of Computer Science",
+      "prefix": "CIS",
+      "number": "252",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS151"
+    },
+    "CIS321": {
+      "name": "Introduction to Probability and Statistics",
+      "prefix": "CIS",
+      "number": "321",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT295"
+    },
+    "CIS341": {
+      "name": "Computer Organization & Programming Systems",
+      "prefix": "CIS",
+      "number": "341",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS351"
+    },
+    "CIS351": {
+      "name": "Data Structures",
+      "prefix": "CIS",
+      "number": "351",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS252 | CSE283"
+    },
+    "CIS352": {
+      "name": "Programming Language: Theory & Practice",
+      "prefix": "CIS",
+      "number": "352",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS252 & CIS375 & CIS351"
+    },
+    "CIS375": {
+      "name": "Introduction to Discrete Mathematics",
+      "prefix": "CIS",
+      "number": "375",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "PHI251"
+    },
+    "CIS453": {
+      "name": "Software Specification and Design",
+      "prefix": "CIS",
+      "number": "453",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS351 | CSE382"
+    },
+    "CIS454": {
+      "name": "Software Implementation",
+      "prefix": "CIS",
+      "number": "454",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS453"
+    },
+    "CIS473": {
+      "name": "Automata and Computability",
+      "prefix": "CIS",
+      "number": "473",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS375"
+    },
+    "CIS477": {
+      "name": "Introduction to Analysis of Algorithms",
+      "prefix": "CIS",
+      "number": "477",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS375 & CIS351"
+    },
+    "CSE384": {
+      "name": "Systems and Network Programming",
+      "prefix": "CSE",
+      "number": "384",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE283 | CIS351"
+    },
+    "CSE486": {
+      "name": "Design of Operating Systems",
+      "prefix": "CSE",
+      "number": "486",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "(CIS341 | CSE381) & CSE384 & CIS351"
+    },
+    "CSE283": {
+      "name": "Introduction to Object-Oriented Design",
+      "prefix": "CSE",
+      "number": "283",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS151"
+    },
+    "CSE382": {
+      "name": "Algorithms & Data Structures",
+      "prefix": "CSE",
+      "number": "382",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE283"
+    },
+    "CSE381": {
+      "name": "Computer Architecture",
+      "prefix": "CSE",
+      "number": "381",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE261"
+    },
+    "CSE261": {
+      "name": "Digital Logic Design",
+      "prefix": "CSE",
+      "number": "261",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MAT295": {
+      "name": "Calculus I",
+      "prefix": "MAT",
+      "number": "295",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MAT296": {
+      "name": "Calculus II",
+      "prefix": "MAT",
+      "number": "296",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT295[C-]"
+    },
+    "MAT397": {
+      "name": "Calculus III",
+      "prefix": "MAT",
+      "number": "397",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT296[C-]"
+    },
+    "MAT331": {
+      "name": "First Course in Linear Algebra",
+      "prefix": "MAT",
+      "number": "331",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT296"
+    },
+    "PHY211": {
+      "name": "General Physics I",
+      "prefix": "PHY",
+      "number": "211",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "PHY221"
+      ],
+      "strict_corequisites": []
+    },
+    "PHY221": {
+      "name": "General Physics Laboratory I",
+      "prefix": "PHY",
+      "number": "221",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "PHY211"
+      ],
+      "strict_corequisites": []
+    },
+    "PHY212": {
+      "name": "General Physics II",
+      "prefix": "PHY",
+      "number": "212",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "PHY222"
+      ],
+      "strict_corequisites": [],
+      "prerequisites": "PHY211 & PHY221"
+    },
+    "PHY222": {
+      "name": "General Physics Laboratory II",
+      "prefix": "PHY",
+      "number": "222",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "PHY212"
+      ],
+      "strict_corequisites": []
+    },
+    "CHE106": {
+      "name": "General Chemistry Lecture I",
+      "prefix": "CHE",
+      "number": "106",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "CHE107"
+      ],
+      "strict_corequisites": []
+    },
+    "CHE107": {
+      "name": "General Chemistry Laboratory I",
+      "prefix": "CHE",
+      "number": "107",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "CHE106"
+      ],
+      "strict_corequisites": []
+    },
+    "BIO121": {
+      "name": "General Biology I",
+      "prefix": "BIO",
+      "number": "121",
+      "credit_hours": 3.0,
+      "corequisites": [
+        "BIO122"
+      ],
+      "strict_corequisites": []
+    },
+    "BIO122": {
+      "name": "General Biology I Laboratory",
+      "prefix": "BIO",
+      "number": "122",
+      "credit_hours": 1.0,
+      "corequisites": [
+        "BIO121"
+      ],
+      "strict_corequisites": []
+    },
+    "WRT105": {
+      "name": "Studio 1: Practices of Academic Writing",
+      "prefix": "WRT",
+      "number": "105",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "WRT205": {
+      "name": "Studio 2: Critical Research and Writing",
+      "prefix": "WRT",
+      "number": "205",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "WRT105"
+    },
+    "CRS225": {
+      "name": "Public Advocacy",
+      "prefix": "CRS",
+      "number": "225",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CRS325": {
+      "name": "Presentational Speaking",
+      "prefix": "CRS",
+      "number": "325",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "IST344": {
+      "name": "Information Reporting and Presentation",
+      "prefix": "IST",
+      "number": "344",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "PHI251": {
+      "name": "Logic",
+      "prefix": "PHI",
+      "number": "251",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "PHI378": {
+      "name": "Minds and Machines",
+      "prefix": "PHI",
+      "number": "378",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "PHI451": {
+      "name": "Logic and Language",
+      "prefix": "PHI",
+      "number": "451",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "PHI251"
+    },
+    "PHI551": {
+      "name": "Mathematical Logic",
+      "prefix": "PHI",
+      "number": "551",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "PHI251 | CIS375"
+    },
+    "PHI552": {
+      "name": "Modal Logic",
+      "prefix": "PHI",
+      "number": "552",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "PHI251"
+    },
+    "CIS386": {
+      "name": "Principles of Computer System Design",
+      "prefix": "CIS",
+      "number": "386",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS351"
+    },
+    "CIS425": {
+      "name": "Introduction to Computer Graphics",
+      "prefix": "CIS",
+      "number": "425",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS351 | CSE382"
+    },
+    "CIS428": {
+      "name": "Introduction to Cryptography",
+      "prefix": "CIS",
+      "number": "428",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS477"
+    },
+    "CIS437": {
+      "name": "Multiagent Systems: Concepts and Programming",
+      "prefix": "CIS",
+      "number": "437",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS375 & CIS351",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CIS440": {
+      "name": "Topics in Mobile Programming",
+      "prefix": "CIS",
+      "number": "440",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS351"
+    },
+    "CIS444": {
+      "name": "Mobile Application Programming",
+      "prefix": "CIS",
+      "number": "444",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS351 | CSE382"
+    },
+    "CIS458": {
+      "name": "Data Networks: Basic Principles",
+      "prefix": "CIS",
+      "number": "458",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS321"
+    },
+    "CIS467": {
+      "name": "Introduction to Artificial Intelligence",
+      "prefix": "CIS",
+      "number": "467",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS375 & CIS321 & (CIS351 | CSE382)",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CIS478": {
+      "name": "Introduction to Quantum Computing",
+      "prefix": "CIS",
+      "number": "478",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS375 & (MAT397 | MAT331)"
+    },
+    "CIS487": {
+      "name": "Access Control, Security and Trust",
+      "prefix": "CIS",
+      "number": "487",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS375"
+    },
+    "CIS489": {
+      "name": "Mobile Systems Security",
+      "prefix": "CIS",
+      "number": "489",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE486"
+    },
+    "CSE389": {
+      "name": "Web System Architecture and Programming",
+      "prefix": "CSE",
+      "number": "389",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CIS351 | CSE283"
+    },
+    "CSE418": {
+      "name": "Deep Learning",
+      "prefix": "CSE",
+      "number": "418",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSE483": {
+      "name": "C# and Windows Programming",
+      "prefix": "CSE",
+      "number": "483",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE382 | CIS351"
+    },
+    "CSE484": {
+      "name": "Introduction to Computer and Network Security",
+      "prefix": "CSE",
+      "number": "484",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE486 | CSE384"
+    },
+    "CSE488": {
+      "name": "Introduction to Internet Security",
+      "prefix": "CSE",
+      "number": "488",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSE486"
+    },
+    "MAT412": {
+      "name": "Introduction to Real Analysis I",
+      "prefix": "MAT",
+      "number": "412",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT397"
+    },
+    "MAT421": {
+      "name": "Applied Probability and Statistics",
+      "prefix": "MAT",
+      "number": "421",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MAT296"
+    },
+    "MAT495": {
+      "name": "Fundamentals of Data Science",
+      "prefix": "MAT",
+      "number": "495",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    }
+  },
+  "conversion_warnings": [
+    "Source: Syracuse University 2025-2026 CourseLeaf academic catalog program page (https://coursecatalog.syracuse.edu/undergraduate/engineering-computer-science/computer-science-bs/). The course-search app at coursecatalog.syracuse.edu/course-search/ is a JS SPA; course descriptions, credits, and prerequisites were instead pulled from the static CourseLeaf course-list pages (.../undergraduate/courses/cis/, /cse/, /mat/, /phy/, /che/, /bio/, /phi/, /crs/, /ist/, /wrt/, /ecs/), which expose courseblock prerequisite text.",
+    "Syracuse course numbers are already real 3-digit catalog numbers; no Banner 7-digit de-mangling was needed.",
+    "total_credits = 120 (stated graduation minimum). Credit reconciliation: intro_major 6 (ECS101 3 + CIS151 3) + cs_core 34 + upper_div_technical_electives 18 + mathematics 15 + natural_sciences 8 + writing 6 + presentation_skills 3 + ssh_required 6 (PHI251 3 + ECS392 3) + ssh_electives 15 + first_year_seminar 1 + free_electives 8 = 120. The representative program of study lists 118-121 due to MAT296 variable credit (2-4) and the MAT397(4)/MAT331(3) choice; modeled MAT296 at 4 and the math section at the stated 'at least 15 credits'.",
+    "Catalog wording: 'The major section consists of ECS 101, CIS 151, the 34-credit computer science core, and 18 credits of upper-division technical electives.' Modeled ECS101+CIS151 as intro_major (all), the 11-course core as cs_core (all, 34 cr), and the electives as upper_div_technical_electives (select, 18 cr).",
+    "CS Core is 34 credits across 11 courses: CIS252 (4) + CIS341/351/352 (3 each) + CSE384 (3) + CIS375 (3) + CIS453/454/473/477 (3 each) + CSE486 (3) = 4 + 30 = 34. Verified against the catalog Computer Science Core table.",
+    "Upper Division Technical Electives (18 cr): catalog allows (a) any CIS or CSE course numbered above 300 (unless excluded), (b) any MAT course numbered above 400 except specifically-excluded MAT 521 (Introduction to Probability) and MAT 485 (Differential Equations and Matrix Algebra for Engineers), and (c) the listed philosophy courses PHI 378, 451, 551, 552. Modeled as a select pool: from.include ['CIS:300+','CSE:300+','MAT:400+'] + from.courses [PHI378,PHI451,PHI551,PHI552], excluding the core/required CIS/CSE courses already counted plus MAT485 and MAT521. The catalog rule 'at least 9 of the 18 credits must be in CIS/CSE' is a sub-constraint the schema cannot fully express; documented here and noted in the requirement name.",
+    "Mathematics Section (>=15 cr): MAT295 Calculus I (4), MAT296 Calculus II (2-4, modeled at 4), MAT397 Calculus III (4) OR MAT331 First Course in Linear Algebra (3) modeled as choice '{MAT397, MAT331}', and CIS321 Introduction to Probability and Statistics (4). CIS321 is the program's required statistics course and is placed in the mathematics section per the catalog; it is excluded from the CIS technical-elective pool to prevent double counting.",
+    "Natural Sciences (8 cr): per the program page, PHY211 (3) + PHY221 lab (1) are UNCONDITIONALLY required ('PHY 211 ... PHY 221 ...'), then 'In addition, students must complete one of the following options' = one of three 4-credit lecture+lab pairs: {[PHY212,PHY222], [CHE106,CHE107], [BIO121,BIO122]}. Modeled as a standalone required requirement (natural_sciences_physics_core, type:all [PHY211,PHY221]) plus a one_of (natural_sciences_second_sequence) over the three lecture+lab bundles, so the physics-core pair reads as required rather than conditional. Coreqs set bidirectionally for each lecture/lab pair.",
+    "General Education (47 cr total): 6 cr writing (WRT105 + WRT205), 3 cr presentational skills (one of CRS225/CRS325/IST344), 8 cr natural sciences (modeled under supporting), 21 cr social science & humanities = PHI251 + ECS392 (6 cr required) + 15 cr A/SS/H electives, plus the 1 cr First Year Seminar and 8 cr free electives. The 15 cr SS/H electives, 1 cr FYS, and 8 cr free electives are modeled as external wildcard '*:*' pools because the catalog draws them from broad Arts & Sciences / VPA offerings not enumerated in this CS-scoped course set.",
+    "Academic standards (not modeled as hard constraints): no grade below C- satisfies the 6 cr writing, the mathematics section, the CS core, or the 18 cr upper-division technical electives; the CS core must be completed with a B- (2.667) average.",
+    "Prerequisites deep-traced from the CourseLeaf course-list pages (cross-validated against the live catalog 2026-06). Real CSE OR-alternatives are PRESERVED exactly as the catalog states them and the alternative courses are defined so the refs resolve: CIS351 'CIS 252 or CSE 283' -> CIS252|CSE283; CIS453 'CIS 351 or CSE 382' -> CIS351|CSE382; CSE384 'CSE 283 or CIS 351' -> CSE283|CIS351; CSE486 '(CIS 341 or CSE 381) and (CSE 384 and CIS 351)' -> (CIS341|CSE381)&CSE384&CIS351. MAT296 'MAT 295 with minimum grade C-' -> MAT295[C-]; MAT397 'MAT 296 with minimum grade C-' -> MAT296[C-]. Where a prerequisite OR-branch referenced a course outside the modeled corpus (e.g. CPS196 alt to CIS151 for CIS252, MAT375 alt to CIS375 for CIS473, MAT534/541 alts for CIS428), the expression was reduced to the defined in-corpus branch to avoid dangling references; those alternative paths are equivalent for plan generation. CSE prerequisite-chain courses (CSE283, CSE382, CSE381, CSE261) are defined so the CIS/CSE OR-branches resolve.",
+    "cip_code 11.0101 (Computer and Information Sciences, General) per the build spec; system_type semester."
+  ]
+}

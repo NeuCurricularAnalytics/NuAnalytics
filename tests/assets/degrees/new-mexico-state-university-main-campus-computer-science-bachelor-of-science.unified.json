@@ -1,0 +1,1099 @@
+{
+  "degree": {
+    "cip_code": "11.0701",
+    "degree_type": "BS",
+    "id": "new-mexico-state-university-main-campus-computer-science-bachelor-of-science",
+    "institution": "New Mexico State University (main campus)",
+    "unitid": 188030,
+    "name": "Computer Science - Bachelor of Science",
+    "source_url": "https://catalogs.nmsu.edu/nmsu/arts-sciences/computer-science/computer-science-bachelor-science/",
+    "system_type": "semester",
+    "catalog_year": "2026-2027",
+    "total_credits": 120,
+    "upper_division_credits": 48,
+    "gpa_minimum": 2.0,
+    "grade_minimum": "C-",
+    "grade_minimum_note": "A grade of at least C- must be earned in each course taken to satisfy departmental and non-departmental requirements. No course may satisfy both a departmental and a non-departmental requirement; no such course may be taken S/U.",
+    "allow_double_counting": false,
+    "major_subjects": [
+      "CSCI",
+      "MATH",
+      "STAT"
+    ],
+    "tags": [
+      "ai",
+      "ai-elective"
+    ]
+  },
+  "requirements": {
+    "cs_core": {
+      "type": "all",
+      "category": "major",
+      "name": "Departmental/College Requirements - Computer Science Core",
+      "courses": [
+        "CSCI1720",
+        "CSCI2210",
+        "CSCI2220",
+        "CSCI2230",
+        "CSCI2310",
+        "CSCI3730",
+        "CSCI3710",
+        "CSCI3720",
+        "CSCI4110",
+        "{CSCI4980, CSCI4999}",
+        "CSCI4105",
+        "CSCI4120",
+        "CSCI4140"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "cs_elective_6cr": {
+      "type": "select",
+      "category": "major",
+      "name": "Computer Science Elective (Select 6 credits from the following)",
+      "credits": 6,
+      "from": {
+        "courses": [
+          "CSCI4225",
+          "CSCI4270",
+          "CSCI4265",
+          "CSCI4425",
+          "CSCI4430",
+          "CSCI4230",
+          "CSCI4405",
+          "CSCI4410",
+          "CSCI4255",
+          "CSCI4205",
+          "CSCI4996",
+          "CSCI4130",
+          "CSCI4245",
+          "CSCI4260",
+          "CSCI4250",
+          "CSCI4305",
+          "CSCI4420",
+          "CSCI4415",
+          "CSCI5310",
+          "CSCI4215",
+          "CSCI4220",
+          "CSCI4235",
+          "CSCI4240",
+          "CSCI4435",
+          "CSCI4440"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "ai",
+        "elective"
+      ]
+    },
+    "linear_algebra": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Non-Departmental: Linear Algebra",
+      "count": 1,
+      "from": {
+        "courses": [
+          "MATH2415",
+          "MATH4230"
+        ]
+      },
+      "tags": [
+        "required"
+      ]
+    },
+    "math_upper_elective": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Non-Departmental: Upper-Division Mathematics Elective (Select one)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "MATH3110",
+          "MATH3120",
+          "MATH3140",
+          "MATH3160",
+          "MATH4320",
+          "MATH4330"
+        ]
+      },
+      "tags": [
+        "required"
+      ]
+    },
+    "statistics": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Non-Departmental: Statistics (Select one)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "AST311",
+          "STAT3110",
+          "STAT4210"
+        ]
+      },
+      "tags": [
+        "required"
+      ]
+    },
+    "non_dept_lab_science": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Non-Departmental: Lab Science (Select one)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "[BIOL2610G, BIOL2610L]",
+          "[BIOL2110G, BIOL2110L]",
+          "CHEM1215G",
+          "CHEM1225G",
+          "[PHYS1230G, PHYS1230L]",
+          "[PHYS1240G, PHYS1240L]",
+          "[PHYS2110, PHYS2110L]",
+          "[PHYS2140, PHYS2140L]",
+          "[PHYS1310G, PHYS1310L]",
+          "[PHYS1320G, PHYS1320L]"
+        ]
+      },
+      "tags": [
+        "required"
+      ]
+    },
+    "gen_ed_english_composition_1": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "General Education Area I: English Composition Level 1",
+      "courses": [
+        "ENGL1110G"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_english_composition_2": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "General Education Area I: English Composition Level 2 (Professional & Technical Communication)",
+      "courses": [
+        "ENGL2210G"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_oral_communication": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Education Area I: Oral Communication (Choose one)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "COMM1115G",
+          "COMM1130G",
+          "HNRS2175G"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_math": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "General Education Area II: Mathematics (Calculus I)",
+      "courses": [
+        "MATH1511G"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_lab_sciences": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Education Area III: Laboratory Sciences (Choose two different courses)",
+      "count": 2,
+      "from": {
+        "courses": [
+          "ASTR1115G",
+          "[BIOL2610G, BIOL2610L]",
+          "[BIOL2110G, BIOL2110L]",
+          "CHEM1215G",
+          "CHEM1225G",
+          "GEOG1110G",
+          "GEOL1110G",
+          "HNRS2116G",
+          "[PHYS1230G, PHYS1230L]",
+          "[PHYS1240G, PHYS1240L]",
+          "[PHYS1310G, PHYS1310L]",
+          "[PHYS1320G, PHYS1320L]"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_social_behavioral": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Education Area IV: Social/Behavioral Sciences",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 3,
+      "external_note": "Choose from the NMSU General Education Area IV (Social/Behavioral Sciences) approved list; see the General Education section of the catalog.",
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_humanities": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Education Area V: Humanities",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 3,
+      "external_note": "Choose from the NMSU General Education Area V (Humanities) approved list; see the General Education section of the catalog.",
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_creative_fine_arts": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "General Education Area VI: Creative and Fine Arts",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 3,
+      "external_note": "Choose from the NMSU General Education Area VI (Creative and Fine Arts) approved list; see the General Education section of the catalog.",
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "gen_ed_elective_calc2": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "General Education Elective: Calculus II",
+      "courses": [
+        "MATH1521G"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "viewing_a_wider_world": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Viewing a Wider World",
+      "credits": 6,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 6,
+      "external_note": "Two upper-division Viewing a Wider World (VWW) courses outside the major; see the Viewing a Wider World section of the catalog for the full list.",
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "free_electives": {
+      "type": "select",
+      "category": "elective",
+      "name": "Electives (to bring the total to 120 credits)",
+      "credits": 14,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 14,
+      "external_note": "Free elective credits (catalog states 14, footnote 7), including upper-division credit as needed to reach the 48-credit upper-division minimum and 120-credit graduation minimum. Amount varies with prerequisites, AP/dual/transfer credit, double majors, and minors.",
+      "tags": [
+        "elective"
+      ]
+    }
+  },
+  "courses": {
+    "CSCI1720": {
+      "name": "Computer Science I",
+      "prefix": "CSCI",
+      "number": "1720",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI1110"
+    },
+    "CSCI1110": {
+      "name": "Introduction to Computer Science",
+      "prefix": "CSCI",
+      "number": "1110",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCI1220": {
+      "name": "Programming Fundamentals (Python)",
+      "prefix": "CSCI",
+      "number": "1220",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCI2210": {
+      "name": "Object-Oriented Programming",
+      "prefix": "CSCI",
+      "number": "2210",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI1720"
+    },
+    "CSCI2220": {
+      "name": "Introduction to Data Structures and Algorithms",
+      "prefix": "CSCI",
+      "number": "2220",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI1720"
+    },
+    "CSCI2230": {
+      "name": "Assembly Language and Machine Organization",
+      "prefix": "CSCI",
+      "number": "2230",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI1720"
+    },
+    "CSCI2310": {
+      "name": "Discrete Mathematics for Computer Science",
+      "prefix": "CSCI",
+      "number": "2310",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI1720"
+    },
+    "CSCI3710": {
+      "name": "Software Development",
+      "prefix": "CSCI",
+      "number": "3710",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2210 & CSCI2220"
+    },
+    "CSCI3720": {
+      "name": "Data Structures and Algorithms",
+      "prefix": "CSCI",
+      "number": "3720",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2220 & CSCI2310"
+    },
+    "CSCI3730": {
+      "name": "Compilers and Automata Theory",
+      "prefix": "CSCI",
+      "number": "3730",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2210 & CSCI2220 & CSCI2230"
+    },
+    "CSCI4105": {
+      "name": "Programming Language Structure I",
+      "prefix": "CSCI",
+      "number": "4105",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI3730 & CSCI3710"
+    },
+    "CSCI4110": {
+      "name": "Computing Ethics and Social Implications of Computing",
+      "prefix": "CSCI",
+      "number": "4110",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI3710"
+    },
+    "CSCI4120": {
+      "name": "Operating Systems I",
+      "prefix": "CSCI",
+      "number": "4120",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2230 & CSCI3710"
+    },
+    "CSCI4130": {
+      "name": "Linux System Administration",
+      "prefix": "CSCI",
+      "number": "4130",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCI4140": {
+      "name": "Database Management Systems I",
+      "prefix": "CSCI",
+      "number": "4140",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2220 & CSCI2310"
+    },
+    "CSCI4205": {
+      "name": "Computer Security",
+      "prefix": "CSCI",
+      "number": "4205",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2220 & CSCI2230"
+    },
+    "CSCI4215": {
+      "name": "Parallel Programming",
+      "prefix": "CSCI",
+      "number": "4215",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI3730"
+    },
+    "CSCI4220": {
+      "name": "Cloud and Edge Computing",
+      "prefix": "CSCI",
+      "number": "4220",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCI4225": {
+      "name": "Introduction to Cryptography",
+      "prefix": "CSCI",
+      "number": "4225",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2310"
+    },
+    "CSCI4230": {
+      "name": "Architectural Concepts I",
+      "prefix": "CSCI",
+      "number": "4230",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2230 & CSCI3730"
+    },
+    "CSCI4235": {
+      "name": "Cellular Networks and Mobile Computing",
+      "prefix": "CSCI",
+      "number": "4235",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCI4240": {
+      "name": "Software Reverse Engineering",
+      "prefix": "CSCI",
+      "number": "4240",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCI4245": {
+      "name": "Computer Networks I",
+      "prefix": "CSCI",
+      "number": "4245",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2220 & CSCI2230"
+    },
+    "CSCI4250": {
+      "name": "Human-Centered Computing",
+      "prefix": "CSCI",
+      "number": "4250",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI3710"
+    },
+    "CSCI4255": {
+      "name": "Digital Game Design",
+      "prefix": "CSCI",
+      "number": "4255",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI3710"
+    },
+    "CSCI4260": {
+      "name": "Visual Programming",
+      "prefix": "CSCI",
+      "number": "4260",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2220 & CSCI2310"
+    },
+    "CSCI4265": {
+      "name": "Modern Web Technologies",
+      "prefix": "CSCI",
+      "number": "4265",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCI4270": {
+      "name": "Principles of Virtual Reality",
+      "prefix": "CSCI",
+      "number": "4270",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI4250"
+    },
+    "CSCI4305": {
+      "name": "Bioinformatics",
+      "prefix": "CSCI",
+      "number": "4305",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2220 & CSCI2310"
+    },
+    "CSCI4405": {
+      "name": "Artificial Intelligence I",
+      "prefix": "CSCI",
+      "number": "4405",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2220 & CSCI2310",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI4410": {
+      "name": "Computer Graphics I",
+      "prefix": "CSCI",
+      "number": "4410",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI3730 | CSCI3710"
+    },
+    "CSCI4415": {
+      "name": "Introduction to Data Mining",
+      "prefix": "CSCI",
+      "number": "4415",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2220 & CSCI2310",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI4420": {
+      "name": "Applied Machine Learning I",
+      "prefix": "CSCI",
+      "number": "4420",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2220 & MATH1511G",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI4425": {
+      "name": "Introduction to Deep Learning",
+      "prefix": "CSCI",
+      "number": "4425",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "(CSCI2220 | CSCI1220) & CSCI2310",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI4430": {
+      "name": "Graph Data Mining",
+      "prefix": "CSCI",
+      "number": "4430",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "(CSCI2220 | CSCI1220) & CSCI2310",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI4435": {
+      "name": "Text Mining and Natural Language Processing",
+      "prefix": "CSCI",
+      "number": "4435",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2220 & CSCI2310",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI4440": {
+      "name": "Generative Artificial Intelligence",
+      "prefix": "CSCI",
+      "number": "4440",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI4980": {
+      "name": "Senior Project",
+      "prefix": "CSCI",
+      "number": "4980",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI3730 & CSCI3710"
+    },
+    "CSCI4996": {
+      "name": "Special Topics",
+      "prefix": "CSCI",
+      "number": "4996",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCI4999": {
+      "name": "Senior Thesis",
+      "prefix": "CSCI",
+      "number": "4999",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI3730 & CSCI3710"
+    },
+    "CSCI5310": {
+      "name": "Bioinformatics Programming",
+      "prefix": "CSCI",
+      "number": "5310",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH1511G": {
+      "name": "Calculus and Analytic Geometry I",
+      "prefix": "MATH",
+      "number": "1511G",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH1521G": {
+      "name": "Calculus and Analytic Geometry II",
+      "prefix": "MATH",
+      "number": "1521G",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH1511G"
+    },
+    "MATH2415": {
+      "name": "Introduction to Linear Algebra",
+      "prefix": "MATH",
+      "number": "2415",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH4230": {
+      "name": "Applied Linear Algebra",
+      "prefix": "MATH",
+      "number": "4230",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2415"
+    },
+    "MATH3110": {
+      "name": "Introduction to Modern Algebra",
+      "prefix": "MATH",
+      "number": "3110",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2415"
+    },
+    "MATH3120": {
+      "name": "Introduction to Analysis",
+      "prefix": "MATH",
+      "number": "3120",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH3140": {
+      "name": "Introduction to Numerical Methods",
+      "prefix": "MATH",
+      "number": "3140",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2415"
+    },
+    "MATH3160": {
+      "name": "Introduction to Ordinary Differential Equations",
+      "prefix": "MATH",
+      "number": "3160",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH1521G"
+    },
+    "MATH4320": {
+      "name": "Logic and Set Theory",
+      "prefix": "MATH",
+      "number": "4320",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH4330": {
+      "name": "Elementary Number Theory",
+      "prefix": "MATH",
+      "number": "4330",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH3110"
+    },
+    "AST311": {
+      "name": "Statistical Applications",
+      "prefix": "A ST",
+      "number": "311",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "STAT3110": {
+      "name": "Statistics for Engineers and Scientists",
+      "prefix": "STAT",
+      "number": "3110",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH1521G"
+    },
+    "STAT4210": {
+      "name": "Probability: Theory and Applications",
+      "prefix": "STAT",
+      "number": "4210",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENGL1110G": {
+      "name": "Composition I",
+      "prefix": "ENGL",
+      "number": "1110G",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENGL2210G": {
+      "name": "Professional and Technical Communication",
+      "prefix": "ENGL",
+      "number": "2210G",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "COMM1115G": {
+      "name": "Introduction to Communication",
+      "prefix": "COMM",
+      "number": "1115G",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "COMM1130G": {
+      "name": "Public Speaking",
+      "prefix": "COMM",
+      "number": "1130G",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "HNRS2175G": {
+      "name": "Introduction to Communication Honors",
+      "prefix": "HNRS",
+      "number": "2175G",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ASTR1115G": {
+      "name": "Introduction to Astronomy Lecture & Laboratory",
+      "prefix": "ASTR",
+      "number": "1115G",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "BIOL2610G": {
+      "name": "Principles of Biology: Biodiversity, Ecology, and Evolution",
+      "prefix": "BIOL",
+      "number": "2610G",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "BIOL2610L"
+      ]
+    },
+    "BIOL2610L": {
+      "name": "Principles of Biology: Biodiversity, Ecology, and Evolution Laboratory",
+      "prefix": "BIOL",
+      "number": "2610L",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "BIOL2610G"
+      ]
+    },
+    "BIOL2110G": {
+      "name": "Principles of Biology: Cellular and Molecular Biology",
+      "prefix": "BIOL",
+      "number": "2110G",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "BIOL2110L"
+      ],
+      "prerequisites": "CHEM1215G"
+    },
+    "BIOL2110L": {
+      "name": "Principles of Biology: Cellular and Molecular Biology Laboratory",
+      "prefix": "BIOL",
+      "number": "2110L",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "BIOL2110G"
+      ],
+      "prerequisites": "CHEM1215G"
+    },
+    "CHEM1215G": {
+      "name": "General Chemistry I Lecture and Laboratory for STEM Majors",
+      "prefix": "CHEM",
+      "number": "1215G",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CHEM1225G": {
+      "name": "General Chemistry II Lecture and Laboratory for STEM Majors",
+      "prefix": "CHEM",
+      "number": "1225G",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CHEM1215G"
+    },
+    "GEOG1110G": {
+      "name": "Physical Geography",
+      "prefix": "GEOG",
+      "number": "1110G",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "GEOL1110G": {
+      "name": "Physical Geology",
+      "prefix": "GEOL",
+      "number": "1110G",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "HNRS2116G": {
+      "name": "Earth, Time and Life",
+      "prefix": "HNRS",
+      "number": "2116G",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "PHYS1230G": {
+      "name": "Algebra-Based Physics I",
+      "prefix": "PHYS",
+      "number": "1230G",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "PHYS1230L"
+      ]
+    },
+    "PHYS1230L": {
+      "name": "Algebra-Based Physics I Lab",
+      "prefix": "PHYS",
+      "number": "1230L",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "PHYS1230G"
+      ]
+    },
+    "PHYS1240G": {
+      "name": "Algebra-Based Physics II",
+      "prefix": "PHYS",
+      "number": "1240G",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "PHYS1240L"
+      ],
+      "prerequisites": "PHYS1230G"
+    },
+    "PHYS1240L": {
+      "name": "Algebra-Based Physics II Lab",
+      "prefix": "PHYS",
+      "number": "1240L",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "PHYS1240G"
+      ]
+    },
+    "PHYS1310G": {
+      "name": "Calculus-Based Physics I",
+      "prefix": "PHYS",
+      "number": "1310G",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "PHYS1310L"
+      ],
+      "prerequisites": "MATH1511G"
+    },
+    "PHYS1310L": {
+      "name": "Calculus-Based Physics I Lab",
+      "prefix": "PHYS",
+      "number": "1310L",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "PHYS1310G"
+      ]
+    },
+    "PHYS1320G": {
+      "name": "Calculus-Based Physics II",
+      "prefix": "PHYS",
+      "number": "1320G",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "PHYS1320L"
+      ],
+      "prerequisites": "(PHYS2110 | PHYS1310G) & MATH1521G"
+    },
+    "PHYS1320L": {
+      "name": "Calculus-Based Physics II Lab",
+      "prefix": "PHYS",
+      "number": "1320L",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "PHYS1320G"
+      ]
+    },
+    "PHYS2110": {
+      "name": "Mechanics",
+      "prefix": "PHYS",
+      "number": "2110",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "PHYS2110L"
+      ]
+    },
+    "PHYS2110L": {
+      "name": "Experimental Mechanics",
+      "prefix": "PHYS",
+      "number": "2110L",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "PHYS2110"
+      ]
+    },
+    "PHYS2140": {
+      "name": "Electricity and Magnetism",
+      "prefix": "PHYS",
+      "number": "2140",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "PHYS2140L"
+      ],
+      "prerequisites": "(PHYS2110 | PHYS1310G) & MATH1511G"
+    },
+    "PHYS2140L": {
+      "name": "Electricity & Magnetism Laboratory",
+      "prefix": "PHYS",
+      "number": "2140L",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [
+        "PHYS2140"
+      ],
+      "prerequisites": "PHYS2110 | PHYS1310G"
+    }
+  },
+  "conversion_warnings": [
+    "Skeletal source file was largely incorrect and was discarded in favor of the live NMSU catalog (catalogs.nmsu.edu, CourseLeaf). The source mis-categorized every block as 'elective', omitted all General Education / Viewing-a-Wider-World / non-departmental supporting requirements, dropped the gen-ed math (MATH 1511G/1521G), used the wrong degree id ('...-elective'), and did not include the larger general-CS elective pool. Rebuilt with proper major/supporting/gen_ed/elective categories.",
+    "NEAR-DUPLICATE SIBLING NOTE: NMSU lists this general 'Computer Science - Bachelor of Science' alongside a separate 'Computer Science (Artificial Intelligence) - Bachelor of Science' concentration (and a standalone 'Artificial Intelligence - B.S.' and a 'Computer Science - B.A.'). This file is the GENERAL CS BS (no concentration): it has NO AI-concentration blocks, CSCI 3720 is part of the required core (not an algorithms choice), and the Computer Science Elective pool is the full 25-course list (adds CSCI 4235/4240/4435/4440/5310 vs. the AI sibling). Free electives are 11 here vs. 2 in the AI sibling because the AI concentration consumes 12 credits.",
+    "Course credits/titles/prereqs verified against the NMSU course bubble (ribbit getcourse) pages: e.g. CSCI 3720 = 4cr (prereq CSCI 2220 & CSCI 2310); CSCI 4980 Senior Project = 4cr (prereq CSCI 3730 & CSCI 3710); CSCI 4140 = 3cr; CSCI 4235/4240/4440/5310 = 3cr (no prereqs); CSCI 4435 = 3cr (prereq CSCI 2220 & CSCI 2310). STEM lab sciences are a 3cr lecture + 1cr lab (BIOL 2610G+L, BIOL 2110G+L, PHYS 1230/1240/1310/1320 G+L, PHYS 2110/2140 +L), while CHEM 1215G/1225G, ASTR 1115G, GEOG/GEOL 1110G, HNRS 2116G are single combined 4cr lecture+lab courses.",
+    "cip_code 11.0701 (Computer Science) inferred from the program being the general single-major CS degree; not stated in the catalog. (The AI-concentration sibling was tagged 11.0101; this general degree is the canonical CS program.)",
+    "catalog_year set to 2026-2027 (the live NMSU catalog edition shown on the page header); not printed in the program body.",
+    "Senior Project OR Senior Thesis modeled as a choice '{CSCI4980, CSCI4999}' inside the required core (catalog: 'CSCI 4980 Senior Project or CSCI 4999 Senior Thesis'). Honors equivalents (ENGL 2210H, MATH 1511H/1521H, COMM honors) are omitted as interchangeable honors sections of the listed G courses.",
+    "Prereqs with grade thresholds (catalog states 'at least a C-') are modeled as plain course references; the C- requirement is captured at the degree level via grade_minimum='C-'. Prereqs simplified to in-scope courses where the catalog lists non-CS engineering/placement alternatives or out-of-scope math: CSCI 1720 modeled as requiring CSCI 1110 (catalog also allows MATH 1220+ or placement); CSCI 4205 dropped 'or consent'; MATH 4230/3110/3140 modeled on MATH 2415 (catalog also lists E E 200 / M E 228 / MATH 1531). CSCI 1110/1220 defined as supporting prereq roots, not degree requirements.",
+    "CSCI 4996 Special Topics is 1-12 variable credit; per catalog footnote 6 it must be taken for 3 credits to count as a course, so it is defined at 3.0 credits as an elective option.",
+    "Overlap not fully modeled (catalog footnote 5: a course can satisfy only one requirement). The lab science offerings appear in both the Gen-Ed Area III pool and the Non-Departmental Lab Science pool; constraints.exclude_used:true is set on the CS elective pool so the analyzer does not reuse a core course. allow_double_counting=false at the degree level.",
+    "Credit reconciliation to total_credits=120: Gen-Ed = 41 (Area I 10 [Comp1 4 + Comp2 3 + Oral 3] + Area II 4 + Area III 8 [two 4cr lab sciences] + Area IV 3 + Area V 3 + Area VI 3 + Gen-Ed-elective/Calc II 4 + VWW 6); Department core 46 (1720/2210/2220/2230/2310/3730/3710/3720 @4 = 32, 4110 @1, senior project/thesis @4, 4105/4120/4140 @3 = 9); CS elective 6; Non-departmental 13 (linear algebra 3 + math upper elective 3 + statistics 3 + lab science 4); free electives 14 = 120 exactly, matching the catalog's stated free-elective figure (footnote 7). Area IV/V/VI, VWW, and free electives are modeled as external_requirement '*:*' wildcard pools (open NMSU distribution lists not enumerated)."
+  ]
+}

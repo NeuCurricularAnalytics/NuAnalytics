@@ -409,7 +409,13 @@ fn write_csv_courses(
 
         let (complexity, blocking, delay, centrality, chain_length) =
             metrics_data.map_or((0, 0, 0, 0, 0), |m| {
-                (m.complexity, m.blocking, m.delay, m.centrality, m.chain_length)
+                (
+                    m.complexity,
+                    m.blocking,
+                    m.delay,
+                    m.centrality,
+                    m.chain_length,
+                )
             });
 
         // Scale complexity for quarter systems

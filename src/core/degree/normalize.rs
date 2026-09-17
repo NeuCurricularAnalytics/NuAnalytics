@@ -85,9 +85,7 @@ pub fn normalize_program(
         .or_else(|| program.degree.institution.clone())
         .unwrap_or_default();
 
-    let program_name = program_override
-        .map(str::to_owned)
-        .unwrap_or_else(|| program.degree.name.clone());
+    let program_name = program_override.map_or_else(|| program.degree.name.clone(), str::to_owned);
 
     let courses = program
         .courses
@@ -124,10 +122,7 @@ fn prereq_raw_to_and_of_or(raw: Option<&str>) -> Vec<Vec<String>> {
     if trimmed.is_empty() {
         return vec![];
     }
-    match parse_to_ast(trimmed) {
-        Some(expr) => expr_to_and_of_or(&expr),
-        None => vec![],
-    }
+    parse_to_ast(trimmed).map_or_else(Vec::new, |expr| expr_to_and_of_or(&expr))
 }
 
 /// Recursively convert a [`PrereqExpr`] to AND-of-OR lists.
@@ -163,9 +158,7 @@ fn expr_to_or_alt(expr: &PrereqExpr) -> String {
             .map(expr_to_or_alt)
             .collect::<Vec<_>>()
             .join(" and "),
-        PrereqExpr::Any(alts) => alts
-            .first()
-            .map_or_else(String::new, expr_to_or_alt),
+        PrereqExpr::Any(alts) => alts.first().map_or_else(String::new, expr_to_or_alt),
     }
 }
 
@@ -219,10 +212,7 @@ mod tests {
             PrereqExpr::Course("CS2100".into()),
             PrereqExpr::Course("DS2500".into()),
         ]);
-        assert_eq!(
-            expr_to_and_of_or(&expr),
-            vec![vec!["CS2100", "DS2500"]]
-        );
+        assert_eq!(expr_to_and_of_or(&expr), vec![vec!["CS2100", "DS2500"]]);
     }
 
     #[test]

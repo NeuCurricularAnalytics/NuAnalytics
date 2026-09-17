@@ -1,0 +1,544 @@
+{
+  "degree": {
+    "cip_code": "11.0701",
+    "degree_type": "BA",
+    "id": "bowdoin-college-computer-science-ab-major",
+    "institution": "Bowdoin College",
+    "unitid": 161004,
+    "name": "Computer Science Major (AB)",
+    "source_url": "https://www.bowdoin.edu/computer-science/requirements/index.html",
+    "system_type": "semester",
+    "catalog_year": "2025-2026",
+    "total_credits": 32,
+    "major_subjects": [
+      "CSCI",
+      "MATH"
+    ],
+    "tags": [
+      "ai",
+      "ai-elective"
+    ]
+  },
+  "requirements": {
+    "cs_core_intro": {
+      "type": "select",
+      "category": "major",
+      "name": "Core: Data Structures I (standard or accelerated entry)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CSCI2100",
+          "CSCI2101"
+        ]
+      },
+      "tags": [
+        "core"
+      ]
+    },
+    "cs_core": {
+      "type": "all",
+      "category": "major",
+      "name": "Computer Science Core",
+      "courses": [
+        "CSCI2102",
+        "CSCI2200",
+        "CSCI2330"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "elective_theory": {
+      "type": "select",
+      "category": "major",
+      "name": "Elective: Algorithms/Theory (at least one)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CSCI2210",
+          "CSCI3210",
+          "CSCI3225",
+          "CSCI3240",
+          "CSCI3250",
+          "CSCI3260"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "elective"
+      ]
+    },
+    "elective_ai": {
+      "type": "select",
+      "category": "major",
+      "name": "Elective: Artificial Intelligence (at least one)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CSCI2400",
+          "CSCI3465",
+          "CSCI3485",
+          "CSCI3725"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "ai",
+        "elective"
+      ]
+    },
+    "elective_systems": {
+      "type": "select",
+      "category": "major",
+      "name": "Elective: Systems (at least one)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CSCI2320",
+          "CSCI3310",
+          "CSCI3325",
+          "CSCI3330"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "elective"
+      ]
+    },
+    "elective_projects": {
+      "type": "select",
+      "category": "major",
+      "name": "Elective: Projects requirement (at least one)",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CSCI2715",
+          "CSCI3225",
+          "CSCI3325",
+          "CSCI3465",
+          "CSCI3485",
+          "CSCI3725"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "elective"
+      ]
+    },
+    "elective_additional": {
+      "type": "select",
+      "category": "major",
+      "name": "Additional CS elective (to reach five 2000+ electives; ≥2 of all 5 electives must be 3000-level)",
+      "count": 1,
+      "from": {
+        "include": [
+          "CSCI:2000+"
+        ],
+        "exclude": [
+          "CSCI2100",
+          "CSCI2101",
+          "CSCI2102",
+          "CSCI2200",
+          "CSCI2330"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true,
+        "min_upper_division": 1
+      },
+      "tags": [
+        "elective"
+      ]
+    },
+    "math_requirement": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Mathematics (one course numbered 1300 or higher)",
+      "count": 1,
+      "from": {
+        "include": [
+          "MATH:1300+"
+        ]
+      },
+      "tags": [
+        "supporting"
+      ]
+    },
+    "first_year_writing_seminar": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "First-Year Writing Seminar (courses numbered 1000-1049)",
+      "count": 1,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 1,
+      "external_note": "First-year writing seminar (1000-1049); minimum grade C-, letter grade only. Not enumerated; satisfied by a seminar outside the defined courses.",
+      "tags": [
+        "writing"
+      ]
+    },
+    "dist_dpi": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Distribution: Difference, Power, and Inequity (DPI)",
+      "count": 1,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 1,
+      "external_note": "One full-credit DPI course taken at Bowdoin. Attribute-based; not enumerable from the defined course set.",
+      "tags": [
+        "distribution"
+      ]
+    },
+    "dist_ins": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Distribution: Inquiry in the Natural Sciences (INS)",
+      "count": 1,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 1,
+      "external_note": "One full-credit INS course taken at Bowdoin. Attribute-based; not enumerable from the defined course set.",
+      "tags": [
+        "distribution"
+      ]
+    },
+    "dist_ip": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Distribution: International Perspectives (IP)",
+      "count": 1,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 1,
+      "external_note": "One full-credit IP course taken at Bowdoin. Attribute-based; not enumerable from the defined course set.",
+      "tags": [
+        "distribution"
+      ]
+    },
+    "dist_mcsr": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Distribution: Mathematical, Computational, or Statistical Reasoning (MCSR)",
+      "count": 1,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 1,
+      "external_note": "One full-credit MCSR course taken at Bowdoin. Typically satisfied by a CSCI or MATH course that also counts for the major (double-counting allowed for distribution).",
+      "tags": [
+        "distribution"
+      ]
+    },
+    "dist_vpa": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Distribution: Visual and Performing Arts (VPA)",
+      "count": 1,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 1,
+      "external_note": "One full-credit VPA course taken at Bowdoin. Attribute-based; not enumerable from the defined course set.",
+      "tags": [
+        "distribution"
+      ]
+    },
+    "free_electives": {
+      "type": "select",
+      "category": "elective",
+      "name": "Free Electives (to reach 32 full-credit courses)",
+      "credits": 16,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "external_requirement": true,
+      "external_credits": 16,
+      "external_note": "Open electives, any subject, to reach the 32-course graduation minimum after the major, math, first-year seminar, and five distribution courses.",
+      "tags": [
+        "elective"
+      ]
+    }
+  },
+  "courses": {
+    "CSCI1101": {
+      "name": "Introduction to Computer Science",
+      "prefix": "CSCI",
+      "number": "1101",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCI1103": {
+      "name": "Accelerated Introduction to Computer Science",
+      "prefix": "CSCI",
+      "number": "1103",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCI2100": {
+      "name": "Accelerated Data Structures and Advanced Programming I",
+      "prefix": "CSCI",
+      "number": "2100",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCI2101": {
+      "name": "Data Structures and Advanced Programming I",
+      "prefix": "CSCI",
+      "number": "2101",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI1101 | CSCI1103"
+    },
+    "CSCI2102": {
+      "name": "Data Structures and Advanced Programming II",
+      "prefix": "CSCI",
+      "number": "2102",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2100 | CSCI2101"
+    },
+    "CSCI2200": {
+      "name": "Algorithms",
+      "prefix": "CSCI",
+      "number": "2200",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2102"
+    },
+    "CSCI2210": {
+      "name": "Theory of Computation",
+      "prefix": "CSCI",
+      "number": "2210",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2101"
+    },
+    "CSCI2320": {
+      "name": "Principles of Programming Languages",
+      "prefix": "CSCI",
+      "number": "2320",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2330"
+    },
+    "CSCI2330": {
+      "name": "Foundations of Computer Systems",
+      "prefix": "CSCI",
+      "number": "2330",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2102 | CSCI2200"
+    },
+    "CSCI2350": {
+      "name": "Social and Economic Networks",
+      "prefix": "CSCI",
+      "number": "2350",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI1101 | CSCI1103"
+    },
+    "CSCI2400": {
+      "name": "Artificial Intelligence",
+      "prefix": "CSCI",
+      "number": "2400",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2102 | CSCI2200 | CSCI2330",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI2510": {
+      "name": "Computing, Ethics and Society",
+      "prefix": "CSCI",
+      "number": "2510",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CSCI2715": {
+      "name": "Human-Computer Interaction",
+      "prefix": "CSCI",
+      "number": "2715",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2101"
+    },
+    "CSCI3210": {
+      "name": "Computational Game Theory",
+      "prefix": "CSCI",
+      "number": "3210",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2200"
+    },
+    "CSCI3225": {
+      "name": "Algorithms for GIS",
+      "prefix": "CSCI",
+      "number": "3225",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2200 & CSCI2330"
+    },
+    "CSCI3240": {
+      "name": "Computational Complexity Theory",
+      "prefix": "CSCI",
+      "number": "3240",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2200"
+    },
+    "CSCI3250": {
+      "name": "Computational Geometry",
+      "prefix": "CSCI",
+      "number": "3250",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2200 & CSCI2330"
+    },
+    "CSCI3260": {
+      "name": "Quantum Computation",
+      "prefix": "CSCI",
+      "number": "3260",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2200"
+    },
+    "CSCI3310": {
+      "name": "Operating Systems",
+      "prefix": "CSCI",
+      "number": "3310",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2330"
+    },
+    "CSCI3325": {
+      "name": "Distributed Systems",
+      "prefix": "CSCI",
+      "number": "3325",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2330"
+    },
+    "CSCI3330": {
+      "name": "Cybersecurity",
+      "prefix": "CSCI",
+      "number": "3330",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2330"
+    },
+    "CSCI3465": {
+      "name": "Financial Machine Learning",
+      "prefix": "CSCI",
+      "number": "3465",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2400",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI3485": {
+      "name": "Deep Learning for Computer Vision",
+      "prefix": "CSCI",
+      "number": "3485",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2400",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CSCI3725": {
+      "name": "Computational Creativity",
+      "prefix": "CSCI",
+      "number": "3725",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CSCI2102 | CSCI2200 | CSCI2330",
+      "tags": [
+        "ai"
+      ]
+    },
+    "MATH1300": {
+      "name": "Mathematics Elective (1300-level or higher placeholder for major math requirement)",
+      "prefix": "MATH",
+      "number": "1300",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    }
+  },
+  "conversion_warnings": [
+    "CREDIT SYSTEM: Bowdoin counts in full-credit courses, not credit-hours. 32 courses are required to graduate, each = 1 unit. Modeled as system_type=semester, credit_hours=1.0 per course, total_credits=32.",
+    "degree_type corrected to BA: Bowdoin awards only the Bachelor of Arts (AB); the skeletal source said BS. CS major name is 'Computer Science Major (AB)'.",
+    "Major = 10 CSCI courses + 1 MATH course. Core (4): (CSCI 2100 or CSCI 2101) + CSCI 2102 + CSCI 2200 + CSCI 2330. Electives (5): ≥1 theory, ≥1 systems, ≥1 AI, ≥1 projects, with ≥2 of the five at the 3000-level. Plus one MATH course numbered 1300+.",
+    "The intro course CSCI 1101/1103 does NOT count toward the major (students placing into CSCI 2100/2101 skip it); modeled CSCI 1101/1103 only as a prerequisite of CSCI 2101, not as a major requirement.",
+    "The 'choose one' core entry is modeled as a select count:1 over {CSCI 2100, CSCI 2101}; CSCI 2100 is the accelerated single-course equivalent of CSCI 1101 + CSCI 2101.",
+    "The four named-category electives (theory/AI/systems/projects) use exclude_used:true so the same course does not satisfy two categories. CSCI 3225/3325/3465/3485/3725 appear in multiple category pools per the catalogue (e.g. 3225 counts for both theory and projects).",
+    "'≥2 of the five electives must be 3000-level' is only partially enforceable across separate select blocks: the four category picks already include several 3000-level options and the 'Additional CS elective' block carries min_upper_division:1. Full joint enforcement of the 2-at-3000 rule across all five picks is not expressible in the schema and is documented here.",
+    "Prerequisites deep-traced from the Bowdoin CSCI course catalogue (catalogue.bowdoin.edu / bowdoin-public.courseleaf.com/courses/csci). Grade-of-C- prereq qualifiers omitted from boolean expressions for tractability (degree-level grade_minimum applies). Placement/MATH co-prereqs for intro courses omitted as they are non-CSCI gating, not major requirements.",
+    "MATH1300 is a placeholder course defined to back the 'MATH:1300+' pool (one math course 1300+); the catalogue does not fix a single course, so any MATH 1300+ satisfies it.",
+    "Bowdoin distribution requirement modeled as five separate gen_ed select blocks (DPI, INS, IP, MCSR, VPA), each one full-credit course, plus the First-Year Writing Seminar. All marked external_requirement:true with '*:*' pools because they are attribute-based and not enumerable from the defined course set (PatternMatchesNoCourses avoidance).",
+    "MCSR distribution can be (and typically is) satisfied by a CSCI or MATH course that also counts for the major; this double-count is allowed for distribution but not modeled, slightly inflating the standalone distribution credit count.",
+    "cip_code 11.0701 (Computer Science) inferred from program name; not stated in catalogue.",
+    "Credit reconciliation: major+math = 10 courses, first-year seminar = 1, five distribution areas = 5, free electives = 16 -> 10+1+5+16 = 32 courses total. Exact free-elective count varies with distribution/major overlap (MCSR commonly satisfied by a major course), which would raise free electives; the schema double-counting policy is allow_double_counting-absent so distribution is modeled as additive."
+  ]
+}

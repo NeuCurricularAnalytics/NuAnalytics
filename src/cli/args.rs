@@ -283,10 +283,10 @@ pub enum DegreeSubcommand {
         target_course: Option<String>,
 
         /// When `--target-course` is set, write the full analysis JSON
-        /// (course complexity, plan stats, target_course_stats, etc.) to
+        /// (course complexity, plan stats, `target_course_stats`, etc.) to
         /// this path in addition to printing `target_course_stats` to stdout.
         ///
-        /// Example: --metrics-out metrics/Tulane__CMPS2200.json
+        /// Example: `--metrics-out metrics/tulane-cmps2200.json`
         #[arg(long, value_name = "PATH", requires = "target_course")]
         metrics_out: Option<PathBuf>,
     },
@@ -750,6 +750,7 @@ pub enum DbSubcommand {
     about = "NuAnalytics command-line interface",
     version = env!("CARGO_PKG_VERSION")
 )]
+/// Top-level `nuanalytics` invocation: the global flags plus the chosen subcommand.
 pub struct Cli {
     /// Set the runtime log level (error|warn|info|debug). Falls back to config if omitted.
     #[arg(long, value_enum)]

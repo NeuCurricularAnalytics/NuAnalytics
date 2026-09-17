@@ -486,7 +486,7 @@ pub struct AnalyzeOptions {
     /// JSON to stdout. Pair with `--no-report --no-csv` for a fast query.
     pub target_course: Option<String>,
     /// When set alongside `target_course`, write the full analysis JSON
-    /// (course complexity, plan stats, target_course_stats) to this path.
+    /// (course complexity, plan stats, `target_course_stats`) to this path.
     pub metrics_out: Option<PathBuf>,
 }
 
@@ -1690,8 +1690,12 @@ fn analyze_degree(
             None,
             Some(course_id.as_str()),
         );
-        let response: serde_json::Value =
-            serde_json::from_str(&json_out).unwrap_or(serde_json::json!({"error": json_out}));
+        // Keep the parse error: without it the caller sees the unparseable body but no
+        // statement of why it failed, which is the defect pattern this repo has already
+        // paid for once in the OAuth callback.
+        let response: serde_json::Value = serde_json::from_str(&json_out).unwrap_or_else(
+            |e| serde_json::json!({"error": json_out, "parse_error": e.to_string()}),
+        );
         let stats = &response["target_course_stats"];
         println!(
             "{}",
@@ -1840,9 +1844,9 @@ pub fn run_schema(out: Option<&Path>) {
 /// - Unified degree JSON → one file
 /// - Degree YAML → one file
 pub fn run_normalize(files: &[PathBuf], out: Option<&Path>, pretty: bool, verbose: bool) {
-    let dir_mode = out.map_or(false, |p| {
-        p.is_dir() || p.to_string_lossy().ends_with(std::path::MAIN_SEPARATOR)
-    }) || files.len() > 1;
+    let dir_mode = out
+        .is_some_and(|p| p.is_dir() || p.to_string_lossy().ends_with(std::path::MAIN_SEPARATOR))
+        || files.len() > 1;
 
     let mut total_programs: usize = 0;
     let mut total_warnings: usize = 0;

@@ -10,17 +10,18 @@ codebase — run `/init` if you want that.
 
 Default features: `log-info`, `log-debug`, `verbose`, `file-logging`, `database`, `mcp`.
 
-    cargo test --features database --lib --bins     # 961 tests, clean
+    cargo test --features database                  # 1151 tests, clean
     cargo build --features database
 
-**`cargo test` (the full suite) does not compile, and this is pre-existing.**
-`tests/rs/first_sem_cases.rs` has 29 `include_str!("/tmp/first_sem_unified/*.unified.json")`
-calls — absolute paths into `/tmp` for fixtures that no longer exist:
+**Degree fixtures are compiled in, so a missing one is a build error, not a test
+failure.** `tests/rs/degree_fixtures.rs` `include_str!`s 13 real degree builds from
+`tests/assets/degrees/`; renaming or deleting one takes out the whole `integration`
+target rather than failing a test. That directory's `Readme.md` records where each came
+from (the `WebScrappedCombinedDataMetrics` corpus) and how to refresh one.
 
-    error: couldn't read `/tmp/first_sem_unified/Syracuse_University_...unified.json`
-
-Use `--lib --bins` until those fixtures are vendored under `tests/fixtures/` and referenced
-relative to `CARGO_MANIFEST_DIR`. Don't be misled into thinking your change broke it.
+**Only `earliest_term` is baselined in the target-course cases, deliberately.** The other
+population figures move when the enumeration seed does. Read the module doc in
+`tests/rs/target_course_population.rs` before adding an assertion on them.
 
 **Builds are memory-hungry on a loaded machine.** A release build alongside several
 `rust-analyzer` instances has OOM-killed this box. Prefer running long builds in their own

@@ -1,0 +1,713 @@
+{
+  "degree": {
+    "cip_code": "11.0701",
+    "degree_type": "BS",
+    "id": "texas-state-university-bachelor-of-science-in-computer-science",
+    "institution": "Texas State University",
+    "unitid": 228459,
+    "name": "Bachelor of Science in Computer Science",
+    "source_url": "https://mycatalog.txstate.edu/undergraduate/science-engineering/computer/computer-science-bs/",
+    "system_type": "semester",
+    "catalog_year": "2024-2025",
+    "total_credits": 120,
+    "major_subjects": [
+      "CS",
+      "MATH"
+    ],
+    "tags": [
+      "computer-science",
+      "bs"
+    ]
+  },
+  "requirements": {
+    "cs_core": {
+      "type": "all",
+      "category": "major",
+      "name": "Computer Science Required Courses",
+      "courses": [
+        "CS1428",
+        "CS2308",
+        "CS2318",
+        "CS2315",
+        "CS3358",
+        "CS3354",
+        "CS3339",
+        "CS3398",
+        "CS3360",
+        "CS4371"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "cs_project_course": {
+      "type": "select",
+      "category": "major",
+      "name": "Computer Science Project Course",
+      "count": 1,
+      "from": {
+        "courses": [
+          "CS4318",
+          "CS4326",
+          "CS4380",
+          "CS4398"
+        ]
+      },
+      "tags": [
+        "required"
+      ]
+    },
+    "cs_advanced_electives": {
+      "type": "select",
+      "category": "major",
+      "name": "CS Advanced Electives (3000/4000-level CS, not otherwise required)",
+      "credits": 12,
+      "from": {
+        "include": [
+          "CS:3000+"
+        ],
+        "exclude": [
+          "CS3339",
+          "CS3354",
+          "CS3358",
+          "CS3360",
+          "CS3398",
+          "CS4371",
+          "CS4318",
+          "CS4326",
+          "CS4380",
+          "CS4398"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "elective"
+      ]
+    },
+    "math_support": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Mathematics Support Courses",
+      "courses": [
+        "MATH2358",
+        "MATH3398",
+        "MATH3305"
+      ],
+      "tags": [
+        "required"
+      ]
+    },
+    "math_minor": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Mathematics or Applied Mathematics Minor",
+      "credits": 6,
+      "from": {
+        "include": [
+          "MATH:3000+"
+        ],
+        "exclude": [
+          "MATH3305",
+          "MATH3398"
+        ]
+      },
+      "constraints": {
+        "exclude_used": true
+      },
+      "tags": [
+        "supporting"
+      ]
+    },
+    "technical_writing": {
+      "type": "select",
+      "category": "supporting",
+      "name": "Technical or Scientific Writing",
+      "count": 1,
+      "from": {
+        "courses": [
+          "ENG3303",
+          "ENG3313"
+        ]
+      },
+      "tags": [
+        "required"
+      ]
+    },
+    "core_first_year_experience": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "First-Year Experience (US 1100)",
+      "courses": [
+        "US1100"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "core_mathematics_020": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "Core: Mathematics (Component Area 020)",
+      "courses": [
+        "MATH2471"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "core_component_area_option": {
+      "type": "all",
+      "category": "gen_ed",
+      "name": "Core: Component Area Option (MATH 2472)",
+      "courses": [
+        "MATH2472"
+      ],
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "core_communication_010": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Core: Communication (Component Area 010)",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "core_component_area_speech": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Core: Component Area Option - Communication (COMM 1310)",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "core_language_philosophy_culture_040": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Core: Language, Philosophy, and Culture (Component Area 040)",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "core_creative_arts_050": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Core: Creative Arts (Component Area 050)",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "core_american_history_060": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Core: American History (Component Area 060)",
+      "credits": 6,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "core_government_070": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Core: Government/Political Science (Component Area 070)",
+      "credits": 6,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "core_social_behavioral_080": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Core: Social and Behavioral Sciences (Component Area 080)",
+      "credits": 3,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "core_life_physical_sciences_0301": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Core: Life and Physical Sciences (Component Area 0301)",
+      "credits": 12,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "gen_ed"
+      ]
+    },
+    "free_electives": {
+      "type": "select",
+      "category": "elective",
+      "name": "Free Electives",
+      "credits": 8,
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "tags": [
+        "elective"
+      ]
+    }
+  },
+  "courses": {
+    "CS1428": {
+      "name": "Foundations of Computer Science I",
+      "prefix": "CS",
+      "number": "1428",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2471"
+    },
+    "CS2308": {
+      "name": "Foundations of Computer Science II",
+      "prefix": "CS",
+      "number": "2308",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS1428"
+    },
+    "CS2315": {
+      "name": "Computer Ethics",
+      "prefix": "CS",
+      "number": "2315",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS1428"
+    },
+    "CS2318": {
+      "name": "Assembly Language",
+      "prefix": "CS",
+      "number": "2318",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2308",
+          "MATH2358"
+        ]
+      }
+    },
+    "CS3339": {
+      "name": "Computer Architecture",
+      "prefix": "CS",
+      "number": "3339",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS2308 & CS2318"
+    },
+    "CS3354": {
+      "name": "Object-Oriented Design and Programming",
+      "prefix": "CS",
+      "number": "3354",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "CS3358": {
+      "name": "Data Structures and Algorithms",
+      "prefix": "CS",
+      "number": "3358",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": {
+        "and": [
+          "CS2308",
+          "MATH2358"
+        ]
+      }
+    },
+    "CS3360": {
+      "name": "Computing Systems Fundamentals",
+      "prefix": "CS",
+      "number": "3360",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS2318 & CS3358"
+    },
+    "CS3398": {
+      "name": "Software Engineering",
+      "prefix": "CS",
+      "number": "3398",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3354 & CS3358 & CS2315"
+    },
+    "CS4371": {
+      "name": "Computer System Security",
+      "prefix": "CS",
+      "number": "4371",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "CS4318": {
+      "name": "Compiler Construction",
+      "prefix": "CS",
+      "number": "4318",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "CS4326": {
+      "name": "Human Factors of Computer Systems",
+      "prefix": "CS",
+      "number": "4326",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "CS4380": {
+      "name": "Parallel Programming",
+      "prefix": "CS",
+      "number": "4380",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3339 & CS3360"
+    },
+    "CS4398": {
+      "name": "Software Engineering Project",
+      "prefix": "CS",
+      "number": "4398",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3398"
+    },
+    "CS3320": {
+      "name": "Internet Software Development",
+      "prefix": "CS",
+      "number": "3320",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "CS3378": {
+      "name": "Theory of Automata",
+      "prefix": "CS",
+      "number": "3378",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358 & MATH3398"
+    },
+    "CS3393": {
+      "name": "Software Testing",
+      "prefix": "CS",
+      "number": "3393",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "CS4310": {
+      "name": "Computer Networks",
+      "prefix": "CS",
+      "number": "4310",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "CS4315": {
+      "name": "Introduction to Data Mining and Information Retrieval",
+      "prefix": "CS",
+      "number": "4315",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "CS4328": {
+      "name": "Operating Systems",
+      "prefix": "CS",
+      "number": "4328",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3339 & CS3360"
+    },
+    "CS4332": {
+      "name": "Introduction to Database Systems",
+      "prefix": "CS",
+      "number": "4332",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "CS4337": {
+      "name": "Introduction to Computer Vision",
+      "prefix": "CS",
+      "number": "4337",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4346": {
+      "name": "Introduction to Artificial Intelligence",
+      "prefix": "CS",
+      "number": "4346",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4347": {
+      "name": "Introduction to Machine Learning",
+      "prefix": "CS",
+      "number": "4347",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS4350": {
+      "name": "Unix Systems Programming",
+      "prefix": "CS",
+      "number": "4350",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3360"
+    },
+    "CS4353": {
+      "name": "Introduction to Graphical User Interfaces",
+      "prefix": "CS",
+      "number": "4353",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "CS4355": {
+      "name": "Algorithms and Analysis",
+      "prefix": "CS",
+      "number": "4355",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358 & MATH3398"
+    },
+    "CS4372": {
+      "name": "Introduction to Digital Multimedia",
+      "prefix": "CS",
+      "number": "4372",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "CS4381": {
+      "name": "Practical Game Development",
+      "prefix": "CS",
+      "number": "4381",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "CS4388": {
+      "name": "Computer Graphics",
+      "prefix": "CS",
+      "number": "4388",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS3358"
+    },
+    "ENG3303": {
+      "name": "Technical Writing",
+      "prefix": "ENG",
+      "number": "3303",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "ENG3313": {
+      "name": "Scientific Writing",
+      "prefix": "ENG",
+      "number": "3313",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH2358": {
+      "name": "Discrete Mathematics I",
+      "prefix": "MATH",
+      "number": "2358",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH2471": {
+      "name": "Calculus I",
+      "prefix": "MATH",
+      "number": "2471",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH2472": {
+      "name": "Calculus II",
+      "prefix": "MATH",
+      "number": "2472",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2471"
+    },
+    "MATH3305": {
+      "name": "Introduction to Probability and Statistics",
+      "prefix": "MATH",
+      "number": "3305",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2472"
+    },
+    "MATH3398": {
+      "name": "Discrete Mathematics II",
+      "prefix": "MATH",
+      "number": "3398",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2358"
+    },
+    "MATH3323": {
+      "name": "Differential Equations",
+      "prefix": "MATH",
+      "number": "3323",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2472"
+    },
+    "MATH3376": {
+      "name": "Applied Linear Algebra",
+      "prefix": "MATH",
+      "number": "3376",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2472"
+    },
+    "MATH3377": {
+      "name": "Linear Algebra",
+      "prefix": "MATH",
+      "number": "3377",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2472"
+    },
+    "MATH3380": {
+      "name": "Analysis I",
+      "prefix": "MATH",
+      "number": "3380",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2472"
+    },
+    "MATH3383": {
+      "name": "Numerical Analysis I",
+      "prefix": "MATH",
+      "number": "3383",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH2472"
+    },
+    "US1100": {
+      "name": "University Seminar",
+      "prefix": "US",
+      "number": "1100",
+      "credit_hours": 1.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    }
+  },
+  "conversion_warnings": [
+    "Source URL verified live (CourseLeaf catalog, 2024-2025). Course titles/credits/prerequisites pulled from the per-course endpoint /ribbit/index.cgi?page=getcourse.rjs&code=<SUBJ NUM>.",
+    "Skeletal source listed a phantom 'CS1319 Fundamentals of Computer Science' that is NOT in the BS CS plan of study; removed. The plan's CS core is CS 1428, 2308, 2318, 2315, 3358, 3354, 3339, 3398, 3360, 4371 (CS 2315 = Computer Ethics, mislabeled 'Not Provided' in the skeleton).",
+    "Skeletal placeholder courses 'CSAdvancedElective' and 'MATHAppliedMathMinor' replaced with real select pools: CS Advanced Electives = 12 cr of CS:3000+ (excluding the required CS courses); Math/Applied Math Minor = 6 cr of MATH:3000+ (advisor-approved minor coursework). Real non-required option courses were enumerated from the Texas State CS and MATH course catalogs so each pool has concrete satisfying courses (CS electives: 3320, 3378, 3393, 4310, 4315, 4328, 4332, 4337, 4346, 4347, 4350, 4353, 4355, 4372, 4381, 4388; MATH minor: 3323, 3376, 3377, 3380, 3383).",
+    "Texas course-number convention: the second digit encodes credit hours (e.g. CS 1428 = 4 cr, CS 2308 = 3 cr, MATH 2471 = 4 cr); credit_hours set accordingly and cross-checked against each course page.",
+    "Prerequisite grade qualifiers ('C or better', 'D or better') and alternative test-score/placement paths dropped to plain course expressions per schema (boolean course expressions only).",
+    "CS 3339 prereq simplified: catalog allows 'CS 2318 OR EE 3320'; EE 3320 not defined in this file, so modeled as 'CS2308 & CS2318' (the in-plan path). CS 3360 similarly uses the CS2318 path; CS 3398 uses CS2315 (vs EE 2300 alternative).",
+    "Texas Core Curriculum (42 SCH state core) modeled as gen_ed pools: Communication, Language/Philosophy/Culture, Creative Arts, American History, Government, Social/Behavioral Sciences, and Life & Physical Sciences use '*:*' wildcard pools (specific approved-course lists not enumerated, per analyzer requirement that pattern pools match a defined course). MATH 2471 (Math 020) and MATH 2472 (Component Area Option) are defined real courses and modeled as 'all'.",
+    "Credit accounting (sums to 120): CS core 31 + CS project 3 + CS advanced electives 12 + MATH support 9 + Math minor 6 + writing 3 = 64 major/supporting; gen-ed/core + US 1100 + free electives = 56 (US1100 1 + MATH2471 4 + MATH2472 4 + Communication 3 + Component-Area speech 3 + Lang/Phil/Culture 3 + Creative Arts 3 + American History 6 + Government 6 + Social/Behavioral 3 + Life&Physical Sciences 12 + Free electives 8).",
+    "cip_code 11.0701 (Computer Science) inferred from program name; not stated in catalog.",
+    "Additional stated graduation rules not separately modeled (they are satisfied within the 120 credits above): minimum 36 advanced (3000+) hours, 9 hours writing-intensive, foreign-language proficiency (2 semesters / 2 HS years), and the 'no more than 3 cr from co-op/internship/research/independent study toward advanced electives' cap."
+  ]
+}

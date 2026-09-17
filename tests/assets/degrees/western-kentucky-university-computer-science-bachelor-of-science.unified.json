@@ -1,0 +1,792 @@
+{
+  "degree": {
+    "cip_code": "11.0701",
+    "degree_type": "BS",
+    "id": "western-kentucky-university-bachelor-of-science-in-computer-science",
+    "institution": "Western Kentucky University",
+    "unitid": 157951,
+    "name": "Bachelor of Science in Computer Science",
+    "source_url": "https://catalog.wku.edu/undergraduate/science-engineering/engineering-applied-sciences/computer-science-bs/",
+    "system_type": "semester",
+    "catalog_year": "2025-2026",
+    "total_credits": 120,
+    "major_subjects": [
+      "CS",
+      "MATH",
+      "STAT"
+    ],
+    "tags": [
+      "ai",
+      "ai-elective"
+    ]
+  },
+  "requirements": {
+    "cs_core": {
+      "type": "all",
+      "category": "major",
+      "name": "Computer Science Core (Required for All Concentrations)",
+      "courses": [
+        "CS180",
+        "CS290",
+        "CS325",
+        "CS331",
+        "CS339",
+        "CS351",
+        "CS360",
+        "CS382",
+        "CS396",
+        "CS421",
+        "CS425",
+        "CS496",
+        "STAT301"
+      ],
+      "tags": [
+        "core"
+      ]
+    },
+    "calculus": {
+      "type": "all",
+      "category": "supporting",
+      "name": "Mathematics: Calculus I",
+      "courses": [
+        "MATH136"
+      ],
+      "tags": [
+        "required"
+      ]
+    },
+    "concentration": {
+      "type": "one_of",
+      "category": "major",
+      "name": "Concentration / Option Selection",
+      "options": [
+        {
+          "id": "general_option",
+          "name": "General Option",
+          "requirements": [
+            {
+              "type": "select",
+              "name": "CS Electives: 200-level or above (3 hours)",
+              "from": {
+                "include": [
+                  "CS:200+"
+                ],
+                "exclude": [
+                  "CS226",
+                  "CS257",
+                  "CS325",
+                  "CS331",
+                  "CS339",
+                  "CS351",
+                  "CS360",
+                  "CS382",
+                  "CS396",
+                  "CS421",
+                  "CS425",
+                  "CS496"
+                ]
+              },
+              "credits": 3,
+              "constraints": {
+                "exclude_used": true
+              }
+            },
+            {
+              "type": "select",
+              "name": "CS Electives: 300-level or above (6 hours)",
+              "from": {
+                "include": [
+                  "CS:300+"
+                ],
+                "exclude": [
+                  "CS325",
+                  "CS331",
+                  "CS339",
+                  "CS351",
+                  "CS360",
+                  "CS382",
+                  "CS396",
+                  "CS421",
+                  "CS425",
+                  "CS496"
+                ]
+              },
+              "credits": 6,
+              "constraints": {
+                "exclude_used": true
+              }
+            },
+            {
+              "type": "select",
+              "name": "CS Electives: 400-level or above (3 hours)",
+              "from": {
+                "include": [
+                  "CS:400+"
+                ],
+                "exclude": [
+                  "CS421",
+                  "CS425",
+                  "CS496"
+                ]
+              },
+              "credits": 3,
+              "constraints": {
+                "exclude_used": true
+              }
+            }
+          ]
+        },
+        {
+          "id": "systems_scientific_applications",
+          "name": "Systems/Scientific Applications Concentration",
+          "requirements": [
+            {
+              "type": "select",
+              "name": "Concentration Electives (12 hours)",
+              "from": {
+                "courses": [
+                  "CS270",
+                  "CS315",
+                  "CS372",
+                  "CS381",
+                  "CS443",
+                  "CS445",
+                  "CS446",
+                  "CS450",
+                  "CS456"
+                ]
+              },
+              "credits": 12,
+              "constraints": {
+                "exclude_used": true
+              }
+            },
+            {
+              "type": "select",
+              "name": "Advanced Mathematics Electives (Choose Two)",
+              "from": {
+                "courses": [
+                  "MATH137",
+                  "MATH305",
+                  "MATH307",
+                  "MATH331",
+                  "MATH405",
+                  "MATH406",
+                  "MATH470",
+                  "MATH473",
+                  "STAT401",
+                  "STAT402"
+                ]
+              },
+              "count": 2,
+              "constraints": {
+                "exclude_used": true
+              }
+            }
+          ]
+        }
+      ],
+      "tags": [
+        "required"
+      ]
+    },
+    "colonnade_foundations_composition": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Colonnade Foundations: College Composition (F-W1)",
+      "from": {
+        "include": [
+          "ENG:*"
+        ]
+      },
+      "credits": 3,
+      "external_requirement": true,
+      "external_credits": 3,
+      "external_note": "Satisfied by ENG 100 College Writing (or equivalent) per WKU Colonnade Foundations."
+    },
+    "colonnade_foundations_quant": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Colonnade Foundations: Quantitative Reasoning (F-QR)",
+      "from": {
+        "include": [
+          "MATH:*"
+        ]
+      },
+      "credits": 3,
+      "external_requirement": true,
+      "external_credits": 0,
+      "external_note": "Satisfied by MATH 136 Calculus I (counted under the Calculus I supporting requirement); no additional credit beyond the major math is required here."
+    },
+    "colonnade_foundations_comm": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Colonnade Foundations: Human Communication (F-OC)",
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "credits": 3,
+      "external_requirement": true,
+      "external_credits": 3,
+      "external_note": "Satisfied by COMM 145 Fundamentals of Public Speaking (or equivalent) per WKU Colonnade Foundations."
+    },
+    "colonnade_foundations_literary": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Colonnade Foundations: Literary Studies (F-AH-L)",
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "credits": 3,
+      "external_requirement": true,
+      "external_credits": 3,
+      "external_note": "WKU Colonnade Foundations Literary Studies (3 hours from approved list)."
+    },
+    "colonnade_foundations_world_history": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Colonnade Foundations: World History (F-SB)",
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "credits": 3,
+      "external_requirement": true,
+      "external_credits": 3,
+      "external_note": "WKU Colonnade Foundations World History (3 hours from approved list)."
+    },
+    "colonnade_explorations_arts_humanities": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Colonnade Explorations: Arts & Humanities (E-AH)",
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "credits": 3,
+      "external_requirement": true,
+      "external_credits": 3,
+      "external_note": "WKU Colonnade Explorations Arts & Humanities (3 hours from approved list)."
+    },
+    "colonnade_explorations_social_behavioral": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Colonnade Explorations: Social & Behavioral Sciences (E-SB)",
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "credits": 3,
+      "external_requirement": true,
+      "external_credits": 3,
+      "external_note": "WKU Colonnade Explorations Social & Behavioral Sciences (3 hours from approved list)."
+    },
+    "colonnade_explorations_natural_science": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Colonnade Explorations: Natural & Physical Sciences (E-NS, two disciplines, one with lab)",
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "credits": 6,
+      "external_requirement": true,
+      "external_credits": 6,
+      "external_note": "WKU Colonnade Explorations Natural & Physical Sciences: 6 hours across two different NS disciplines, at least one with a lab."
+    },
+    "colonnade_connections_local_global": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Colonnade Connections: Local to Global (C-LG)",
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "credits": 3,
+      "external_requirement": true,
+      "external_credits": 3,
+      "external_note": "WKU Colonnade Connections Local to Global (3 hours; junior standing recommended)."
+    },
+    "colonnade_connections_systems": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Colonnade Connections: Systems (C-SY)",
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "credits": 3,
+      "external_requirement": true,
+      "external_credits": 3,
+      "external_note": "WKU Colonnade Connections Systems (3 hours; junior standing recommended)."
+    },
+    "colonnade_connections_social_cultural": {
+      "type": "select",
+      "category": "gen_ed",
+      "name": "Colonnade Connections: Social & Cultural (C-SC)",
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "credits": 3,
+      "external_requirement": true,
+      "external_credits": 3,
+      "external_note": "WKU Colonnade Connections Social & Cultural (3 hours; junior standing recommended)."
+    },
+    "free_electives": {
+      "type": "select",
+      "category": "elective",
+      "name": "Unrestricted / General Electives",
+      "from": {
+        "include": [
+          "*:*"
+        ]
+      },
+      "credits": 24,
+      "external_requirement": true,
+      "external_credits": 24,
+      "external_note": "General electives to reach the 120-hour graduation minimum (General Option): 120 - 41 core - 12 CS electives - 4 MATH 136 - 39 Colonnade = 24 hours. Includes world-language proficiency coursework where needed."
+    }
+  },
+  "courses": {
+    "CS180": {
+      "name": "Computer Science I",
+      "prefix": "CS",
+      "number": "180",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS170 | MATH116 | MATH116E | MATH123"
+    },
+    "CS170": {
+      "name": "Problem Solving and Programming Concepts",
+      "prefix": "CS",
+      "number": "170",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CS226": {
+      "name": "Introduction to Information Security",
+      "prefix": "CS",
+      "number": "226",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CS257": {
+      "name": "Python Programming",
+      "prefix": "CS",
+      "number": "257",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CS270": {
+      "name": "Introduction to Web Programming",
+      "prefix": "CS",
+      "number": "270",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS180"
+    },
+    "CS290": {
+      "name": "Computer Science II",
+      "prefix": "CS",
+      "number": "290",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS180 & (MATH117 | MATH118 | MATH136 | MATH137)"
+    },
+    "CS315": {
+      "name": "Introduction to Unix",
+      "prefix": "CS",
+      "number": "315",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS290"
+    },
+    "CS325": {
+      "name": "Computer Organization and Architecture",
+      "prefix": "CS",
+      "number": "325",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS290"
+    },
+    "CS331": {
+      "name": "Data Structures",
+      "prefix": "CS",
+      "number": "331",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS290"
+    },
+    "CS339": {
+      "name": "Discrete Structures",
+      "prefix": "CS",
+      "number": "339",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS290 & MATH136"
+    },
+    "CS351": {
+      "name": "Database Management Systems I",
+      "prefix": "CS",
+      "number": "351",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS290"
+    },
+    "CS360": {
+      "name": "Software Engineering I",
+      "prefix": "CS",
+      "number": "360",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS331 & CS351"
+    },
+    "CS372": {
+      "name": "Mobile App Development",
+      "prefix": "CS",
+      "number": "372",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS290"
+    },
+    "CS381": {
+      "name": "Introduction to Computer Networks",
+      "prefix": "CS",
+      "number": "381",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS290"
+    },
+    "CS382": {
+      "name": "Programming Languages",
+      "prefix": "CS",
+      "number": "382",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS290"
+    },
+    "CS396": {
+      "name": "Intermediate Software Project",
+      "prefix": "CS",
+      "number": "396",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS331 & CS351"
+    },
+    "CS421": {
+      "name": "Data Structures and Algorithm Analysis",
+      "prefix": "CS",
+      "number": "421",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS339 & CS331 & STAT301"
+    },
+    "CS425": {
+      "name": "Operating Systems I",
+      "prefix": "CS",
+      "number": "425",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS325 & CS382"
+    },
+    "CS443": {
+      "name": "Database Management Systems II",
+      "prefix": "CS",
+      "number": "443",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS331 & CS351"
+    },
+    "CS445": {
+      "name": "Operating Systems II",
+      "prefix": "CS",
+      "number": "445",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS425"
+    },
+    "CS446": {
+      "name": "Interactive Computer Graphics",
+      "prefix": "CS",
+      "number": "446",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH307 & CS331"
+    },
+    "CS450": {
+      "name": "Computer Networks",
+      "prefix": "CS",
+      "number": "450",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS325 & CS381"
+    },
+    "CS456": {
+      "name": "Artificial Intelligence",
+      "prefix": "CS",
+      "number": "456",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS331 & CS339",
+      "tags": [
+        "ai"
+      ]
+    },
+    "CS496": {
+      "name": "CS Senior Project and Professional Practice",
+      "prefix": "CS",
+      "number": "496",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "CS360 & CS396"
+    },
+    "MATH116": {
+      "name": "College Algebra",
+      "prefix": "MATH",
+      "number": "116",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH116E": {
+      "name": "College Algebra (Enhanced)",
+      "prefix": "MATH",
+      "number": "116E",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH117": {
+      "name": "Trigonometry",
+      "prefix": "MATH",
+      "number": "117",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH118": {
+      "name": "Precalculus Mathematics",
+      "prefix": "MATH",
+      "number": "118",
+      "credit_hours": 5.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH123": {
+      "name": "Trigonometry and Precalculus",
+      "prefix": "MATH",
+      "number": "123",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "MATH136": {
+      "name": "Calculus I",
+      "prefix": "MATH",
+      "number": "136",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH117 | MATH118"
+    },
+    "MATH137": {
+      "name": "Calculus II",
+      "prefix": "MATH",
+      "number": "137",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH136"
+    },
+    "MATH237": {
+      "name": "Multivariable Calculus",
+      "prefix": "MATH",
+      "number": "237",
+      "credit_hours": 4.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH137"
+    },
+    "MATH305": {
+      "name": "Introduction to Mathematical Modeling",
+      "prefix": "MATH",
+      "number": "305",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH137"
+    },
+    "MATH307": {
+      "name": "Introduction to Linear Algebra",
+      "prefix": "MATH",
+      "number": "307",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH137 | (MATH136 & CS290)"
+    },
+    "MATH310": {
+      "name": "Introduction to Discrete Mathematics",
+      "prefix": "MATH",
+      "number": "310",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH137"
+    },
+    "MATH331": {
+      "name": "Differential Equations",
+      "prefix": "MATH",
+      "number": "331",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH137"
+    },
+    "MATH405": {
+      "name": "Numerical Analysis I",
+      "prefix": "MATH",
+      "number": "405",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH137 & (MATH237 | MATH307 | MATH310) & (CS146 | CS180)"
+    },
+    "MATH406": {
+      "name": "Numerical Analysis II",
+      "prefix": "MATH",
+      "number": "406",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH237 & MATH307 & MATH331 & (MATH405 | CS405)"
+    },
+    "MATH470": {
+      "name": "Introduction to Operations Research",
+      "prefix": "MATH",
+      "number": "470",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH237 & MATH307"
+    },
+    "MATH473": {
+      "name": "Introduction to Graph Theory",
+      "prefix": "MATH",
+      "number": "473",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH307 & MATH310"
+    },
+    "CS146": {
+      "name": "Computing for Scientists and Engineers",
+      "prefix": "CS",
+      "number": "146",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "CS405": {
+      "name": "Numerical Computing",
+      "prefix": "CS",
+      "number": "405",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "STAT301": {
+      "name": "Introductory Probability and Applied Statistics",
+      "prefix": "STAT",
+      "number": "301",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "MATH136"
+    },
+    "STAT330": {
+      "name": "Probability and Statistics",
+      "prefix": "STAT",
+      "number": "330",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    },
+    "STAT401": {
+      "name": "Regression Analysis",
+      "prefix": "STAT",
+      "number": "401",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "STAT301 & (STAT330 | CS396)"
+    },
+    "STAT402": {
+      "name": "Experimental Design",
+      "prefix": "STAT",
+      "number": "402",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": [],
+      "prerequisites": "STAT301 & (STAT330 | CS396)"
+    },
+    "ENG100": {
+      "name": "College Writing",
+      "prefix": "ENG",
+      "number": "100",
+      "credit_hours": 3.0,
+      "corequisites": [],
+      "strict_corequisites": []
+    }
+  },
+  "conversion_warnings": [
+    "Catalog year set to 2025-2026 per the live CourseLeaf program page (catalog.wku.edu).",
+    "degree.id changed from '...-elective' to '...-computer-science' (skeletal id encoded a mis-classification of the program as an AI elective; this is the full BS CS major).",
+    "cip_code 11.0701 (Computer Science) inferred from program name; not stated in catalog.",
+    "Skeletal source modeled the major as a flat 'all' core plus a 'Math Electives' pick-2 and a stray 'AI Electives = CS456 all' / 'Unrestricted = MATH136 all'. Rebuilt to the catalog's two-track structure: General Option vs Systems/Scientific Applications Concentration, modeled as a type:one_of.",
+    "General Option CS electives modeled as three select pools (3 hr 200+, 6 hr 300+, 3 hr 400+) per catalog wording 'Select 12 hours CS electives including: 3 hours at the 200-level or above (excluding CS 226 and CS 257), 6 hours at the 300-level or above and another 3 hours at the 400-level or above'. Excludes the 12 required core CS courses (and CS 226/CS 257 from the 200-level pool) so the pools draw only real electives.",
+    "Systems/Scientific Applications Concentration electives are the explicit 12-hour list CS 270/315/372/381/443/445/446/450/456 plus 'choose two' advanced math/STAT from MATH 137/305/307/331/405/406/470/473, STAT 401/402 (6-8 hrs). This concentration totals ~121 hrs; total_credits=120 reflects the General Option graduation minimum (the stated lower bound).",
+    "MATH 137 corrected to 4 credit_hours (live catalog) vs 3 in the skeletal source.",
+    "MATH 136 (Calculus I) modeled as a supporting requirement (prereq for STAT 301 and CS 339); it also satisfies the Colonnade Quantitative Reasoning Foundation, so colonnade_foundations_quant carries external_credits=0 to avoid double-counting its 4 hours.",
+    "WKU Colonnade general-education program (39 hrs: Foundations 18 + Explorations 12 + Connections 9) modeled as external_requirement select pools with '*:*' include patterns (per the avoid-PatternMatchesNoCourses rule), since specific Colonnade courses are not enumerated on the program page.",
+    "Free/general electives = 24 hrs to reach 120 (120 - 41 core - 12 CS electives - 4 MATH136 - 39 Colonnade). Some general-elective hours absorb WKU's world-language proficiency requirement (novice-high before 60 hrs).",
+    "Prerequisites de-listed of grade qualifiers ('with a minimum grade of C') and admission-standing phrases ('Human Communications', 'Writing in the Disciplines') which are not course references; CS360 and CS396 alternate paths (CS239/CS180[B]/EE380, ENG307) simplified to the primary CS-major path to avoid dangling external refs.",
+    "CS180/CS290 placement-test prerequisite alternatives (ACT/SAT/MPE scores) dropped; only the course-based alternatives retained as boolean prereqs."
+  ]
+}
