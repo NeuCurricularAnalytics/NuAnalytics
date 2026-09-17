@@ -1041,7 +1041,11 @@ fn check_unreferenced_courses(
     }
 
     // Now identify implicitly referenced courses (prerequisites of referenced courses)
-    // We use two BFS passes:
+    // Two DFS passes (both use a Vec as a LIFO work stack, not a queue). Note the
+    // consequence for `compute_strictly_reachable`: it records a path on first
+    // discovery, so the `dependency_chain` in a HiddenRequirement warning is the first
+    // path found, not the shortest.
+    //
     // 1. All reachable courses (Weak + Strict) -> To mark as "Referenced" (avoid Unreferenced warning)
     let weakly_reachable = compute_weakly_reachable(&explicitly_referenced, courses);
 

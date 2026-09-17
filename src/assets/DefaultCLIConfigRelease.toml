@@ -95,5 +95,5 @@ ignore_duplicates = true
 # Order in which plans are enumerated before sampling:
 #   sequential  — enumerate in natural order (may bias statistics toward early options)
 #   shuffled    — randomize order before sampling (recommended for unbiased stats)
-#   stratified  — ensure coverage across elective option space
+#   stratified  — NOT YET IMPLEMENTED; currently behaves as shuffled
 sampling_strategy = "shuffled"

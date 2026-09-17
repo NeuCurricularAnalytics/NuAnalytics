@@ -338,11 +338,11 @@ fn aggregate_metrics_comparison() {
         let plan_path = format!("samples/plans/{plan_name}.csv");
         let reference_path = format!("samples/planner-output/correct/{plan_name}_w_metrics.csv");
 
-        // Skip if reference file doesn't exist
-        if !Path::new(&reference_path).exists() {
-            println!("Skipping {plan_name}: reference file not found");
-            continue;
-        }
+        assert!(
+            Path::new(&reference_path).exists(),
+            "reference metrics missing: {reference_path} — without it this plan is \
+             silently dropped from the comparison"
+        );
 
         let school = match parse_curriculum_csv(&plan_path) {
             Ok(s) => s,

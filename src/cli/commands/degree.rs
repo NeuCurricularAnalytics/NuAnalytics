@@ -26,6 +26,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process;
 
+/// Error-string prefix marking the `--target-course` fast path as handled.
+///
+/// `analyze_degree` prints its own output and generates no rollup, so it signals
+/// completion through the error channel; the dispatcher treats a value starting with
+/// this prefix as success rather than a failure.
+const TARGET_COURSE_DONE_SENTINEL: &str = "__target_course_done__";
+
 /// Validate a degree program YAML file
 ///
 /// Loads the degree program from the specified YAML file and runs comprehensive
@@ -962,7 +969,7 @@ fn run_analyze_inprocess(files: &[PathBuf], options: &AnalyzeOptions, config: &C
             match analyze_degree(path, options, config) {
                 Ok(_) => Ok(()),
                 // Sentinel used by --target-course fast path: not a real error.
-                Err(ref e) if e.starts_with("__target_course_done__") => Ok(()),
+                Err(ref e) if e.starts_with(TARGET_COURSE_DONE_SENTINEL) => Ok(()),
                 Err(e) => Err(e),
             }
         });
@@ -1658,6 +1665,80 @@ fn parse_equivalent_courses(course_ref: &str) -> Option<HashSet<String>> {
     None
 }
 
+/// Print `target_course_stats` for one degree and return the completion sentinel.
+///
+/// The analysis pipeline lives under `nu_analytics::mcp`, so this path needs the `mcp`
+/// feature; the `cfg(not(...))` counterpart below reports that instead of failing to
+/// compile. Returns a `String` because the caller signals "handled, stop here" through
+/// the error channel — see [`TARGET_COURSE_DONE_SENTINEL`].
+#[cfg(feature = "mcp")]
+fn emit_target_course_stats(
+    degree_path: &Path,
+    options: &AnalyzeOptions,
+    course_id: &str,
+) -> String {
+    let raw = match std::fs::read_to_string(degree_path) {
+        Ok(raw) => raw,
+        Err(e) => return format!("Failed to read {}: {e}", degree_path.display()),
+    };
+    let json_out = nu_analytics::mcp::tools::analyze::execute_json(
+        &raw,
+        options.max_plans,
+        options.include_courses.as_deref(),
+        false,
+        None,
+        false,
+        false,
+        None,
+        None,
+        Some(course_id),
+    );
+    // Keep the parse error: without it the caller sees the unparseable body but no
+    // statement of why it failed, which is the defect pattern this repo has already
+    // paid for once in the OAuth callback.
+    let response: serde_json::Value = serde_json::from_str(&json_out)
+        .unwrap_or_else(|e| serde_json::json!({"error": json_out, "parse_error": e.to_string()}));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&response["target_course_stats"]).unwrap_or_default()
+    );
+    if let Some(ref out_path) = options.metrics_out {
+        // Surfaced, not swallowed: --metrics-out is an explicit request for a file, so
+        // silently not writing it is the same defect class as the discarded parse error
+        // above.
+        if let Some(parent) = out_path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                return format!(
+                    "--metrics-out: cannot create directory {}: {e}",
+                    parent.display()
+                );
+            }
+        }
+        if let Err(e) = std::fs::write(out_path, &json_out) {
+            return format!("--metrics-out: cannot write {}: {e}", out_path.display());
+        }
+    }
+    format!("{TARGET_COURSE_DONE_SENTINEL}{course_id}")
+}
+
+/// Reports that `--target-course` is unavailable in a build without the `mcp` feature.
+#[cfg(not(feature = "mcp"))]
+fn emit_target_course_stats(
+    _degree_path: &Path,
+    options: &AnalyzeOptions,
+    course_id: &str,
+) -> String {
+    let also = if options.metrics_out.is_some() {
+        " (--metrics-out is unavailable for the same reason)"
+    } else {
+        ""
+    };
+    format!(
+        "--target-course {course_id} requires the `mcp` feature, which this binary was \
+         built without{also}. Rebuild with `--features mcp`."
+    )
+}
+
 /// Run full degree analysis: generate plans, compute metrics, produce report
 ///
 /// This is the main entry point for the `--analyze` flag. It:
@@ -1672,44 +1753,10 @@ fn analyze_degree(
     options: &AnalyzeOptions,
     config: &Config,
 ) -> Result<nu_analytics::core::report::unified_report::ProgramRollup, String> {
-    // Fast path: when --target-course is set, call execute_json directly and
-    // print target_course_stats as JSON to stdout, then exit. This avoids
-    // generating full reports and is the intended interface for the testsuite.
+    // Fast path: --target-course prints target_course_stats and skips report
+    // generation entirely, so it returns the completion sentinel rather than a rollup.
     if let Some(ref course_id) = options.target_course {
-        let raw = std::fs::read_to_string(degree_path)
-            .map_err(|e| format!("Failed to read {}: {e}", degree_path.display()))?;
-        let json_out = nu_analytics::mcp::tools::analyze::execute_json(
-            &raw,
-            options.max_plans,
-            options.include_courses.as_deref(),
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            Some(course_id.as_str()),
-        );
-        // Keep the parse error: without it the caller sees the unparseable body but no
-        // statement of why it failed, which is the defect pattern this repo has already
-        // paid for once in the OAuth callback.
-        let response: serde_json::Value = serde_json::from_str(&json_out).unwrap_or_else(
-            |e| serde_json::json!({"error": json_out, "parse_error": e.to_string()}),
-        );
-        let stats = &response["target_course_stats"];
-        println!(
-            "{}",
-            serde_json::to_string_pretty(stats).unwrap_or_default()
-        );
-        // Optionally save the full analysis JSON to disk.
-        if let Some(ref out_path) = options.metrics_out {
-            if let Some(parent) = out_path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let _ = std::fs::write(out_path, &json_out);
-        }
-        // Return a minimal rollup — caller ignores it in this mode.
-        return Err(format!("__target_course_done__{course_id}"));
+        return Err(emit_target_course_stats(degree_path, options, course_id));
     }
 
     // Load and validate the degree program, then run the shared single-degree
@@ -3342,10 +3389,14 @@ fn find_equivalent_in_plan_set<'a>(
     equivalences: &HashMap<String, HashSet<String>>,
     plan_courses: &HashSet<&'a str>,
 ) -> Option<&'a str> {
+    // Lexicographic minimum for the same reason as the MCP twin
+    // (`analyze::find_equivalent_in_plan`): iterating a HashSet picks a hash-order
+    // dependent equivalent, which lands in the DAG and shifts scheduled terms.
     equivalences.get(course).and_then(|equivs| {
         equivs
             .iter()
-            .find_map(|eq| plan_courses.get(eq.as_str()).copied())
+            .filter_map(|eq| plan_courses.get(eq.as_str()).copied())
+            .min()
     })
 }
 

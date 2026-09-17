@@ -16,10 +16,11 @@ fn samples_dir() -> PathBuf {
 #[test]
 fn test_plan_generation_from_yaml() {
     let degree_path = samples_dir().join("neu-khoury-bscs-boston.yaml");
-    if !degree_path.exists() {
-        eprintln!("Skipping test: sample degree file not found");
-        return;
-    }
+    assert!(
+        degree_path.exists(),
+        "fixture missing: {} — a missing fixture is a broken test, not a skip",
+        degree_path.display()
+    );
 
     let program = load_degree_from_yaml(&degree_path).expect("Failed to load degree");
 
@@ -59,10 +60,11 @@ fn test_plan_generation_from_yaml() {
 #[test]
 fn test_requirement_resolver_types() {
     let degree_path = samples_dir().join("neu-khoury-bscs-boston.yaml");
-    if !degree_path.exists() {
-        eprintln!("Skipping test: sample degree file not found");
-        return;
-    }
+    assert!(
+        degree_path.exists(),
+        "fixture missing: {} — a missing fixture is a broken test, not a skip",
+        degree_path.display()
+    );
 
     let program = load_degree_from_yaml(&degree_path).expect("Failed to load degree");
     let mut req_resolver = RequirementResolver::new(&program.courses);
@@ -101,10 +103,11 @@ fn test_requirement_resolver_types() {
 #[test]
 fn test_plan_generation_stats() {
     let degree_path = samples_dir().join("csu-cs-bscs-general.yaml");
-    if !degree_path.exists() {
-        eprintln!("Skipping test: sample degree file not found");
-        return;
-    }
+    assert!(
+        degree_path.exists(),
+        "fixture missing: {} — a missing fixture is a broken test, not a skip",
+        degree_path.display()
+    );
 
     let program = load_degree_from_yaml(&degree_path).expect("Failed to load degree");
 
@@ -186,10 +189,11 @@ fn test_plan_deduplication() {
 #[test]
 fn test_plan_uniqueness() {
     let degree_path = samples_dir().join("neu-khoury-bscs-boston.yaml");
-    if !degree_path.exists() {
-        eprintln!("Skipping test: sample degree file not found");
-        return;
-    }
+    assert!(
+        degree_path.exists(),
+        "fixture missing: {} — a missing fixture is a broken test, not a skip",
+        degree_path.display()
+    );
 
     let program = load_degree_from_yaml(&degree_path).expect("Failed to load degree");
 
@@ -203,22 +207,20 @@ fn test_plan_uniqueness() {
     let generator = PlanGenerator::new(&program.requirements, &program.courses, config);
     let plans: Vec<PlanVariant> = generator.generate().collect();
 
-    // Check uniqueness by comparing fingerprints
-    let mut seen = std::collections::HashSet::new();
-    for plan in &plans {
-        let fp = plan.fingerprint();
-        if seen.contains(&fp) {
-            // If fingerprints match, verify courses actually differ
-            // (hash collisions are theoretically possible)
-            continue;
-        }
-        seen.insert(fp);
-    }
+    assert!(
+        !plans.is_empty(),
+        "the generator produced no plans to check for uniqueness"
+    );
 
-    println!(
-        "Generated {} plans, {} unique fingerprints",
+    // ignore_duplicates: false above means the generator must not emit the same course
+    // set twice, so fingerprints are expected to be distinct one-for-one.
+    let seen: std::collections::HashSet<_> = plans.iter().map(PlanVariant::fingerprint).collect();
+    assert_eq!(
+        seen.len(),
         plans.len(),
-        seen.len()
+        "{} of {} generated plans share a fingerprint despite ignore_duplicates = false",
+        plans.len() - seen.len(),
+        plans.len()
     );
 }
 
@@ -289,63 +291,70 @@ fn test_plan_category_utilities() {
 
 /// Debug test: Print resolved requirements for CSU to verify 400-level handling
 #[test]
-fn test_debug_csu_requirements() {
+fn test_csu_major_requirements_resolve_to_expected_shapes() {
+    // Was a println!-only scratchpad. The figures below are measured, and they are the
+    // ones the scratchpad was written to inspect: that the CSU sample's 400-level
+    // requirements resolve at all, and that the elective pool really is 400-level CS.
     let degree_path = samples_dir().join("csu-cs-bscs-general.yaml");
-    if !degree_path.exists() {
-        eprintln!("Skipping test: sample degree file not found");
-        return;
-    }
+    assert!(
+        degree_path.exists(),
+        "fixture missing: {}",
+        degree_path.display()
+    );
 
     let program = load_degree_from_yaml(&degree_path).expect("Failed to load degree");
     let mut req_resolver = RequirementResolver::new(&program.courses);
     let resolved = req_resolver.resolve_all(&program.requirements);
 
-    println!("\n=== Resolved Major Requirements ===");
-    for req in &resolved {
-        if req.category.as_deref() == Some("major") {
-            println!(
-                "\n{} ({} choices, exclude_used: {})",
-                req.id, req.choice_count, req.exclude_used
-            );
-            if req.choice_count <= 3 {
-                for (i, choice) in req.choices.iter().enumerate() {
-                    println!("  Choice {}: {:?}", i + 1, choice);
-                }
-            } else {
-                println!("  First: {:?}", req.choices.first());
-                println!("  Last: {:?}", req.choices.last());
-            }
-        }
-    }
+    let major_count = resolved
+        .iter()
+        .filter(|r| r.category.as_deref() == Some("major"))
+        .count();
+    assert!(
+        major_count > 0,
+        "the CSU sample must resolve at least one major requirement"
+    );
 
-    // Check specific requirements
-    println!("\n=== Checking 400-level requirements ===");
-    let capstone = resolved.iter().find(|r| r.id == "capstone");
-    let cs_400_electives = resolved.iter().find(|r| r.id == "cs_400_electives");
-    let tech_focus = resolved.iter().find(|r| r.id.contains("tech_focus"));
+    let capstone = resolved
+        .iter()
+        .find(|r| r.id == "capstone")
+        .expect("the CSU sample defines a `capstone` requirement");
+    assert!(
+        capstone.choice_count > 0,
+        "capstone must offer at least one choice"
+    );
+    assert_eq!(
+        capstone.choice_count,
+        capstone.choices.len(),
+        "capstone choice_count must match the enumerated choices"
+    );
 
-    if let Some(req) = capstone {
-        println!("\nCapstone: {} choices", req.choice_count);
-        println!("  First choice: {:?}", req.choices.first());
-    }
+    let electives = resolved
+        .iter()
+        .find(|r| r.id == "cs_400_electives")
+        .expect("the CSU sample defines a `cs_400_electives` requirement");
+    let pool: std::collections::HashSet<&String> = electives.choices.iter().flatten().collect();
+    assert!(
+        pool.len() >= 20,
+        "the 400-level elective pool should be substantial, got {} courses",
+        pool.len()
+    );
+    assert!(
+        pool.iter().all(|c| c.starts_with("CS4")),
+        "every course in cs_400_electives must be a 400-level CS course, got {:?}",
+        pool.iter()
+            .filter(|c| !c.starts_with("CS4"))
+            .collect::<Vec<_>>()
+    );
 
-    if let Some(req) = cs_400_electives {
-        println!("\nCS 400 Electives: {} choices", req.choice_count);
-        println!("  First choice: {:?}", req.choices.first());
-        // Count total CS 400-level courses across all choices
-        let all_courses: std::collections::HashSet<_> = req.choices.iter().flatten().collect();
-        let cs_400_count = all_courses.iter().filter(|c| c.starts_with("CS4")).count();
-        println!("  Total unique CS 400-level courses: {cs_400_count}");
-    }
-
-    if let Some(req) = tech_focus {
-        println!("\nTech Focus/Minor: {} choices", req.choice_count);
-        if !req.choices.is_empty() {
-            let first = &req.choices[0];
-            let cs_400_in_first: Vec<_> = first.iter().filter(|c| c.starts_with("CS4")).collect();
-            println!("  CS 400-level in first choice: {cs_400_in_first:?}");
-        }
-    }
+    let tech_focus = resolved
+        .iter()
+        .find(|r| r.id.contains("tech_focus"))
+        .expect("the CSU sample defines a tech-focus requirement");
+    assert!(
+        tech_focus.choice_count > 0,
+        "tech focus must offer at least one choice"
+    );
 }
 
 /// Test selected plans collection
@@ -393,10 +402,11 @@ fn test_selected_plans_collection() {
 #[test]
 fn test_plan_generation_with_includes() {
     let degree_path = samples_dir().join("csu-cs-bscs-general.yaml");
-    if !degree_path.exists() {
-        eprintln!("Skipping test: sample degree file not found");
-        return;
-    }
+    assert!(
+        degree_path.exists(),
+        "fixture missing: {} — a missing fixture is a broken test, not a skip",
+        degree_path.display()
+    );
 
     let program = load_degree_from_yaml(&degree_path).expect("Failed to load degree");
 
@@ -429,10 +439,11 @@ fn test_plan_generation_with_includes() {
 #[test]
 fn test_plan_generation_with_excludes() {
     let degree_path = samples_dir().join("csu-cs-bscs-general.yaml");
-    if !degree_path.exists() {
-        eprintln!("Skipping test: sample degree file not found");
-        return;
-    }
+    assert!(
+        degree_path.exists(),
+        "fixture missing: {} — a missing fixture is a broken test, not a skip",
+        degree_path.display()
+    );
 
     let program = load_degree_from_yaml(&degree_path).expect("Failed to load degree");
 
@@ -465,10 +476,11 @@ fn test_plan_generation_with_excludes() {
 #[test]
 fn test_includes_reduce_plan_count() {
     let degree_path = samples_dir().join("csu-cs-bscs-general.yaml");
-    if !degree_path.exists() {
-        eprintln!("Skipping test: sample degree file not found");
-        return;
-    }
+    assert!(
+        degree_path.exists(),
+        "fixture missing: {} — a missing fixture is a broken test, not a skip",
+        degree_path.display()
+    );
 
     let program = load_degree_from_yaml(&degree_path).expect("Failed to load degree");
 

@@ -6,6 +6,7 @@
 //! - Required course categories have sufficient courses
 //! - No "Unknown" or improperly named courses
 
+use crate::core::degree::is_placeholder_course;
 use crate::core::models::course::Course;
 use crate::core::models::CourseGraph;
 use std::collections::{HashMap, HashSet};
@@ -479,37 +480,6 @@ impl<'a> PlanValidator<'a> {
 // ============================================================================
 
 /// Check if a course key appears to be a placeholder/generated course
-fn is_placeholder_course(course_key: &str) -> bool {
-    // Common placeholder patterns:
-    // - ELEC### (elective placeholders)
-    // - XX## where XX is 2-4 uppercase letters and ## is digits (gen-ed placeholders)
-    // - Ends with 'S' indicating small/partial credit course
-
-    if course_key.starts_with("ELEC") {
-        return true;
-    }
-
-    // Check for short prefix + digits pattern (e.g., "FE01", "AC02")
-    if course_key.len() <= 6 {
-        let prefix: String = course_key
-            .chars()
-            .take_while(|c| c.is_alphabetic())
-            .collect();
-        let digits: String = course_key
-            .chars()
-            .skip_while(|c| c.is_alphabetic())
-            .take_while(char::is_ascii_digit)
-            .collect();
-
-        if prefix.len() >= 2 && prefix.len() <= 4 && !digits.is_empty() && digits.len() <= 3 {
-            // Likely a placeholder
-            return true;
-        }
-    }
-
-    false
-}
-
 /// Format a validation error as a string
 fn format_error(error: &PlanValidationError) -> String {
     match error {

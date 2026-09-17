@@ -908,21 +908,29 @@ fn extract_number(key: &str) -> Option<u32> {
 ///
 /// Converts requirement IDs like `writing_composition` to "WRTC" (up to 4 chars, uppercase)
 fn sanitize_placeholder_prefix(req_id: &str) -> String {
-    // Take first letter of each word (snake_case), up to 4 chars
-    let parts: Vec<&str> = req_id.split('_').collect();
-    let prefix: String = parts
-        .iter()
+    // First letter of each snake_case word, up to 4 chars.
+    //
+    // Only *alphabetic* initials count. Ids like `nested_1` (see
+    // `resolve_nested_requirements`) would otherwise yield the prefix "N1" and a
+    // placeholder named `N101` — indistinguishable from a real 100-level course, and
+    // missed by `is_placeholder_course`, so it leaked into per-course metrics as if it
+    // were a catalogue course.
+    let prefix: String = req_id
+        .split('_')
         .filter_map(|part| part.chars().next())
+        .filter(char::is_ascii_alphabetic)
         .take(4)
         .collect::<String>()
         .to_uppercase();
 
-    // Pad to at least 2 chars
-    if prefix.len() < 2 {
-        format!("{prefix}X")
-    } else {
-        prefix
+    // Pad to at least 2 chars: a one-character prefix is also outside the shape
+    // `is_placeholder_course` recognises. An id with no alphabetic initials at all
+    // (`"1_2_3"`) pads from empty, so one `X` is not enough.
+    let mut prefix = prefix;
+    while prefix.len() < 2 {
+        prefix.push('X');
     }
+    prefix
 }
 
 /// Check if a course key belongs to a major CS subject
@@ -1171,5 +1179,49 @@ mod tests {
         assert_eq!(extract_subject("MATH1234"), Some("MATH".to_string()));
         assert_eq!(extract_number("CS3000"), Some(3000));
         assert_eq!(extract_number("MATH1234"), Some(1234));
+    }
+
+    #[test]
+    fn test_sanitize_placeholder_prefix_yields_only_alphabetic_recognisable_prefixes() {
+        // (req_id, expected prefix)
+        for (id, want) in [
+            ("natural_sciences", "NS"),
+            ("writing_composition", "WC"),
+            ("arts_humanities_cultural", "AHC"),
+            ("free_elective", "FE"),
+            ("electives", "EX"), // single word -> padded
+            ("nested_1", "NX"),  // digit initial dropped, then padded
+            ("nested_12", "NX"),
+            ("group_2_extra", "GE"), // digit initial skipped, not counted
+            ("1_2_3", "XX"),         // no alphabetic initials at all
+        ] {
+            assert_eq!(
+                sanitize_placeholder_prefix(id),
+                want,
+                "prefix for req_id {id:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_generated_placeholders_are_recognised_as_placeholders() {
+        // Regression: `nested_1` used to produce the prefix "N1" and hence the
+        // placeholder `N101`, which is shaped exactly like a real 100-level course and
+        // so escaped `is_placeholder_course` — leaking into per-course metrics.
+        for id in [
+            "nested_1",
+            "nested_0",
+            "natural_sciences",
+            "electives",
+            "1_2_3",
+        ] {
+            let prefix = sanitize_placeholder_prefix(id);
+            let placeholder = format!("{prefix}{:02}", 1);
+            assert!(
+                crate::core::degree::is_placeholder_course(&placeholder),
+                "placeholder {placeholder} generated from req_id {id:?} must be \
+                 recognisable as a placeholder"
+            );
+        }
     }
 }

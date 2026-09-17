@@ -90,7 +90,7 @@ pub fn enable_debug() {
 }
 #[cfg(not(feature = "log-debug"))]
 /// Enable debug logging at runtime (no-op when `log-debug` feature is disabled).
-pub fn enable_debug() {}
+pub const fn enable_debug() {}
 
 #[cfg(feature = "log-debug")]
 /// Disable debug logging at runtime.
@@ -99,7 +99,7 @@ pub fn disable_debug() {
 }
 #[cfg(not(feature = "log-debug"))]
 /// Disable debug logging at runtime (no-op when `log-debug` feature is disabled).
-pub fn disable_debug() {}
+pub const fn disable_debug() {}
 
 #[cfg(feature = "log-debug")]
 /// Returns whether debug logging is enabled.
@@ -108,7 +108,8 @@ pub fn is_debug_enabled() -> bool {
 }
 #[cfg(not(feature = "log-debug"))]
 /// Returns whether debug logging is enabled (always false when feature is disabled).
-pub fn is_debug_enabled() -> bool {
+#[must_use]
+pub const fn is_debug_enabled() -> bool {
     false
 }
 
@@ -119,7 +120,7 @@ pub fn enable_verbose() {
 }
 #[cfg(not(feature = "verbose"))]
 /// Enable verbose output at runtime (no-op when `verbose` feature is disabled).
-pub fn enable_verbose() {}
+pub const fn enable_verbose() {}
 
 #[cfg(feature = "verbose")]
 /// Disable verbose output at runtime.
@@ -128,7 +129,7 @@ pub fn disable_verbose() {
 }
 #[cfg(not(feature = "verbose"))]
 /// Disable verbose output at runtime (no-op when `verbose` feature is disabled).
-pub fn disable_verbose() {}
+pub const fn disable_verbose() {}
 
 #[cfg(feature = "verbose")]
 /// Returns whether verbose output is enabled.
@@ -137,7 +138,8 @@ pub fn is_verbose_enabled() -> bool {
 }
 #[cfg(not(feature = "verbose"))]
 /// Returns whether verbose output is enabled (always false when feature is disabled).
-pub fn is_verbose_enabled() -> bool {
+#[must_use]
+pub const fn is_verbose_enabled() -> bool {
     false
 }
 
@@ -159,7 +161,8 @@ pub fn init_file_logging(path: &std::path::Path) -> bool {
 
 #[cfg(not(feature = "file-logging"))]
 /// Initialize file logging (no-op when `file-logging` feature is disabled).
-pub fn init_file_logging(_path: &std::path::Path) -> bool {
+#[must_use]
+pub const fn init_file_logging(_path: &std::path::Path) -> bool {
     false
 }
 
@@ -173,16 +176,9 @@ fn write_to_file(message: &str) {
     }
 }
 
-#[cfg(not(feature = "file-logging"))]
-fn write_to_file(_message: &str) {}
-
 #[cfg(feature = "file-logging")]
 fn is_file_logging_active() -> bool {
     LOG_FILE.lock().is_ok_and(|lf| lf.is_some())
-}
-#[cfg(not(feature = "file-logging"))]
-fn is_file_logging_active() -> bool {
-    false
 }
 
 fn emit(prefix: &str, msg: &str, to_stderr: bool) {
@@ -287,8 +283,24 @@ macro_rules! verbose {
 mod tests {
     use super::*;
 
+    /// Serialises the tests that touch the logger's process-global state.
+    ///
+    /// `LOG_LEVEL`, `DEBUG_ENABLED` and `VERBOSE_ENABLED` are process-wide atomics, and
+    /// `cargo test` runs this module's tests concurrently in one binary. Without this
+    /// lock a sibling's `set_level` lands between another test's setup and its
+    /// assertion — a reproducible flake, not a theoretical one.
+    static GLOBAL_STATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Take the lock, ignoring poisoning from an unrelated failing test.
+    fn lock_globals() -> std::sync::MutexGuard<'static, ()> {
+        GLOBAL_STATE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     #[test]
     fn test_set_level_from_str_valid() {
+        let _guard = lock_globals();
         assert!(set_level_from_str("error"));
         assert!(set_level_from_str("err"));
         assert!(set_level_from_str("warn"));
@@ -301,6 +313,7 @@ mod tests {
 
     #[test]
     fn test_set_level_from_str_invalid() {
+        let _guard = lock_globals();
         assert!(!set_level_from_str("trace"));
         assert!(!set_level_from_str(""));
         assert!(!set_level_from_str("verbose"));
@@ -314,28 +327,55 @@ mod tests {
         assert_eq!(Level::Debug as u8, 4);
     }
 
+    #[cfg(feature = "log-debug")]
     #[test]
-    fn test_debug_toggle() {
+    fn test_debug_toggle_tracks_state() {
+        let _guard = lock_globals();
         enable_debug();
-        assert!(is_debug_enabled());
+        assert!(is_debug_enabled(), "enable_debug must take effect");
         disable_debug();
-        #[cfg(feature = "log-debug")]
-        assert!(!is_debug_enabled());
-        // Re-enable for other tests
+        assert!(!is_debug_enabled(), "disable_debug must take effect");
+        // Re-enable: sibling tests in this module share the global.
         enable_debug();
     }
 
+    #[cfg(not(feature = "log-debug"))]
     #[test]
-    fn test_verbose_toggle() {
+    fn test_debug_toggle_is_inert_without_the_feature() {
+        let _guard = lock_globals();
+        enable_debug();
+        assert!(
+            !is_debug_enabled(),
+            "without log-debug, enable_debug is a no-op and the query stays false"
+        );
+    }
+
+    #[cfg(feature = "verbose")]
+    #[test]
+    fn test_verbose_toggle_tracks_state() {
+        let _guard = lock_globals();
         enable_verbose();
-        assert!(is_verbose_enabled());
+        assert!(is_verbose_enabled(), "enable_verbose must take effect");
         disable_verbose();
-        #[cfg(feature = "verbose")]
-        assert!(!is_verbose_enabled());
+        assert!(!is_verbose_enabled(), "disable_verbose must take effect");
+    }
+
+    #[cfg(not(feature = "verbose"))]
+    #[test]
+    fn test_verbose_toggle_is_inert_without_the_feature() {
+        let _guard = lock_globals();
+        enable_verbose();
+        assert!(
+            !is_verbose_enabled(),
+            "without the verbose feature, enable_verbose is a no-op"
+        );
     }
 
     #[test]
-    fn test_should_log_at_various_levels() {
+    fn test_should_log_respects_the_configured_level() {
+        let _guard = lock_globals();
+        // Error and Warn are unconditional; Info and Debug are additionally
+        // feature-gated inside should_log, so they are asserted separately below.
         set_level(Level::Error);
         assert!(should_log(Level::Error));
         assert!(!should_log(Level::Warn));
@@ -348,9 +388,19 @@ mod tests {
 
         set_level(Level::Info);
         assert!(should_log(Level::Error));
-        assert!(should_log(Level::Info));
+        assert!(should_log(Level::Warn));
 
-        // Reset to default
         set_level(Level::Debug);
+    }
+
+    #[test]
+    fn test_should_log_gates_info_on_its_feature() {
+        let _guard = lock_globals();
+        set_level(Level::Debug);
+        assert_eq!(
+            should_log(Level::Info),
+            cfg!(feature = "log-info"),
+            "Info logging is permitted only when the log-info feature is enabled"
+        );
     }
 }

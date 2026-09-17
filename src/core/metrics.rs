@@ -103,7 +103,8 @@ pub fn compute_delay(dag: &DAG) -> Result<DelayByCourse, String> {
     let outgoing = build_outgoing_edges(dag);
     let indegree = build_indegree_counts(dag);
 
-    let topo_order = topological_order(&dag.courses, &outgoing, &indegree)?;
+    let topo_order = topological_order(&dag.courses, &outgoing, &indegree)
+        .map_err(|e| format!("cannot compute delay factors: {e}"))?;
     let longest_to = longest_paths_to(&topo_order, dag);
     let longest_from = longest_paths_from(&topo_order, &outgoing);
 
@@ -137,7 +138,8 @@ pub fn compute_blocking(dag: &DAG) -> Result<BlockingByCourse, String> {
     let indegree = build_indegree_counts(dag);
 
     // Verify DAG is acyclic
-    let _ = topological_order(&dag.courses, &outgoing, &indegree)?;
+    let _ = topological_order(&dag.courses, &outgoing, &indegree)
+        .map_err(|e| format!("cannot compute blocking factors: {e}"))?;
 
     let blocking = dag
         .courses
@@ -201,7 +203,8 @@ pub fn compute_centrality(dag: &DAG) -> Result<CentralityByCourse, String> {
     let indegree = build_indegree_counts(dag);
 
     // Verify DAG is acyclic
-    let _ = topological_order(&dag.courses, &outgoing, &indegree)?;
+    let _ = topological_order(&dag.courses, &outgoing, &indegree)
+        .map_err(|e| format!("cannot compute centrality: {e}"))?;
 
     // Find sources (no incoming edges) and sinks (no outgoing edges)
     let sources: Vec<String> = dag
@@ -251,7 +254,8 @@ pub fn compute_centrality(dag: &DAG) -> Result<CentralityByCourse, String> {
 pub fn compute_chain_length(dag: &DAG) -> Result<ChainLengthByCourse, String> {
     let outgoing = build_outgoing_edges(dag);
     let indegree = build_indegree_counts(dag);
-    let topo_order = topological_order(&dag.courses, &outgoing, &indegree)?;
+    let topo_order = topological_order(&dag.courses, &outgoing, &indegree)
+        .map_err(|e| format!("cannot compute chain lengths: {e}"))?;
     let longest_to = longest_paths_to(&topo_order, dag);
 
     let chain_lengths = dag
@@ -526,7 +530,32 @@ fn topological_order(
     }
 
     if order.len() != courses.len() {
-        return Err("Cycle detected in requisite graph; cannot compute delay factors".to_string());
+        // Names the unorderable courses and stays operation-free: this helper serves
+        // delay, blocking, centrality and chain-length, so claiming "cannot compute
+        // delay factors" misreported three of its four callers. Each caller adds its
+        // own verb.
+        const MAX_LISTED: usize = 10;
+        let ordered: std::collections::HashSet<&String> = order.iter().collect();
+        let mut unordered: Vec<&str> = courses
+            .iter()
+            .filter(|c| !ordered.contains(c))
+            .map(String::as_str)
+            .collect();
+        unordered.sort_unstable();
+        let listed = if unordered.len() > MAX_LISTED {
+            format!(
+                "{}, … and {} more",
+                unordered[..MAX_LISTED].join(", "),
+                unordered.len() - MAX_LISTED
+            )
+        } else {
+            unordered.join(", ")
+        };
+        return Err(format!(
+            "cycle detected in requisite graph: {} of {} courses could not be ordered ({listed})",
+            unordered.len(),
+            courses.len()
+        ));
     }
 
     Ok(order)
@@ -944,9 +973,27 @@ mod tests {
             delay_result.is_err(),
             "Should detect cycle through corequisites"
         );
+        let message = delay_result.unwrap_err();
         assert!(
-            delay_result.unwrap_err().contains("Cycle"),
-            "Error message should mention cycle detection"
+            message.to_lowercase().contains("cycle"),
+            "error must mention the cycle: {message}"
+        );
+        assert!(
+            message.contains("delay factors"),
+            "error must name the operation the caller was performing: {message}"
+        );
+        assert!(
+            message.contains('A') && message.contains('B'),
+            "error must name the courses that could not be ordered: {message}"
+        );
+
+        // The same cycle reported through a different caller must name that caller's
+        // operation, not delay factors — the whole point of moving the verb out of the
+        // shared helper.
+        let blocking = compute_blocking(&dag).expect_err("cycle must be detected");
+        assert!(
+            blocking.contains("blocking factors"),
+            "blocking must not be reported as a delay-factor failure: {blocking}"
         );
     }
 

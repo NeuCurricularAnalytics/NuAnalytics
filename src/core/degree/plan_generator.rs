@@ -17,7 +17,7 @@
 //!
 //! - **Sequential**: Default enumeration order (may bias towards simpler plans first)
 //! - **Shuffled**: Randomizes the order of plan generation for unbiased sampling
-//! - **Stratified**: Ensures coverage across different complexity levels
+//! - **Stratified**: *not yet implemented* — accepted as an alias for Shuffled
 //!
 //! Shuffled sampling is recommended when computing aggregate statistics to avoid
 //! systematic bias in the median/quartile calculations.
@@ -88,11 +88,21 @@ fn expand_course_list(courses: &[String]) -> Vec<String> {
 ///
 /// Placeholder courses are generated for requirements that use wildcard patterns
 /// or when specific courses aren't enumerated. They follow naming conventions like:
-/// - "ELEC001", "ELEC002" - free electives
-/// - "GE01", "GE02" - generic gen-ed placeholders
-/// - "FQ01", "FW01" - specific gen-ed category placeholders
-fn is_placeholder_course(course_key: &str) -> bool {
-    // Check for common placeholder patterns
+/// - `ELEC001`, `ELEC002S` — free electives, from [`Self::add_elective_placeholders`]
+/// - `GE01`, `AC01`, `FE01`, `WRTC01` — gen-ed placeholders, from
+///   `requirement_resolver`'s `sanitize_placeholder_prefix`
+///
+/// The discriminator for the second family is the *number*: placeholders are numbered
+/// below 100, real catalogue courses are not (`CS101`, `PSY100`, `CT301` are courses).
+///
+/// This is the single definition of "placeholder" for the crate — plan validation and
+/// the per-course metrics filter both depend on it agreeing with the generators above.
+/// Two earlier private copies disagreed with it in opposite directions: one required an
+/// `ELEC_` prefix nothing emits (so every placeholder leaked into `per_course_metrics`),
+/// the other accepted any 2-4 letter prefix with up to 3 digits (so `CS101` was treated
+/// as a placeholder).
+#[must_use]
+pub fn is_placeholder_course(course_key: &str) -> bool {
     if course_key.starts_with("ELEC") {
         return true;
     }
@@ -153,7 +163,7 @@ fn extract_gen_ed_code(name: &str) -> Option<String> {
 /// Different strategies trade off between performance and statistical accuracy:
 /// - Sequential is fastest but may produce biased statistics
 /// - Shuffled gives unbiased samples at the cost of pre-computing indices
-/// - Stratified ensures good coverage of the complexity range
+/// - Stratified is accepted but not yet implemented; it behaves as Shuffled
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum SamplingStrategy {
     /// Sequential enumeration (first combinations first)
@@ -163,7 +173,11 @@ pub enum SamplingStrategy {
     /// Recommended for accurate median/quartile computation
     #[default]
     Shuffled,
-    /// Stratified sampling across complexity strata
+    /// Stratified sampling across complexity strata.
+    ///
+    /// **Not implemented.** Accepted for forward compatibility and currently dispatched
+    /// to [`Self::Shuffled`] (see `build_shuffled_order`'s call site). Do not choose it
+    /// expecting stratification.
     /// Ensures good coverage of complexity range
     Stratified,
 }
@@ -895,7 +909,9 @@ impl<'a> PlanIterator<'a> {
     /// Create a new plan iterator
     fn new(generator: &'a PlanGenerator<'a>) -> Self {
         let indices = vec![0; generator.major_requirements.len()];
-        // Done if no major requirements (single plan) or any requirement has no choices
+        // Not done when there are no major requirements: one plan (non-major courses
+        // only) is still emitted. Done immediately when a requirement exists but has
+        // zero choices, since no combination can satisfy it.
         let done = !generator.major_requirements.is_empty()
             && generator
                 .major_requirements

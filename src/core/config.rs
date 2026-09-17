@@ -443,7 +443,7 @@ impl Config {
     ///
     /// ```ignore
     /// let config = Config::from_toml(r#"
-    /// [Logging]
+    /// [logging]
     /// level = "info"
     /// file = "$NU_ANALYTICS/app.log"
     /// "#)?;
@@ -638,19 +638,29 @@ impl Config {
     ///
     /// The saved file will use the format:
     /// ```toml
-    /// [Logging]
+    /// [logging]
     /// level = "info"
     /// file = "$NU_ANALYTICS/logs/nuanalytics.log"
     /// verbose = false
     ///
-    /// [Database]
+    /// [database]
     /// anon_key = "your-anon-key"
     /// endpoint = "https://your-project.supabase.co"
     ///
-    /// [Paths]
+    /// [paths]
     /// metrics_dir = "$NU_ANALYTICS/metrics"
     /// reports_dir = "$NU_ANALYTICS/reports"
+    ///
+    /// [audit]
+    /// # ...
+    ///
+    /// [degree_analysis]
+    /// # ...
     /// ```
+    ///
+    /// Section names are lower-case, matching the field names — TOML keys are
+    /// case-sensitive and no field carries a `serde(rename)`, so `[Logging]` parses as
+    /// an unknown section and every field silently falls back to its default.
     ///
     /// # Errors
     /// Returns an error if:
@@ -1062,7 +1072,10 @@ mod tests {
     fn test_from_defaults_returns_valid_config() {
         let config = Config::from_defaults();
         // Should have some reasonable defaults
-        assert!(!config.logging.level.is_empty() || config.logging.level.is_empty());
+        assert!(
+            !config.logging.level.is_empty(),
+            "the compiled-in defaults must set a log level"
+        );
         // Just verify it loads
     }
 
@@ -1257,5 +1270,67 @@ reports_dir = "./reports"
         assert_eq!(cfg.logging.file, default_logging.file);
         assert_eq!(cfg.logging.verbose, default_logging.verbose);
         assert_eq!(cfg.paths.metrics_dir, "./metrics");
+    }
+
+    /// SECURITY: neither compiled-in default asset may ship database credentials.
+    ///
+    /// This repo is public. `merge_defaults` refills an *empty* `endpoint`/`anon_key`
+    /// from these assets and `load_home_config` then saves the result, so any value
+    /// committed here silently re-points a self-hosted user at that backend and
+    /// persists it.
+    ///
+    /// Both files are read as raw text on purpose: only one is `include_str!`d per
+    /// build profile, so asserting through `Config::from_defaults()` would leave the
+    /// other completely unchecked.
+    #[test]
+    fn default_assets_never_ship_database_credentials() {
+        const RELEASE: &str = include_str!("../assets/DefaultCLIConfigRelease.toml");
+        const DEBUG: &str = include_str!("../assets/DefaultCLIConfigDebug.toml");
+
+        for (name, src) in [
+            ("DefaultCLIConfigRelease.toml", RELEASE),
+            ("DefaultCLIConfigDebug.toml", DEBUG),
+        ] {
+            let config =
+                Config::from_toml(src).unwrap_or_else(|e| panic!("{name} must parse as TOML: {e}"));
+            assert!(
+                config.database.endpoint.is_empty(),
+                "{name} ships a non-blank database.endpoint ({:?}). This repo is public, \
+                 and merge_defaults will silently re-point and persist a self-hosted \
+                 user's config to it.",
+                config.database.endpoint
+            );
+            assert!(
+                config.database.anon_key.is_empty(),
+                "{name} ships a non-blank database.anon_key"
+            );
+        }
+    }
+
+    #[test]
+    fn merge_defaults_neither_overwrites_a_configured_endpoint_nor_invents_one() {
+        // The refill-then-save path is what makes the guard above load-bearing, so pin
+        // its two edges: a configured endpoint must survive, and a blank one must stay
+        // blank rather than acquiring a value from the compiled-in defaults.
+        let defaults = Config::from_defaults();
+
+        let mut configured = Config::default();
+        configured.database.endpoint = "https://nu.example.com".to_string();
+        configured.database.anon_key = "local-anon-key".to_string();
+        configured.merge_defaults(&defaults);
+        assert_eq!(
+            configured.database.endpoint, "https://nu.example.com",
+            "a self-hosted endpoint must survive merge_defaults untouched"
+        );
+        assert_eq!(configured.database.anon_key, "local-anon-key");
+
+        let mut blank = Config::default();
+        blank.merge_defaults(&defaults);
+        assert!(
+            blank.database.endpoint.is_empty(),
+            "an empty endpoint was back-filled from the compiled-in defaults, which is \
+             exactly how a committed credential would reach a user's saved config"
+        );
+        assert!(blank.database.anon_key.is_empty());
     }
 }

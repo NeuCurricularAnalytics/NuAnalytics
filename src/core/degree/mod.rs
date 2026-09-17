@@ -78,7 +78,8 @@ pub use validation::{
 
 // Re-export plan generation types
 pub use plan_generator::{
-    PlanGenerationStats, PlanGenerator, PlanGeneratorConfig, SamplingStrategy,
+    is_placeholder_course, PlanGenerationStats, PlanGenerator, PlanGeneratorConfig,
+    SamplingStrategy,
 };
 pub use plan_variant::PlanVariant;
 pub use requirement_resolver::{RequirementResolver, ResolvedRequirement};

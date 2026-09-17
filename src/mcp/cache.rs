@@ -9,13 +9,15 @@
 //!   reachable by the server (`yaml_path` returns ENOENT).
 //!
 //! - [`ARTIFACT_CACHE`] — small LRU of `AnalysisArtifacts` keyed by the
-//!   (yaml-hash, `max_plans`, `include_courses`) tuple. Three sequential
+//!   (yaml-hash, `max_plans`, `include_courses`, `random_seed`,
+//!   `analysis_timeout_seconds`, `target_course`) tuple. All six are hashed; see
+//!   [`make_artifact_key`]. Three sequential
 //!   `render_plan_graph` calls on the same YAML now run the plan-generation
 //!   pipeline once instead of three times.
 //!
-//! Both caches live as `LazyLock<Mutex<…>>` statics because the analyze
-//! pipeline reaches them from five tool modules (`analyze`, `audit`,
-//! `report`, `plan_graph`, `course_detail`). Threading the state through
+//! Both caches live as `LazyLock<Mutex<…>>` statics because several tool modules reach
+//! them: the artifact cache from `analyze`, `report`, `plan_graph` and `course_detail`;
+//! the YAML cache from `cache`, `trim`, `convert` and `server`. (`audit` uses neither.) Threading the state through
 //! every call site would be invasive for what is effectively a process
 //! singleton.
 

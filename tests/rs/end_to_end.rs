@@ -191,9 +191,17 @@ fn test_plan_generation_basic() {
     assert!(count > 0, "Should generate at least one plan");
 }
 
-/// Test that generated plans have valid prerequisite order
+/// Every generated plan's course list honours `PlanVariant`'s documented contract:
+/// unique, sorted, and drawn only from the program.
+///
+/// Deliberately not a prerequisite-*order* test. `PlanVariant.courses` is documented as
+/// "unique, sorted for consistency", so its positions are alphabetical and carry no
+/// topological information — measured on the CSU sample, 6 of 22 in-plan prerequisite
+/// pairs appear positionally "out of order" purely from sorting. Ordering only becomes
+/// meaningful once a plan is scheduled, which `test_term_scheduler_prerequisite_order`
+/// below asserts.
 #[test]
-fn test_generated_plans_prerequisite_order() {
+fn test_generated_plans_have_unique_sorted_known_courses() {
     let program = load_degree_from_yaml("samples/degrees/csu-cs-bscs-general.yaml")
         .expect("Failed to load degree");
 
@@ -204,28 +212,30 @@ fn test_generated_plans_prerequisite_order() {
 
     let generator = PlanGenerator::new(&program.requirements, &program.courses, config);
 
-    // For each plan, verify prerequisite constraints
+    let mut plans_checked = 0;
     for plan in generator.generate().take(5) {
-        // Build a position map
-        let positions: HashMap<_, _> = plan
-            .courses
-            .iter()
-            .enumerate()
-            .map(|(i, c)| (c.clone(), i))
-            .collect();
-
-        // For each course, check that prerequisites come before it
-        for (course_key, course) in &program.courses {
-            if let Some(&_course_pos) = positions.get(course_key) {
-                for prereq in &course.prerequisites {
-                    if let Some(&_prereq_pos) = positions.get(prereq) {
-                        // Note: This check may not apply for all plans due to OR prerequisites
-                        // We just verify we don't have obvious violations
-                    }
-                }
-            }
+        assert!(
+            !plan.courses.is_empty(),
+            "a generated plan must not be empty"
+        );
+        assert!(
+            plan.courses.windows(2).all(|w| w[0] < w[1]),
+            "courses must be sorted and duplicate-free, got {:?}",
+            plan.courses
+        );
+        for course in &plan.courses {
+            assert!(
+                program.courses.contains_key(course)
+                    || nu_analytics::core::degree::is_placeholder_course(course),
+                "{course} is neither a program course nor a generated placeholder"
+            );
         }
+        plans_checked += 1;
     }
+    assert!(
+        plans_checked > 0,
+        "the generator produced no plans to check"
+    );
 }
 
 // ============================================================================

@@ -90,7 +90,7 @@ pub enum SamplingStrategyArg {
     /// Shuffled (default) - randomize order for unbiased sampling
     #[default]
     Shuffled,
-    /// Stratified - ensure coverage across option space
+    /// Stratified - not yet implemented; currently behaves as shuffled
     Stratified,
 }
 
@@ -218,7 +218,8 @@ pub enum DegreeSubcommand {
         #[arg(long, value_enum, value_name = "STRATEGY")]
         calc_strategy: Option<CalcStrategyArg>,
 
-        /// Sampling strategy for plan enumeration (sequential, shuffled, stratified)
+        /// Sampling strategy for plan enumeration (sequential, shuffled, stratified).
+        /// `stratified` is accepted but not yet implemented and behaves as `shuffled`.
         #[arg(long, value_enum, value_name = "STRATEGY")]
         sampling_strategy: Option<SamplingStrategyArg>,
 
