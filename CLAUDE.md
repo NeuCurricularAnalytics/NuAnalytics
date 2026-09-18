@@ -88,9 +88,7 @@ contains everything in them.
 
 Configuring the tool against a backend is no longer the hard part — two `config set`
 commands, `db login`, and `db doctor`. What is left for a new operator is the five-file
-hand-applied schema (`db bootstrap`), and a `PGRST_DB_MAX_ROWS` cap that truncates at
-1000 rows with HTTP 200 while the MCP tools ask for 5,000 — wrong analytics, no error,
-and detectable via `cip_codes`' known 2,173 rows.
+hand-applied schema (`db bootstrap`).
 
 **There are two ways to sign in and OAuth is only one of them.** `db login --email <addr>`
 uses GoTrue's `grant_type=password`, which needs no external identity provider, so it is
@@ -106,8 +104,19 @@ shapes. Do not add a cause of our own to a rejection. The password is prompted v
 
 **`nuanalytics db doctor` is the first thing to run against an unfamiliar deployment.** It
 walks configuration → reachability → anon-key read → session → authenticated read → schema
-(all 20 tables) → seed data, each check gating the next so the report names one cause
-rather than repeating it. Logic is in `src/core/database/doctor.rs`; the CLI only formats.
+(all 20 tables) → seed data → row limit, each check gating the next so the report names one
+cause rather than repeating it. Logic is in `src/core/database/doctor.rs`; the CLI only
+formats. A check added to `diagnose` must also be added to the three `*_DEPENDENTS` arrays,
+or it silently disappears from the report when an earlier check fails — the unreachable
+test asserts the report length to catch exactly that.
+
+**The row-limit check is the one that catches wrong answers rather than errors.** A
+`PGRST_DB_MAX_ROWS` below 5,000 truncates the MCP completions queries with an HTTP 200 and
+no indication. It is detected by disagreement between `count_rows` (`count=exact`, which
+the cap does not apply to) and `DbClient::rows_returned` (a real select), so the reported
+cap is observed, not guessed. Probing `completions` covers the full 5,000; the `cip_codes`
+fallback only proves a cap is above 2,173 and **says so** rather than implying coverage it
+does not have.
 
 **Failure messages are shared, not per-call-site.** `DatabaseError::next_steps(endpoint)`
 (`src/core/database/error.rs`) owns the remediation text for every variant, and both

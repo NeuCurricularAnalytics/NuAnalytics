@@ -414,6 +414,35 @@ impl DbClient {
             })
     }
 
+    /// How many rows the backend actually hands back when asked for `limit` of them.
+    ///
+    /// Detects a `PGRST_DB_MAX_ROWS` cap, which `PostgREST` applies *silently*: a capped
+    /// response is an HTTP 200 carrying fewer rows, with nothing in the body or headers to
+    /// say it was truncated. Comparing this against the real row count from
+    /// [`DbClient::count_rows`] — which uses `count=exact` and is not subject to the cap —
+    /// is the only way to see it from the client side.
+    ///
+    /// Selects a single named column so the probe transfers as little as it can.
+    ///
+    /// # Errors
+    /// Whatever [`DbClient::select`] reports, plus [`DatabaseError::ParseError`] if the
+    /// backend answers a select with something other than an array.
+    pub async fn rows_returned(
+        &self,
+        table: &str,
+        column: &str,
+        limit: usize,
+    ) -> DatabaseResult<usize> {
+        let filters = QueryFilters::new();
+        let body = self.select(table, column, &filters, Some(limit)).await?;
+        body.as_array().map(Vec::len).ok_or_else(|| {
+            DatabaseError::ParseError(format!(
+                "{} answered a row-limit probe for {table} with a non-array body",
+                self.endpoint
+            ))
+        })
+    }
+
     /// Status code from a read that sends only the anon key, no user JWT.
     ///
     /// The deployment check this answers: row-level security should *filter* an
@@ -1479,5 +1508,79 @@ mod tests {
             client.anon_read_status("cip_codes").await.expect("status"),
             401
         );
+    }
+
+    #[tokio::test]
+    async fn rows_returned_counts_what_the_backend_actually_sent() {
+        // Not what was asked for: a capped backend answers 200 with fewer rows and no
+        // indication, so the count of the returned array is the only signal there is.
+        let url = stub_server("200 OK", "[{\"c\":1},{\"c\":2},{\"c\":3}]").await;
+        let client = DbClient::new(&url, "anon", "jwt".to_string()).expect("client");
+        assert_eq!(
+            client
+                .rows_returned("cip_codes", "cip_code", 5000)
+                .await
+                .expect("probe"),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn rows_returned_rejects_a_body_that_is_not_an_array() {
+        // A gateway that answers a select with an object would otherwise be counted as
+        // zero rows, which reads as "the cap is zero" rather than "this is not PostgREST".
+        let url = stub_server("200 OK", "{\"message\":\"not an array\"}").await;
+        let client = DbClient::new(&url, "anon", "jwt".to_string()).expect("client");
+        match client.rows_returned("cip_codes", "cip_code", 5000).await {
+            Err(DatabaseError::ParseError(detail)) => assert!(
+                detail.contains("cip_codes"),
+                "must name the table probed: {detail}"
+            ),
+            other => panic!("expected a ParseError, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn rows_returned_asks_for_the_limit_it_was_given() {
+        // The limit has to reach PostgREST or the probe cannot detect a cap at all.
+        let (url, seen) = stub_server_recording("200 OK", "[]").await;
+        let client = DbClient::new(&url, "anon", "jwt".to_string()).expect("client");
+        let _ = client.rows_returned("completions", "unitid", 5000).await;
+        let request = seen.lock().expect("recorded request").clone();
+        assert!(request.contains("limit=5000"), "{request}");
+        assert!(
+            request.contains("select=unitid"),
+            "must select one narrow column, not everything: {request}"
+        );
+    }
+
+    /// Canned-response server that records the request line it received.
+    async fn stub_server_recording(
+        status_line: &'static str,
+        body: &'static str,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<String>>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind ephemeral port");
+        let url = format!("http://{}", listener.local_addr().expect("local addr"));
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let recorder = std::sync::Arc::clone(&seen);
+        tokio::spawn(async move {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut buf = [0u8; 8192];
+            let n = tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
+                .await
+                .unwrap_or(0);
+            *recorder.lock().expect("record request") =
+                String::from_utf8_lossy(&buf[..n]).to_string();
+            let response = format!(
+                "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
+        });
+        (url, seen)
     }
 }

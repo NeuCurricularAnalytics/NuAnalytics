@@ -56,13 +56,12 @@ What remains is not configuration. In order of how much it blocks:
 1. **The schema is five files applied by hand in a specific order** (§4, `db bootstrap`).
    Laborious and easy to get wrong, but visible when wrong -- `db doctor` names the
    missing tables.
-2. **A row cap returns wrong numbers rather than errors** (§4). Only bites after everything
-   appears to work, which makes it the most dangerous of the three.
-3. **A project-local config resets `auth_file`** (§3, found-while-doing). Turns a working
+2. **A project-local config resets `auth_file`** (§3, found-while-doing). Turns a working
    session into *"Not signed in"*.
 
-The walkthrough is what found the sign-in barrier and the row cap; neither was in this
-document before 2026-09-18. The other two items were already here.
+The row cap that used to sit between these two is now diagnosed by `db doctor` rather than
+left to produce wrong numbers; see §4. The walkthrough is what found it and the sign-in
+barrier, neither of which was in this document before 2026-09-18.
 
 ---
 
@@ -387,23 +386,41 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       exit 1. Also verified not-configured (exits 1 with the shared remediation) and the
       no-tty case, which reports *"`--email` needs an interactive terminal"* rather than a
       credential problem.
-- [ ] **`db doctor` cannot see a `PGRST_DB_MAX_ROWS` cap, and the cap returns wrong
-      answers rather than errors.** Upstream Supabase defaults it to **1000** while the
-      MCP completions tools request up to 5,000 rows
-      (`src/mcp/tools/completions.rs:557,1063,1099`). PostgREST silently returns the first
-      1000 with HTTP 200, so representation ratios and totals come out confidently wrong
-      with nothing in the output to suggest truncation. This is the worst failure mode in
-      the whole document: every other one announces itself.
+- [x] **`db doctor` could not see a `PGRST_DB_MAX_ROWS` cap, and the cap returns wrong
+      answers rather than errors.** *(done)* -- new **row limit** check, the eighth.
+      Upstream Supabase defaults the setting to **1000** while the MCP completions tools
+      request up to 5,000 rows (`src/mcp/tools/completions.rs:557,1063,1099`). PostgREST
+      truncates to the cap with an HTTP 200 and nothing to say it did, so representation
+      ratios and totals come out confidently short. It was the worst failure mode in this
+      document because every other one announces itself.
 
-      It is also cheaply detectable, because `cip_codes` has a known 2,173 rows and
-      `doctor` already counts it. **Fix:** after the seed-data check passes, `select`
-      `cip_codes` with a limit above 1000; if exactly 1000 rows come back against a
-      2,173-row table, report the cap and name the setting. Costs one request and turns a
-      silent-wrong-answer class into a named diagnosis.
+      Detection compares two requests whose disagreement *is* the diagnosis:
+      `count_rows` uses `count=exact`, which the cap does not apply to, and the new
+      `DbClient::rows_returned` does a real select of one narrow column. Fewer rows back
+      than asked for, against a table known to hold more, means the cap is exactly the
+      number returned -- so the check reports the observed value rather than guessing it.
 
-      **[verified 2026-09-18]** Not set on `nu.lionelle.com`: `limit=5000` returned all
-      2,173 rows, and `limit=1500` returned 1,500, so that deployment is unaffected. The
-      risk is specifically a *new* stack left on upstream defaults.
+      Probes `completions` first and falls back to `cip_codes`
+      (`ROW_LIMIT_PROBES`). `completions` is what the MCP tools actually query at 5,000,
+      so it gives full coverage; `cip_codes` is seeded on every install and its 2,173 rows
+      still catch the upstream default of 1000, which is the case that matters on a fresh
+      stack. **The check says so when its reach is limited** -- on a `cip_codes`-only
+      deployment it passes with *"a cap above 2173 cannot be seen until more data is
+      imported"*, because a cap of 3000 is genuinely invisible there and implying
+      otherwise would be the same class of error as asserting an unestablished cause.
+      An empty deployment warns rather than failing: nothing to probe is not a fault.
+
+      This is a `Fail`, not a `Warn`, unlike the seed-data check. A short optional seed
+      leaves a usable deployment; a backend that answers large queries with wrong numbers
+      does not.
+
+      **[verified 2026-09-18]** Live against `nu.lionelle.com`:
+      `✓ row limit  completions returned all 5000 rows of a 5000-row request`, 8 passed.
+      The cap is not set there. The failure path cannot be exercised against that stack
+      without reconfiguring it, so it is covered by a stub that answers `count=exact`
+      truthfully while truncating the select -- the asymmetry the real setting produces.
+      Mutation-tested: weakening the comparison to `got == 0`, and reversing the probe
+      order, each fail a test.
 - [ ] **`db bootstrap`** — apply the five schema/seed files in the documented order
       (`docs/database/setup.md:114-121`) through whichever path is available: Management API
       when a project ref is configured, direct `psql` otherwise. Applying the schema is the

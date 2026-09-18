@@ -147,21 +147,23 @@ pub async fn diagnose(config: &DatabaseConfig) -> Report {
 
     report.push("schema", schema_outcome(&client).await);
     report.push("seed data", cip_seed_outcome(&client).await);
+    report.push("row limit", row_limit_outcome(&client).await);
     report
 }
 
 /// Checks that cannot run without a reachable backend.
-const REACHABILITY_DEPENDENTS: [&str; 5] = [
+const REACHABILITY_DEPENDENTS: [&str; 6] = [
     "anon-key read",
     "session",
     "authenticated read",
     "schema",
     "seed data",
+    "row limit",
 ];
 /// Checks that cannot run without a valid session.
-const SESSION_DEPENDENTS: [&str; 3] = ["authenticated read", "schema", "seed data"];
+const SESSION_DEPENDENTS: [&str; 4] = ["authenticated read", "schema", "seed data", "row limit"];
 /// Checks that cannot run without a working authenticated read.
-const READ_DEPENDENTS: [&str; 2] = ["schema", "seed data"];
+const READ_DEPENDENTS: [&str; 3] = ["schema", "seed data", "row limit"];
 
 /// Record `names` as skipped, so the report lists one cause instead of repeating it.
 fn skip_remaining(report: &mut Report, names: &[&'static str], reason: &str) {
@@ -314,6 +316,77 @@ async fn cip_seed_outcome(client: &DbClient) -> Outcome {
         )),
         Err(e) => Outcome::Fail(format!("cannot count cip_codes: {e}")),
     }
+}
+
+/// Largest page the MCP completions tools ask `PostgREST` for.
+///
+/// Mirrors the `Some(5_000)` limits in `src/mcp/tools/completions.rs`. A
+/// `PGRST_DB_MAX_ROWS` below this truncates those queries, so it is the threshold the
+/// row-limit check probes against.
+pub const MCP_MAX_REQUEST_ROWS: usize = 5_000;
+
+/// Tables the row-limit check will probe, widest first, as `(table, narrow column)`.
+///
+/// `completions` is what the MCP tools actually query at [`MCP_MAX_REQUEST_ROWS`], so it
+/// gives full coverage — but it is empty until IPEDS is imported. `cip_codes` is seeded on
+/// every install, and although its 2,173 rows can only prove a cap is above that, it does
+/// catch the upstream default of 1000, which is the case that matters.
+const ROW_LIMIT_PROBES: [(&str, &str); 2] = [
+    (tables::COMPLETIONS, "unitid"),
+    (tables::CIP_CODES, "cip_code"),
+];
+
+/// Detect a `PGRST_DB_MAX_ROWS` cap by asking for more rows than the cap allows.
+///
+/// This is a [`Outcome::Fail`] rather than a warning because it is the only
+/// misconfiguration in the deployment that produces *wrong answers* instead of errors:
+/// `PostgREST` truncates with an HTTP 200 and no indication, so representation ratios and
+/// totals come out confidently short.
+async fn row_limit_outcome(client: &DbClient) -> Outcome {
+    for (table, column) in ROW_LIMIT_PROBES {
+        // count=exact is not subject to the cap, so this is the true row count.
+        let Ok(total) = client.count_rows(table).await else {
+            continue;
+        };
+        let want = usize::try_from(total)
+            .unwrap_or(MCP_MAX_REQUEST_ROWS)
+            .min(MCP_MAX_REQUEST_ROWS);
+        // Asking for one row proves nothing, and no cap is set below 1.
+        if want < 2 {
+            continue;
+        }
+
+        let Ok(got) = client.rows_returned(table, column, want).await else {
+            continue;
+        };
+
+        if got < want {
+            return Outcome::Fail(format!(
+                "{table} returned {got} rows for a {want}-row request — PGRST_DB_MAX_ROWS \
+                 is capping responses at {got}. Large queries truncate silently with HTTP \
+                 200, so analytics come out wrong rather than failing. Leave it unset or \
+                 set it to at least {MCP_MAX_REQUEST_ROWS}"
+            ));
+        }
+
+        return if want == MCP_MAX_REQUEST_ROWS {
+            Outcome::Pass(format!(
+                "{table} returned all {want} rows of a {MCP_MAX_REQUEST_ROWS}-row request"
+            ))
+        } else {
+            // Honest about the blind spot: a cap between `want` and 5000 is invisible
+            // until there is enough data to ask for more than `want` rows.
+            Outcome::Pass(format!(
+                "{table} returned all {want} rows; a cap above {want} cannot be seen until \
+                 more data is imported"
+            ))
+        };
+    }
+
+    Outcome::Warn(format!(
+        "no table has enough rows to test the row cap — import IPEDS data, then re-run to \
+         check PGRST_DB_MAX_ROWS is not below {MCP_MAX_REQUEST_ROWS}"
+    ))
 }
 
 // ============================================================================
@@ -471,21 +544,29 @@ mod tests {
         assert!(matches!(reachability.outcome, Outcome::Fail(_)));
 
         // Everything downstream is skipped, so the report names one cause rather than six.
-        for name in ["session", "authenticated read", "schema", "seed data"] {
-            let check = report
-                .checks
-                .iter()
-                .find(|c| c.name == name)
-                .unwrap_or_else(|| panic!("{name} should still appear in the report"));
+        // Asserted over the whole report rather than a hand-listed subset: a check added
+        // to `diagnose` but left out of REACHABILITY_DEPENDENTS would otherwise vanish
+        // from the unreachable report without any test noticing.
+        for check in &report.checks {
+            if matches!(check.name, "configuration" | "reachability") {
+                continue;
+            }
             assert!(
                 matches!(check.outcome, Outcome::Skipped(_)),
-                "{name} should be skipped, got {:?}",
+                "{} should be skipped, got {:?}",
+                check.name,
                 check.outcome
             );
         }
         let (_, _, fail, skipped) = report.tally();
         assert_eq!(fail, 1, "exactly one thing is actually wrong");
-        assert!(skipped >= 4);
+        assert_eq!(skipped, REACHABILITY_DEPENDENTS.len());
+        assert_eq!(
+            report.checks.len(),
+            2 + REACHABILITY_DEPENDENTS.len(),
+            "an unreachable backend should list as many checks as a healthy one, each \
+             either run or explicitly skipped"
+        );
     }
 
     #[test]
@@ -508,5 +589,140 @@ mod tests {
         ] {
             assert!(tables::ALL.contains(&named), "{named} missing from ALL");
         }
+    }
+
+    // --- row limit ----------------------------------------------------------
+
+    /// Stub `PostgREST` that reports `total` rows but never hands back more than `cap`.
+    ///
+    /// That asymmetry is the behaviour under test: `PGRST_DB_MAX_ROWS` does not apply to
+    /// a `count=exact` request, so a capped backend answers the count truthfully while
+    /// silently truncating the select — with an HTTP 200 either way.
+    async fn capped_backend(total: u64, cap: usize) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind ephemeral port");
+        let url = format!("http://{}", listener.local_addr().expect("local addr"));
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let mut buf = [0u8; 8192];
+                let n = tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
+                    .await
+                    .unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]).to_string();
+
+                let (extra, body) = if request.contains("count=exact") {
+                    (format!("Content-Range: 0-0/{total}\r\n"), "[]".to_string())
+                } else {
+                    let asked = request
+                        .split("limit=")
+                        .nth(1)
+                        .and_then(|rest| {
+                            rest.split(|c: char| !c.is_ascii_digit())
+                                .next()
+                                .and_then(|d| d.parse::<usize>().ok())
+                        })
+                        .unwrap_or(1);
+                    let rows = asked.min(cap);
+                    let items = vec!["1"; rows].join(",");
+                    (String::new(), format!("[{items}]"))
+                };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
+            }
+        });
+        url
+    }
+
+    fn client_for(url: &str) -> DbClient {
+        DbClient::new(url, "anon", "jwt".to_string()).expect("stub client")
+    }
+
+    #[tokio::test]
+    async fn row_limit_fails_when_the_backend_caps_below_the_mcp_request_size() {
+        // The upstream default: 1000, against a completions table with plenty of rows.
+        let url = capped_backend(1_225_442, 1000).await;
+        let outcome = row_limit_outcome(&client_for(&url)).await;
+
+        match outcome {
+            Outcome::Fail(msg) => {
+                assert!(msg.contains("1000"), "should name the observed cap: {msg}");
+                assert!(
+                    msg.contains("PGRST_DB_MAX_ROWS"),
+                    "should name the setting to change: {msg}"
+                );
+                assert!(
+                    msg.contains("silently") || msg.contains("wrong"),
+                    "should say why a truncation matters: {msg}"
+                );
+            }
+            other => panic!("a cap below {MCP_MAX_REQUEST_ROWS} must fail, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn row_limit_passes_when_a_full_page_comes_back() {
+        let url = capped_backend(1_225_442, usize::MAX).await;
+        let outcome = row_limit_outcome(&client_for(&url)).await;
+        match outcome {
+            Outcome::Pass(msg) => assert!(
+                msg.contains(&MCP_MAX_REQUEST_ROWS.to_string()),
+                "a clean pass should say the full page arrived: {msg}"
+            ),
+            other => panic!("expected Pass, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn row_limit_admits_what_a_small_table_cannot_prove() {
+        // Only cip_codes is seeded, so the probe can ask for at most 2,173 rows. That
+        // rules out the dangerous default of 1000 but says nothing about a cap of 3000,
+        // and the message has to be honest about it rather than implying full coverage.
+        let url = capped_backend(EXPECTED_CIP_CODES, usize::MAX).await;
+        let outcome = row_limit_outcome(&client_for(&url)).await;
+        match outcome {
+            Outcome::Pass(msg) => {
+                assert!(
+                    msg.contains("cannot be seen"),
+                    "must not imply coverage it does not have: {msg}"
+                );
+                assert!(
+                    !msg.contains(&MCP_MAX_REQUEST_ROWS.to_string()),
+                    "nothing was proven at {MCP_MAX_REQUEST_ROWS} rows: {msg}"
+                );
+            }
+            other => panic!("expected Pass with a caveat, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn row_limit_warns_rather_than_failing_on_an_empty_deployment() {
+        // A fresh install before any import: nothing to probe, and that is not a fault.
+        let url = capped_backend(0, usize::MAX).await;
+        let outcome = row_limit_outcome(&client_for(&url)).await;
+        assert!(
+            matches!(outcome, Outcome::Warn(_)),
+            "an empty deployment cannot be judged, got {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn row_limit_probes_the_table_the_mcp_tools_actually_query_first() {
+        // completions gives coverage all the way to MCP_MAX_REQUEST_ROWS; cip_codes is
+        // only the fallback for a deployment with no imported data. Reversing this would
+        // silently shrink the check's reach on a fully populated backend.
+        assert_eq!(ROW_LIMIT_PROBES[0].0, tables::COMPLETIONS);
+        assert_eq!(ROW_LIMIT_PROBES[1].0, tables::CIP_CODES);
+        assert!(
+            u64::try_from(MCP_MAX_REQUEST_ROWS).expect("fits") > EXPECTED_CIP_CODES,
+            "the fallback table is smaller than the request size, which is why the \
+             small-table pass carries a caveat"
+        );
     }
 }

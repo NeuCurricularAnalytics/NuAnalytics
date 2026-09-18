@@ -193,6 +193,38 @@ ping:          ✓ authenticated read succeeded
 If you see `401 Invalid API key`, your anon key is the wrong format — see the key format
 note in the credentials section above.
 
+### Check the whole deployment, not just the connection
+
+`db status` answers "can I reach it". `db doctor` answers "is it set up right", which is
+the question if you did not build the backend yourself:
+
+```sh
+nuanalytics db doctor
+```
+
+```
+Backend:  https://db.example.edu
+  endpoint from: /home/you/.config/nuanalytics/config.toml
+
+✓ configuration        endpoint https://db.example.edu, anon key set, enabled
+✓ reachability         https://db.example.edu answered
+✓ anon-key read        200 — row-level security filters an unauthenticated read rather than rejecting it
+✓ session              valid, you@example.edu
+✓ authenticated read   succeeded
+✓ schema               all 20 tables present
+✓ seed data            cip_codes has all 2173 rows
+✓ row limit            completions returned all 5000 rows of a 5000-row request
+
+8 passed, 0 warning(s), 0 failed, 0 skipped
+```
+
+Each check gates the next, so a failure is reported once with the rest marked `-` skipped
+rather than six errors that all share one cause. Exits 1 on any failure. Warnings do not
+fail it — a short optional seed still leaves a working deployment.
+
+Run this before Step 4 as well as after: on an unconfigured schema it tells you exactly
+which of the 20 tables are missing, which is faster than reading SQL errors.
+
 ---
 
 ## Step 7 — Enable an OAuth provider (optional)
@@ -423,4 +455,6 @@ Config files:
 | Import fails: `23503 Key not present in institutions` | Some IPEDS survey UNITIDs don't appear in HD — run `schema.sql` fresh (no FK constraints) |
 | Import fails: `21000 ON CONFLICT affects row twice` | Upgrade to latest build — completions now filter to MAJORNUM=1 only |
 | Upsert fails with `42501 permission denied` | RLS INSERT policy is missing — see Step 5 |
+| `db doctor`: `PGRST_DB_MAX_ROWS is capping responses` | Self-hosted only. Upstream defaults the cap to 1000 while the MCP tools request 5,000, so large queries truncate silently with HTTP 200 and analytics come out wrong. Leave `PGRST_DB_MAX_ROWS` unset, or set it to at least 10000 |
+| Completions totals look too low but nothing errored | Run `nuanalytics db doctor` and read the **row limit** check — a row cap produces short answers, not failures |
 | Timed out waiting for browser callback | OAuth flow didn't complete in 2 minutes — run `db login` again |
