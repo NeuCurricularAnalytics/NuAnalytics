@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Default CLI configuration loaded based on build profile.
 /// Uses release defaults in release mode, debug defaults in debug mode.
@@ -245,25 +245,19 @@ pub enum SourceStatus {
     Malformed(String),
 }
 
-impl SourceStatus {
-    /// True when the file exists but could not be used — the case worth reporting.
-    #[must_use]
-    pub const fn is_failure(&self) -> bool {
-        matches!(self, Self::Unreadable(_) | Self::Malformed(_))
-    }
-}
-
 /// Which precedence tier supplied `database.endpoint`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EndpointSource {
     /// No tier set it.
     #[default]
     Unset,
+    /// A `--db-endpoint` flag, which outranks every file.
+    CliOverride,
     /// A project-local `nuanalytics.toml` in the working directory.
     LocalConfig,
     /// The home config (`config.toml`, or `dconfig.toml` for debug builds).
     HomeConfig,
-    /// The compiled-in defaults — which ship blank, so this means "blank".
+    /// The compiled-in defaults, i.e. neither a home nor a local file supplied one.
     CompiledDefaults,
 }
 
@@ -291,13 +285,16 @@ impl ConfigSources {
     pub fn describe(&self) -> Vec<String> {
         let mut out = Vec::new();
         let winner = match self.endpoint_from {
+            EndpointSource::CliOverride => {
+                "--db-endpoint (overrides every config file)".to_string()
+            }
             EndpointSource::LocalConfig => self.local.as_ref().map_or_else(
                 || "project-local config".to_string(),
                 |p| p.display().to_string(),
             ),
             EndpointSource::HomeConfig => self.home.display().to_string(),
             EndpointSource::CompiledDefaults => {
-                "compiled-in defaults (which ship blank)".to_string()
+                "compiled-in defaults (no config file supplied one)".to_string()
             }
             EndpointSource::Unset => "nothing — no tier set an endpoint".to_string(),
         };
@@ -308,7 +305,7 @@ impl ConfigSources {
                 && self.local_status == SourceStatus::Loaded
             {
                 out.push(format!(
-                    "note: {} exists and outranks the home config, but sets no endpoint",
+                    "note: {} exists and outranks the home config, but did not set an endpoint",
                     local.display()
                 ));
             }
@@ -338,6 +335,29 @@ impl ConfigSources {
             }
         }
         out
+    }
+}
+
+impl DatabaseConfig {
+    /// The endpoint, or an explicit marker when blank.
+    ///
+    /// One definition: the `is_empty()` branch was written out at six call sites across
+    /// three files, and `db status` rendered the same blank state two different ways.
+    #[must_use]
+    pub fn endpoint_label(&self) -> &str {
+        endpoint_label(&self.endpoint)
+    }
+}
+
+/// The endpoint, or an explicit marker when blank.
+///
+/// Free function so `core::database::error` can use it without depending on config.
+#[must_use]
+pub const fn endpoint_label(endpoint: &str) -> &str {
+    if endpoint.is_empty() {
+        "(no endpoint configured)"
+    } else {
+        endpoint
     }
 }
 
@@ -636,61 +656,91 @@ impl Config {
     /// project-local file silently outranks both.
     #[must_use]
     pub fn load_with_sources() -> (Self, ConfigSources) {
+        let home = Self::get_config_file_path();
+        let local = Self::get_local_config_file_path();
+        Self::load_with_sources_from(&home, local.as_deref(), true)
+    }
+
+    /// [`Self::load_with_sources`] with the paths injected, for tests.
+    ///
+    /// `create_home_if_missing` exists because the production path creates and saves the
+    /// home config on a first run. A test must never do that: it would write to the
+    /// developer's real `~/.config/nuanalytics/`, through the same
+    /// `merge_defaults`-then-save path that can silently re-point a configured backend.
+    #[must_use]
+    pub fn load_with_sources_from(
+        home: &Path,
+        local: Option<&Path>,
+        create_home_if_missing: bool,
+    ) -> (Self, ConfigSources) {
         let defaults = Self::from_defaults();
 
-        // Tier 3: home config.
-        let home = Self::get_config_file_path();
-        let mut config = Self::load_home_config(&defaults);
-        let home_status = if home.exists() {
-            match fs::read_to_string(&home) {
-                Ok(content) => match Self::from_toml(&content) {
-                    Ok(_) => SourceStatus::Loaded,
-                    Err(e) => SourceStatus::Malformed(e.to_string()),
-                },
-                Err(e) => SourceStatus::Unreadable(e.to_string()),
-            }
+        // `existed` is captured *before* loading, because the production loader creates
+        // the file from defaults on a first run — reporting it as "loaded" would name a
+        // file the tool itself had just written.
+        let existed = home.exists();
+        let mut config = if create_home_if_missing {
+            Self::load_home_config(&defaults)
+        } else {
+            Self::read_config_file(home)
+                .0
+                .unwrap_or_else(|| defaults.clone())
+        };
+        let home_status = if existed {
+            Self::read_config_file(home).1
         } else {
             SourceStatus::Missing
         };
         let mut sources = ConfigSources {
-            home,
+            home: home.to_path_buf(),
             home_status,
             ..ConfigSources::default()
         };
-        let endpoint_after_home = config.database.endpoint.clone();
 
         // Tier 2: project-local config.
-        if let Some(local_path) = Self::get_local_config_file_path() {
+        let mut local_set_endpoint = false;
+        if let Some(local_path) = local {
             if local_path.exists() {
-                sources.local = Some(local_path.clone());
-                match fs::read_to_string(&local_path) {
-                    Ok(content) => match Self::from_toml(&content) {
-                        Ok(local_config) => {
-                            sources.local_status = SourceStatus::Loaded;
-                            config.merge_from(&local_config);
-                        }
-                        Err(e) => sources.local_status = SourceStatus::Malformed(e.to_string()),
-                    },
-                    Err(e) => sources.local_status = SourceStatus::Unreadable(e.to_string()),
+                sources.local = Some(local_path.to_path_buf());
+                let (parsed, status) = Self::read_config_file(local_path);
+                sources.local_status = status;
+                if let Some(local_config) = parsed {
+                    // Recorded, not inferred by diffing the merged value: a local file
+                    // that repeats the home endpoint would otherwise be reported as
+                    // "sets no endpoint", pointing the user at the wrong file to edit.
+                    local_set_endpoint = !local_config.database.endpoint.is_empty();
+                    config.merge_from(&local_config);
                 }
             }
         }
 
         sources.endpoint_from = if config.database.endpoint.is_empty() {
             EndpointSource::Unset
-        } else if config.database.endpoint == endpoint_after_home {
-            // The home tier already had it. Distinguish a real file from the compiled
-            // defaults that `load_home_config` falls back to on first run.
-            if matches!(sources.home_status, SourceStatus::Loaded) {
-                EndpointSource::HomeConfig
-            } else {
-                EndpointSource::CompiledDefaults
-            }
-        } else {
+        } else if local_set_endpoint {
             EndpointSource::LocalConfig
+        } else if matches!(sources.home_status, SourceStatus::Loaded) {
+            EndpointSource::HomeConfig
+        } else {
+            // No usable home file, yet a non-empty endpoint: it came from the
+            // compiled-in defaults.
+            EndpointSource::CompiledDefaults
         };
 
         (config, sources)
+    }
+
+    /// Read and parse one config file, reporting why it could not be used.
+    ///
+    /// One definition for both tiers: the read/parse/classify sequence was written three
+    /// times, and the home file was parsed twice per load.
+    fn read_config_file(path: &Path) -> (Option<Self>, SourceStatus) {
+        match fs::read_to_string(path) {
+            Ok(content) => match Self::from_toml(&content) {
+                Ok(config) => (Some(config), SourceStatus::Loaded),
+                Err(e) => (None, SourceStatus::Malformed(e.to_string())),
+            },
+            Err(e) => (None, SourceStatus::Unreadable(e.to_string())),
+        }
     }
 
     /// Load configuration from home directory, creating it if needed
@@ -1588,32 +1638,163 @@ reports_dir = "./reports"
         );
     }
 
-    #[test]
-    fn source_status_only_flags_real_failures() {
-        assert!(
-            !SourceStatus::Missing.is_failure(),
-            "absent is not a failure"
-        );
-        assert!(!SourceStatus::Loaded.is_failure());
-        assert!(SourceStatus::Unreadable(String::new()).is_failure());
-        assert!(SourceStatus::Malformed(String::new()).is_failure());
+    // ---- provenance over real files ----------------------------------------
+    //
+    // These use `load_with_sources_from(.., create_home_if_missing = false)`. The
+    // production entry point creates and re-saves the home config, so a test calling it
+    // would write to the developer's real ~/.config/nuanalytics/ through the same
+    // merge_defaults-then-save path CLAUDE.md warns about.
+
+    fn write(path: &Path, body: &str) {
+        fs::write(path, body).expect("write test config");
     }
 
     #[test]
-    fn load_with_sources_reports_the_home_path_for_this_build_profile() {
-        // Release reads config.toml, debug reads dconfig.toml. Reporting the wrong one
-        // would be worse than reporting nothing.
-        let (_, sources) = Config::load_with_sources();
-        let name = sources
-            .home
-            .file_name()
-            .and_then(|n| n.to_str())
-            .expect("home config path has a file name");
-        let expected = if cfg!(debug_assertions) {
-            "dconfig.toml"
-        } else {
-            "config.toml"
-        };
-        assert_eq!(name, expected, "home config file name for this profile");
+    fn a_local_file_outranks_the_home_file_and_is_named() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (home, local) = (
+            dir.path().join("config.toml"),
+            dir.path().join("nuanalytics.toml"),
+        );
+        write(
+            &home,
+            "[database]\nendpoint = \"https://home.example.com\"\nanon_key = \"k\"\n",
+        );
+        write(
+            &local,
+            "[database]\nendpoint = \"https://local.example.com\"\n",
+        );
+
+        let (config, sources) = Config::load_with_sources_from(&home, Some(&local), false);
+        assert_eq!(config.database.endpoint, "https://local.example.com");
+        assert_eq!(sources.endpoint_from, EndpointSource::LocalConfig);
+        assert!(
+            sources.describe().join("\n").contains("nuanalytics.toml"),
+            "the winning file must be named"
+        );
+    }
+
+    #[test]
+    fn a_local_file_repeating_the_home_endpoint_is_not_called_empty() {
+        // Provenance used to be inferred by comparing the merged value against the
+        // post-home value, so a local file setting the *same* endpoint was reported as
+        // "did not set an endpoint" — pointing the user at the wrong file to edit.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (home, local) = (
+            dir.path().join("config.toml"),
+            dir.path().join("nuanalytics.toml"),
+        );
+        write(
+            &home,
+            "[database]\nendpoint = \"https://same.example.com\"\nanon_key = \"k\"\n",
+        );
+        write(
+            &local,
+            "[database]\nendpoint = \"https://same.example.com\"\n",
+        );
+
+        let (_, sources) = Config::load_with_sources_from(&home, Some(&local), false);
+        assert_eq!(
+            sources.endpoint_from,
+            EndpointSource::LocalConfig,
+            "the local file did set the endpoint, even though the value matches home"
+        );
+        assert!(
+            !sources
+                .describe()
+                .join("\n")
+                .contains("did not set an endpoint"),
+            "must not claim the local file is silent: {:?}",
+            sources.describe()
+        );
+    }
+
+    #[test]
+    fn a_local_file_that_sets_no_endpoint_is_flagged_as_outranking_anyway() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (home, local) = (
+            dir.path().join("config.toml"),
+            dir.path().join("nuanalytics.toml"),
+        );
+        write(
+            &home,
+            "[database]\nendpoint = \"https://home.example.com\"\nanon_key = \"k\"\n",
+        );
+        write(&local, "[logging]\nlevel = \"debug\"\n");
+
+        let (config, sources) = Config::load_with_sources_from(&home, Some(&local), false);
+        assert_eq!(config.database.endpoint, "https://home.example.com");
+        assert_eq!(sources.endpoint_from, EndpointSource::HomeConfig);
+        let joined = sources.describe().join("\n");
+        assert!(
+            joined.contains("did not set an endpoint"),
+            "a local file that outranks but is silent must be called out: {joined}"
+        );
+    }
+
+    #[test]
+    fn a_malformed_home_config_is_reported_not_swallowed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path().join("config.toml");
+        write(&home, "this is not toml =\n");
+
+        let (_, sources) = Config::load_with_sources_from(&home, None, false);
+        assert!(
+            matches!(sources.home_status, SourceStatus::Malformed(_)),
+            "got {:?}",
+            sources.home_status
+        );
+        let joined = sources.describe().join("\n");
+        assert!(joined.contains("not valid TOML"), "got: {joined}");
+        assert!(
+            joined.contains(&home.display().to_string()),
+            "the failure must name the file: {joined}"
+        );
+    }
+
+    #[test]
+    fn a_malformed_local_config_does_not_hide_the_working_home_config() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (home, local) = (
+            dir.path().join("config.toml"),
+            dir.path().join("nuanalytics.toml"),
+        );
+        write(
+            &home,
+            "[database]\nendpoint = \"https://home.example.com\"\nanon_key = \"k\"\n",
+        );
+        write(&local, "[database\n");
+
+        let (config, sources) = Config::load_with_sources_from(&home, Some(&local), false);
+        assert_eq!(
+            config.database.endpoint, "https://home.example.com",
+            "an unusable local file must not blank the endpoint"
+        );
+        assert_eq!(sources.endpoint_from, EndpointSource::HomeConfig);
+        let joined = sources.describe().join("\n");
+        assert!(joined.contains("not valid TOML"), "got: {joined}");
+        assert!(
+            joined.contains("nuanalytics.toml"),
+            "must name the unusable file: {joined}"
+        );
+    }
+
+    #[test]
+    fn a_missing_home_config_is_not_reported_as_loaded() {
+        // The production loader creates the file on a first run; reporting "loaded" would
+        // name a file the tool itself had just written.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path().join("config.toml");
+        let (_, sources) = Config::load_with_sources_from(&home, None, false);
+        assert_eq!(sources.home_status, SourceStatus::Missing);
+        assert_eq!(sources.endpoint_from, EndpointSource::Unset);
+        assert!(
+            sources
+                .describe()
+                .join("\n")
+                .contains("no tier set an endpoint"),
+            "{:?}",
+            sources.describe()
+        );
     }
 }

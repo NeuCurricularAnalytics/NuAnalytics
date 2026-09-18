@@ -10,6 +10,7 @@
 //! The auth token is user-specific and must not be committed to version control.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 // ============================================================================
@@ -157,11 +158,49 @@ struct RefreshUser {
 /// Returns a string describing the failure if the HTTP request fails or
 /// Supabase rejects the refresh token (e.g. it was revoked by `db logout`
 /// on another machine, or the user was deleted).
+/// Why a token refresh failed.
+///
+/// The distinction is load-bearing: a transport failure means the backend could not be
+/// reached, while a rejection means it answered and refused the token. Collapsing both
+/// into one string made `DbClient::from_config` report an unreachable backend as
+/// "not signed in", telling the user to run `db login` against a host that was down.
+#[derive(Debug, Clone)]
+pub enum RefreshError {
+    /// The request never got an answer (DNS, connection refused, TLS, timeout).
+    Transport(String),
+    /// The backend answered and refused the refresh token.
+    Rejected(String),
+    /// The backend answered with a body this client could not parse.
+    Malformed(String),
+}
+
+impl RefreshError {
+    /// The message as the user should see it.
+    #[must_use]
+    pub fn detail(&self) -> &str {
+        match self {
+            Self::Transport(m) | Self::Rejected(m) | Self::Malformed(m) => m,
+        }
+    }
+}
+
+impl fmt::Display for RefreshError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.detail())
+    }
+}
+
+/// Exchange a refresh token for a fresh session.
+///
+/// # Errors
+/// [`RefreshError::Transport`] when the backend could not be reached,
+/// [`RefreshError::Rejected`] when it refused the token, and
+/// [`RefreshError::Malformed`] when its answer could not be parsed.
 pub async fn refresh_session(
     endpoint: &str,
     anon_key: &str,
     refresh_token: &str,
-) -> Result<AuthState, String> {
+) -> Result<AuthState, RefreshError> {
     let url = format!("{}{REFRESH_TOKEN_PATH}", endpoint.trim_end_matches('/'));
     let body = serde_json::json!({ "refresh_token": refresh_token });
 
@@ -172,20 +211,21 @@ pub async fn refresh_session(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("token refresh request to {url} failed: {e}"))?;
+        .map_err(|e| {
+            RefreshError::Transport(format!("token refresh request to {url} failed: {e}"))
+        })?;
 
     let status = response.status();
     if !status.is_success() {
         let body_text = response.text().await.unwrap_or_default();
-        return Err(format!(
+        return Err(RefreshError::Rejected(format!(
             "token refresh at {url} rejected ({status}): {body_text}"
-        ));
+        )));
     }
 
-    let parsed: RefreshResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("token refresh returned malformed JSON: {e}"))?;
+    let parsed: RefreshResponse = response.json().await.map_err(|e| {
+        RefreshError::Malformed(format!("token refresh returned malformed JSON: {e}"))
+    })?;
 
     Ok(AuthState {
         access_token: parsed.access_token,
@@ -195,22 +235,25 @@ pub async fn refresh_session(
     })
 }
 
-/// Load the auth file, refreshing the token if it's expired.
+/// Load the auth file, refreshing the token if it is expired.
 ///
-/// Returns the freshest available [`AuthState`], or `Ok(None)` when no auth
-/// file exists yet — that's a signal for the caller to surface a `db login`
-/// prompt rather than an error. On a successful refresh the new state is
-/// persisted back to disk so the next process startup also sees a valid
-/// session.
+/// Returns the on-disk state **unchanged** when it is still clock-valid — including a
+/// clock-valid token the backend has already revoked, since nothing here asks the
+/// backend. For the case where the backend rejected the token we just sent, see
+/// `DbClient::force_refresh_from_disk`, which ignores `is_valid()` on purpose.
+///
+/// Returns `Ok(None)` when no auth file exists yet — a signal for the caller to surface a
+/// `db login` prompt rather than an error. On a successful refresh the new state is
+/// persisted back to disk so the next process startup also sees a valid session.
 ///
 /// # Errors
-/// Returns a string when the file exists but the refresh call failed
-/// (network error, revoked refresh token, malformed response).
+/// Returns a [`RefreshError`] when the file exists but the refresh call failed; the
+/// variant distinguishes "could not reach the backend" from "the backend refused it".
 pub async fn load_and_refresh(
     auth_path: &Path,
     endpoint: &str,
     anon_key: &str,
-) -> Result<Option<AuthState>, String> {
+) -> Result<Option<AuthState>, RefreshError> {
     let Some(state) = load_auth_state(auth_path) else {
         return Ok(None);
     };

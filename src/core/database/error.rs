@@ -34,10 +34,7 @@ impl fmt::Display for DatabaseError {
                 f,
                 "Database is disabled. Set `enabled = true` in [database] config."
             ),
-            Self::NotAuthenticated(detail) => write!(
-                f,
-                "Not signed in ({detail}). Run `nuanalytics db login` first."
-            ),
+            Self::NotAuthenticated(detail) => write!(f, "Not signed in ({detail})."),
             Self::ConnectionError(msg) => write!(f, "Database connection error: {msg}"),
             Self::QueryError(msg) => write!(f, "Database query error: {msg}"),
             Self::ParseError(msg) => write!(f, "Data parse error: {msg}"),
@@ -58,11 +55,7 @@ impl DatabaseError {
     /// Shared by the CLI (`db status`) and the MCP server so the two cannot drift.
     #[must_use]
     pub fn next_steps(&self, endpoint: &str) -> Vec<String> {
-        let backend = if endpoint.is_empty() {
-            "(no endpoint configured)"
-        } else {
-            endpoint
-        };
+        let backend = crate::core::config::endpoint_label(endpoint);
         match self {
             Self::NotConfigured => vec![
                 "no backend is configured. Set one:".to_string(),
@@ -75,8 +68,10 @@ impl DatabaseError {
                 "the database is disabled in configuration. Enable it:".to_string(),
                 "  nuanalytics config set database.enabled true".to_string(),
             ],
-            Self::NotAuthenticated(detail) => vec![
-                format!("no valid session ({detail})."),
+            // The detail is not echoed: callers print the error itself before these
+            // steps, so repeating it made one failure state the same path twice.
+            Self::NotAuthenticated(_) => vec![
+                "no valid session.".to_string(),
                 format!("  nuanalytics db login      # authenticates against {backend}"),
             ],
             Self::ConnectionError(_) => vec![
@@ -84,8 +79,15 @@ impl DatabaseError {
                 "Check the endpoint is correct and the backend is running; this is not a login problem."
                     .to_string(),
             ],
-            Self::QueryError(_) | Self::ParseError(_) => vec![format!(
+            Self::QueryError(_) => vec![format!(
                 "{backend} answered, but the request failed. The message above is the backend's own."
+            )],
+            // Not folded in with QueryError: a parse failure is *this client's* error, and
+            // for a serialisation failure the backend was never contacted at all. Saying
+            // "the backend answered" would assert something that did not happen.
+            Self::ParseError(_) => vec![format!(
+                "the payload could not be parsed. The message above is this client's parse \
+                 error, not {backend}'s."
             )],
             Self::IngestError(_) => {
                 vec!["the write failed; the message above is the backend's own.".to_string()]
@@ -148,10 +150,135 @@ mod tests {
     }
 
     #[test]
-    fn test_display_not_authenticated_prompts_login() {
+    fn test_display_not_authenticated_states_the_fact_without_the_remedy() {
+        // Display carries what happened; `next_steps` carries what to do. It used to do
+        // both, so a single failure printed `db login` up to three times.
         let msg = DatabaseError::NotAuthenticated("auth file missing".to_string()).to_string();
         assert!(msg.contains("Not signed in"));
         assert!(msg.contains("auth file missing"));
-        assert!(msg.contains("db login"));
+        assert!(
+            !msg.contains("db login"),
+            "the remedy belongs to next_steps: {msg}"
+        );
+    }
+
+    #[test]
+    fn next_steps_and_kind_cover_every_variant() {
+        // `next_steps` is the single source of remediation for both the CLI and the MCP
+        // server, so every variant's wording is user-facing. Four were previously
+        // asserted nowhere.
+        let cases: [(DatabaseError, &str, &str); 7] = [
+            (
+                DatabaseError::NotConfigured,
+                "not_configured",
+                "config set database.endpoint",
+            ),
+            (
+                DatabaseError::Disabled,
+                "disabled",
+                "config set database.enabled true",
+            ),
+            (
+                DatabaseError::NotAuthenticated("auth file missing".to_string()),
+                "not_authenticated",
+                "db login",
+            ),
+            (
+                DatabaseError::ConnectionError("refused".to_string()),
+                "unreachable",
+                "not a login problem",
+            ),
+            (
+                DatabaseError::QueryError("42501".to_string()),
+                "query_failed",
+                "answered, but the request failed",
+            ),
+            (
+                DatabaseError::ParseError("eof".to_string()),
+                "parse_failed",
+                "could not be parsed",
+            ),
+            (
+                DatabaseError::IngestError("no csv".to_string()),
+                "ingest_failed",
+                "the write failed",
+            ),
+        ];
+        for (error, kind, needle) in cases {
+            assert_eq!(error.kind(), kind, "kind for {error:?}");
+            let steps = error.next_steps("https://nu.example.com").join("\n");
+            assert!(steps.contains(needle), "{kind} steps: {steps}");
+        }
+    }
+
+    #[test]
+    fn next_steps_names_the_backend_or_says_none_is_configured() {
+        for error in [
+            DatabaseError::NotAuthenticated("x".to_string()),
+            DatabaseError::ConnectionError("x".to_string()),
+            DatabaseError::QueryError("x".to_string()),
+            DatabaseError::ParseError("x".to_string()),
+        ] {
+            let named = error.next_steps("https://nu.example.com").join(" ");
+            assert!(
+                named.contains("https://nu.example.com"),
+                "{error:?} must name the backend: {named}"
+            );
+            let blank = error.next_steps("").join(" ");
+            assert!(
+                blank.contains("(no endpoint configured)"),
+                "{error:?} must state a blank endpoint rather than leave a gap: {blank}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_install_with_no_backend_is_never_told_to_log_in() {
+        // There is nothing to log in to; this was the original reported defect.
+        for error in [DatabaseError::NotConfigured, DatabaseError::Disabled] {
+            let steps = error.next_steps("").join(" ");
+            assert!(!steps.contains("db login"), "{error:?}: {steps}");
+        }
+    }
+
+    #[test]
+    fn a_parse_failure_is_not_attributed_to_the_backend() {
+        // The payload is this client's serde error, and for a serialisation failure the
+        // backend was never contacted — claiming "the backend answered" would assert
+        // something that did not happen.
+        let steps = DatabaseError::ParseError("expected value".to_string())
+            .next_steps("https://nu.example.com")
+            .join(" ");
+        assert!(
+            steps.contains("this client's parse error"),
+            "must attribute the error to the client: {steps}"
+        );
+        assert!(
+            !steps.contains("answered, but the request failed"),
+            "must not claim the backend answered: {steps}"
+        );
+    }
+
+    #[test]
+    fn remediation_is_stated_once_per_failure() {
+        // Display says what happened; next_steps says what to do. `db login` used to
+        // appear in the detail, in Display, and in next_steps — three times for one
+        // failure.
+        let error = DatabaseError::NotAuthenticated("auth file disappeared at /x".to_string());
+        let shown = error.to_string();
+        assert!(
+            !shown.contains("db login"),
+            "Display must state the fact only, not the remedy: {shown}"
+        );
+        let steps = error.next_steps("https://nu.example.com").join("\n");
+        assert_eq!(
+            steps.matches("db login").count(),
+            1,
+            "the remedy must appear exactly once: {steps}"
+        );
+        assert!(
+            !steps.contains("/x"),
+            "next_steps must not echo the detail the caller already printed: {steps}"
+        );
     }
 }

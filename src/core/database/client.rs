@@ -29,6 +29,7 @@
 
 use super::auth::{
     auth_file_path, load_and_refresh, load_auth_state, refresh_session, save_auth_state, AuthState,
+    RefreshError,
 };
 use super::error::{DatabaseError, DatabaseResult};
 use super::query::{FilterKind, QueryFilters};
@@ -53,6 +54,20 @@ const HTTP_TIMEOUT: Duration = Duration::from_mins(1);
 /// Connection-establishment timeout — fail fast when the endpoint is
 /// unreachable rather than waiting out the full request budget.
 const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Map an auth-layer [`RefreshError`] onto the database error the caller should see.
+///
+/// A transport failure becomes [`DatabaseError::ConnectionError`] so its remediation says
+/// "could not reach the backend" rather than "run `db login`" — the mis-diagnosis this
+/// distinction exists to prevent.
+fn refresh_error_to_database_error(error: RefreshError) -> DatabaseError {
+    match error {
+        RefreshError::Transport(msg) => DatabaseError::ConnectionError(msg),
+        RefreshError::Rejected(msg) | RefreshError::Malformed(msg) => {
+            DatabaseError::NotAuthenticated(msg)
+        }
+    }
+}
 
 /// Database client backed by Supabase.
 ///
@@ -100,7 +115,7 @@ impl DbClient {
         let auth_path = auth_file_path(config);
         let state = load_and_refresh(&auth_path, &config.endpoint, &config.anon_key)
             .await
-            .map_err(DatabaseError::NotAuthenticated)?
+            .map_err(refresh_error_to_database_error)?
             .ok_or_else(|| {
                 DatabaseError::NotAuthenticated(format!("no auth file at {}", auth_path.display()))
             })?;
@@ -193,6 +208,11 @@ impl DbClient {
     /// `db login` is picked up without a restart) via [`load_and_refresh`],
     /// which also persists the refreshed token; falls back to refreshing the
     /// in-memory refresh token for clients with no tracked auth file.
+    ///
+    /// `force` — set after the backend rejected the token we just sent — diverts the
+    /// on-disk path to [`Self::force_refresh_from_disk`], which ignores `is_valid()`.
+    /// Without that divert, `load_and_refresh`'s short-circuit returns the same rejected
+    /// token and the caller's retry is wasted.
     async fn load_fresh_state(
         &self,
         current: &AuthState,
@@ -204,10 +224,10 @@ impl DbClient {
             }
             return load_and_refresh(path, &self.endpoint, &self.anon_key)
                 .await
-                .map_err(DatabaseError::NotAuthenticated)?
+                .map_err(refresh_error_to_database_error)?
                 .ok_or_else(|| {
                     DatabaseError::NotAuthenticated(format!(
-                        "auth file disappeared at {}; run `nuanalytics db login`",
+                        "auth file disappeared at {}",
                         path.display()
                     ))
                 });
@@ -219,7 +239,7 @@ impl DbClient {
         }
         refresh_session(&self.endpoint, &self.anon_key, &current.refresh_token)
             .await
-            .map_err(DatabaseError::NotAuthenticated)
+            .map_err(refresh_error_to_database_error)
     }
 
     /// Obtain a token after the backend *rejected* the one we just used.
@@ -238,31 +258,31 @@ impl DbClient {
         rejected: &AuthState,
     ) -> DatabaseResult<AuthState> {
         let on_disk = load_auth_state(path).ok_or_else(|| {
-            DatabaseError::NotAuthenticated(format!(
-                "auth file disappeared at {}; run `nuanalytics db login`",
-                path.display()
-            ))
+            DatabaseError::NotAuthenticated(format!("auth file disappeared at {}", path.display()))
         })?;
 
-        if on_disk.access_token != rejected.access_token {
+        // Must also be clock-valid: adopting a *different but expired* token spends the
+        // caller's single retry on a token that cannot work either.
+        if on_disk.access_token != rejected.access_token && on_disk.is_valid() {
             return Ok(on_disk);
         }
 
         if on_disk.refresh_token.is_empty() {
             return Err(DatabaseError::NotAuthenticated(format!(
-                "{} holds no refresh token; run `nuanalytics db login`",
+                "{} holds no refresh token",
                 path.display()
             )));
         }
 
         let refreshed = refresh_session(&self.endpoint, &self.anon_key, &on_disk.refresh_token)
             .await
-            .map_err(|e| {
-                DatabaseError::NotAuthenticated(format!(
-                    "{e}; the session for {} was rejected and could not be refreshed — run \
-                     `nuanalytics db login`",
+            .map_err(|e| match e {
+                // Unreachable is not a login problem, even on the forced path.
+                RefreshError::Transport(msg) => DatabaseError::ConnectionError(msg),
+                other => DatabaseError::NotAuthenticated(format!(
+                    "{other}; the session for {} was rejected and could not be refreshed",
                     self.endpoint
-                ))
+                )),
             })?;
         // Best-effort persist so sibling processes see the rotation too.
         let _ = save_auth_state(path, &refreshed);
@@ -298,18 +318,21 @@ impl DbClient {
     /// Check database connectivity with a minimal authenticated read.
     ///
     /// # Errors
-    /// Returns [`DatabaseError::ConnectionError`] when the underlying read
-    /// fails (including a 401 if the session is no longer valid).
+    /// Propagates the error from [`Self::select`] unchanged, so the variant reflects what
+    /// actually happened: [`DatabaseError::ConnectionError`] when the backend could not
+    /// be reached, [`DatabaseError::NotAuthenticated`] for a 401 that survived the forced
+    /// refresh and retry, and [`DatabaseError::QueryError`] when the backend answered
+    /// with some other error status.
+    ///
+    /// It deliberately does **not** rewrite an answered failure as a connection error.
+    /// Doing so reported a self-hosted stack that answers `404` because its schema was
+    /// never migrated as "could not reach the backend" — a cause the code had not
+    /// established.
     pub async fn ping(&self) -> DatabaseResult<()> {
         let filters = QueryFilters::new();
-        match self
-            .select(tables::INSTITUTIONS, "unitid", &filters, Some(1))
+        self.select(tables::INSTITUTIONS, "unitid", &filters, Some(1))
             .await
-        {
-            Ok(_) => Ok(()),
-            Err(DatabaseError::QueryError(msg)) => Err(DatabaseError::ConnectionError(msg)),
-            Err(e) => Err(e),
-        }
+            .map(|_| ())
     }
 
     /// Query a table with filters, returning results as a JSON array.
@@ -320,8 +343,11 @@ impl DbClient {
     ///
     /// # Errors
     /// - [`DatabaseError::QueryError`] if `PostgREST` returns a non-success
-    ///   status (e.g. 401 when the token expired mid-request, 400 for
-    ///   malformed filters).
+    ///   status other than 401 (e.g. 400 for malformed filters, 404 when the table is
+    ///   absent).
+    /// - [`DatabaseError::NotAuthenticated`] if a 401 survives the forced refresh and
+    ///   retry.
+    /// - [`DatabaseError::ConnectionError`] if the backend could not be reached at all.
     /// - [`DatabaseError::ParseError`] if the response is not valid JSON.
     pub async fn select(
         &self,
@@ -361,8 +387,7 @@ impl DbClient {
         let body = response.text().await.unwrap_or_default();
         if status == 401 {
             return DatabaseError::NotAuthenticated(format!(
-                "{} rejected the session after a forced refresh (401): {body}; run \
-                 `nuanalytics db login`",
+                "{} rejected the session after a forced refresh (401): {body}",
                 self.endpoint
             ));
         }
@@ -379,7 +404,9 @@ impl DbClient {
             .header("Accept", "application/json")
             .send()
             .await
-            .map_err(|e| DatabaseError::QueryError(format!("HTTP request failed: {e}")))
+            .map_err(|e| {
+                DatabaseError::ConnectionError(format!("request to {} failed: {e}", self.endpoint))
+            })
     }
 
     /// Issue a single authenticated upsert `POST` for one chunk. Split out so
@@ -399,7 +426,9 @@ impl DbClient {
             .json(chunk)
             .send()
             .await
-            .map_err(|e| DatabaseError::QueryError(format!("HTTP request failed: {e}")))
+            .map_err(|e| {
+                DatabaseError::ConnectionError(format!("request to {} failed: {e}", self.endpoint))
+            })
     }
 
     /// Upsert a batch of records.
@@ -417,8 +446,11 @@ impl DbClient {
     ///
     /// # Errors
     /// - [`DatabaseError::ParseError`] if records cannot be serialised.
-    /// - [`DatabaseError::QueryError`] if the HTTP request fails or Supabase
-    ///   returns an error status.
+    /// - [`DatabaseError::QueryError`] if Supabase answers with an error status other
+    ///   than 401.
+    /// - [`DatabaseError::NotAuthenticated`] if a 401 survives the forced refresh and
+    ///   retry.
+    /// - [`DatabaseError::ConnectionError`] if the backend could not be reached at all.
     pub async fn upsert_batch<T>(
         &self,
         table: &str,
@@ -784,6 +816,9 @@ mod tests {
 
     // ---- forced re-authentication after a rejected token --------------------
 
+    /// Session returned by the stub's happy auth route.
+    const REFRESHED: &str = r#"{"access_token":"refreshed-token","refresh_token":"refresh-next","expires_in":3600,"user":{"email":"u@example.com"}}"#;
+
     /// Serve canned HTTP responses on an ephemeral port and return the base URL.
     ///
     /// `/auth/v1/token` (the `GoTrue` refresh) always gets a fresh session, so a client's
@@ -795,8 +830,54 @@ mod tests {
     /// these tests are already `#[tokio::test]`. The whole auth/query surface previously
     /// had no coverage at the HTTP boundary.
     async fn stub_server(status_line: &'static str, body: &'static str) -> String {
-        const REFRESHED: &str = r#"{"access_token":"refreshed-token","refresh_token":"refresh-next","expires_in":3600,"user":{"email":"u@example.com"}}"#;
+        stub_server_with_auth(("200 OK", REFRESHED), status_line, body).await
+    }
 
+    /// As [`stub_server`], but non-auth requests are answered from `responses` in order,
+    /// reusing the last entry once exhausted — so a 401 can be followed by a 200 and the
+    /// *successful* retry becomes expressible.
+    async fn stub_server_seq(responses: Vec<(&'static str, &'static str)>) -> String {
+        assert!(!responses.is_empty(), "stub needs at least one response");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind ephemeral port");
+        let url = format!("http://{}", listener.local_addr().expect("local addr"));
+        tokio::spawn(async move {
+            let mut next = 0usize;
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let mut buf = [0u8; 8192];
+                let n = tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
+                    .await
+                    .unwrap_or(0);
+                let is_auth = String::from_utf8_lossy(&buf[..n]).contains("/auth/v1/token");
+                let (line, payload) = if is_auth {
+                    ("200 OK", REFRESHED)
+                } else {
+                    let entry = responses[next.min(responses.len() - 1)];
+                    next += 1;
+                    entry
+                };
+                let response = format!(
+                    "HTTP/1.1 {line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+                let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
+            }
+        });
+        url
+    }
+
+    /// As [`stub_server`], but `auth` answers `/auth/v1/token`, so the *forced refresh
+    /// itself* can be made to fail. Without this the auth route always succeeded and the
+    /// refresh-rejected branch was unreachable — two tests took the same path.
+    async fn stub_server_with_auth(
+        auth: (&'static str, &'static str),
+        status_line: &'static str,
+        body: &'static str,
+    ) -> String {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind ephemeral port");
@@ -811,11 +892,7 @@ mod tests {
                     .await
                     .unwrap_or(0);
                 let is_auth = String::from_utf8_lossy(&buf[..n]).contains("/auth/v1/token");
-                let (line, payload) = if is_auth {
-                    ("200 OK", REFRESHED)
-                } else {
-                    (status_line, body)
-                };
+                let (line, payload) = if is_auth { auth } else { (status_line, body) };
                 let response = format!(
                     "HTTP/1.1 {line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
                     payload.len()
@@ -882,12 +959,17 @@ mod tests {
         match err {
             DatabaseError::NotAuthenticated(detail) => {
                 assert!(
-                    detail.contains("db login"),
-                    "must say what to do next: {detail}"
-                );
-                assert!(
                     detail.contains(&path.display().to_string()),
                     "must name the file it looked for: {detail}"
+                );
+                // The remedy lives in next_steps, not in the detail, so one failure
+                // states it once.
+                let steps = DatabaseError::NotAuthenticated(detail)
+                    .next_steps("e")
+                    .join(" ");
+                assert!(
+                    steps.contains("db login"),
+                    "must say what to do next: {steps}"
                 );
             }
             other => panic!("expected NotAuthenticated, got {other:?}"),
@@ -913,26 +995,33 @@ mod tests {
             .await
             .expect_err("cannot refresh");
         match err {
-            DatabaseError::NotAuthenticated(detail) => assert!(
-                detail.contains("no refresh token") && detail.contains("db login"),
-                "got: {detail}"
-            ),
+            DatabaseError::NotAuthenticated(detail) => {
+                assert!(detail.contains("no refresh token"), "got: {detail}");
+                let steps = DatabaseError::NotAuthenticated(detail)
+                    .next_steps("e")
+                    .join(" ");
+                assert!(steps.contains("db login"), "got: {steps}");
+            }
             other => panic!("expected NotAuthenticated, got {other:?}"),
         }
     }
 
     #[tokio::test]
-    async fn a_rejected_refresh_names_the_backend_and_the_fix() {
-        // Covers the case where the forced refresh itself is rejected. Distinct from
-        // `a_401_surviving_the_retry_is_not_authenticated` below, which covers a refresh
-        // that succeeds and a retry that is still refused.
-        let url = stub_server("401 Unauthorized", r#"{"message":"JWT expired"}"#).await;
+    async fn a_rejected_refresh_is_not_reported_as_a_rejected_retry() {
+        // The refresh itself is refused here. Distinct from
+        // `a_401_surviving_the_retry_is_not_authenticated`, where the refresh succeeds
+        // and the *retry* is refused — the two previously shared a stub that always
+        // accepted the refresh, so they were the same test under two names.
+        let url = stub_server_with_auth(
+            ("401 Unauthorized", r#"{"error":"invalid_grant"}"#),
+            "401 Unauthorized",
+            r#"{"message":"JWT expired"}"#,
+        )
+        .await;
         let tmp = tempfile::tempdir().expect("tempdir");
         let path = tmp.path().join("auth.json");
         save_auth_state(&path, &session("same-token", "refresh", 3600)).expect("save");
 
-        // A real auth file, so the forced refresh succeeds against the stub's auth route
-        // and the retry happens. The retry then gets 401 again — the case under test.
         let client = DbClient::new_with_session(
             &url,
             "anon",
@@ -944,13 +1033,20 @@ mod tests {
         let err = client
             .select("institutions", "*", &QueryFilters::default(), Some(1))
             .await
-            .expect_err("a 401 that survives the retry must be an error");
+            .expect_err("a refused refresh must surface as an error");
         match err {
             DatabaseError::NotAuthenticated(detail) => {
-                assert!(detail.contains("401"), "must report the status: {detail}");
                 assert!(
-                    detail.contains("db login"),
-                    "must say what to do next: {detail}"
+                    detail.contains("could not be refreshed"),
+                    "a refused refresh must not be reported as a refused retry: {detail}"
+                );
+                assert!(
+                    detail.contains("invalid_grant"),
+                    "must quote what the provider said: {detail}"
+                );
+                assert!(
+                    !detail.contains("forced refresh"),
+                    "that wording belongs to the surviving-401 case, not this one: {detail}"
                 );
                 assert!(
                     detail.contains(&url),
@@ -1015,15 +1111,100 @@ mod tests {
                 );
                 assert!(detail.contains("401"), "must report the status: {detail}");
                 assert!(
-                    detail.contains("db login"),
-                    "must say what to do next: {detail}"
-                );
-                assert!(
                     detail.contains(&url),
                     "must name the backend it talked to: {detail}"
+                );
+                let steps = DatabaseError::NotAuthenticated(detail)
+                    .next_steps(&url)
+                    .join(" ");
+                assert!(
+                    steps.contains("db login"),
+                    "must say what to do next: {steps}"
                 );
             }
             other => panic!("expected NotAuthenticated for a surviving 401, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_backend_at_startup_is_not_reported_as_a_login_problem() {
+        // The mis-diagnosis this whole workstream exists to kill, at the one place it
+        // mattered most: the MCP server builds its client once via `from_config`, so a
+        // backend that is merely down used to be reported as "not signed in" — and
+        // therefore "run `db login`" — for the entire process lifetime.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("auth.json");
+        // Expired on purpose: that is what forces `from_config` to attempt a refresh,
+        // which is where the transport failure happens.
+        save_auth_state(&path, &session("tok", "refresh", -3600)).expect("save");
+
+        let config = DatabaseConfig {
+            enabled: true,
+            // Port 1 is not listening, so the connection is refused without a timeout.
+            endpoint: "http://127.0.0.1:1".to_string(),
+            anon_key: "anon".to_string(),
+            auth_file: path.display().to_string(),
+            management_key: String::new(),
+        };
+
+        let err = DbClient::from_config(&config)
+            .await
+            .expect_err("an unreachable backend cannot yield a client");
+        match err {
+            DatabaseError::ConnectionError(detail) => {
+                assert!(
+                    detail.contains("127.0.0.1:1"),
+                    "must name the backend it could not reach: {detail}"
+                );
+                let steps = DatabaseError::ConnectionError(detail).next_steps(&config.endpoint);
+                let joined = steps.join(" ");
+                assert!(
+                    joined.contains("not a login problem"),
+                    "remediation must not send the user to `db login`: {joined}"
+                );
+                assert!(
+                    !joined.contains("db login"),
+                    "an unreachable backend must never be told to log in: {joined}"
+                );
+            }
+            other => {
+                panic!("an unreachable backend must classify as ConnectionError, got {other:?}")
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_401_that_the_forced_refresh_fixes_succeeds_and_persists_the_rotation() {
+        // Every other new test here asserts a failure. This covers the path the retry
+        // exists for — 401, forced refresh, retry succeeds — and the on-disk rotation
+        // that lets sibling processes reuse the new session. Delete the `save_auth_state`
+        // in `force_refresh_from_disk` and only this test notices.
+        let url = stub_server_seq(vec![
+            ("401 Unauthorized", r#"{"message":"JWT expired"}"#),
+            ("200 OK", "[]"),
+        ])
+        .await;
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("auth.json");
+        save_auth_state(&path, &session("same-token", "refresh", 3600)).expect("save");
+        let client = DbClient::new_with_session(
+            &url,
+            "anon",
+            session("same-token", "refresh", 3600),
+            Some(path.clone()),
+        )
+        .expect("client");
+
+        let rows = client
+            .select("institutions", "*", &QueryFilters::default(), Some(1))
+            .await
+            .expect("the retry after a forced refresh must succeed");
+        assert!(rows.is_array(), "got {rows:?}");
+
+        let on_disk = load_auth_state(&path).expect("auth file still present");
+        assert_eq!(
+            on_disk.access_token, "refreshed-token",
+            "the rotated session must be persisted so sibling processes see it"
+        );
     }
 }

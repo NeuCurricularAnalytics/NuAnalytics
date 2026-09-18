@@ -20,10 +20,17 @@ use std::path::{Path, PathBuf};
 fn main() {
     let args = Cli::parse();
 
-    // Load configuration once at startup and apply CLI overrides to it
-    let mut config = Config::load();
+    // Load configuration once at startup and apply CLI overrides to it. The sources are
+    // kept so `db status` can report which tier supplied the endpoint — including this
+    // override, which outranks every file.
+    let (mut config, mut config_sources) = Config::load_with_sources();
     let defaults = Config::from_defaults();
-    config.apply_overrides(&args.to_config_overrides());
+    let overrides = args.to_config_overrides();
+    let endpoint_overridden = overrides.db_endpoint.is_some();
+    config.apply_overrides(&overrides);
+    if endpoint_overridden {
+        config_sources.endpoint_from = nu_analytics::config::EndpointSource::CliOverride;
+    }
 
     let verbose = setup_logging(&args, &config);
 
@@ -62,7 +69,7 @@ fn main() {
         }
         #[cfg(feature = "database")]
         Command::Db { subcommand } => {
-            commands::db::run(subcommand, &config);
+            commands::db::run(subcommand, &config, &config_sources);
         }
         #[cfg(feature = "mcp")]
         Command::Mcp => {

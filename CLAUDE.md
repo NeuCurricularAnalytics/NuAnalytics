@@ -10,7 +10,7 @@ codebase — run `/init` if you want that.
 
 Default features: `log-info`, `log-debug`, `verbose`, `file-logging`, `database`, `mcp`.
 
-    cargo test --features database                  # 1179 tests, clean
+    cargo test --features database                  # 1192 tests, clean
     cargo build --features database
 
 **Degree fixtures are compiled in, so a missing one is a build error, not a test

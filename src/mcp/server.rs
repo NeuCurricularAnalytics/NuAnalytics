@@ -101,13 +101,17 @@ impl NuAnalyticsMcpServer {
         }
     }
 
-    /// Create a new MCP server instance with database access
+    /// Create a new MCP server instance with database access.
+    ///
+    /// Takes the client by value rather than `Option`: a `None` client with no recorded
+    /// reason produced a response blaming configuration for a cause the code had not
+    /// established. Use [`Self::with_db_error`] when the client could not be built.
     #[cfg(feature = "database")]
     #[must_use]
-    pub fn with_db(db: Option<Arc<DbClient>>) -> Self {
+    pub fn with_db(db: Arc<DbClient>) -> Self {
         Self {
             tool_router: Self::tool_router(),
-            db,
+            db: Some(db),
             db_unavailable: None,
         }
     }
@@ -838,7 +842,9 @@ where
 /// transient outage of a correctly-configured backend was reported as user error for as
 /// long as the server ran.
 ///
-/// `reason` is `None` only for a server constructed without database support at all.
+/// `reason` is `None` only for [`NuAnalyticsMcpServer::new`] — a server built without
+/// database support. [`NuAnalyticsMcpServer::with_db`] always has a client, and
+/// [`NuAnalyticsMcpServer::with_db_error`] always has a reason.
 #[cfg(feature = "database")]
 fn db_not_configured_response(tool: &str, reason: Option<&DbUnavailable>) -> String {
     let Some(reason) = reason else {
@@ -852,11 +858,7 @@ fn db_not_configured_response(tool: &str, reason: Option<&DbUnavailable>) -> Str
         .to_string();
     };
 
-    let backend = if reason.endpoint.is_empty() {
-        "(no endpoint configured)"
-    } else {
-        reason.endpoint.as_str()
-    };
+    let backend = crate::core::config::endpoint_label(&reason.endpoint);
     let mut next_steps = reason.next_steps.clone();
     // The client is built once at startup, so fixing config or logging in is not enough
     // on its own — say so rather than leaving the model to guess.
@@ -950,14 +952,10 @@ pub async fn run_server(db_config: &DatabaseConfig) -> Result<(), Box<dyn std::e
         match DbClient::from_config(db_config).await {
             Ok(client) => {
                 eprintln!("Database client initialized for {}.", db_config.endpoint);
-                NuAnalyticsMcpServer::with_db(Some(Arc::new(client)))
+                NuAnalyticsMcpServer::with_db(Arc::new(client))
             }
             Err(e) => {
-                let backend = if db_config.endpoint.is_empty() {
-                    "(no endpoint configured)"
-                } else {
-                    db_config.endpoint.as_str()
-                };
+                let backend = db_config.endpoint_label();
                 eprintln!("Database unavailable for {backend}: {e}");
                 for step in e.next_steps(&db_config.endpoint) {
                     eprintln!("  {step}");
@@ -1183,5 +1181,39 @@ mod db_unavailable_tests {
             serde_json::from_str(&db_not_configured_response("t", None)).expect("valid JSON");
         assert_eq!(v["reason"], "no_client");
         assert!(v["next_steps"].as_array().is_some_and(|a| !a.is_empty()));
+    }
+
+    #[test]
+    fn a_tool_on_a_db_less_server_reports_the_startup_reason() {
+        // The three tests above call the formatter directly, so none of them would
+        // notice if `get_db` stopped forwarding the recorded reason — every tool would
+        // silently fall back to "no_client" and still pass.
+        let server = NuAnalyticsMcpServer::with_db_error(
+            &DatabaseError::ConnectionError("connection refused".to_string()),
+            "https://nu.example.com",
+        );
+        let response = server
+            .get_db("query_institutions")
+            .expect_err("a server built from a startup failure has no client");
+        let v: serde_json::Value = serde_json::from_str(&response).expect("valid JSON");
+        assert_eq!(
+            v["reason"], "unreachable",
+            "the startup reason must reach the tool, not be replaced by no_client: {v}"
+        );
+        assert_eq!(v["backend"], "https://nu.example.com");
+        assert_eq!(v["tool"], "query_institutions");
+    }
+
+    #[test]
+    fn the_restart_requirement_is_stated_by_text_not_merely_present() {
+        let reason = DbUnavailable::from_error(&DatabaseError::NotConfigured, "");
+        let v: serde_json::Value =
+            serde_json::from_str(&db_not_configured_response("t", Some(&reason)))
+                .expect("valid JSON");
+        let steps = v["next_steps"].to_string();
+        assert!(
+            steps.contains("restart the server"),
+            "the client is built once at startup, so this must be said: {steps}"
+        );
     }
 }

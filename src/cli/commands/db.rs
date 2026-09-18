@@ -9,10 +9,11 @@
 use std::fmt::Write as _;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use nu_analytics::config::Config;
+use nu_analytics::config::{Config, ConfigSources};
 use nu_analytics::database::import::{execute_import, ImportOptions, ImportOutcome, ImportResult};
 use nu_analytics::database::{
-    auth_file_path, clear_auth_state, ipeds, load_auth_state, save_auth_state, AuthState, DbClient,
+    auth_file_path, clear_auth_state, ipeds, load_auth_state, save_auth_state, AuthState,
+    DatabaseError, DbClient,
 };
 
 use crate::args::DbSubcommand;
@@ -21,13 +22,13 @@ const OAUTH_TIMEOUT_SECS: u64 = 120;
 const SUPABASE_MGMT_API_BASE: &str = "https://api.supabase.com/v1/projects";
 
 /// Run the `db` subcommand, dispatching to the appropriate handler.
-pub fn run(subcommand: DbSubcommand, config: &Config) {
+pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
     match subcommand {
         DbSubcommand::Login { provider } => run_login(config, &provider),
         DbSubcommand::Logout => run_logout(config),
         DbSubcommand::Whoami => run_whoami(config),
         DbSubcommand::ExecSql { file } => run_exec_sql(config, &file),
-        DbSubcommand::Status => run_status(config),
+        DbSubcommand::Status => run_status(config, sources),
         DbSubcommand::IpedsImport {
             dir,
             institutions,
@@ -87,10 +88,11 @@ pub(super) fn make_runtime() -> Option<tokio::runtime::Runtime> {
 /// Validate database config, build an async runtime, and run the OAuth login flow.
 fn run_login(config: &Config, provider: &str) {
     if config.database.endpoint.is_empty() || config.database.anon_key.is_empty() {
-        eprintln!("✗ Database not configured.");
-        eprintln!("  Set `database.endpoint` and `database.anon_key` in your config, then re-run.");
-        eprintln!("  nuanalytics config set database.endpoint https://your-project.supabase.co");
-        eprintln!("  nuanalytics config set database.anon_key <anon-key>");
+        // Uses the shared steps rather than its own copy, which omitted the caveat that
+        // `config set` writes to the home config while a project-local nuanalytics.toml
+        // outranks it — the documented trap.
+        eprintln!("✗ {}", DatabaseError::NotConfigured);
+        report_db_error(&DatabaseError::NotConfigured, &config.database.endpoint);
         return;
     }
 
@@ -343,28 +345,32 @@ impl CallbackFailure {
 
     /// Terminal message: which backend, what failed, what to do. Asserts no cause.
     fn terminal_message(&self, endpoint: &str) -> String {
-        let backend = if endpoint.is_empty() {
-            "(no endpoint configured)"
-        } else {
-            endpoint
-        };
+        let backend = nu_analytics::config::endpoint_label(endpoint);
         let mut out = String::from("OAuth callback returned no authorization code.\n");
         let _ = writeln!(out, "  backend: {backend}");
-        match self.provider_text() {
-            Some(text) => {
-                let _ = writeln!(out, "  provider reported: {text}");
-            }
-            None => out.push_str(
-                "  provider reported: nothing — no error or error_description was sent\n",
-            ),
+        // The closing advice differs by branch: calling "nothing was sent" the provider's
+        // own message would itself be false, and with an error_code present the line
+        // immediately above is the code, not the provider text.
+        let provider_text = self.provider_text();
+        if let Some(ref text) = provider_text {
+            let _ = writeln!(out, "  provider reported: {text}");
+        } else {
+            out.push_str("  provider reported: nothing — no error or error_description was sent\n");
         }
         if let Some(ref code) = self.code {
             let _ = writeln!(out, "  error_code: {code}");
         }
-        out.push_str(
-            "The line above is the provider's own message. Read it before changing \
-             provider settings; re-run `nuanalytics db login` to retry.",
-        );
+        if provider_text.is_some() {
+            out.push_str(
+                "The `provider reported` line is the provider's own message. Read it before \
+                 changing provider settings; re-run `nuanalytics db login` to retry.",
+            );
+        } else {
+            out.push_str(
+                "The callback carried no error detail. Re-run `nuanalytics db login`; if it \
+                 fails again, read the full redirect URL from the browser's address bar.",
+            );
+        }
         out
     }
 
@@ -379,11 +385,7 @@ impl CallbackFailure {
         let code = self.code.as_ref().map_or_else(String::new, |c| {
             format!("<p class=\"meta\">error_code: {}</p>", escape_html(c))
         });
-        let backend = if endpoint.is_empty() {
-            "(no endpoint configured)".to_string()
-        } else {
-            escape_html(endpoint)
-        };
+        let backend = escape_html(nu_analytics::config::endpoint_label(endpoint));
         format!(
             r#"<!DOCTYPE html>
 <html><head><title>NuAnalytics — Sign In Failed</title>
@@ -589,13 +591,18 @@ async fn do_exec_sql(management_key: &str, project_ref: &str, sql: &str) -> Resu
 // Status
 // ============================================================================
 
-fn run_status(config: &Config) {
+fn run_status(config: &Config, sources: &ConfigSources) {
     print_config_line("endpoint", &config.database.endpoint);
-    // Which file supplied the endpoint. Without this, a stale home config is
+    // Which tier supplied the endpoint. Without this, a stale home config is
     // indistinguishable from a correct one — and the home file differs by build profile
     // (`config.toml` for release, `dconfig.toml` for debug), so the same machine can
     // report two different backends depending on which binary is run.
-    for line in Config::load_with_sources().1.describe() {
+    //
+    // Passed in from `main` rather than re-loaded: a second `load_with_sources()` would
+    // re-run the loader's create-and-save side effects, and would not see the
+    // `--db-endpoint` override that `main` applied — so it could name a config file that
+    // did not supply the value being printed on the line above.
+    for line in sources.describe() {
         println!("  {line}");
     }
     print_config_line(
@@ -641,18 +648,24 @@ fn run_status(config: &Config) {
         Ok(()) => println!("ping:          ✓ authenticated read succeeded"),
         Err(e) => {
             eprintln!("ping:          ✗ {e}");
-            for (i, line) in e
-                .next_steps(&config.database.endpoint)
-                .into_iter()
-                .enumerate()
-            {
-                if i == 0 {
-                    eprintln!("→ {line}");
-                } else {
-                    eprintln!("  {line}");
-                }
-            }
+            report_db_error(&e, &config.database.endpoint);
             std::process::exit(1);
+        }
+    }
+}
+
+/// Print a database error's remediation to stderr.
+///
+/// Every caller routes through here so the wording comes from
+/// [`DatabaseError::next_steps`] rather than being guessed per call site. Three sites
+/// previously printed "Configure the database and run `nuanalytics db login` first" for
+/// *any* failure, which tells a user with an unreachable backend to log in.
+pub fn report_db_error(error: &DatabaseError, endpoint: &str) {
+    for (i, line) in error.next_steps(endpoint).into_iter().enumerate() {
+        if i == 0 {
+            eprintln!("→ {line}");
+        } else {
+            eprintln!("  {line}");
         }
     }
 }
@@ -662,11 +675,7 @@ fn run_status(config: &Config) {
 /// Printed by every command that reports state: with cloud and self-hosted both
 /// supported, "which backend is this?" is the first question in any support exchange.
 fn endpoint_or_unset(db: &nu_analytics::config::DatabaseConfig) -> &str {
-    if db.endpoint.is_empty() {
-        "(no endpoint configured)"
-    } else {
-        &db.endpoint
-    }
+    db.endpoint_label()
 }
 
 /// Print a config field as `label:    value ✓/✗`. Empty values become `(unset)` and a ✗.
@@ -741,7 +750,7 @@ fn run_ipeds_import(
         Ok(c) => c,
         Err(e) => {
             eprintln!("✗ Database not available: {e}");
-            eprintln!("  Configure the database and run `nuanalytics db login` first.");
+            report_db_error(&e, &config.database.endpoint);
             return;
         }
     };
@@ -807,7 +816,7 @@ fn run_import(config: &Config, files: &[std::path::PathBuf], opts: &ImportOption
         Ok(c) => c,
         Err(e) => {
             eprintln!("✗ Database not available: {e}");
-            eprintln!("  Configure the database and run `nuanalytics db login` first.");
+            report_db_error(&e, &config.database.endpoint);
             std::process::exit(1);
         }
     };

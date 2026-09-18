@@ -584,7 +584,7 @@ pub fn run_analyze_from_db(name: &str, options: &AnalyzeOptions, config: &Config
         Ok(c) => c,
         Err(e) => {
             eprintln!("✗ Database not available: {e}");
-            eprintln!("  Configure the database and run `nuanalytics db login` first.");
+            super::db::report_db_error(&e, &config.database.endpoint);
             process::exit(1);
         }
     };
