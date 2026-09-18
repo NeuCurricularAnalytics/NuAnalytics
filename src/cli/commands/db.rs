@@ -456,12 +456,19 @@ fn run_whoami(config: &Config) {
                 || "unknown".to_string(),
                 |dt| dt.format("%Y-%m-%d %H:%M UTC").to_string(),
             );
-            println!("Signed in as: {email}");
+            println!("Signed in as:  {email}");
+            println!("Backend:       {}", endpoint_or_unset(&config.database));
             println!("Token expires: {expires}");
-            println!("Auth file:    {}", path.display());
+            println!("Auth file:     {}", path.display());
         }
-        Some(_) => println!("Session expired. Run `nuanalytics db login` to sign in again."),
-        None => println!("Not signed in. Run `nuanalytics db login`."),
+        Some(_) => println!(
+            "Session expired for {}. Run `nuanalytics db login` to sign in again.",
+            endpoint_or_unset(&config.database)
+        ),
+        None => println!(
+            "Not signed in to {}. Run `nuanalytics db login`.",
+            endpoint_or_unset(&config.database)
+        ),
     }
 }
 
@@ -584,6 +591,13 @@ async fn do_exec_sql(management_key: &str, project_ref: &str, sql: &str) -> Resu
 
 fn run_status(config: &Config) {
     print_config_line("endpoint", &config.database.endpoint);
+    // Which file supplied the endpoint. Without this, a stale home config is
+    // indistinguishable from a correct one — and the home file differs by build profile
+    // (`config.toml` for release, `dconfig.toml` for debug), so the same machine can
+    // report two different backends depending on which binary is run.
+    for line in Config::load_with_sources().1.describe() {
+        println!("  {line}");
+    }
     print_config_line(
         "anon key",
         if config.database.anon_key.is_empty() {
@@ -640,6 +654,18 @@ fn run_status(config: &Config) {
             }
             std::process::exit(1);
         }
+    }
+}
+
+/// The configured endpoint, or an explicit marker when blank.
+///
+/// Printed by every command that reports state: with cloud and self-hosted both
+/// supported, "which backend is this?" is the first question in any support exchange.
+fn endpoint_or_unset(db: &nu_analytics::config::DatabaseConfig) -> &str {
+    if db.endpoint.is_empty() {
+        "(no endpoint configured)"
+    } else {
+        &db.endpoint
     }
 }
 

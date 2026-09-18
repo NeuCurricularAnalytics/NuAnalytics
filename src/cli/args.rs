@@ -639,7 +639,8 @@ pub enum DbSubcommand {
         #[arg(value_name = "FILE")]
         file: std::path::PathBuf,
     },
-    /// Check database connectivity and display row counts
+    /// Report the configured backend, which config file supplied it, session validity,
+    /// and whether an authenticated read succeeds. Exits 1 when the read fails.
     Status,
     /// Import IPEDS data from locally downloaded CSV or ZIP files into Supabase.
     ///

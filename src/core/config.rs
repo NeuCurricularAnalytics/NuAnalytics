@@ -227,6 +227,120 @@ pub struct ConfigOverrides {
     pub reports_dir: Option<String>,
 }
 
+/// Whether a config file was read, and why not when it was not.
+///
+/// Read failures used to be swallowed by `if let Ok(...)`, so a malformed home config
+/// silently produced default settings — including a blank endpoint that
+/// [`Config::merge_defaults`] then refilled and saved.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum SourceStatus {
+    /// No file at this path.
+    #[default]
+    Missing,
+    /// Read and parsed.
+    Loaded,
+    /// Present but could not be read (permissions, I/O).
+    Unreadable(String),
+    /// Present and readable but not valid TOML for this schema.
+    Malformed(String),
+}
+
+impl SourceStatus {
+    /// True when the file exists but could not be used — the case worth reporting.
+    #[must_use]
+    pub const fn is_failure(&self) -> bool {
+        matches!(self, Self::Unreadable(_) | Self::Malformed(_))
+    }
+}
+
+/// Which precedence tier supplied `database.endpoint`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EndpointSource {
+    /// No tier set it.
+    #[default]
+    Unset,
+    /// A project-local `nuanalytics.toml` in the working directory.
+    LocalConfig,
+    /// The home config (`config.toml`, or `dconfig.toml` for debug builds).
+    HomeConfig,
+    /// The compiled-in defaults — which ship blank, so this means "blank".
+    CompiledDefaults,
+}
+
+/// Where the effective configuration came from.
+#[derive(Debug, Clone, Default)]
+pub struct ConfigSources {
+    /// Home config path for this build profile.
+    pub home: PathBuf,
+    /// Outcome of reading [`Self::home`].
+    pub home_status: SourceStatus,
+    /// Project-local config path, when one exists in the working directory.
+    pub local: Option<PathBuf>,
+    /// Outcome of reading [`Self::local`].
+    pub local_status: SourceStatus,
+    /// Which tier supplied the database endpoint.
+    pub endpoint_from: EndpointSource,
+}
+
+impl ConfigSources {
+    /// Human-readable provenance lines, most specific first.
+    ///
+    /// Includes any read/parse failure, because a config that could not be read is the
+    /// likeliest reason the effective settings are not what the user expects.
+    #[must_use]
+    pub fn describe(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let winner = match self.endpoint_from {
+            EndpointSource::LocalConfig => self.local.as_ref().map_or_else(
+                || "project-local config".to_string(),
+                |p| p.display().to_string(),
+            ),
+            EndpointSource::HomeConfig => self.home.display().to_string(),
+            EndpointSource::CompiledDefaults => {
+                "compiled-in defaults (which ship blank)".to_string()
+            }
+            EndpointSource::Unset => "nothing — no tier set an endpoint".to_string(),
+        };
+        out.push(format!("endpoint from: {winner}"));
+
+        if let Some(ref local) = self.local {
+            if self.endpoint_from != EndpointSource::LocalConfig
+                && self.local_status == SourceStatus::Loaded
+            {
+                out.push(format!(
+                    "note: {} exists and outranks the home config, but sets no endpoint",
+                    local.display()
+                ));
+            }
+        }
+        for (label, path, status) in [
+            (
+                "home config",
+                self.home.display().to_string(),
+                &self.home_status,
+            ),
+            (
+                "project-local config",
+                self.local
+                    .as_ref()
+                    .map_or_else(String::new, |p| p.display().to_string()),
+                &self.local_status,
+            ),
+        ] {
+            match status {
+                SourceStatus::Unreadable(e) => {
+                    out.push(format!("{label} at {path} could not be read: {e}"));
+                }
+                SourceStatus::Malformed(e) => {
+                    out.push(format!("{label} at {path} is not valid TOML: {e}"));
+                }
+                SourceStatus::Loaded | SourceStatus::Missing => {}
+            }
+        }
+        out
+    }
+}
+
 impl Config {
     /// Get the `$NU_ANALYTICS` directory path
     ///
@@ -510,23 +624,73 @@ impl Config {
     /// ```
     #[must_use]
     pub fn load() -> Self {
+        Self::load_with_sources().0
+    }
+
+    /// Load configuration and report where each part came from.
+    ///
+    /// Precedence is unchanged: local `nuanalytics.toml` > home config > compiled
+    /// defaults. The [`ConfigSources`] half exists because "which backend am I talking
+    /// to" is unanswerable without also knowing *which file said so* — the home file is
+    /// `config.toml` for release builds and `dconfig.toml` for debug builds, and a
+    /// project-local file silently outranks both.
+    #[must_use]
+    pub fn load_with_sources() -> (Self, ConfigSources) {
         let defaults = Self::from_defaults();
 
-        // Load home directory config (tier 3)
+        // Tier 3: home config.
+        let home = Self::get_config_file_path();
         let mut config = Self::load_home_config(&defaults);
+        let home_status = if home.exists() {
+            match fs::read_to_string(&home) {
+                Ok(content) => match Self::from_toml(&content) {
+                    Ok(_) => SourceStatus::Loaded,
+                    Err(e) => SourceStatus::Malformed(e.to_string()),
+                },
+                Err(e) => SourceStatus::Unreadable(e.to_string()),
+            }
+        } else {
+            SourceStatus::Missing
+        };
+        let mut sources = ConfigSources {
+            home,
+            home_status,
+            ..ConfigSources::default()
+        };
+        let endpoint_after_home = config.database.endpoint.clone();
 
-        // Apply local directory config if present (tier 2)
+        // Tier 2: project-local config.
         if let Some(local_path) = Self::get_local_config_file_path() {
             if local_path.exists() {
-                if let Ok(content) = fs::read_to_string(&local_path) {
-                    if let Ok(local_config) = Self::from_toml(&content) {
-                        config.merge_from(&local_config);
-                    }
+                sources.local = Some(local_path.clone());
+                match fs::read_to_string(&local_path) {
+                    Ok(content) => match Self::from_toml(&content) {
+                        Ok(local_config) => {
+                            sources.local_status = SourceStatus::Loaded;
+                            config.merge_from(&local_config);
+                        }
+                        Err(e) => sources.local_status = SourceStatus::Malformed(e.to_string()),
+                    },
+                    Err(e) => sources.local_status = SourceStatus::Unreadable(e.to_string()),
                 }
             }
         }
 
-        config
+        sources.endpoint_from = if config.database.endpoint.is_empty() {
+            EndpointSource::Unset
+        } else if config.database.endpoint == endpoint_after_home {
+            // The home tier already had it. Distinguish a real file from the compiled
+            // defaults that `load_home_config` falls back to on first run.
+            if matches!(sources.home_status, SourceStatus::Loaded) {
+                EndpointSource::HomeConfig
+            } else {
+                EndpointSource::CompiledDefaults
+            }
+        } else {
+            EndpointSource::LocalConfig
+        };
+
+        (config, sources)
     }
 
     /// Load configuration from home directory, creating it if needed
@@ -1332,5 +1496,124 @@ reports_dir = "./reports"
              exactly how a committed credential would reach a user's saved config"
         );
         assert!(blank.database.anon_key.is_empty());
+    }
+
+    // ---- config provenance --------------------------------------------------
+
+    #[test]
+    fn describe_names_the_file_that_supplied_the_endpoint() {
+        let sources = ConfigSources {
+            home: PathBuf::from("/home/u/.config/nuanalytics/dconfig.toml"),
+            home_status: SourceStatus::Loaded,
+            local: None,
+            local_status: SourceStatus::Missing,
+            endpoint_from: EndpointSource::HomeConfig,
+        };
+        let lines = sources.describe();
+        assert!(
+            lines[0].contains("dconfig.toml"),
+            "must name the exact file, since the home file differs by build profile: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn describe_names_a_project_local_file_when_it_won() {
+        let sources = ConfigSources {
+            home: PathBuf::from("/home/u/.config/nuanalytics/config.toml"),
+            home_status: SourceStatus::Loaded,
+            local: Some(PathBuf::from("/work/proj/nuanalytics.toml")),
+            local_status: SourceStatus::Loaded,
+            endpoint_from: EndpointSource::LocalConfig,
+        };
+        let joined = sources.describe().join("\n");
+        assert!(
+            joined.contains("/work/proj/nuanalytics.toml"),
+            "the local file outranks the home one and must be named: {joined}"
+        );
+    }
+
+    #[test]
+    fn describe_warns_when_a_local_file_outranks_but_sets_no_endpoint() {
+        // The documented trap: `config set` writes to the home config, so a user with a
+        // project-local file can set an endpoint, see it succeed, and still be told the
+        // home value is in effect. Saying the local file exists explains why.
+        let sources = ConfigSources {
+            home: PathBuf::from("/home/u/.config/nuanalytics/config.toml"),
+            home_status: SourceStatus::Loaded,
+            local: Some(PathBuf::from("/work/proj/nuanalytics.toml")),
+            local_status: SourceStatus::Loaded,
+            endpoint_from: EndpointSource::HomeConfig,
+        };
+        let joined = sources.describe().join("\n");
+        assert!(
+            joined.contains("outranks"),
+            "must mention that a local file exists and outranks the home config: {joined}"
+        );
+    }
+
+    #[test]
+    fn describe_reports_an_unusable_config_instead_of_staying_silent() {
+        // These used to be swallowed by `if let Ok(...)`, so a malformed config produced
+        // default settings with no indication why.
+        let malformed = ConfigSources {
+            home: PathBuf::from("/home/u/.config/nuanalytics/config.toml"),
+            home_status: SourceStatus::Malformed("expected `=` at line 3".to_string()),
+            local: None,
+            local_status: SourceStatus::Missing,
+            endpoint_from: EndpointSource::CompiledDefaults,
+        };
+        let joined = malformed.describe().join("\n");
+        assert!(joined.contains("not valid TOML"), "got: {joined}");
+        assert!(joined.contains("expected `=` at line 3"), "got: {joined}");
+
+        let unreadable = ConfigSources {
+            home_status: SourceStatus::Unreadable("permission denied".to_string()),
+            ..ConfigSources::default()
+        };
+        let joined = unreadable.describe().join("\n");
+        assert!(joined.contains("could not be read"), "got: {joined}");
+        assert!(joined.contains("permission denied"), "got: {joined}");
+    }
+
+    #[test]
+    fn describe_states_plainly_when_no_tier_set_an_endpoint() {
+        let sources = ConfigSources {
+            endpoint_from: EndpointSource::Unset,
+            ..ConfigSources::default()
+        };
+        let joined = sources.describe().join("\n");
+        assert!(
+            joined.contains("no tier set an endpoint"),
+            "a blank endpoint must be stated, not left implicit: {joined}"
+        );
+    }
+
+    #[test]
+    fn source_status_only_flags_real_failures() {
+        assert!(
+            !SourceStatus::Missing.is_failure(),
+            "absent is not a failure"
+        );
+        assert!(!SourceStatus::Loaded.is_failure());
+        assert!(SourceStatus::Unreadable(String::new()).is_failure());
+        assert!(SourceStatus::Malformed(String::new()).is_failure());
+    }
+
+    #[test]
+    fn load_with_sources_reports_the_home_path_for_this_build_profile() {
+        // Release reads config.toml, debug reads dconfig.toml. Reporting the wrong one
+        // would be worse than reporting nothing.
+        let (_, sources) = Config::load_with_sources();
+        let name = sources
+            .home
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("home config path has a file name");
+        let expected = if cfg!(debug_assertions) {
+            "dconfig.toml"
+        } else {
+            "config.toml"
+        };
+        assert_eq!(name, expected, "home config file name for this profile");
     }
 }

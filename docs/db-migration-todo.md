@@ -129,15 +129,26 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
 
 ## 3. Diagnosability
 
-- [ ] **`db whoami` does not print the endpoint** (`db.rs:355-372`). `db status` already
-      does (`:482`). With two possible backends, "which database am I talking to" is the
-      first question in any support exchange.
-- [ ] **Report which config file won.** Precedence is local `nuanalytics.toml` > home
-      `config.toml` > compiled defaults (`config.rs:492-530`), but `config set` writes to
-      *home* (`:667-673`). A user with a project-local file can run `config set`, see it
-      succeed, and still hit the old backend. `db status` should name the source file.
-- [ ] **`db status` help text is wrong.** `args.rs:641` advertises row counts it doesn't
-      display.
+- [x] **`db whoami` does not print the endpoint** *(done)* — `whoami` now prints a
+      `Backend:` line, and both not-signed-in arms name the endpoint too ("Not signed in
+      to https://…"). Shared `endpoint_or_unset` renders `(no endpoint configured)`
+      rather than a blank.
+- [x] **Report which config file won.** *(done)* — `Config::load_with_sources()` returns
+      a `ConfigSources { home, home_status, local, local_status, endpoint_from }` and
+      `db status` prints `endpoint from: <path>`. It also reports a config that exists but
+      could not be read or parsed, which `load()` previously swallowed via
+      `if let Ok(...)`, and warns when a project-local file outranks the home config but
+      sets no endpoint.
+
+      **This mattered immediately.** The home file differs by build profile —
+      `config.toml` for release, `dconfig.toml` for debug (`config.rs:20`) — so the same
+      machine reports two different backends depending on which binary is run. That cost
+      a wrong report during this very work: `db status` from `target/debug` said the
+      backend was the cloud project while `config.toml` had long pointed at
+      `nu.lionelle.com`. Naming the file makes the split visible.
+- [x] **`db status` help text is wrong.** *(done)* — now describes what it actually
+      reports: backend, which config file supplied it, session validity, authenticated
+      read, and that it exits 1 on failure.
 - [x] **The forced token refresh cannot force.** *(done)* `reauthenticate(force)` now
       routes to `DbClient::force_refresh_from_disk`, which re-reads the auth file and
       adopts a newer token if another process wrote one, otherwise exchanges the refresh
@@ -208,6 +219,36 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       There is nothing to log in to. The hint should branch: not-configured -> point at
       `config set database.endpoint/anon_key` (or `db bootstrap`, B9); not-authenticated ->
       `db login`.
+
+### Found while doing §3 [verified]
+
+- [ ] **A project-local config silently resets every field it does not mention.**
+      `merge_from` (`config.rs:568`) overrides whenever the incoming value is non-empty,
+      but by the time it runs, serde has already filled absent keys with their
+      `#[serde(default = ...)]` values — which for `auth_file` is a *non-empty* relative
+      path (`default_auth_file`, `config.rs:77`). So a `nuanalytics.toml` containing only
+
+          [database]
+          endpoint = "https://nu.lionelle.com"
+
+      silently replaces the home config's `auth_file` with `.debug/dauth.json`, resolved
+      against the current directory. `db whoami` then reports **"Not signed in"** for a
+      user who is signed in; the tool simply looked in the wrong file.
+      **[verified]** Reproduced against this machine's own configuration.
+
+      `endpoint`, `anon_key` and `management_key` escape this only by accident — their
+      defaults are `""`, and an empty value cannot override.
+      Every other field with a non-empty default is affected, including `logging.level`,
+      `logging.file` and both `paths.*` entries.
+
+      **Fix:** merge only keys the file actually contains. Either deep-merge at the
+      `toml::Table` level before deserializing (removes the empty-string heuristic
+      entirely and is the conventional shape for layered config), or pass the parsed
+      table alongside and gate each field on key presence. Prefer the former, but note it
+      changes semantics for an explicit `endpoint = ""` in a local file, which currently
+      cannot override — and per `CLAUDE.md` an empty endpoint is refilled from the
+      compiled defaults and then **saved**, so that interaction needs a test before the
+      change lands.
 
 ## 4. Making self-hosting reproducible
 
