@@ -92,12 +92,48 @@ fn read_file_or_zip(path: &Path) -> DatabaseResult<String> {
         let mut file = archive
             .by_index(csv_index)
             .map_err(|e| DatabaseError::IngestError(format!("Cannot read zip entry: {e}")))?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)
-            .map_err(|e| DatabaseError::IngestError(format!("Cannot decode zip entry: {e}")))?;
-        Ok(content)
+        let entry_name = file.name().to_string();
+        let mut entry_bytes = Vec::new();
+        file.read_to_end(&mut entry_bytes).map_err(|e| {
+            DatabaseError::IngestError(format!(
+                "Cannot read {entry_name} inside {}: {e}",
+                path.display()
+            ))
+        })?;
+        Ok(decode_ipeds_bytes(
+            &entry_bytes,
+            &format!("{entry_name} inside {}", path.display()),
+        ))
     } else {
-        Ok(String::from_utf8_lossy(&bytes).into_owned())
+        Ok(decode_ipeds_bytes(&bytes, &path.display().to_string()))
+    }
+}
+
+/// Decode IPEDS bytes as UTF-8, falling back to CP1252.
+///
+/// IPEDS has historically shipped CP1252, and the two read paths used to disagree about
+/// it: the zip path used a strict UTF-8 read, so one `\xe9` (the `é` in a trustee name)
+/// aborted a 6,256-row import, while the loose-CSV path used `from_utf8_lossy` and
+/// silently turned the same byte into `U+FFFD`, corrupting the institution's name with no
+/// signal at all.
+///
+/// CP1252 rather than Latin-1 on purpose: they differ over `0x80..=0x9F`, where CP1252
+/// has the smart quotes and em dash that appear in institution names and Latin-1 has C1
+/// control codes. Decoding CP1252 cannot fail — every byte maps — so this returns a
+/// `String` rather than a `Result`.
+fn decode_ipeds_bytes(bytes: &[u8], source: &str) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => text.to_owned(),
+        Err(e) => {
+            // Reported, not silent: a file that needed the fallback is worth knowing
+            // about, and the byte offset is what makes a bad row findable.
+            let (text, _, _) = encoding_rs::WINDOWS_1252.decode(bytes);
+            crate::info!(
+                "{source} is not valid UTF-8 at byte {}; decoded as CP1252 instead",
+                e.valid_up_to()
+            );
+            text.into_owned()
+        }
     }
 }
 
@@ -875,5 +911,84 @@ mod tests {
         let record = StringRecord::from(vec!["99"]); // sentinel → None → 0 added
         accumulate_demo_totals(&mut totals, 1, Some(5), &demo, &record);
         assert_eq!(totals[&(1, 5)].total_men, 0);
+    }
+
+    // ---- CP1252 source files ------------------------------------------------
+
+    /// `Ren\xe9 Smith` — the shape of the row that aborted the HD2022 import: a CP1252
+    /// `é` (0xE9), which is not valid UTF-8 on its own.
+    const CP1252_ROW: &[u8] = b"UNITID,INSTNM\n100654,Ren\xe9 Smith College\n";
+
+    #[test]
+    fn test_decode_ipeds_bytes_prefers_utf8() {
+        let utf8 = "UNITID,INSTNM\n100654,René Smith College\n";
+        assert_eq!(decode_ipeds_bytes(utf8.as_bytes(), "t"), utf8);
+    }
+
+    #[test]
+    fn test_decode_ipeds_bytes_falls_back_to_cp1252() {
+        let decoded = decode_ipeds_bytes(CP1252_ROW, "HD2022.csv");
+        assert!(
+            decoded.contains("René Smith College"),
+            "the accented character must survive, got: {decoded}"
+        );
+        assert!(
+            !decoded.contains('\u{fffd}'),
+            "the byte must be decoded, not replaced with U+FFFD: {decoded}"
+        );
+    }
+
+    #[test]
+    fn test_decode_ipeds_bytes_maps_the_cp1252_specific_range() {
+        // 0x80..=0x9F is where CP1252 and Latin-1 disagree. Decoding these as Latin-1
+        // would yield C1 control codes instead of the punctuation that appears in
+        // institution names.
+        let cases: &[(&[u8], char)] = &[
+            (b"\x91", '\u{2018}'), // left single quote
+            (b"\x92", '\u{2019}'), // right single quote — apostrophes in names
+            (b"\x93", '\u{201C}'), // left double quote
+            (b"\x97", '\u{2014}'), // em dash
+            (b"\x80", '\u{20AC}'), // euro sign
+        ];
+        for (bytes, expected) in cases {
+            let decoded = decode_ipeds_bytes(bytes, "t");
+            assert_eq!(
+                decoded.chars().next(),
+                Some(*expected),
+                "CP1252 {bytes:02x?} must decode to {expected:?}, not a control code"
+            );
+        }
+        // And the upper half agrees with Latin-1, so those must be unchanged.
+        assert_eq!(decode_ipeds_bytes(b"\xe9", "t"), "é");
+        assert_eq!(decode_ipeds_bytes(b"\xfc", "t"), "ü");
+    }
+
+    #[test]
+    fn test_read_file_or_zip_decodes_a_cp1252_plain_csv() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("hd2022.csv");
+        std::fs::write(&path, CP1252_ROW).expect("write");
+
+        let read = read_file_or_zip(&path).expect("a CP1252 csv must be readable");
+        assert!(read.contains("René Smith College"), "got: {read}");
+    }
+
+    #[test]
+    fn test_read_file_or_zip_decodes_a_cp1252_zip_entry() {
+        // The reported failure: a strict UTF-8 read aborted the whole import here.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("HD2022.zip");
+        let file = std::fs::File::create(&path).expect("create zip");
+        let mut zip = zip::ZipWriter::new(file);
+        zip.start_file::<_, ()>("hd2022.csv", zip::write::SimpleFileOptions::default())
+            .expect("start entry");
+        std::io::Write::write_all(&mut zip, CP1252_ROW).expect("write entry");
+        zip.finish().expect("finish zip");
+
+        let read = read_file_or_zip(&path).expect("a CP1252 zip entry must be readable");
+        assert!(
+            read.contains("René Smith College"),
+            "one accented character must not abort the import, got: {read}"
+        );
     }
 }

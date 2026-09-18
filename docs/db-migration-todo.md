@@ -78,26 +78,48 @@ suite (see "Blocker for anyone picking up Part B -- RESOLVED").
 
 ---
 
-## 1. Importer defects [verified]
+## 1. Importer defects [verified] — DONE
 
 Found by running `db ipeds-import` for 2022/2023/2024/2025.
 
-- [ ] **Non-UTF-8 source files are rejected outright.** `HD2022.zip` failed with
+- [x] **Non-UTF-8 source files are rejected outright.** *(done)* — `decode_ipeds_bytes`
+      tries UTF-8 and falls back to CP1252, and **both** read paths now use it. They had
+      disagreed: the zip path used a strict UTF-8 read and aborted, while the loose-CSV
+      path used `from_utf8_lossy` and silently replaced the byte with `U+FFFD`, corrupting
+      the name with no signal. CP1252 rather than Latin-1 because they differ over
+      `0x80..=0x9F`, where CP1252 carries the smart quotes and em dash that appear in
+      institution names. `encoding_rs` was already in the lock file via `reqwest` under
+      the same feature, so this added no new crate. The fallback is reported, with the
+      byte offset. Five tests, including the real `\xe9` row and the
+      CP1252-vs-Latin-1 range.
+      ~~Original:~~ `HD2022.zip` failed with
       `Cannot decode zip entry: stream did not contain valid UTF-8`. The file is CP1252;
       the offending byte is `\xe9` (the `é` in a trustee name) at byte 64468. One accented
       character aborts a 6,256-row import. IPEDS has historically shipped CP1252.
       **Fix:** fall back to CP1252/Latin-1 when UTF-8 decoding fails.
       Workaround today: `iconv -f CP1252 -t UTF-8` then repack the zip.
-- [ ] **Partial failure exits 0.** For 2022, institutions failed while completions
+- [x] **Partial failure exits 0.** *(done)* — failures are collected and the command
+      exits 1 with a per-file summary. It also calls out the specific dangerous
+      combination explicitly: completions succeeding while institutions failed leaves rows
+      referencing absent `unitid`s, which is exactly how the 494 orphans appeared.
+      ~~Original:~~ For 2022, institutions failed while completions
       succeeded and the process still exited 0, so a batch loop reports success on a
       half-finished import. The only symptom was 494 orphaned `completions` rows referencing
       `unitid`s absent from `institutions`.
       **Fix:** return non-zero when any sub-import fails.
-- [ ] **IPEDS filename casing is inconsistent.** `hd2022.csv` / `hd2025.csv` are lowercase;
+- [x] **IPEDS filename casing is inconsistent.** *(done)* — `auto_detect_file` matches
+      case-insensitively, keeping a fast path for an exactly-cased name. Directory entries
+      are sorted first: `read_dir` order is arbitrary, so with both `HD2022.csv` and
+      `hd2022.csv` present an unsorted scan picked a different file per run. Five tests,
+      one of which pins the determinism.
+      ~~Original:~~ `hd2022.csv` / `hd2025.csv` are lowercase;
       `HD2023.csv` / `HD2024.csv` are uppercase. `--dir` auto-detection must be
       case-insensitive or it silently skips files.
-- [ ] **`docs/database/ipeds-data.md:121-122` direct-download URLs fail for the newest
-      release.** `datacenter/data/HD2025.zip` 404s even with browser headers and a referer,
+- [x] **`docs/database/ipeds-data.md` direct-download URLs fail for the newest
+      release.** *(done)* — documented that the current year must come through the Data
+      Center UI, alongside the casing and CP1252 notes so the next person meets them in
+      the docs rather than in a failed import.
+      ~~Original:~~ `datacenter/data/HD2025.zip` 404s even with browser headers and a referer,
       while `HD2024.zip` succeeds by the same method. The current year must come through the
       Data Center UI. Document that rather than implying `curl -O` always works.
 

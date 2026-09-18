@@ -122,7 +122,20 @@ curl -L -O https://nces.ed.gov/ipeds/datacenter/data/HD2024.zip
 curl -L -O https://nces.ed.gov/ipeds/datacenter/data/C2024_A.zip
 ```
 
-Or download manually from the browser and save to `~/ipeds/`.
+**The direct URL does not work for the most recent release.** `HD2025.zip` returns 404
+this way even with browser headers and a referer, while `HD2024.zip` succeeds by exactly
+the same method. The current year has to come through the Data Center UI at
+<https://nces.ed.gov/ipeds/use-the-data>; save the files to `~/ipeds/` from the browser.
+Earlier years download fine with `curl`.
+
+Two things not to be surprised by once the files are on disk:
+
+- **Casing is inconsistent between years.** `hd2022.csv` and `hd2025.csv` ship lowercase;
+  `HD2023.csv` and `HD2024.csv` ship uppercase. `--dir` auto-detection is
+  case-insensitive, so either works.
+- **Some years are CP1252, not UTF-8.** `HD2022.zip` contains an `é` (byte `0xE9`) in a
+  trustee name. The importer decodes UTF-8 first and falls back to CP1252, reporting
+  which file needed the fallback; no `iconv` pre-pass is required.
 
 ### 3. Import
 

@@ -758,6 +758,10 @@ fn run_ipeds_import(
     let (inst_path, comp_path) =
         resolve_ipeds_paths(dir, institutions_path, completions_path, year);
 
+    let mut institutions_failed = false;
+    let mut completions_ok = false;
+    let mut failures: Vec<String> = Vec::new();
+
     if let Some(path) = inst_path {
         println!("Importing institutions from {} ...", path.display());
         match rt.block_on(ipeds::ingest_institutions(&client, &path, year)) {
@@ -765,7 +769,11 @@ fn run_ipeds_import(
                 "  ✓ {} read, {} upserted, {} skipped",
                 stats.rows_read, stats.rows_upserted, stats.rows_skipped
             ),
-            Err(e) => eprintln!("  ✗ Institutions import failed: {e}"),
+            Err(e) => {
+                eprintln!("  ✗ Institutions import failed: {e}");
+                institutions_failed = true;
+                failures.push(format!("institutions ({}): {e}", path.display()));
+            }
         }
     } else {
         println!("  ℹ Skipping institutions (no file provided or found)");
@@ -775,15 +783,42 @@ fn run_ipeds_import(
         println!("Importing completions from {} ...", path.display());
         println!("  (all CIP codes stored; query with CIP filter for CS vs all-programs)");
         match rt.block_on(ipeds::ingest_completions(&client, &path, year)) {
-            Ok(stats) => println!(
-                "  ✓ {} rows read, {} matched CS CIP codes, {} upserted, {} skipped",
-                stats.rows_read, stats.rows_filtered, stats.rows_upserted, stats.rows_skipped
-            ),
-            Err(e) => eprintln!("  ✗ Completions import failed: {e}"),
+            Ok(stats) => {
+                println!(
+                    "  ✓ {} rows read, {} matched CS CIP codes, {} upserted, {} skipped",
+                    stats.rows_read, stats.rows_filtered, stats.rows_upserted, stats.rows_skipped
+                );
+                completions_ok = true;
+            }
+            Err(e) => {
+                eprintln!("  ✗ Completions import failed: {e}");
+                failures.push(format!("completions ({}): {e}", path.display()));
+            }
         }
     } else {
         println!("  ℹ Skipping completions (no file provided or found)");
     }
+
+    if failures.is_empty() {
+        return;
+    }
+
+    // Exits non-zero so a batch loop over several years stops reporting success on a
+    // half-finished import — the original symptom was 494 completions rows referencing
+    // unitids that never made it into `institutions`.
+    eprintln!();
+    eprintln!("✗ IPEDS import for {year} did not complete:");
+    for failure in &failures {
+        eprintln!("  - {failure}");
+    }
+    if institutions_failed && completions_ok {
+        eprintln!(
+            "  Completions were written while institutions were not, so some rows now \
+             reference unitids that are absent from `institutions`. Re-run the \
+             institutions import for {year} before relying on joins."
+        );
+    }
+    std::process::exit(1);
 }
 
 // ============================================================================
@@ -1151,27 +1186,51 @@ fn write_import_failures(failures: &[(std::path::PathBuf, String)]) {
 /// Supports simple glob-style patterns with a single `*` wildcard
 /// (e.g. `"HD*.csv"` matches `"HD2023.csv"`). Returns the first match, or `None`.
 fn auto_detect_file(dir: &std::path::Path, candidates: &[&str]) -> Option<std::path::PathBuf> {
+    // Matching is case-insensitive: IPEDS ships `hd2022.csv` and `hd2025.csv` lowercase
+    // but `HD2023.csv` and `HD2024.csv` uppercase, so an exact-case lookup silently
+    // skipped whole years and the import reported "no file provided or found".
+    let entries = directory_names(dir);
+
     for candidate in candidates {
-        let path = dir.join(candidate);
-        if path.exists() {
-            return Some(path);
+        // Fast path for an exact, correctly-cased name.
+        let direct = dir.join(candidate);
+        if direct.exists() {
+            return Some(direct);
         }
 
-        if candidate.contains('*') {
-            let prefix = candidate.split('*').next().unwrap_or("");
-            let suffix = candidate.split('*').next_back().unwrap_or("");
-            if let Ok(entries) = std::fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name_str = name.to_string_lossy();
-                    if name_str.starts_with(prefix) && name_str.ends_with(suffix) {
-                        return Some(entry.path());
-                    }
-                }
-            }
+        let wanted = candidate.to_lowercase();
+        let matched = if let Some((prefix, suffix)) = wanted.split_once('*') {
+            find_name(&entries, |name| {
+                name.starts_with(prefix) && name.ends_with(suffix)
+            })
+        } else {
+            find_name(&entries, |name| name == wanted)
+        };
+        if let Some(name) = matched {
+            return Some(dir.join(name));
         }
     }
     None
+}
+
+/// File names in `dir`, sorted, for deterministic matching.
+///
+/// Sorted because `read_dir` order is arbitrary: with both `HD2023.csv` and `hd2023.csv`
+/// present, an unsorted scan picks a different file from run to run.
+fn directory_names(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort_unstable();
+    names
+}
+
+/// First name whose lower-cased form satisfies `matches`.
+fn find_name(names: &[String], matches: impl Fn(&str) -> bool) -> Option<&String> {
+    names.iter().find(|name| matches(&name.to_lowercase()))
 }
 
 // ============================================================================
@@ -1547,5 +1606,81 @@ mod tests {
         assert_eq!(f.code.as_deref(), Some("unexpected_failure"));
         assert!(f.terminal_message("e").contains("unexpected_failure"));
         assert!(f.error_page("e").contains("unexpected_failure"));
+    }
+
+    // ---- IPEDS filename casing ---------------------------------------------
+
+    fn touch(dir: &std::path::Path, name: &str) {
+        std::fs::write(dir.join(name), b"UNITID\n").expect("write fixture");
+    }
+
+    #[test]
+    fn test_auto_detect_file_matches_lowercase_ipeds_names() {
+        // IPEDS ships hd2022.csv and hd2025.csv lowercase but HD2023.csv and HD2024.csv
+        // uppercase; an exact-case lookup silently skipped the lowercase years and the
+        // import reported "no file provided or found".
+        let dir = tempfile::tempdir().expect("tempdir");
+        touch(dir.path(), "hd2022.csv");
+
+        let found = auto_detect_file(dir.path(), &["HD2022.csv", "HD2022.zip", "HD*.csv"])
+            .expect("a lowercase IPEDS file must be found");
+        assert_eq!(found.file_name().unwrap(), "hd2022.csv");
+    }
+
+    #[test]
+    fn test_auto_detect_file_matches_mixed_case_zip_and_glob() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        touch(dir.path(), "Hd2024.ZIP");
+        let found = auto_detect_file(dir.path(), &["HD2024.csv", "HD2024.zip"])
+            .expect("case-insensitive zip match");
+        assert_eq!(found.file_name().unwrap(), "Hd2024.ZIP");
+
+        let glob_dir = tempfile::tempdir().expect("tempdir");
+        touch(glob_dir.path(), "c2023_a.csv");
+        let found = auto_detect_file(glob_dir.path(), &["C2023_A.csv", "C*_A.csv"])
+            .expect("case-insensitive glob match");
+        assert_eq!(found.file_name().unwrap(), "c2023_a.csv");
+    }
+
+    #[test]
+    fn test_auto_detect_file_prefers_an_exact_name_over_the_glob() {
+        // The year-specific candidate must win, or a directory holding several years
+        // imports the wrong one.
+        let dir = tempfile::tempdir().expect("tempdir");
+        touch(dir.path(), "HD2019.csv");
+        touch(dir.path(), "hd2024.csv");
+
+        let found =
+            auto_detect_file(dir.path(), &["HD2024.csv", "HD2024.zip", "HD*.csv"]).expect("found");
+        assert_eq!(
+            found.file_name().unwrap(),
+            "hd2024.csv",
+            "the requested year must win over an earlier glob match"
+        );
+    }
+
+    #[test]
+    fn test_auto_detect_file_is_deterministic_across_case_variants() {
+        // read_dir order is arbitrary; with both cases present the same file must be
+        // chosen every time rather than alternating between runs.
+        let dir = tempfile::tempdir().expect("tempdir");
+        touch(dir.path(), "HD2022.csv");
+        touch(dir.path(), "hd2022.csv");
+
+        let first = auto_detect_file(dir.path(), &["HD*.csv"]).expect("found");
+        for _ in 0..20 {
+            assert_eq!(
+                auto_detect_file(dir.path(), &["HD*.csv"]).expect("found"),
+                first,
+                "case-variant selection must not vary between calls"
+            );
+        }
+    }
+
+    #[test]
+    fn test_auto_detect_file_still_returns_none_when_nothing_matches() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        touch(dir.path(), "readme.txt");
+        assert!(auto_detect_file(dir.path(), &["HD2022.csv", "HD*.csv"]).is_none());
     }
 }
