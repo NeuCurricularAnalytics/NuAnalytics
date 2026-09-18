@@ -75,10 +75,11 @@ written at default umask (0644), unlike the auth file (0600, `auth.rs:88-93`).
 
 `docs/db-migration-todo.md` is the live work list for making the backend a true deployment
 target. Items marked `[verified]` were observed in practice, not theorised. Sections 1
-(importer defects), 2 (backend portability) and 3 (diagnosability) are **done**, as is
-`db doctor` from §4. Read **"Where a fresh installer gets stuck"** near the top before
-picking an item — it is the measured walkthrough and it orders the remaining work by how
-much each thing blocks.
+(importer defects), 2 (backend portability), 3 (diagnosability) and 4 (reproducible
+self-hosting) are **done**. What is left is §5 data integrity, whose fix is SQL, and one
+§3 defect: a project-local `nuanalytics.toml` resets every field it does not mention.
+Read **"Where a fresh installer gets stuck"** near the top before picking an item — it is
+the measured walkthrough.
 
 **Every deployment is a fresh install** (true as of 2026-09-18 — the author's is the only
 one). So there is no schema migration path to preserve, and
@@ -86,9 +87,19 @@ one). So there is no schema migration path to preserve, and
 own headers that they are for pre-existing databases and that `schema.sql` already
 contains everything in them.
 
-Configuring the tool against a backend is no longer the hard part — two `config set`
-commands, `db login`, and `db doctor`. What is left for a new operator is the five-file
-hand-applied schema (`db bootstrap`).
+**Standing up a new backend is four commands**, none of which need a checkout or an OAuth
+app: `config set database.endpoint`, `config set database.anon_key`,
+`db bootstrap --print | psql "$DATABASE_URL"`, `db login --email <addr>`, then
+`db doctor` to confirm.
+
+**`db bootstrap` owns the file order, not the connection.** `--print` emits the five
+schema/seed files in dependency order and makes no network calls and reads no config —
+that is the state someone is in before setup. Plain `db bootstrap` applies them via the
+Management API on Supabase cloud only, and refuses on a self-hosted endpoint rather than
+inventing a project ref. The files are `include_str!`'d from `docs/database/`, so there is
+one copy and no drift; `bootstrap::SCHEMA_FILES` is guarded by a test that diffs it
+against `docs/database/*.sql`, so a new file added there must be wired in or moved to
+`historical/`.
 
 **There are two ways to sign in and OAuth is only one of them.** `db login --email <addr>`
 uses GoTrue's `grant_type=password`, which needs no external identity provider, so it is

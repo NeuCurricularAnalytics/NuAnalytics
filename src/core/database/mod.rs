@@ -22,6 +22,7 @@
 //! ```
 
 pub mod auth;
+pub mod bootstrap;
 pub mod client;
 pub mod doctor;
 pub mod error;

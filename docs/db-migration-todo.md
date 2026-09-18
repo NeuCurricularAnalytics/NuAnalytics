@@ -51,17 +51,25 @@ Signing in no longer needs an OAuth application either, as of 2026-09-18:
 `db login --email <addr>` uses GoTrue's password grant, which every stack has out of the
 box. That was the one barrier with no workaround outside the tool.
 
-What remains is not configuration. In order of how much it blocks:
+Nor is applying the schema, as of 2026-09-18: `db bootstrap --print | psql "$DATABASE_URL"`
+emits all five files in the order they require, with no config and no network needed.
 
-1. **The schema is five files applied by hand in a specific order** (§4, `db bootstrap`).
-   Laborious and easy to get wrong, but visible when wrong -- `db doctor` names the
-   missing tables.
-2. **A project-local config resets `auth_file`** (§3, found-while-doing). Turns a working
-   session into *"Not signed in"*.
+So the answer to "can someone configure the NuAnalytics side of a self-hosted or remote
+backend without it being a hassle" is **yes**, in four commands:
 
-The row cap that used to sit between these two is now diagnosed by `db doctor` rather than
-left to produce wrong numbers; see §4. The walkthrough is what found it and the sign-in
-barrier, neither of which was in this document before 2026-09-18.
+    nuanalytics config set database.endpoint <url>
+    nuanalytics config set database.anon_key <key>
+    nuanalytics db bootstrap --print | psql "$DATABASE_URL"
+    nuanalytics db login --email <addr>
+    nuanalytics db doctor            # confirms all eight checks
+
+**One known defect still in the way:** a project-local `nuanalytics.toml` resets
+`auth_file` and every other field it does not mention (§3, found-while-doing), turning a
+working session into *"Not signed in"*. It has a workaround -- do not keep a project-local
+config -- but it is the last thing on this list that can waste someone's afternoon.
+
+The walkthrough is what found the sign-in barrier and the row cap; neither was in this
+document before 2026-09-18.
 
 ---
 
@@ -347,7 +355,7 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       compiled defaults and then **saved**, so that interaction needs a test before the
       change lands.
 
-## 4. Making self-hosting reproducible
+## 4. Making self-hosting reproducible — DONE
 
 - [x] **`db login` was OAuth-only, so nobody could sign in to a new stack until an OAuth
       app existed.** *(done)* -- `nuanalytics db login --email <addr>` now uses GoTrue's
@@ -421,41 +429,39 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       truthfully while truncating the select -- the asymmetry the real setting produces.
       Mutation-tested: weakening the comparison to `got == 0`, and reversing the probe
       order, each fail a test.
-- [ ] **`db bootstrap`** — apply the five schema/seed files in the documented order
-      (`docs/database/setup.md:114-121`) through whichever path is available: Management API
-      when a project ref is configured, direct `psql` otherwise. Applying the schema is the
-      *only* real asymmetry between cloud and self-hosted; closing it is what makes the two
-      interchangeable.
+- [x] **`db bootstrap`** *(done)* -- applies the five schema/seed files in the order they
+      require, or emits them with `--print`. Implemented as **option 2 folded with 1**, as
+      recommended: the ordering is what actually goes wrong, and neither half requires the
+      tool to learn SQL connectivity.
 
-      **Blocked on a decision, not on effort.** The cloud half is straightforward — it is
-      `do_exec_sql` per file, now that `database.project_ref` is explicit. The self-hosted
-      half is not: it needs a Postgres connection, and this codebase deliberately has
-      none. `CLAUDE.md` states the invariant plainly — "The client speaks PostgREST over
-      HTTP, never the SQL wire protocol... There is no connection string and no SQL.
-      Anything that assumes a Postgres connection is wrong." Shelling out to `psql` would
-      introduce a second, unlike access path with credentials the tool does not hold and
-      cannot validate, and `db doctor` would not be able to check it.
+      `--print` writes all five to stdout in order and **makes no network calls and reads
+      no config** -- which matters, because that is the exact state someone is in before
+      any of this is set up. Pipe it into `psql`, redirect it to review, or paste it into
+      the cloud SQL Editor. On Supabase cloud, plain `db bootstrap` applies the files
+      itself through the Management API, gated on an explicit `project_ref` and
+      `management_key`; on a self-hosted endpoint it refuses and points at
+      `--print | psql` rather than sending a meaningless project ref.
 
-      Three options, in order of how much they preserve that invariant:
-      1. **Cloud only.** `db bootstrap` applies the files via the Management API and
-         refuses on a self-hosted endpoint, pointing at `psql -f` and the documented file
-         order. Honest, small, and leaves the asymmetry open.
-      2. **Emit, do not apply.** `db bootstrap --print` concatenates the five files in the
-         correct order to stdout, so a self-hosted operator pipes it to `psql` themselves.
-         Closes the ordering hazard (the actual source of error) without the tool holding
-         database credentials.
-      3. **Shell out to `psql`.** Closes the asymmetry fully, at the cost of the
-         invariant, a new config surface (host/port/user/password or a DSN), and a
-         dependency on `psql` being installed.
+      The files are `include_str!`'d (~166 KB) rather than read from disk, so the command
+      works for someone who installed the binary and has no checkout, and so there is
+      exactly one copy of each file -- editing `docs/database/schema.sql` changes what the
+      tool emits, with no drift possible. Verified byte-for-byte: all five appear
+      verbatim, in order, and the only additions are `--` comments (165,784 bytes of SQL +
+      1,237 of banners).
 
-      Recommend 2, with 1 folded in: the ordering is the part that goes wrong, and neither
-      option requires the tool to learn SQL connectivity. Needs a call before implementation.
+      A failed step stops the run and names the file, rather than continuing and burying
+      the cause under a cascade of missing-relation errors from the files that depend on
+      it. It says the files are idempotent so a re-run is safe.
 
-      *Fresh-installs-only makes this smaller than written.* There is no upgrade path to
-      support and no ambiguity about which files a given database already has: the answer
-      is always all five, in order, once. `--print` can therefore emit one deterministic
-      stream with no state to inspect and no flags to choose between, and the five files
-      can be `include_str!`'d so the output does not depend on the repo being present.
+      `SCHEMA_FILES` is guarded by a test that reads `docs/database/*.sql` and fails if the
+      directory and the list disagree -- so a sixth file added without being wired in is
+      caught rather than silently producing an incomplete schema. Mutation-tested by
+      dropping a file from the list: two tests fail.
+
+      The `project_ref`/`management_key` checks were **extracted** into
+      `management_api_credentials` and are now shared with `db exec-sql`, which had the
+      same thirty lines. Both now exit 1 on failure; `db exec-sql` previously returned 0.
+
 - [x] **`db doctor`** *(done)* — `nuanalytics db doctor`. Checks run outwards from
       configuration to data, and each one gates the next so the report names a single
       cause instead of repeating it six times: configuration → reachability → anon-key
@@ -480,30 +486,32 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       surfaces as a reachability failure with rustls' own message, which is accurate; a
       separate expiry check would need to parse the chain and would risk asserting a cause
       the code has not established.
-- [ ] **`deploy/selfhost/`** — pinned compose file, env template with empty secrets, the
-      five-file bootstrap, and a README.
+- [x] **`deploy/selfhost/`** *(done, as documentation)* -- resolved the scope question the
+      second way: the four verified gotchas are now written up in
+      `docs/database/setup.md` under **Self-hosting notes**, and the compose stack stays
+      where it is. Vendoring it into this public repo would have duplicated a live
+      deployment that cannot be verified from here, and the local notes put operational
+      work on the `archon` side rather than this repo.
 
-      **Scope question first.** A working stack already exists outside this repo, and the
-      local handoff notes put operational work on the `archon` side rather than here. Two
-      readings of this item: vendor the compose stack into this public repo, or keep the
-      stack where it is and document the four verified gotchas below in
-      `docs/database/setup.md`. The second is cheap and immediately useful; the first
-      duplicates a live deployment and cannot be verified from here without standing a
-      second one up. Needs a call on which was intended.
+      `setup.md` now opens by stating that both deployments are supported and that the one
+      real difference is how the schema gets applied, and sends a self-hoster to the new
+      section before Step 1. Documented there:
+      - **`PGRST_DB_MAX_ROWS` defaults to 1000** while the MCP completions tools request
+        5,000 -- the only one of the four that produces wrong answers instead of an error,
+        and now also caught by `db doctor`'s row-limit check.
+      - **`podman-compose` 1.6.0 hangs during image pull** (sits in `ep_poll`, no child
+        process, no storage growth, exits 0 when killed, so it looks like it worked).
+        Workaround: `podman pull` each image first. **[verified]**
+      - **SELinux-enforcing hosts need `:ro,Z`** on the gateway config mounts; upstream
+        ships plain `:ro`, so the container cannot read its own entrypoint and
+        crash-loops. **[verified]**
+      - **The gateway is Envoy (`api-gw`), not Kong**, and there is no `vector` or
+        `analytics` service; the only dependency edge to cut when dropping Studio is
+        `api-gw <- studio`. Kong-era guides do not match. **[verified]**
 
-      Verified gotchas to document either way:
-      - `podman-compose` 1.6.0 hangs during image pull (sits in `ep_poll`, no child process,
-        no storage growth, then exits 0 when killed). Workaround: `podman pull` each image
-        first, then `up -d` completes in seconds. **[verified]**
-      - On SELinux-enforcing hosts the Envoy config mounts need `:ro,Z`. Upstream ships them
-        as plain `:ro`, so the container cannot read its own entrypoint, crash-loops, and
-        floods the desktop with AVC denials. The `db` mounts already carry `:Z`. **[verified]**
-      - `PGRST_DB_MAX_ROWS` defaults to **1000** upstream, while the MCP completions tools
-        request up to 5,000 rows (`src/mcp/tools/completions.rs:557,1063,1099`). Leave it
-        unset or set it ≥ 10000, or large queries truncate silently with no error.
-      - Upstream now uses Envoy (`api-gw`), not Kong, and there is no `vector` or
-        `analytics` service. The only dependency edge to cut when dropping Studio is
-        `api-gw <- studio`. **[verified]**
+      Also: where to get the endpoint and anon key on a self-hosted stack
+      (`API_EXTERNAL_URL` / `ANON_KEY` in the stack `.env`, not the Supabase dashboard),
+      and that `db exec-sql` does not apply there.
 
 ## 5. Data integrity on a shared instance
 

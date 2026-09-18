@@ -12,7 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use nu_analytics::config::{Config, ConfigSources};
 use nu_analytics::database::import::{execute_import, ImportOptions, ImportOutcome, ImportResult};
 use nu_analytics::database::{
-    auth_file_path, clear_auth_state, doctor, ipeds, load_auth_state, save_auth_state,
+    auth_file_path, bootstrap, clear_auth_state, doctor, ipeds, load_auth_state, save_auth_state,
     sign_in_with_password, AuthState, DatabaseError, DbClient, SignInError,
 };
 
@@ -31,6 +31,7 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
         DbSubcommand::Whoami => run_whoami(config),
         DbSubcommand::ExecSql { file } => run_exec_sql(config, &file),
         DbSubcommand::Status => run_status(config, sources),
+        DbSubcommand::Bootstrap { print } => run_bootstrap(config, print),
         DbSubcommand::Doctor => run_doctor(config, sources),
         DbSubcommand::IpedsImport {
             dir,
@@ -82,6 +83,54 @@ pub(super) fn make_runtime() -> Option<tokio::runtime::Runtime> {
             None
         }
     }
+}
+
+// ============================================================================
+// Bootstrap — apply or emit the schema and seed files
+// ============================================================================
+
+/// Apply the bootstrap files, or write them to stdout with `--print`.
+fn run_bootstrap(config: &Config, print: bool) {
+    if print {
+        // Deliberately unconditional: this path touches no backend, so it must work with
+        // no config, no session, and no network — which is exactly the situation someone
+        // setting a stack up for the first time is in.
+        print!("{}", bootstrap::concatenated());
+        return;
+    }
+
+    let alternative = "`nuanalytics db bootstrap --print | psql \"$DATABASE_URL\"`";
+    let Some((management_key, project_ref)) =
+        management_api_credentials(config, "db bootstrap", alternative)
+    else {
+        std::process::exit(1);
+    };
+
+    let Some(rt) = make_runtime() else { return };
+
+    println!(
+        "Applying {} files to project {project_ref}",
+        bootstrap::SCHEMA_FILES.len()
+    );
+    for (index, file) in bootstrap::SCHEMA_FILES.iter().enumerate() {
+        let step = index + 1;
+        let total = bootstrap::SCHEMA_FILES.len();
+        println!("  [{step}/{total}] {} — {}", file.path, file.purpose);
+
+        if let Err(e) = rt.block_on(do_exec_sql(&management_key, &project_ref, file.sql)) {
+            eprintln!("✗ {} failed: {e}", file.path);
+            // Stops rather than continuing: every later file depends on an earlier one,
+            // so carrying on would bury this error under a cascade of missing-relation
+            // failures that all share this cause.
+            eprintln!(
+                "  Stopped at step {step} of {total}. Fix this, then re-run — the files are \
+                 idempotent, so the steps already applied will not be repeated."
+            );
+            std::process::exit(1);
+        }
+    }
+    println!("✓ Schema and seed data applied");
+    println!("  Verify with: nuanalytics db doctor");
 }
 
 // ============================================================================
@@ -599,12 +648,25 @@ fn suggest_project_ref(endpoint: &str) -> Option<&str> {
 }
 
 /// Read a SQL file from disk and execute it against the Supabase Management API.
-fn run_exec_sql(config: &Config, file: &std::path::Path) {
-    // Checked before the management key: this command only works against Supabase cloud,
-    // and a self-hosted user was previously told to go create a Supabase PAT before ever
-    // being told the command does not apply to their deployment.
+/// Resolve the two settings the Supabase Management API needs, or explain what is missing.
+///
+/// Returns `(management_key, project_ref)`. The project ref is checked **first and
+/// explicitly**: the Management API is a cloud-only path, and a self-hosted user was once
+/// told to go create a Supabase Personal Access Token before ever being told the command
+/// does not apply to their deployment. `project_ref` is never inferred from the hostname —
+/// a cloud project on a custom domain has no `.supabase.co` in its URL, and a self-hosted
+/// host would otherwise yield a meaningless ref.
+///
+/// `command` names the caller and `self_hosted_alternative` is the advice to give when
+/// there is no project ref, which differs by caller: applying one file is `psql -f`, while
+/// applying the whole bootstrap is a pipe.
+fn management_api_credentials(
+    config: &Config,
+    command: &str,
+    self_hosted_alternative: &str,
+) -> Option<(String, String)> {
     if config.database.project_ref.is_empty() {
-        eprintln!("✗ `db exec-sql` targets the Supabase Management API, which needs");
+        eprintln!("✗ `{command}` targets the Supabase Management API, which needs");
         eprintln!("  `database.project_ref` to be set explicitly:");
         eprintln!();
         if let Some(suggestion) = suggest_project_ref(&config.database.endpoint) {
@@ -620,22 +682,32 @@ fn run_exec_sql(config: &Config, file: &std::path::Path) {
                 endpoint_or_unset(&config.database)
             );
             eprintln!("  self-hosted stack there is no project ref and no Management API —");
-            eprintln!(
-                "  apply SQL directly instead, e.g. `psql -f {}`.",
-                file.display()
-            );
+            eprintln!("  apply SQL directly instead: {self_hosted_alternative}");
         }
-        return;
+        return None;
     }
-    let project_ref = config.database.project_ref.clone();
 
     if config.database.management_key.is_empty() {
         eprintln!("✗ `database.management_key` is not set.");
         eprintln!("  1. Go to https://app.supabase.com/account/tokens");
         eprintln!("  2. Create a Personal Access Token");
         eprintln!("  3. Run: nuanalytics config set database.management_key <token>");
-        return;
+        return None;
     }
+
+    Some((
+        config.database.management_key.clone(),
+        config.database.project_ref.clone(),
+    ))
+}
+
+fn run_exec_sql(config: &Config, file: &std::path::Path) {
+    let alternative = format!("`psql -f {}`", file.display());
+    let Some((management_key, project_ref)) =
+        management_api_credentials(config, "db exec-sql", &alternative)
+    else {
+        std::process::exit(1);
+    };
 
     let sql = match std::fs::read_to_string(file) {
         Ok(s) => s,
@@ -654,13 +726,12 @@ fn run_exec_sql(config: &Config, file: &std::path::Path) {
 
     let Some(rt) = make_runtime() else { return };
 
-    match rt.block_on(do_exec_sql(
-        &config.database.management_key,
-        &project_ref,
-        &sql,
-    )) {
+    match rt.block_on(do_exec_sql(&management_key, &project_ref, &sql)) {
         Ok(msg) => println!("✓ {msg}"),
-        Err(e) => eprintln!("✗ SQL execution failed: {e}"),
+        Err(e) => {
+            eprintln!("✗ SQL execution failed: {e}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -1441,6 +1512,37 @@ mod tests {
             Some("hello world".to_string())
         );
         assert_eq!(extract_query_param(line, "code"), Some("a b".to_string()));
+    }
+
+    // --- bootstrap ----------------------------------------------------------
+
+    #[test]
+    fn bootstrap_print_needs_nothing_configured() {
+        // The whole point of --print is that it works before any of this is set up:
+        // no endpoint, no session, no network. Anything that reads config here would
+        // defeat it, so this pins that the output depends only on the embedded files.
+        let sql = bootstrap::concatenated();
+        assert!(sql.starts_with("--"), "must open with a SQL comment");
+        for file in &bootstrap::SCHEMA_FILES {
+            assert!(
+                sql.contains(file.sql),
+                "{} must be emitted verbatim, not summarised",
+                file.path
+            );
+        }
+    }
+
+    #[test]
+    fn bootstrap_emits_the_files_in_dependency_order() {
+        // Out of order, a seed file hits a table that does not exist yet. This asserts
+        // the emitted stream, not just the constant, because the stream is what a user
+        // pipes into psql.
+        let sql = bootstrap::concatenated();
+        let at = |needle: &str| sql.find(needle).expect("file is present");
+        assert!(at("docs/database/schema.sql") < at("docs/database/cip-seed.sql"));
+        assert!(
+            at("docs/database/programs-schema.sql") < at("docs/database/program-lookup-seed.sql")
+        );
     }
 
     // --- describe_sign_in_error ---------------------------------------------

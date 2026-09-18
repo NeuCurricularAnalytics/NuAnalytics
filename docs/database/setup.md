@@ -1,8 +1,16 @@
 # Database Setup — Supabase
 
-NuAnalytics uses [Supabase](https://supabase.com) as its cloud database. Supabase is an
-open-source Firebase alternative built on PostgreSQL. All IPEDS institution data,
-completion demographics, and stored degree programs are kept here.
+NuAnalytics keeps its IPEDS institution data, completion demographics, and stored degree
+programs in [Supabase](https://supabase.com) — an open-source Firebase alternative built
+on PostgreSQL.
+
+**Two deployments are supported and behave identically: Supabase cloud, and a stack you
+host yourself.** The client only ever speaks PostgREST over HTTP, so pointing it at a
+different backend is configuration, not code. The one real difference is *how the schema
+gets applied*, which is [Step 4](#step-4--create-the-database-schema).
+
+If you are self-hosting, read [Self-hosting notes](#self-hosting-notes) first, then skip
+Steps 1–2 and start at Step 3.
 
 ---
 
@@ -36,6 +44,59 @@ its own; row-level security gates every table on
 automatically when it's within 60s of expiry, so a single `db login` per
 machine keeps long-running sessions (CLI batches, MCP servers) usable
 without manual re-auth.
+
+---
+
+## Self-hosting notes
+
+Skip this section if you are using Supabase cloud.
+
+Everything below was hit in practice standing up a self-hosted stack. None of it is
+NuAnalytics-specific — it is all upstream behaviour that costs an afternoon to rediscover.
+
+**Get your endpoint and anon key from your own stack**, not the Supabase dashboard: they
+are `API_EXTERNAL_URL` and `ANON_KEY` in the stack's `.env`. Then pick up at Step 3.
+
+### Row cap — the one that returns wrong answers instead of errors
+
+`PGRST_DB_MAX_ROWS` defaults to **1000** upstream, while the MCP completions tools request
+up to 5,000 rows. PostgREST truncates to the cap with an HTTP 200 and no indication, so
+totals and representation ratios come out confidently short rather than failing.
+
+**Leave it unset, or set it to at least 10000.** `nuanalytics db doctor` checks for this
+explicitly — see the **row limit** check.
+
+### `podman-compose` 1.6.0 hangs during image pull
+
+It sits in `ep_poll` with no child process and no storage growth, then exits 0 when killed,
+which makes it look like it succeeded. Pull the images first, then bring the stack up:
+
+```sh
+podman pull <each image in the compose file>
+podman-compose up -d          # completes in seconds once images are local
+```
+
+### SELinux-enforcing hosts need `:ro,Z` on the gateway config mounts
+
+Upstream ships the Envoy config mounts as plain `:ro`. On an enforcing host the container
+cannot read its own entrypoint, crash-loops, and floods the desktop with AVC denials. The
+`db` mounts already carry `:Z`; the gateway ones need the same.
+
+### The gateway is Envoy, not Kong
+
+Current upstream uses Envoy as `api-gw`, and there is no `vector` or `analytics` service.
+If you are trimming the stack — dropping Studio, say — the only dependency edge to cut is
+`api-gw <- studio`. Guides written against the Kong-era compose file will not match.
+
+### Schema and seeds
+
+There is no Management API on a self-hosted stack, so `db exec-sql` does not apply. Use:
+
+```sh
+nuanalytics db bootstrap --print | psql "$DATABASE_URL"
+```
+
+See [Step 4](#step-4--create-the-database-schema).
 
 ---
 
@@ -96,8 +157,30 @@ nuanalytics config get database
 
 ## Step 4 — Create the database schema
 
-The schema is stored in `docs/database/schema.sql`. Open the Supabase **SQL Editor**
-(Dashboard → SQL Editor → New query), paste the entire file contents, and click **Run**.
+Five files must be applied, **in order** — the seed files insert into tables the schema
+files create, so out of sequence they fail on a missing relation. `db bootstrap` owns that
+ordering so you do not have to:
+
+```sh
+# Any deployment — emits all five files in order, makes no network calls
+nuanalytics db bootstrap --print | psql "$DATABASE_URL"
+
+# Supabase cloud — applies them for you, needs project_ref + management_key
+nuanalytics db bootstrap
+```
+
+`--print` works with no configuration and no session, which is the situation you are in
+before any of this is set up. Pipe it to `psql`, redirect it to a file to review, or paste
+the output into the Supabase **SQL Editor** (Dashboard → SQL Editor → New query → Run).
+
+If a step fails during `db bootstrap`, it stops there and names the file rather than
+carrying on and burying the cause under a cascade of missing-relation errors. Everything
+is idempotent, so fix the problem and re-run.
+
+Verify the result with `nuanalytics db doctor`, which checks all 20 tables and the seed
+row counts.
+
+### What gets created
 
 The schema creates:
 - **7 lookup tables** — `award_levels`, `institution_control`, `institution_level`, `institution_sector`, `carnegie_class`, `institution_locale`, `institution_size`
@@ -109,30 +192,35 @@ The schema creates:
 > codes evolve between taxonomy versions. All joins use `LEFT JOIN` rather than FK
 > constraints.
 
-### Step 4b — Seed the lookup and CIP tables
+### Step 4b — The five files, if you are applying them by hand
 
-After the schema, run these files in the SQL Editor. Order matters.
+`db bootstrap` applies these for you. This is what it applies, and why the order is what
+it is:
 
-```
-docs/database/schema.sql               ← run first (creates tables + indexes + RLS policies)
-docs/database/cip-seed.sql             ← run second (populates cip_codes — 2,173 CIP 2020 codes)
-docs/database/lookup-seed.sql          ← run third (populates award_levels, carnegie_class, locale, etc.)
-docs/database/programs-schema.sql      ← run fourth (creates the stored-programs tables — see below)
-docs/database/program-lookup-seed.sql  ← run fifth (seeds degree_types)
-```
+| # | File | Creates / seeds |
+|---|------|-----------------|
+| 1 | `docs/database/schema.sql` | Tables, indexes, RLS policies |
+| 2 | `docs/database/cip-seed.sql` | `cip_codes` — 2,173 CIP 2020 codes |
+| 3 | `docs/database/lookup-seed.sql` | `award_levels`, `carnegie_class`, locale, … |
+| 4 | `docs/database/programs-schema.sql` | Stored-programs tables |
+| 5 | `docs/database/program-lookup-seed.sql` | `degree_types` |
 
-The first three must be done **before** importing IPEDS data. The last two add
-the normalized stored-programs tables; run them before `db import` /
-`import_degree` (see [Stored programs (normalized)](#stored-programs-normalized)).
-Each can also be applied from the CLI:
+Files 2 and 3 insert into tables file 1 creates; file 5 seeds a table file 4 creates.
 
-```sh
-nuanalytics db exec-sql docs/database/programs-schema.sql
-nuanalytics db exec-sql docs/database/program-lookup-seed.sql
-```
+The first three must be applied **before** importing IPEDS data. The last two add the
+normalized stored-programs tables; apply them before `db import` / `import_degree` (see
+[Stored programs (normalized)](#stored-programs-normalized)).
 
-Every object in these files uses `IF NOT EXISTS` and drops policies before
-recreating them, so they are safe to re-run on a live database.
+On Supabase cloud an individual file can also be applied with
+`nuanalytics db exec-sql <file>`. That is a cloud-only path — it uses the Management API,
+which a self-hosted stack does not have.
+
+Every object uses `IF NOT EXISTS` and policies are dropped before being recreated, so all
+of this is safe to re-run on a live database.
+
+> `docs/database/historical/` holds two migrations for databases created before a schema
+> change. **A fresh install must not run them** — everything in them is already in
+> `schema.sql`.
 
 ---
 

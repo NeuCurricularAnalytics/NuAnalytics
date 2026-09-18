@@ -662,6 +662,32 @@ pub enum DbSubcommand {
     /// Report the configured backend, which config file supplied it, session validity,
     /// and whether an authenticated read succeeds. Exits 1 when the read fails.
     Status,
+    /// Apply the schema and seed files a deployment needs, in the order they require.
+    ///
+    /// The ordering is the part that goes wrong: the seed files insert into tables the
+    /// schema files create, so running them out of sequence fails on a missing relation.
+    ///
+    /// How the SQL reaches the database depends on the deployment. A Supabase cloud
+    /// project has a Management API that accepts SQL, so `db bootstrap` can apply the
+    /// files itself once `database.project_ref` and `database.management_key` are set. A
+    /// self-hosted stack has neither, and this tool speaks only `PostgREST` over HTTP — so
+    /// for those, `--print` emits every file in order for you to pipe wherever you like.
+    ///
+    /// Every object uses `IF NOT EXISTS` and policies are dropped before being recreated,
+    /// so both paths are safe to re-run against a live database.
+    ///
+    /// Examples:
+    /// ```sh
+    /// nuanalytics db bootstrap --print | psql "$DATABASE_URL"   # any deployment
+    /// nuanalytics db bootstrap --print > schema.sql             # review it first
+    /// nuanalytics db bootstrap                                  # Supabase cloud only
+    /// ```
+    Bootstrap {
+        /// Write the combined SQL to stdout instead of applying it. Works for any
+        /// deployment and makes no network calls.
+        #[arg(long)]
+        print: bool,
+    },
     /// Diagnose a whole deployment: config source, reachability, RLS behaviour, session,
     /// schema completeness and seed data.
     ///
