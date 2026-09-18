@@ -10,7 +10,7 @@ codebase — run `/init` if you want that.
 
 Default features: `log-info`, `log-debug`, `verbose`, `file-logging`, `database`, `mcp`.
 
-    cargo test --features database                  # 1200 tests, clean
+    cargo test --features database                  # 1216 tests, clean
     cargo build --features database
 
 **Degree fixtures are compiled in, so a missing one is a build error, not a test
@@ -74,10 +74,17 @@ written at default umask (0644), unlike the auth file (0600, `auth.rs:88-93`).
 ## Current work
 
 `docs/db-migration-todo.md` is the live work list for making the backend a true deployment
-target — importer defects, backend portability, diagnosability, reproducibility, and data
-integrity on a shared instance. Items marked `[verified]` were observed in practice, not
-theorised. Start there. Its "make failures legible" section is done; the remaining §3
-items are missing-information ones.
+target. Items marked `[verified]` were observed in practice, not theorised. Sections 1
+(importer defects), 2 (backend portability) and 3 (diagnosability) are **done**, as is
+`db doctor` from §4. What is left: `db bootstrap` and `deploy/selfhost/` in §4, both
+blocked on a decision rather than effort and written up with options in the doc, and §5
+data integrity, whose fix is a SQL migration adding `created_by` with matching RLS
+policies — no Rust.
+
+**`nuanalytics db doctor` is the first thing to run against an unfamiliar deployment.** It
+walks configuration → reachability → anon-key read → session → authenticated read → schema
+(all 20 tables) → seed data, each check gating the next so the report names one cause
+rather than repeating it. Logic is in `src/core/database/doctor.rs`; the CLI only formats.
 
 **Failure messages are shared, not per-call-site.** `DatabaseError::next_steps(endpoint)`
 (`src/core/database/error.rs`) owns the remediation text for every variant, and both

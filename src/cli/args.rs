@@ -654,6 +654,14 @@ pub enum DbSubcommand {
     /// Report the configured backend, which config file supplied it, session validity,
     /// and whether an authenticated read succeeds. Exits 1 when the read fails.
     Status,
+    /// Diagnose a whole deployment: config source, reachability, RLS behaviour, session,
+    /// schema completeness and seed data.
+    ///
+    /// Written for somebody who did not set the backend up. Cloud and self-hosted should
+    /// behave identically; the one real difference is whether the schema and seed files
+    /// were applied, which this reports table by table. Exits 1 on any hard failure —
+    /// missing seed data is a warning, not a failure.
+    Doctor,
     /// Import IPEDS data from locally downloaded CSV or ZIP files into Supabase.
     ///
     /// Only two files are needed — the completions file is used in a single pass to

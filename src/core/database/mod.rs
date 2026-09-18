@@ -23,6 +23,7 @@
 
 pub mod auth;
 pub mod client;
+pub mod doctor;
 pub mod error;
 #[cfg(feature = "database")]
 pub mod import;
@@ -58,6 +59,49 @@ pub mod tables {
     pub const ANALYSIS_COURSE_METRICS: &str = "analysis_course_metrics";
     /// Per run x selected exemplar plan (shortest/longest/samples)
     pub const ANALYSIS_PLANS: &str = "analysis_plans";
+
+    /// IPEDS award-level lookup (seeded by `lookup-seed.sql`)
+    pub const AWARD_LEVELS: &str = "award_levels";
+    /// Carnegie classification lookup
+    pub const CARNEGIE_CLASS: &str = "carnegie_class";
+    /// Institution control lookup (public / private)
+    pub const INSTITUTION_CONTROL: &str = "institution_control";
+    /// Institution level lookup (4-year / 2-year / less-than-2-year)
+    pub const INSTITUTION_LEVEL: &str = "institution_level";
+    /// Institution locale lookup (city / suburb / town / rural)
+    pub const INSTITUTION_LOCALE: &str = "institution_locale";
+    /// Institution sector lookup
+    pub const INSTITUTION_SECTOR: &str = "institution_sector";
+    /// Institution size-category lookup
+    pub const INSTITUTION_SIZE: &str = "institution_size";
+
+    /// Every table the schema defines, for whole-deployment checks.
+    ///
+    /// A missing entry here is what distinguishes "the schema was applied" from "the
+    /// schema and the seeds were applied" — the seven lookup tables come from
+    /// `lookup-seed.sql`, so their absence means a half-finished bootstrap.
+    pub const ALL: &[&str] = &[
+        ANALYSIS_COURSE_METRICS,
+        ANALYSIS_PLANS,
+        ANALYSIS_RUNS,
+        AWARD_LEVELS,
+        CARNEGIE_CLASS,
+        CIP_CODES,
+        COMPLETIONS,
+        COURSES,
+        DEGREES,
+        DEGREE_TYPES,
+        INSTITUTIONS,
+        INSTITUTION_COMPLETION_TOTALS,
+        INSTITUTION_CONTROL,
+        INSTITUTION_LEVEL,
+        INSTITUTION_LOCALE,
+        INSTITUTION_SECTOR,
+        INSTITUTION_SIZE,
+        PROGRAMS,
+        PROGRAM_COURSES,
+        PROGRAM_REQUIREMENTS,
+    ];
 }
 
 pub use crate::core::config::DatabaseConfig;

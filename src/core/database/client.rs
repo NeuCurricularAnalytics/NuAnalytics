@@ -55,6 +55,15 @@ const HTTP_TIMEOUT: Duration = Duration::from_mins(1);
 /// unreachable rather than waiting out the full request budget.
 const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Whether a `PostgREST` error body reports an undefined relation.
+///
+/// Keys off SQLSTATE `42P01` first and the message text only as a fallback, because the
+/// prose wording is not part of any contract.
+fn is_undefined_relation(message: &str) -> bool {
+    message.contains("42P01")
+        || (message.contains("does not exist") && message.contains("relation"))
+}
+
 /// Map an auth-layer [`RefreshError`] onto the database error the caller should see.
 ///
 /// A transport failure becomes [`DatabaseError::ConnectionError`] so its remediation says
@@ -335,6 +344,101 @@ impl DbClient {
         self.select(tables::INSTITUTIONS, "unitid", &filters, Some(1))
             .await
             .map(|_| ())
+    }
+
+    /// Whether `table` exists, as the backend sees it.
+    ///
+    /// `PostgREST` answers a request for an absent relation with SQLSTATE `42P01`, which
+    /// is what separates "the schema was never applied here" from every other query
+    /// failure. Used by `db doctor`; a bare error would leave the user guessing which.
+    ///
+    /// # Errors
+    /// Propagates anything that is not an undefined-relation answer — an unreachable
+    /// backend or a rejected session is not evidence about the schema.
+    pub async fn table_exists(&self, table: &str) -> DatabaseResult<bool> {
+        let filters = QueryFilters::new();
+        match self.select(table, "*", &filters, Some(1)).await {
+            Ok(_) => Ok(true),
+            Err(DatabaseError::QueryError(msg)) if is_undefined_relation(&msg) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Exact row count for `table`.
+    ///
+    /// Uses `Prefer: count=exact` and reads `Content-Range`, so the rows are never
+    /// transferred — a count over `completions` would otherwise pull a million rows.
+    ///
+    /// # Errors
+    /// As [`Self::select`], plus [`DatabaseError::ParseError`] when the backend answers
+    /// without a usable `Content-Range`.
+    pub async fn count_rows(&self, table: &str) -> DatabaseResult<u64> {
+        let url = format!("{}{REST_API_PREFIX}/{table}?select=*", self.endpoint);
+        let token = self.current_token().await?;
+        let response = self
+            .http
+            .get(&url)
+            .header("apikey", &self.anon_key)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Prefer", "count=exact")
+            .header("Range", "0-0")
+            .send()
+            .await
+            .map_err(|e| {
+                DatabaseError::ConnectionError(format!("request to {} failed: {e}", self.endpoint))
+            })?;
+
+        if !response.status().is_success() {
+            return Err(self.classify_failure(response).await);
+        }
+        let range = response
+            .headers()
+            .get("content-range")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                DatabaseError::ParseError(format!(
+                    "{} answered a count request for {table} without a Content-Range header",
+                    self.endpoint
+                ))
+            })?;
+        // Content-Range is `<start>-<end>/<total>`, or `*/<total>` for an empty table.
+        range
+            .rsplit('/')
+            .next()
+            .and_then(|total| total.trim().parse::<u64>().ok())
+            .ok_or_else(|| {
+                DatabaseError::ParseError(format!(
+                    "cannot read a row count for {table} from Content-Range {range:?}"
+                ))
+            })
+    }
+
+    /// Status code from a read that sends only the anon key, no user JWT.
+    ///
+    /// The deployment check this answers: row-level security should *filter* an
+    /// unauthenticated read to nothing (`200` with an empty array), not reject it. A `401`
+    /// means the policies demand a role the anon key does not carry, which breaks the
+    /// login bootstrap; a `404` means the table is not there at all.
+    ///
+    /// # Errors
+    /// [`DatabaseError::ConnectionError`] when the backend could not be reached.
+    pub async fn anon_read_status(&self, table: &str) -> DatabaseResult<u16> {
+        let url = format!(
+            "{}{REST_API_PREFIX}/{table}?select=*&limit=1",
+            self.endpoint
+        );
+        let response = self
+            .http
+            .get(&url)
+            .header("apikey", &self.anon_key)
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| {
+                DatabaseError::ConnectionError(format!("request to {} failed: {e}", self.endpoint))
+            })?;
+        Ok(response.status().as_u16())
     }
 
     /// Query a table with filters, returning results as a JSON array.
@@ -1235,5 +1339,145 @@ mod tests {
         let client = DbClient::new("https://host.example.com///", "anon", "jwt".to_string())
             .expect("client");
         assert_eq!(client.endpoint, "https://host.example.com");
+    }
+
+    // ---- deployment probes used by `db doctor` ------------------------------
+
+    /// Stub that answers non-auth reads with `status_line`, `body` and an optional
+    /// `Content-Range` — the header `count_rows` reads, which the other stubs omit.
+    async fn stub_server_counting(
+        status_line: &'static str,
+        body: &'static str,
+        content_range: Option<&'static str>,
+    ) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind ephemeral port");
+        let url = format!("http://{}", listener.local_addr().expect("local addr"));
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let mut buf = [0u8; 8192];
+                let n = tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
+                    .await
+                    .unwrap_or(0);
+                let is_auth = String::from_utf8_lossy(&buf[..n]).contains("/auth/v1/token");
+                let (line, payload) = if is_auth {
+                    ("200 OK", REFRESHED)
+                } else {
+                    (status_line, body)
+                };
+                let range = if is_auth {
+                    String::new()
+                } else {
+                    content_range.map_or_else(String::new, |r| format!("Content-Range: {r}\r\n"))
+                };
+                let response = format!(
+                    "HTTP/1.1 {line}\r\nContent-Type: application/json\r\n{range}Content-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+                let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
+            }
+        });
+        url
+    }
+
+    #[tokio::test]
+    async fn table_exists_distinguishes_a_missing_relation_from_other_failures() {
+        // An absent table is the signal that the schema was never applied here; every
+        // other failure says nothing about the schema and must not be reported as if it
+        // did.
+        let missing = stub_server_counting(
+            "404 Not Found",
+            r#"{"code":"42P01","message":"relation \"public.award_levels\" does not exist"}"#,
+            None,
+        )
+        .await;
+        let client = DbClient::new(&missing, "anon", "jwt".to_string()).expect("client");
+        assert!(
+            !client
+                .table_exists("award_levels")
+                .await
+                .expect("classified"),
+            "an undefined relation must report absence, not an error"
+        );
+
+        let present = stub_server_counting("200 OK", "[]", None).await;
+        let client = DbClient::new(&present, "anon", "jwt".to_string()).expect("client");
+        assert!(client
+            .table_exists("award_levels")
+            .await
+            .expect("classified"));
+
+        // A permission error is not evidence about existence.
+        let forbidden = stub_server_counting(
+            "403 Forbidden",
+            r#"{"code":"42501","message":"permission denied"}"#,
+            None,
+        )
+        .await;
+        let client = DbClient::new(&forbidden, "anon", "jwt".to_string()).expect("client");
+        assert!(
+            client.table_exists("award_levels").await.is_err(),
+            "a permission failure must propagate, not be read as 'table missing'"
+        );
+    }
+
+    #[tokio::test]
+    async fn count_rows_reads_the_total_from_content_range() {
+        // Counting must not transfer the rows: `completions` has over a million.
+        let url = stub_server_counting("206 Partial Content", "[]", Some("0-0/2173")).await;
+        let client = DbClient::new(&url, "anon", "jwt".to_string()).expect("client");
+        assert_eq!(client.count_rows("cip_codes").await.expect("count"), 2173);
+    }
+
+    #[tokio::test]
+    async fn count_rows_handles_an_empty_table_and_a_missing_header() {
+        // PostgREST answers `*/0` for an empty table.
+        let empty = stub_server_counting("200 OK", "[]", Some("*/0")).await;
+        let client = DbClient::new(&empty, "anon", "jwt".to_string()).expect("client");
+        assert_eq!(client.count_rows("cip_codes").await.expect("count"), 0);
+
+        let headerless = stub_server_counting("200 OK", "[]", None).await;
+        let client = DbClient::new(&headerless, "anon", "jwt".to_string()).expect("client");
+        match client.count_rows("cip_codes").await {
+            Err(DatabaseError::ParseError(detail)) => {
+                assert!(
+                    detail.contains("Content-Range"),
+                    "must name the header it needed: {detail}"
+                );
+                assert!(
+                    detail.contains("cip_codes"),
+                    "must name the table: {detail}"
+                );
+            }
+            other => panic!("expected a ParseError naming the header, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn anon_read_status_sends_no_user_jwt() {
+        // The point of this probe is what RLS does *without* a session, so the request
+        // must not carry one.
+        let url = stub_server_counting("200 OK", "[]", None).await;
+        let client = DbClient::new(&url, "anon", "should-not-be-sent".to_string()).expect("client");
+        assert_eq!(
+            client.anon_read_status("cip_codes").await.expect("status"),
+            200
+        );
+    }
+
+    #[tokio::test]
+    async fn anon_read_status_reports_a_rejection_rather_than_erroring() {
+        // A 401 here is a finding, not a failure to probe — doctor needs the number.
+        let url =
+            stub_server_counting("401 Unauthorized", r#"{"message":"JWT required"}"#, None).await;
+        let client = DbClient::new(&url, "anon", "jwt".to_string()).expect("client");
+        assert_eq!(
+            client.anon_read_status("cip_codes").await.expect("status"),
+            401
+        );
     }
 }

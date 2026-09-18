@@ -307,13 +307,66 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       when a project ref is configured, direct `psql` otherwise. Applying the schema is the
       *only* real asymmetry between cloud and self-hosted; closing it is what makes the two
       interchangeable.
-- [ ] **`db doctor`** — report, for whatever backend is configured: which config file
-      supplied the endpoint, reachability, cert validity, whether all 20 tables exist,
-      whether an anon-key-only read returns `200 []` (RLS filtering) rather than an error,
-      session validity, and row-count sanity (`cip_codes` = 2173). This is what lets a group
-      that is not the author diagnose their own deployment.
+
+      **Blocked on a decision, not on effort.** The cloud half is straightforward — it is
+      `do_exec_sql` per file, now that `database.project_ref` is explicit. The self-hosted
+      half is not: it needs a Postgres connection, and this codebase deliberately has
+      none. `CLAUDE.md` states the invariant plainly — "The client speaks PostgREST over
+      HTTP, never the SQL wire protocol... There is no connection string and no SQL.
+      Anything that assumes a Postgres connection is wrong." Shelling out to `psql` would
+      introduce a second, unlike access path with credentials the tool does not hold and
+      cannot validate, and `db doctor` would not be able to check it.
+
+      Three options, in order of how much they preserve that invariant:
+      1. **Cloud only.** `db bootstrap` applies the files via the Management API and
+         refuses on a self-hosted endpoint, pointing at `psql -f` and the documented file
+         order. Honest, small, and leaves the asymmetry open.
+      2. **Emit, do not apply.** `db bootstrap --print` concatenates the five files in the
+         correct order to stdout, so a self-hosted operator pipes it to `psql` themselves.
+         Closes the ordering hazard (the actual source of error) without the tool holding
+         database credentials.
+      3. **Shell out to `psql`.** Closes the asymmetry fully, at the cost of the
+         invariant, a new config surface (host/port/user/password or a DSN), and a
+         dependency on `psql` being installed.
+
+      Recommend 2, with 1 folded in: the ordering is the part that goes wrong, and neither
+      option requires the tool to learn SQL connectivity. Needs a call before implementation.
+- [x] **`db doctor`** *(done)* — `nuanalytics db doctor`. Checks run outwards from
+      configuration to data, and each one gates the next so the report names a single
+      cause instead of repeating it six times: configuration → reachability → anon-key
+      read → session → authenticated read → schema → seed data. Verified against the live
+      self-hosted backend (7 passed) and against the not-configured, disabled and
+      unreachable cases, which exit 1 with the rest marked skipped.
+
+      Logic lives in `src/core/database/doctor.rs` returning a `Report` of `Check`s, so
+      ordering and the pass/fail judgement are testable without a terminal; the CLI only
+      formats. Warnings do not fail the command — a deployment whose optional seed is
+      short is still usable, one missing tables is not.
+
+      Three probes were added to `DbClient` for it: `table_exists` (keys off SQLSTATE
+      `42P01`, so a permission error is *not* read as "table missing"), `count_rows` (uses
+      `Prefer: count=exact` and reads `Content-Range`, so counting `completions` does not
+      transfer a million rows), and `anon_read_status` (sends the anon key with no user
+      JWT, which is the only way to observe what RLS does to an unauthenticated read).
+      `tables::ALL` now lists all 20, including the seven lookup tables from
+      `lookup-seed.sql` whose absence means a half-finished bootstrap.
+
+      Not covered, deliberately: **cert validity** as a distinct check. A bad certificate
+      surfaces as a reachability failure with rustls' own message, which is accurate; a
+      separate expiry check would need to parse the chain and would risk asserting a cause
+      the code has not established.
 - [ ] **`deploy/selfhost/`** — pinned compose file, env template with empty secrets, the
-      five-file bootstrap, and a README. Verified gotchas to document:
+      five-file bootstrap, and a README.
+
+      **Scope question first.** A working stack already exists outside this repo, and the
+      local handoff notes put operational work on the `archon` side rather than here. Two
+      readings of this item: vendor the compose stack into this public repo, or keep the
+      stack where it is and document the four verified gotchas below in
+      `docs/database/setup.md`. The second is cheap and immediately useful; the first
+      duplicates a live deployment and cannot be verified from here without standing a
+      second one up. Needs a call on which was intended.
+
+      Verified gotchas to document either way:
       - `podman-compose` 1.6.0 hangs during image pull (sits in `ep_poll`, no child process,
         no storage growth, then exits 0 when killed). Workaround: `podman pull` each image
         first, then `up -d` completes in seconds. **[verified]**

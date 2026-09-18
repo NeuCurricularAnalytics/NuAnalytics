@@ -12,7 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use nu_analytics::config::{Config, ConfigSources};
 use nu_analytics::database::import::{execute_import, ImportOptions, ImportOutcome, ImportResult};
 use nu_analytics::database::{
-    auth_file_path, clear_auth_state, ipeds, load_auth_state, save_auth_state, AuthState,
+    auth_file_path, clear_auth_state, doctor, ipeds, load_auth_state, save_auth_state, AuthState,
     DatabaseError, DbClient,
 };
 
@@ -29,6 +29,7 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
         DbSubcommand::Whoami => run_whoami(config),
         DbSubcommand::ExecSql { file } => run_exec_sql(config, &file),
         DbSubcommand::Status => run_status(config, sources),
+        DbSubcommand::Doctor => run_doctor(config, sources),
         DbSubcommand::IpedsImport {
             dir,
             institutions,
@@ -684,6 +685,38 @@ fn run_status(config: &Config, sources: &ConfigSources) {
             report_db_error(&e, &config.database.endpoint);
             std::process::exit(1);
         }
+    }
+}
+
+/// Run `db doctor`: print a per-check deployment report and exit 1 on a hard failure.
+///
+/// Presentation only — the checks and their ordering live in `core::database::doctor` so
+/// they can be tested without a terminal.
+fn run_doctor(config: &Config, sources: &ConfigSources) {
+    println!("Backend:  {}", endpoint_or_unset(&config.database));
+    for line in sources.describe() {
+        println!("  {line}");
+    }
+    println!();
+
+    let Some(rt) = make_runtime() else { return };
+    let report = rt.block_on(doctor::diagnose(&config.database));
+
+    for check in &report.checks {
+        println!(
+            "{} {:<20} {}",
+            check.outcome.marker(),
+            check.name,
+            check.outcome.detail()
+        );
+    }
+
+    let (pass, warn, fail, skipped) = report.tally();
+    println!();
+    println!("{pass} passed, {warn} warning(s), {fail} failed, {skipped} skipped");
+
+    if report.has_failures() {
+        std::process::exit(1);
     }
 }
 
