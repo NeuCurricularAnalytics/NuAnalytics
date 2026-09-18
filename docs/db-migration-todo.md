@@ -18,10 +18,19 @@ models, and `QueryFilters` need no changes at all.
 
 ---
 
-## Start here — make failures legible (NEXT STEP)
+## Start here — make failures legible (DONE)
 
-The numbered sections below are grouped by **category, not priority**. Do the
-error-surfacing work first.
+All five items below landed. Verification: `cargo fmt --check` clean, `cargo clippy
+--all-targets -- -D warnings` clean under `--no-default-features`, `--features database`
+and `--all-features`; 1172 tests on default features (4 consecutive clean runs), 707 with
+no default features. The HTTP boundary now has its first tests — a path-aware
+`tokio::net::TcpListener` stub in `client.rs`, no new dev-dependency.
+
+What is left in §3 is the four *missing-information* items (`db whoami` endpoint, naming
+the winning config file, the `db status` help text, `db logout --remote`), which were
+always scheduled after these.
+
+The numbered sections below are grouped by **category, not priority**.
 
 Why this first: every item in it has already cost real debugging time during the
 migration, the changes are small and mutually independent, and until a failure names its
@@ -129,20 +138,39 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       succeed, and still hit the old backend. `db status` should name the source file.
 - [ ] **`db status` help text is wrong.** `args.rs:641` advertises row counts it doesn't
       display.
-- [ ] **The forced token refresh cannot force.** `client.rs:285` catches a 401 and calls
+- [x] **The forced token refresh cannot force.** *(done)* `reauthenticate(force)` now
+      routes to `DbClient::force_refresh_from_disk`, which re-reads the auth file and
+      adopts a newer token if another process wrote one, otherwise exchanges the refresh
+      token directly. A 401 that survives the retry is classified by
+      `DbClient::classify_failure` as `NotAuthenticated` naming the endpoint and
+      `db login`, not a bare `QueryError`. Covered by five `#[tokio::test]`s over a
+      path-aware stub server (`client.rs`), no new dev-dependency.
+      ~~Original:~~ `client.rs:285` catches a 401 and calls
       `reauthenticate(true)`, but the path runs through `load_and_refresh`, which
       short-circuits on `state.is_valid()` (`auth.rs:214-217`) and returns the same dead
       token. A stale-but-clock-valid token yields a bare `PostgREST error (401)` with no
       "run `db login`" hint, and the retry is wasted.
       **Fix:** call `refresh_session` directly when `force` is set, and map a post-retry 401
       to `DatabaseError::NotAuthenticated`.
-- [ ] **MCP database outages are misreported as user error.** `run_server` builds the
+- [x] **MCP database outages are misreported as user error.** *(done)* `run_server` now
+      keeps the startup failure in `DbUnavailable { endpoint, kind, detail, next_steps }`
+      instead of discarding it, and `db_not_configured_response` emits
+      `{backend, reason, detail, next_steps}` — including an explicit "the client is
+      created at startup; restart after fixing" step. An unreachable backend is no longer
+      reported as a config or login problem.
+      ~~Original:~~ `run_server` builds the
       `DbClient` once at startup (`src/mcp/server.rs:879-891`) and on failure sets it to
       `None` for the process lifetime; every tool then returns `db_not_configured_response`
       (`:795-806`), which blames config or login. It is also intermittent: a fresh token
       starts fine and fails per-call, an hour-old token starts with no database tools at
       all. Name the endpoint and distinguish unreachable / not-configured / not-logged-in.
-- [ ] **`accept_oauth_callback` throws away the only useful part of an OAuth failure**
+- [x] **`accept_oauth_callback` throws away the only useful part of an OAuth failure**
+      *(done)* `CallbackFailure` now captures `error`, `error_description` and
+      `error_code` and renders them in both the terminal message and the browser page
+      (HTML-escaped — the text arrives via a URL). The invented "check that the provider
+      is enabled" wording is gone from both. The real cutover failure is pinned as a test
+      fixture so it cannot regress.
+      ~~Original:~~
       [verified — cost hours]. `db.rs:294-297` keeps the `error` query param and discards
       `error_description`, so every failed callback collapses to
       *"Sign in failed — check that the provider is enabled in your Supabase project"*.
@@ -155,7 +183,11 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       terminal message and the browser page, and stop asserting a cause the code cannot
       know. The current wording actively misdirects: it sent us to audit GoTrue config and
       the GitHub OAuth app registration twice.
-- [ ] **`db status` reports a stale expiry next to a successful ping** [verified]. It
+- [x] **`db status` reports a stale expiry next to a successful ping** *(done)* — the
+      auth-file line is now rendered *after* the ping, so it reflects the refreshed
+      session. Verified against the live backend: `expires in 60 min` beside
+      `ping: ✓ authenticated read succeeded`.
+      ~~Original:~~ [verified]. It
       renders the auth-file line from the on-disk `expires_at` *before* the ping refreshes
       the token, so a session that refreshes fine prints
       `✓ (expired 29827635 min ago as …)` immediately above
@@ -165,7 +197,12 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
 - [ ] **No `db logout --remote`, and `db login` cannot re-auth a live session.** Offboarding
       is server-side only (delete the `auth.users` row); `clear_auth_state` is local
       (`auth.rs:104-106`). Worth a note in `db logout`'s help that it revokes nothing.
-- [ ] **`db status` tells a not-configured user to log in** [verified]. On a fresh install
+- [x] **`db status` tells a not-configured user to log in** *(done)* — remediation now
+      comes from `DatabaseError::next_steps(endpoint)` in the library, shared with the MCP
+      server so the two cannot drift. Verified on a blank config: it points at
+      `config set database.endpoint/anon_key` and notes that `config set` writes to the
+      home config while a project-local `nuanalytics.toml` wins.
+      ~~Original:~~ [verified]. On a fresh install
       with blank defaults (post-B6) it prints `endpoint (unset) ✗`, `anon key (unset) ✗`,
       `ping: ✗ Database not configured...` and then `→ run \`nuanalytics db login\``.
       There is nothing to log in to. The hint should branch: not-configured -> point at

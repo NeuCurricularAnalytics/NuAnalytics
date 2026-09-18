@@ -46,6 +46,68 @@ impl fmt::Display for DatabaseError {
     }
 }
 
+impl DatabaseError {
+    /// What the user should do next, one line per step.
+    ///
+    /// Branches on the variant because the fixes are different and not interchangeable:
+    /// a not-configured install has no backend to log in to, and an unreachable backend
+    /// is not a login problem. `endpoint` is named so the message says *which* backend it
+    /// is talking about — with cloud and self-hosted both supported, that is the first
+    /// question in any support exchange.
+    ///
+    /// Shared by the CLI (`db status`) and the MCP server so the two cannot drift.
+    #[must_use]
+    pub fn next_steps(&self, endpoint: &str) -> Vec<String> {
+        let backend = if endpoint.is_empty() {
+            "(no endpoint configured)"
+        } else {
+            endpoint
+        };
+        match self {
+            Self::NotConfigured => vec![
+                "no backend is configured. Set one:".to_string(),
+                "  nuanalytics config set database.endpoint <url>".to_string(),
+                "  nuanalytics config set database.anon_key <key>".to_string(),
+                "`config set` writes to the home config; a project-local nuanalytics.toml takes precedence over it."
+                    .to_string(),
+            ],
+            Self::Disabled => vec![
+                "the database is disabled in configuration. Enable it:".to_string(),
+                "  nuanalytics config set database.enabled true".to_string(),
+            ],
+            Self::NotAuthenticated(detail) => vec![
+                format!("no valid session ({detail})."),
+                format!("  nuanalytics db login      # authenticates against {backend}"),
+            ],
+            Self::ConnectionError(_) => vec![
+                format!("could not reach {backend}."),
+                "Check the endpoint is correct and the backend is running; this is not a login problem."
+                    .to_string(),
+            ],
+            Self::QueryError(_) | Self::ParseError(_) => vec![format!(
+                "{backend} answered, but the request failed. The message above is the backend's own."
+            )],
+            Self::IngestError(_) => {
+                vec!["the write failed; the message above is the backend's own.".to_string()]
+            }
+        }
+    }
+
+    /// Short machine-readable tag for the failure class, for JSON consumers.
+    #[must_use]
+    pub const fn kind(&self) -> &'static str {
+        match self {
+            Self::NotConfigured => "not_configured",
+            Self::Disabled => "disabled",
+            Self::NotAuthenticated(_) => "not_authenticated",
+            Self::ConnectionError(_) => "unreachable",
+            Self::QueryError(_) => "query_failed",
+            Self::ParseError(_) => "parse_failed",
+            Self::IngestError(_) => "ingest_failed",
+        }
+    }
+}
+
 impl std::error::Error for DatabaseError {}
 
 /// Convenience alias for database results

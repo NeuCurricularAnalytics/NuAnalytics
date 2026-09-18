@@ -440,7 +440,11 @@ const fn complexity_class(c: usize) -> &'static str {
 }
 
 /// Escape HTML special characters for safe embedding in element content.
-pub(crate) fn escape_html(s: &str) -> String {
+///
+/// `pub` rather than `pub(crate)` so the binary crate can reach it — the OAuth callback
+/// page in `cli::commands::db` renders provider-supplied text and must escape it.
+#[must_use]
+pub fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")

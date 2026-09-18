@@ -16,4 +16,4 @@ pub use curriculum_graph::{
     CurriculumGraphSpec, EdgeType, GraphEdge, TermGroup,
 };
 pub use mermaid::MermaidGenerator;
-pub use renderer::{CurriculumGraphRenderer, VanillaJsRenderer};
+pub use renderer::{escape_html, CurriculumGraphRenderer, VanillaJsRenderer};

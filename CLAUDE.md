@@ -10,7 +10,7 @@ codebase — run `/init` if you want that.
 
 Default features: `log-info`, `log-debug`, `verbose`, `file-logging`, `database`, `mcp`.
 
-    cargo test --features database                  # 1156 tests, clean
+    cargo test --features database                  # 1172 tests, clean
     cargo build --features database
 
 **Degree fixtures are compiled in, so a missing one is a build error, not a test
@@ -76,4 +76,18 @@ written at default umask (0644), unlike the auth file (0600, `auth.rs:88-93`).
 `docs/db-migration-todo.md` is the live work list for making the backend a true deployment
 target — importer defects, backend portability, diagnosability, reproducibility, and data
 integrity on a shared instance. Items marked `[verified]` were observed in practice, not
-theorised. Start there.
+theorised. Start there. Its "make failures legible" section is done; the remaining §3
+items are missing-information ones.
+
+**Failure messages are shared, not per-call-site.** `DatabaseError::next_steps(endpoint)`
+(`src/core/database/error.rs`) owns the remediation text for every variant, and both
+`db status` and the MCP server's `db_not_configured_response` render it. Add wording there
+rather than at a call site, and keep to the rule the TODO sets: name the backend, name
+what failed, name the next step, and assert no cause the code has not established.
+
+`docs/clean-up-analysis-todo.md` is a separate, not-yet-started plan for the degree
+analysis pipeline, which exists twice (CLI and MCP) and **disagrees with itself** —
+measured 19% apart on median complexity for the same degree. It opens with evidence that
+the two are the same level of analysis, and that `planner` is not, so `planner` stays out
+of it. Step 1 is a standalone correctness fix needing no refactor: the MCP per-plan DAG
+treats an OR-group as an AND.

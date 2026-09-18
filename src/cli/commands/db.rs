@@ -6,6 +6,7 @@
 //! - `ipeds-import` — IPEDS CSV ingestion
 //! - `import` — degree report → normalized program tables
 
+use std::fmt::Write as _;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use nu_analytics::config::Config;
@@ -157,7 +158,7 @@ async fn do_oauth_login(config: &Config, provider: &str) -> Result<(), String> {
 
     let code = tokio::time::timeout(
         tokio::time::Duration::from_secs(OAUTH_TIMEOUT_SECS),
-        accept_oauth_callback(listener),
+        accept_oauth_callback(listener, &config.database.endpoint),
     )
     .await
     .map_err(|_| format!("Timed out waiting for browser callback ({OAUTH_TIMEOUT_SECS}s)"))??;
@@ -258,7 +259,10 @@ fn open_browser(url: &str) -> Result<(), String> {
 
 /// Accept one HTTP request on the listener, extract the OAuth `code` parameter,
 /// and return a response page to the browser.
-async fn accept_oauth_callback(listener: tokio::net::TcpListener) -> Result<String, String> {
+async fn accept_oauth_callback(
+    listener: tokio::net::TcpListener,
+    endpoint: &str,
+) -> Result<String, String> {
     let (mut stream, _) = listener
         .accept()
         .await
@@ -277,12 +281,12 @@ async fn accept_oauth_callback(listener: tokio::net::TcpListener) -> Result<Stri
 
     // Request line: "GET /callback?code=XXX&... HTTP/1.1"
     let code = extract_query_param(request, "code");
-    let error = extract_query_param(request, "error");
+    let failure = CallbackFailure::from_request_line(request);
 
     let (status, body) = if code.is_some() {
-        ("200 OK", CALLBACK_SUCCESS_HTML)
+        ("200 OK", CALLBACK_SUCCESS_HTML.to_string())
     } else {
-        ("400 Bad Request", CALLBACK_ERROR_HTML)
+        ("400 Bad Request", failure.error_page(endpoint))
     };
 
     let response = format!(
@@ -291,12 +295,111 @@ async fn accept_oauth_callback(listener: tokio::net::TcpListener) -> Result<Stri
     );
     stream.write_all(response.as_bytes()).await.ok();
 
-    code.ok_or_else(|| {
-        error.map_or_else(
-            || "No code in OAuth callback — check the provider is enabled in Supabase".to_string(),
-            |e| format!("OAuth error: {e}"),
+    code.ok_or_else(|| failure.terminal_message(endpoint))
+}
+
+/// What the auth provider reported on a failed OAuth callback.
+///
+/// `GoTrue` puts the actionable text in `error_description`; `error` on its own is a coarse
+/// class such as `server_error`. Discarding the description used to collapse every
+/// failure into one invented cause, which sent two people to audit provider settings for
+/// what was actually a malformed `auth.users` row.
+#[derive(Debug, Default)]
+struct CallbackFailure {
+    /// OAuth error class, e.g. `server_error`, `access_denied`.
+    error: Option<String>,
+    /// Provider's human-readable explanation — the part worth reading.
+    description: Option<String>,
+    /// Provider-specific code, when sent.
+    code: Option<String>,
+}
+
+impl CallbackFailure {
+    fn from_request_line(request_line: &str) -> Self {
+        Self {
+            error: extract_query_param(request_line, "error"),
+            description: extract_query_param(request_line, "error_description"),
+            code: extract_query_param(request_line, "error_code"),
+        }
+    }
+
+    /// The provider's own words, most specific part first. `None` when it said nothing.
+    fn provider_text(&self) -> Option<String> {
+        let mut parts: Vec<&str> = Vec::new();
+        if let Some(ref d) = self.description {
+            parts.push(d);
+        }
+        if let Some(ref e) = self.error {
+            if Some(e) != self.description.as_ref() {
+                parts.push(e);
+            }
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(" — "))
+        }
+    }
+
+    /// Terminal message: which backend, what failed, what to do. Asserts no cause.
+    fn terminal_message(&self, endpoint: &str) -> String {
+        let backend = if endpoint.is_empty() {
+            "(no endpoint configured)"
+        } else {
+            endpoint
+        };
+        let mut out = String::from("OAuth callback returned no authorization code.\n");
+        let _ = writeln!(out, "  backend: {backend}");
+        match self.provider_text() {
+            Some(text) => {
+                let _ = writeln!(out, "  provider reported: {text}");
+            }
+            None => out.push_str(
+                "  provider reported: nothing — no error or error_description was sent\n",
+            ),
+        }
+        if let Some(ref code) = self.code {
+            let _ = writeln!(out, "  error_code: {code}");
+        }
+        out.push_str(
+            "The line above is the provider's own message. Read it before changing \
+             provider settings; re-run `nuanalytics db login` to retry.",
+        );
+        out
+    }
+
+    /// Browser page carrying the same detail, so it survives closing the tab.
+    fn error_page(&self, endpoint: &str) -> String {
+        use nu_analytics::core::report::visualization::escape_html;
+
+        let detail = self.provider_text().map_or_else(
+            || "The provider sent no error description.".to_string(),
+            |text| format!("Provider reported: {}", escape_html(&text)),
+        );
+        let code = self.code.as_ref().map_or_else(String::new, |c| {
+            format!("<p class=\"meta\">error_code: {}</p>", escape_html(c))
+        });
+        let backend = if endpoint.is_empty() {
+            "(no endpoint configured)".to_string()
+        } else {
+            escape_html(endpoint)
+        };
+        format!(
+            r#"<!DOCTYPE html>
+<html><head><title>NuAnalytics — Sign In Failed</title>
+<style>body{{font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#fff5f5}}
+.box{{text-align:left;max-width:40rem;padding:2rem;background:#fff;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.1)}}
+h1{{color:#c53030}}p{{color:#555}}
+.detail{{background:#f7f7f7;padding:.75rem;border-radius:4px;font-family:monospace;white-space:pre-wrap;word-break:break-word}}
+.meta{{color:#777;font-size:.9em}}</style></head>
+<body><div class="box"><h1>✗ Sign in failed</h1>
+<p class="meta">backend: {backend}</p>
+<p class="detail">{detail}</p>
+{code}
+<p>This is the provider's own message. Return to the terminal, which shows the same
+detail, and re-run <code>nuanalytics db login</code> to retry.</p></div></body></html>"#
         )
-    })
+    }
 }
 
 /// Extract the first value of a named query parameter from an HTTP request line.
@@ -319,14 +422,6 @@ const CALLBACK_SUCCESS_HTML: &str = r#"<!DOCTYPE html>
 h1{color:#16803d}p{color:#555}</style></head>
 <body><div class="box"><h1>✓ Signed in successfully</h1>
 <p>You can close this tab and return to the terminal.</p></div></body></html>"#;
-
-const CALLBACK_ERROR_HTML: &str = r#"<!DOCTYPE html>
-<html><head><title>NuAnalytics — Sign In Failed</title>
-<style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#fff5f5}
-.box{text-align:center;padding:2rem;background:#fff;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.1)}
-h1{color:#c53030}p{color:#555}</style></head>
-<body><div class="box"><h1>✗ Sign in failed</h1>
-<p>Check that the provider is enabled in your Supabase project, then try again.</p></div></body></html>"#;
 
 // ============================================================================
 // Logout
@@ -499,13 +594,9 @@ fn run_status(config: &Config) {
     );
 
     let auth_path = auth_file_path(&config.database);
-    match load_auth_state(&auth_path) {
-        Some(state) => println!(
-            "auth file:     {} ✓ ({})",
-            auth_path.display(),
-            format_session_descriptor(&state)
-        ),
-        None => println!("auth file:     {} ✗ (missing)", auth_path.display()),
+    let had_auth_file = load_auth_state(&auth_path).is_some();
+    if !had_auth_file {
+        println!("auth file:     {} ✗ (missing)", auth_path.display());
     }
 
     let Some(rt) = make_runtime() else { return };
@@ -514,11 +605,39 @@ fn run_status(config: &Config) {
         let client = DbClient::from_config(&config.database).await?;
         client.ping().await
     });
+
+    // Rendered after the ping, not before: the ping refreshes and rewrites the session,
+    // so reading `expires_at` first reported a long-expired token immediately above a
+    // successful authenticated read.
+    if had_auth_file {
+        match load_auth_state(&auth_path) {
+            Some(state) => println!(
+                "auth file:     {} ✓ ({})",
+                auth_path.display(),
+                format_session_descriptor(&state)
+            ),
+            None => println!(
+                "auth file:     {} ✗ (removed during probe)",
+                auth_path.display()
+            ),
+        }
+    }
+
     match probe {
         Ok(()) => println!("ping:          ✓ authenticated read succeeded"),
         Err(e) => {
             eprintln!("ping:          ✗ {e}");
-            eprintln!("→ run `nuanalytics db login`");
+            for (i, line) in e
+                .next_steps(&config.database.endpoint)
+                .into_iter()
+                .enumerate()
+            {
+                if i == 0 {
+                    eprintln!("→ {line}");
+                } else {
+                    eprintln!("  {line}");
+                }
+            }
             std::process::exit(1);
         }
     }
@@ -1268,5 +1387,130 @@ mod tests {
             extract_project_ref("https://api.db.example.com"),
             Some("api".to_string())
         );
+    }
+
+    // ---- OAuth callback failure reporting -----------------------------------
+
+    /// The exact callback that cost hours during the self-hosted cutover: `GoTrue` put a
+    /// malformed-`auth.users`-row error in `error_description`, and it was discarded.
+    const REAL_FAILURE: &str = "GET /callback?error=server_error&error_description=sql%3A+Scan+error+on+column+index+3%2C+name+%22confirmation_token%22%3A+converting+NULL+to+string+is+unsupported HTTP/1.1";
+
+    #[test]
+    fn test_callback_failure_keeps_the_provider_description() {
+        let f = CallbackFailure::from_request_line(REAL_FAILURE);
+        assert_eq!(f.error.as_deref(), Some("server_error"));
+        let description = f.description.as_deref().expect("description is parsed");
+        assert!(
+            description.contains("confirmation_token"),
+            "the provider's actual explanation must survive parsing, got: {description}"
+        );
+        assert!(
+            description.contains("converting NULL to string is unsupported"),
+            "got: {description}"
+        );
+    }
+
+    #[test]
+    fn test_terminal_message_names_backend_and_quotes_the_provider() {
+        let f = CallbackFailure::from_request_line(REAL_FAILURE);
+        let msg = f.terminal_message("https://nu.example.com");
+
+        // (a) which backend
+        assert!(
+            msg.contains("https://nu.example.com"),
+            "message must name the backend: {msg}"
+        );
+        // (b) what actually failed — the provider's own words, not a summary
+        assert!(
+            msg.contains("confirmation_token"),
+            "message must carry the provider's explanation: {msg}"
+        );
+        // (c) what to do next
+        assert!(
+            msg.contains("db login"),
+            "message must say what to do next: {msg}"
+        );
+        // And must NOT assert a cause the code cannot know.
+        assert!(
+            !msg.to_lowercase().contains("provider is enabled"),
+            "message must not invent a cause: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_terminal_message_says_so_when_the_provider_sent_nothing() {
+        let f = CallbackFailure::from_request_line("GET /callback HTTP/1.1");
+        assert!(
+            f.provider_text().is_none(),
+            "an empty callback yields no provider text"
+        );
+        let msg = f.terminal_message("https://nu.example.com");
+        assert!(
+            msg.contains("nothing"),
+            "an empty callback must report that the provider said nothing, not guess: {msg}"
+        );
+        assert!(!msg.to_lowercase().contains("provider is enabled"), "{msg}");
+    }
+
+    #[test]
+    fn test_terminal_message_handles_an_unconfigured_endpoint() {
+        let f = CallbackFailure::from_request_line(REAL_FAILURE);
+        let msg = f.terminal_message("");
+        assert!(
+            msg.contains("no endpoint configured"),
+            "an empty endpoint must be stated, not printed as a blank: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_error_page_carries_the_description_and_escapes_it() {
+        let f = CallbackFailure::from_request_line(REAL_FAILURE);
+        let page = f.error_page("https://nu.example.com");
+        assert!(
+            page.contains("confirmation_token"),
+            "the browser page must show the provider's explanation — it is the page the \
+             user was previously forced to read out of the address bar"
+        );
+        assert!(
+            page.contains("https://nu.example.com"),
+            "page names the backend"
+        );
+        assert!(
+            !page.contains("provider is enabled in your Supabase project"),
+            "the page must not invent a cause"
+        );
+        // The description reached us through a URL, so it must not be able to inject markup.
+        assert!(
+            f.description
+                .as_deref()
+                .expect("has description")
+                .contains('"'),
+            "fixture should contain a quote character to make the escaping meaningful"
+        );
+        assert!(
+            page.contains("&quot;confirmation_token&quot;"),
+            "provider text must be HTML-escaped in the page"
+        );
+    }
+
+    #[test]
+    fn test_error_page_escapes_injected_markup() {
+        let line =
+            "GET /callback?error=x&error_description=%3Cscript%3Ealert(1)%3C%2Fscript%3E HTTP/1.1";
+        let page = CallbackFailure::from_request_line(line).error_page("https://nu.example.com");
+        assert!(
+            !page.contains("<script>"),
+            "a callback URL must not be able to inject script into the page"
+        );
+        assert!(page.contains("&lt;script&gt;"), "markup must be escaped");
+    }
+
+    #[test]
+    fn test_error_code_is_reported_when_present() {
+        let line = "GET /callback?error=server_error&error_code=unexpected_failure&error_description=boom HTTP/1.1";
+        let f = CallbackFailure::from_request_line(line);
+        assert_eq!(f.code.as_deref(), Some("unexpected_failure"));
+        assert!(f.terminal_message("e").contains("unexpected_failure"));
+        assert!(f.error_page("e").contains("unexpected_failure"));
     }
 }
