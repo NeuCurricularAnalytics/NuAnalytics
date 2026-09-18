@@ -1,7 +1,7 @@
 //! Database management CLI commands.
 //!
 //! Handles `nuanalytics db` subcommands:
-//! - `login` / `logout` / `whoami` — Supabase OAuth authentication
+//! - `login` / `logout` / `whoami` — Supabase authentication (OAuth or password)
 //! - `status` — connectivity check
 //! - `ipeds-import` — IPEDS CSV ingestion
 //! - `import` — degree report → normalized program tables
@@ -12,8 +12,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use nu_analytics::config::{Config, ConfigSources};
 use nu_analytics::database::import::{execute_import, ImportOptions, ImportOutcome, ImportResult};
 use nu_analytics::database::{
-    auth_file_path, clear_auth_state, doctor, ipeds, load_auth_state, save_auth_state, AuthState,
-    DatabaseError, DbClient,
+    auth_file_path, clear_auth_state, doctor, ipeds, load_auth_state, save_auth_state,
+    sign_in_with_password, AuthState, DatabaseError, DbClient, SignInError,
 };
 
 use crate::args::DbSubcommand;
@@ -24,7 +24,9 @@ const SUPABASE_MGMT_API_BASE: &str = "https://api.supabase.com/v1/projects";
 /// Run the `db` subcommand, dispatching to the appropriate handler.
 pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
     match subcommand {
-        DbSubcommand::Login { provider } => run_login(config, &provider),
+        DbSubcommand::Login { provider, email } => {
+            run_login(config, provider.as_deref(), email.as_deref());
+        }
         DbSubcommand::Logout => run_logout(config),
         DbSubcommand::Whoami => run_whoami(config),
         DbSubcommand::ExecSql { file } => run_exec_sql(config, &file),
@@ -83,25 +85,119 @@ pub(super) fn make_runtime() -> Option<tokio::runtime::Runtime> {
 }
 
 // ============================================================================
-// Login — OAuth PKCE flow
+// Login — OAuth PKCE flow and password grant
 // ============================================================================
 
-/// Validate database config, build an async runtime, and run the OAuth login flow.
-fn run_login(config: &Config, provider: &str) {
+/// OAuth provider used when neither `--provider` nor `--email` is given.
+const DEFAULT_OAUTH_PROVIDER: &str = "github";
+
+/// Validate database config, build an async runtime, and run the requested login flow.
+///
+/// `provider` and `email` are mutually exclusive at the arg parser, so at most one is
+/// `Some`; `email` selects the password grant and anything else selects OAuth.
+fn run_login(config: &Config, provider: Option<&str>, email: Option<&str>) {
     if config.database.endpoint.is_empty() || config.database.anon_key.is_empty() {
         // Uses the shared steps rather than its own copy, which omitted the caveat that
         // `config set` writes to the home config while a project-local nuanalytics.toml
         // outranks it — the documented trap.
         eprintln!("✗ {}", DatabaseError::NotConfigured);
         report_db_error(&DatabaseError::NotConfigured, &config.database.endpoint);
-        return;
+        std::process::exit(1);
     }
 
     let Some(rt) = make_runtime() else { return };
 
-    if let Err(e) = rt.block_on(do_oauth_login(config, provider)) {
+    let outcome = email.map_or_else(
+        || {
+            rt.block_on(do_oauth_login(
+                config,
+                provider.unwrap_or(DEFAULT_OAUTH_PROVIDER),
+            ))
+        },
+        |address| rt.block_on(do_password_login(config, address)),
+    );
+
+    // Exits non-zero like every other `db` subcommand. Login is the first step of setting
+    // a deployment up, so a script that chains `db login && db import` must not carry on
+    // against a backend it never signed in to.
+    if let Err(e) = outcome {
         eprintln!("✗ Login failed: {e}");
+        std::process::exit(1);
     }
+}
+
+/// Sign in with an email address and a password read from the terminal.
+///
+/// The password is prompted for rather than accepted as an argument: an argument would
+/// persist in shell history and be visible in `ps` output for the life of the process.
+async fn do_password_login(config: &Config, email: &str) -> Result<(), String> {
+    println!("Signing in to {} as {email}", config.database.endpoint);
+    let password = prompt_password()?;
+    if password.is_empty() {
+        return Err("no password entered".to_string());
+    }
+
+    let state = sign_in_with_password(
+        &config.database.endpoint,
+        &config.database.anon_key,
+        email,
+        &password,
+    )
+    .await
+    .map_err(|e| describe_sign_in_error(&e, &config.database.endpoint))?;
+
+    persist_session(config, &state)
+}
+
+/// Read a password from the terminal without echoing it.
+///
+/// # Errors
+/// Fails when there is no terminal to prompt on, which is what happens in a pipeline or
+/// CI job — the message says so rather than reporting it as a credential problem.
+fn prompt_password() -> Result<String, String> {
+    rpassword::prompt_password("Password: ").map_err(|e| {
+        let mut msg = format!("cannot read a password from this terminal ({e}).");
+        msg.push_str(" `--email` needs an interactive terminal; use OAuth for unattended sign-in.");
+        msg
+    })
+}
+
+/// Render a [`SignInError`] with the backend named and a next step that fits the variant.
+///
+/// Rejections quote `GoTrue`'s own message and add no cause of our own: "Invalid login
+/// credentials" and "Email not confirmed" want different things from the user, and only
+/// the backend knows which applies.
+fn describe_sign_in_error(error: &SignInError, endpoint: &str) -> String {
+    match error {
+        SignInError::Transport(msg) => {
+            format!("{endpoint} could not be reached: {msg}")
+        }
+        SignInError::Rejected { status, detail } => {
+            let mut msg = format!("{endpoint} refused the sign-in: {detail} (HTTP {status})");
+            msg.push_str(
+                "\n  The account must already exist on the backend — `--email` never creates one.",
+            );
+            msg.push_str(
+                "\n  If the address and password are right, check that email/password sign-in",
+            );
+            msg.push_str("\n  is enabled on the stack (GoTrue `GOTRUE_EXTERNAL_EMAIL_ENABLED`).");
+            msg
+        }
+        SignInError::Malformed(msg) => format!(
+            "{endpoint} answered the sign-in with something this client could not read: {msg}"
+        ),
+    }
+}
+
+/// Write a freshly obtained session to the configured auth file and report where it went.
+fn persist_session(config: &Config, state: &AuthState) -> Result<(), String> {
+    let auth_path = auth_file_path(&config.database);
+    save_auth_state(&auth_path, state)?;
+
+    let email = state.user_email.as_deref().unwrap_or("(no email)");
+    println!("✓ Signed in as {email}");
+    println!("  Session saved to {}", auth_path.display());
+    Ok(())
 }
 
 /// Carry out the full OAuth 2.0 PKCE flow:
@@ -182,14 +278,7 @@ async fn do_oauth_login(config: &Config, provider: &str) -> Result<(), String> {
         user_email: session.user.email,
     };
 
-    let auth_path = auth_file_path(&config.database);
-    save_auth_state(&auth_path, &state)?;
-
-    let email = state.user_email.as_deref().unwrap_or("(no email)");
-    println!("✓ Signed in as {email}");
-    println!("  Session saved to {}", auth_path.display());
-
-    Ok(())
+    persist_session(config, &state)
 }
 
 /// Parse a provider name string into the SDK's `OAuthProvider` enum.
@@ -1352,6 +1441,66 @@ mod tests {
             Some("hello world".to_string())
         );
         assert_eq!(extract_query_param(line, "code"), Some("a b".to_string()));
+    }
+
+    // --- describe_sign_in_error ---------------------------------------------
+
+    #[test]
+    fn describe_sign_in_error_quotes_the_backend_and_invents_no_cause() {
+        // The rule this whole workstream enforces: report what the backend said, name the
+        // backend, and do not assert a cause the code has not established.
+        let rendered = describe_sign_in_error(
+            &SignInError::Rejected {
+                status: 400,
+                detail: "Email not confirmed".to_string(),
+            },
+            "https://db.example.edu",
+        );
+        assert!(rendered.contains("https://db.example.edu"), "{rendered}");
+        assert!(rendered.contains("Email not confirmed"), "{rendered}");
+        assert!(
+            !rendered.to_lowercase().contains("wrong password"),
+            "must not narrow a refusal to a cause GoTrue did not state: {rendered}"
+        );
+    }
+
+    #[test]
+    fn describe_sign_in_error_says_unreachable_rather_than_refused() {
+        // A host that is down must not be reported as a credential problem — the same
+        // confusion `RefreshError` was split up to prevent.
+        let rendered = describe_sign_in_error(
+            &SignInError::Transport("connection refused".to_string()),
+            "https://db.example.edu",
+        );
+        assert!(
+            rendered.contains("could not be reached"),
+            "expected an unreachability message, got {rendered}"
+        );
+        assert!(
+            !rendered.contains("refused the sign-in"),
+            "a transport failure is not a refusal: {rendered}"
+        );
+    }
+
+    #[test]
+    fn describe_sign_in_error_names_the_endpoint_for_every_variant() {
+        // Whatever went wrong, the message has to say which backend it was talking to;
+        // the MCP server's failures were unusable before this became the rule.
+        let variants = [
+            SignInError::Transport("down".to_string()),
+            SignInError::Rejected {
+                status: 403,
+                detail: "nope".to_string(),
+            },
+            SignInError::Malformed("bad json".to_string()),
+        ];
+        for variant in &variants {
+            let rendered = describe_sign_in_error(variant, "https://db.example.edu");
+            assert!(
+                rendered.contains("https://db.example.edu"),
+                "{variant:?} rendered without the endpoint: {rendered}"
+            );
+        }
     }
 
     // --- parse_provider ----------------------------------------------------

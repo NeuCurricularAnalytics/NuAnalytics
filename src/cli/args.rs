@@ -594,25 +594,33 @@ pub enum Command {
 #[cfg(feature = "database")]
 #[derive(Debug, Subcommand)]
 pub enum DbSubcommand {
-    /// Sign in to Supabase via OAuth and save the session for database operations.
+    /// Sign in to Supabase and save the session for database operations.
     ///
-    /// Opens your browser to authenticate with the chosen OAuth provider (default: GitHub).
-    /// After authorising, the browser redirects back to a temporary local server and
-    /// the session token is saved automatically.
+    /// Two ways in. OAuth (the default) opens your browser to authenticate with the
+    /// chosen provider, then redirects back to a temporary local server; the provider
+    /// must be enabled in the project under Authentication → Providers, which on a
+    /// self-hosted stack means registering an OAuth application first. A password sign-in
+    /// (`--email`) needs no provider at all, so it is the way in to a stack that has not
+    /// had one set up — the password is prompted for, never passed as an argument.
+    ///
+    /// Neither path creates an account: the user must already exist on the backend, so
+    /// `--email` does not require signup to be enabled.
     ///
     /// Requires `database.endpoint` and `database.anon_key` to be set in config.
-    /// The provider must be enabled in your Supabase project under Authentication → Providers.
     ///
     /// Examples:
     /// ```sh
-    /// nuanalytics db login                    # uses GitHub
+    /// nuanalytics db login                          # OAuth via GitHub
     /// nuanalytics db login --provider google
-    /// nuanalytics db login --provider gitlab
+    /// nuanalytics db login --email you@example.edu   # prompts for a password
     /// ```
     Login {
-        /// OAuth provider to use (github, google, gitlab, discord, azure, ...)
-        #[arg(long, value_name = "PROVIDER", default_value = "github")]
-        provider: String,
+        /// OAuth provider to use (github, google, gitlab, discord, azure, ...). Default: github.
+        #[arg(long, value_name = "PROVIDER", conflicts_with = "email")]
+        provider: Option<String>,
+        /// Sign in with this email address and a prompted password instead of OAuth.
+        #[arg(long, value_name = "ADDRESS")]
+        email: Option<String>,
     },
     /// Remove the locally saved session token. Revokes nothing server-side.
     ///

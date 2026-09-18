@@ -105,7 +105,10 @@ pub mod tables {
 }
 
 pub use crate::core::config::DatabaseConfig;
-pub use auth::{auth_file_path, clear_auth_state, load_auth_state, save_auth_state, AuthState};
+pub use auth::{
+    auth_file_path, clear_auth_state, load_auth_state, save_auth_state, sign_in_with_password,
+    AuthState, SignInError,
+};
 pub use client::DbClient;
 pub use error::{DatabaseError, DatabaseResult};
 pub use models::{

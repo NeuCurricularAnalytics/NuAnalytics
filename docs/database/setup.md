@@ -140,8 +140,10 @@ recreating them, so they are safe to re-run on a live database.
 
 RLS policies are included in `schema.sql` — no separate step needed for fresh installs.
 
-**Existing database (set up before this was added):** Run `docs/database/rls-patch.sql`
-in the SQL Editor to add the missing policies without touching any data.
+**Existing database (set up before this was added):** Run
+`docs/database/historical/rls-patch.sql` in the SQL Editor to add the missing policies
+without touching any data. Fresh installs must not run it — see
+`docs/database/historical/Readme.md`.
 
 To verify policies are in place:
 
@@ -193,14 +195,24 @@ note in the credentials section above.
 
 ---
 
-## Step 7 — Enable an OAuth provider
+## Step 7 — Enable an OAuth provider (optional)
 
-IPEDS data import requires an authenticated session. NuAnalytics uses OAuth — your
-browser handles the sign-in, and no password is ever stored locally.
+IPEDS data import requires an authenticated session. There are two ways to get one, and
+neither stores a password locally:
+
+| | Setup needed | Use when |
+|---|---|---|
+| **OAuth** (`db login`) | Register an OAuth app with the provider, allowlist the redirect URL — this step | You want browser sign-in, or several people share the deployment |
+| **Password** (`db login --email`) | None. Every GoTrue ships the password grant | You are standing up a stack and just need in |
+
+**If you are self-hosting and only want to get going, skip to Step 8 and use
+`--email`.** This step exists because OAuth is nicer day to day, not because sign-in
+requires it. Neither method creates accounts — the user must already exist on the
+backend, so using `--email` does not mean enabling signup.
 
 > **Symptom check:** If `nuanalytics db login` prints a URL and you get a **404** when
 > you open it, the OAuth provider is not yet enabled in Supabase. Complete this step
-> first before running `db login`.
+> first before running `db login`, or sign in with `--email` instead.
 
 ### 7a — Add the redirect URL allowlist entry
 
@@ -264,13 +276,28 @@ Signing in is required for any **write** operation (IPEDS import, storing degree
 Read access (MCP query tools) works without signing in.
 
 ```sh
-nuanalytics db login                      # opens browser with GitHub (default)
-nuanalytics db login --provider google    # or another enabled provider
+nuanalytics db login                          # OAuth, opens browser with GitHub (default)
+nuanalytics db login --provider google        # OAuth with another enabled provider
+nuanalytics db login --email you@example.edu  # password, prompted — needs no OAuth provider
 ```
 
-NuAnalytics opens your Windows browser (on WSL/Windows: via `powershell.exe Start-Process`). After you approve
-access on GitHub/Google, the browser redirects to a temporary local server and the
-terminal shows `✓ Signed in as you@email.com`. The session is saved automatically.
+**OAuth.** NuAnalytics opens your Windows browser (on WSL/Windows: via
+`powershell.exe Start-Process`). After you approve access on GitHub/Google, the browser
+redirects to a temporary local server and the terminal shows
+`✓ Signed in as you@email.com`. The session is saved automatically.
+
+**Password.** `--email` prompts for the password and does not echo it. Pass only the
+address — never the password, which would land in your shell history and be visible in
+`ps`. This path needs no OAuth provider, which makes it the way into a stack you have
+just stood up. It requires an interactive terminal, so use OAuth for unattended sign-in.
+
+Both paths save the same session file and refresh the same way, so it makes no difference
+to anything downstream which one you used. A refusal quotes the backend's own words:
+
+```
+✗ Login failed: https://db.example.edu refused the sign-in: Invalid login credentials (HTTP 400)
+  The account must already exist on the backend — `--email` never creates one.
+```
 
 Verify read-write access:
 ```sh
@@ -378,7 +405,10 @@ Config files:
 |---------|----------|
 | `Database not configured` | Set `endpoint`, `anon_key`, and `enabled = true` — see Step 3 |
 | `401 Invalid API key` | Using the wrong key format — must be the JWT anon key (`eyJhbGc...`), not the publishable key (`sb_publishable_...`). Find it under **Project Settings → API → Project API keys → anon / public** |
-| `404` when opening the login URL | OAuth provider not enabled — complete Step 7 first |
+| `404` when opening the login URL | OAuth provider not enabled — complete Step 7, or sign in with `db login --email <addr>`, which needs no provider |
+| `refused the sign-in: Invalid login credentials` | The address or password is wrong, or the account has no password because it was created through OAuth. `--email` never creates an account |
+| `refused the sign-in: Email not confirmed` | The account exists but its address was never confirmed — confirm it, or disable confirmation on the stack |
+| `--email` needs an interactive terminal | The password prompt needs a tty, so it cannot run in CI or a pipeline. Use OAuth for unattended sign-in |
 | GitHub error: `redirect_uri_mismatch` | Authorization callback URL in your GitHub OAuth App doesn't match `https://<project>.supabase.co/auth/v1/callback` |
 | Login URL opens but `site can't be reached` (WSL) | Browser is Windows-side but can't reach WSL listener — ensure `WSL_DISTRO_NAME` env var is set; rebuilding from source will pick it up automatically |
 | Login URL opens but callback fails | `http://127.0.0.1:*` is not in Supabase → Authentication → URL Configuration → Redirect URLs |

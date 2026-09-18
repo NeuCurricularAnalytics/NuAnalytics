@@ -16,6 +16,54 @@ against `{endpoint}/rest/v1`, plus GoTrue at `{endpoint}/auth/v1`. There is no `
 `tokio-postgres`. So pointing at a different backend is configuration, and the query layer,
 models, and `QueryFilters` need no changes at all.
 
+**Every deployment is a fresh install.** As of 2026-09-18 the only existing installation
+is the author's. Nothing here needs a migration path from an older schema, which retires
+two files and changes the shape of §5 (below). Anything framed as "migrate an existing
+database" can be folded into the schema it patches.
+
+Consequently `docs/database/rls-patch.sql` and `docs/database/schema-patch-v2.sql` are
+**obsolete**. Both say so in their own headers -- *"Run against an existing database"*,
+*"If you are setting up a fresh database, run schema.sql instead -- it already includes
+all of the below"* -- so every object in them is already in `schema.sql`. They are seven
+files in a directory where the documented order names five, which is a trap for exactly
+the person this document is written for. Delete them, or move them under
+`docs/database/historical/`.
+
+---
+
+## Where a fresh installer gets stuck (measured 2026-09-18)
+
+Walked end to end with an isolated `HOME`, so this is what a new user actually meets
+rather than what the code looks like it should do.
+
+**Configuring the tool is no longer the hard part.** Two commands point it at any backend,
+and `db doctor` then reports the state of that backend check by check:
+
+    nuanalytics config set database.endpoint <url>
+    nuanalytics config set database.anon_key <key>
+
+Unconfigured is reported correctly and exits 1 -- *"no backend is configured"*, the two
+commands to fix it, and the warning that a project-local `nuanalytics.toml` outranks what
+`config set` writes. Nothing is silently defaulted: `endpoint from: nothing — no tier set
+an endpoint`. That is §2 and §3 having landed.
+
+Signing in no longer needs an OAuth application either, as of 2026-09-18:
+`db login --email <addr>` uses GoTrue's password grant, which every stack has out of the
+box. That was the one barrier with no workaround outside the tool.
+
+What remains is not configuration. In order of how much it blocks:
+
+1. **The schema is five files applied by hand in a specific order** (§4, `db bootstrap`).
+   Laborious and easy to get wrong, but visible when wrong -- `db doctor` names the
+   missing tables.
+2. **A row cap returns wrong numbers rather than errors** (§4). Only bites after everything
+   appears to work, which makes it the most dangerous of the three.
+3. **A project-local config resets `auth_file`** (§3, found-while-doing). Turns a working
+   session into *"Not signed in"*.
+
+The walkthrough is what found the sign-in barrier and the row cap; neither was in this
+document before 2026-09-18. The other two items were already here.
+
 ---
 
 ## Start here — make failures legible (DONE)
@@ -302,6 +350,60 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
 
 ## 4. Making self-hosting reproducible
 
+- [x] **`db login` was OAuth-only, so nobody could sign in to a new stack until an OAuth
+      app existed.** *(done)* -- `nuanalytics db login --email <addr>` now uses GoTrue's
+      `grant_type=password`, which needs no external identity provider and is therefore
+      the way in to a stack whose operator has not registered an OAuth application. OAuth
+      stays the default, so nothing changes for the existing deployment, and the two flags
+      conflict at the arg parser rather than one silently winning.
+
+      The password is prompted for on the tty via `rpassword` and never accepted as an
+      argument -- an argument persists in shell history and is visible in `ps` for the
+      life of the process. `rpassword` was preferred over a hand-rolled `stty -echo`
+      because it restores the terminal on a signal; `stty` leaves echo off after a Ctrl-C
+      at the prompt. Verified not to echo: a pty test types a known string and asserts it
+      never appears in the output.
+
+      Neither path creates an account, so this did not enable signup -- the user must
+      already exist, which is what `add-member.sh` does today.
+
+      Both grants return the same session body, so they now share one `TokenResponse` and
+      one `into_auth_state`, which is where the `expires_at`-from-`expires_in`
+      recomputation lives (self-hosted GoTrue does not always send the absolute field).
+      Failures are a typed `SignInError` split the same way as `RefreshError`, for the
+      same reason: `Transport` means the backend was never reached, `Rejected` means it
+      answered and refused. Rejections quote GoTrue's own words -- `gotrue_error_text`
+      reads `error_description`, `msg`, `message`, `error_code` and `error`, most
+      specific first, because GoTrue has shipped all of those shapes and a self-hosted
+      stack may run any of them.
+
+      `run_login` now exits 1 on failure. It was the only `db` subcommand that did not,
+      and it is the first step of setting a deployment up, so `db login && db import`
+      would previously have carried on against a backend it never signed in to.
+
+      **[verified 2026-09-18]** Live against `nu.lionelle.com` through a pty: the grant
+      reaches GoTrue and its own refusal surfaces --
+      `https://nu.lionelle.com refused the sign-in: Invalid login credentials (HTTP 400)`,
+      exit 1. Also verified not-configured (exits 1 with the shared remediation) and the
+      no-tty case, which reports *"`--email` needs an interactive terminal"* rather than a
+      credential problem.
+- [ ] **`db doctor` cannot see a `PGRST_DB_MAX_ROWS` cap, and the cap returns wrong
+      answers rather than errors.** Upstream Supabase defaults it to **1000** while the
+      MCP completions tools request up to 5,000 rows
+      (`src/mcp/tools/completions.rs:557,1063,1099`). PostgREST silently returns the first
+      1000 with HTTP 200, so representation ratios and totals come out confidently wrong
+      with nothing in the output to suggest truncation. This is the worst failure mode in
+      the whole document: every other one announces itself.
+
+      It is also cheaply detectable, because `cip_codes` has a known 2,173 rows and
+      `doctor` already counts it. **Fix:** after the seed-data check passes, `select`
+      `cip_codes` with a limit above 1000; if exactly 1000 rows come back against a
+      2,173-row table, report the cap and name the setting. Costs one request and turns a
+      silent-wrong-answer class into a named diagnosis.
+
+      **[verified 2026-09-18]** Not set on `nu.lionelle.com`: `limit=5000` returned all
+      2,173 rows, and `limit=1500` returned 1,500, so that deployment is unaffected. The
+      risk is specifically a *new* stack left on upstream defaults.
 - [ ] **`db bootstrap`** — apply the five schema/seed files in the documented order
       (`docs/database/setup.md:114-121`) through whichever path is available: Management API
       when a project ref is configured, direct `psql` otherwise. Applying the schema is the
@@ -331,6 +433,12 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
 
       Recommend 2, with 1 folded in: the ordering is the part that goes wrong, and neither
       option requires the tool to learn SQL connectivity. Needs a call before implementation.
+
+      *Fresh-installs-only makes this smaller than written.* There is no upgrade path to
+      support and no ambiguity about which files a given database already has: the answer
+      is always all five, in order, once. `--print` can therefore emit one deterministic
+      stream with no state to inspect and no flags to choose between, and the five files
+      can be `include_str!`'d so the output does not depend on the repo being present.
 - [x] **`db doctor`** *(done)* — `nuanalytics db doctor`. Checks run outwards from
       configuration to data, and each one gates the next so the report names a single
       cause instead of repeating it six times: configuration → reachability → anon-key
@@ -389,11 +497,21 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       Two people importing their own version of the same program means the second silently
       overwrites the first's `document` JSONB. `analysis_runs` is unaffected — `run_key` is
       a content hash, so the overwrite is a no-op.
-      **Fix (one migration, no Rust):** add `created_by uuid DEFAULT auth.uid()` to
-      `programs`, `degrees`, `program_courses`, `program_requirements`, and replace their
-      `FOR ALL` policies with `USING (created_by = auth.uid() OR created_by IS NULL)` plus a
-      matching `WITH CHECK`. Leave the IPEDS reference tables and `courses` shared by design
+      **Fix (edit the schema, plus one small Rust change):** add
+      `created_by uuid DEFAULT auth.uid()` to `programs`, `degrees`, `program_courses`,
+      `program_requirements`, and replace their `FOR ALL` policies with
+      `USING (created_by = auth.uid() OR created_by IS NULL)` plus a matching `WITH CHECK`.
+      Leave the IPEDS reference tables and `courses` shared by design
       (`src/core/database/mod.rs:56`).
+
+      *Revised for fresh-installs-only:* this was written as a standalone migration file
+      to avoid breaking existing databases. With no such databases, edit
+      `programs-schema.sql` in place instead -- a sixth file in a directory whose
+      documented order already trips people is a worse outcome than a schema that is
+      correct on first application. The author's own instance is the one thing that then
+      needs the `ALTER`, applied by hand, which is a single known case rather than a
+      supported path. The `IS NULL` disjunct stays: it is what keeps rows created before
+      the column existed readable, including that instance's.
       **[verified]** The resulting error is *not* the expected `42501` RLS violation. Because
       RLS hides the other user's row from the UPDATE path, the `merge-duplicates` upsert
       falls through to an INSERT and trips the natural-key unique constraint instead:

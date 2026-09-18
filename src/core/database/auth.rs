@@ -116,18 +116,26 @@ pub fn auth_file_path(db_config: &crate::core::config::DatabaseConfig) -> PathBu
 }
 
 // ============================================================================
-// Token refresh
+// Token grants
 // ============================================================================
 
 /// Relative path for Supabase's refresh-token grant endpoint.
 const REFRESH_TOKEN_PATH: &str = "/auth/v1/token?grant_type=refresh_token";
 
-/// Response body for `POST /auth/v1/token?grant_type=refresh_token`.
+/// Relative path for Supabase's password grant endpoint.
 ///
-/// Only the fields we persist into [`AuthState`] are deserialised; Supabase
-/// returns extra fields (`token_type`, `user`, …) that we ignore.
+/// Unlike the OAuth flow this needs no external identity provider, which is what makes it
+/// usable on a freshly stood-up stack.
+const PASSWORD_GRANT_PATH: &str = "/auth/v1/token?grant_type=password";
+
+/// Response body for either grant at `POST /auth/v1/token`.
+///
+/// `GoTrue` returns the same session shape for `grant_type=refresh_token` and
+/// `grant_type=password`, so both paths deserialise into this. Only the fields we persist
+/// into [`AuthState`] are read; Supabase returns extra ones (`token_type`, the full `user`
+/// record, …) that we ignore.
 #[derive(Debug, Deserialize)]
-struct RefreshResponse {
+struct TokenResponse {
     access_token: String,
     refresh_token: String,
     /// Seconds until the new access token expires (typically 3600).
@@ -137,27 +145,30 @@ struct RefreshResponse {
     /// Some Supabase deployments return a refreshed user payload; we only
     /// care about the email for display.
     #[serde(default)]
-    user: Option<RefreshUser>,
+    user: Option<TokenUser>,
 }
 
 #[derive(Debug, Deserialize)]
-struct RefreshUser {
+struct TokenUser {
     #[serde(default)]
     email: Option<String>,
 }
 
-/// Exchange a refresh token for a fresh access token.
-///
-/// Calls Supabase's `POST {endpoint}/auth/v1/token?grant_type=refresh_token`
-/// with the project anon key in the `apikey` header. Used by the database
-/// client to keep long-running sessions (MCP servers in particular) from
-/// dead-ending at the 1-hour JWT expiry — `is_expired()` already returns
-/// `true` 60s ahead of the wall-clock expiry to give callers a buffer.
-///
-/// # Errors
-/// Returns a string describing the failure if the HTTP request fails or
-/// Supabase rejects the refresh token (e.g. it was revoked by `db logout`
-/// on another machine, or the user was deleted).
+impl TokenResponse {
+    /// Convert a grant response into the session we persist.
+    ///
+    /// `expires_at` is computed from `expires_in` rather than read from the response,
+    /// because self-hosted `GoTrue` does not always send the absolute field.
+    fn into_auth_state(self) -> AuthState {
+        AuthState {
+            access_token: self.access_token,
+            refresh_token: self.refresh_token,
+            expires_at: chrono::Utc::now().timestamp() + self.expires_in,
+            user_email: self.user.and_then(|u| u.email),
+        }
+    }
+}
+
 /// Why a token refresh failed.
 ///
 /// The distinction is load-bearing: a transport failure means the backend could not be
@@ -192,10 +203,15 @@ impl fmt::Display for RefreshError {
 
 /// Exchange a refresh token for a fresh session.
 ///
+/// Calls `POST {endpoint}/auth/v1/token?grant_type=refresh_token` with the project anon
+/// key in the `apikey` header. Keeps long-running sessions (MCP servers in particular)
+/// from dead-ending at the 1-hour JWT expiry; [`AuthState::is_expired`] reports `true`
+/// 60s ahead of the wall-clock expiry to give callers room to call this.
+///
 /// # Errors
 /// [`RefreshError::Transport`] when the backend could not be reached,
-/// [`RefreshError::Rejected`] when it refused the token, and
-/// [`RefreshError::Malformed`] when its answer could not be parsed.
+/// [`RefreshError::Rejected`] when it refused the token — revoked elsewhere, or the user
+/// was deleted — and [`RefreshError::Malformed`] when its answer could not be parsed.
 pub async fn refresh_session(
     endpoint: &str,
     anon_key: &str,
@@ -223,16 +239,118 @@ pub async fn refresh_session(
         )));
     }
 
-    let parsed: RefreshResponse = response.json().await.map_err(|e| {
+    let parsed: TokenResponse = response.json().await.map_err(|e| {
         RefreshError::Malformed(format!("token refresh returned malformed JSON: {e}"))
     })?;
 
-    Ok(AuthState {
-        access_token: parsed.access_token,
-        refresh_token: parsed.refresh_token,
-        expires_at: chrono::Utc::now().timestamp() + parsed.expires_in,
-        user_email: parsed.user.and_then(|u| u.email),
-    })
+    Ok(parsed.into_auth_state())
+}
+
+// ============================================================================
+// Password sign-in
+// ============================================================================
+
+/// Why a password sign-in failed.
+///
+/// Split the same way as [`RefreshError`], for the same reason: a transport failure means
+/// the backend was never reached, while a rejection means it answered and refused. The
+/// rejection variant carries `GoTrue`'s own words rather than a guess — inventing a cause
+/// is the defect that made the OAuth callback expensive to debug.
+#[derive(Debug, Clone)]
+pub enum SignInError {
+    /// The request never got an answer (DNS, connection refused, TLS, timeout).
+    Transport(String),
+    /// The backend answered and refused the credentials.
+    Rejected {
+        /// HTTP status `GoTrue` replied with.
+        status: u16,
+        /// `GoTrue`'s own description of the refusal, most specific field available.
+        detail: String,
+    },
+    /// The backend answered with a body this client could not parse.
+    Malformed(String),
+}
+
+impl fmt::Display for SignInError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Transport(m) | Self::Malformed(m) => f.write_str(m),
+            Self::Rejected { status, detail } => write!(f, "{detail} (HTTP {status})"),
+        }
+    }
+}
+
+/// Pull the most specific human-readable message out of a `GoTrue` error body.
+///
+/// `GoTrue` has shipped three shapes for these over the versions it supports, and a
+/// self-hosted stack may be running any of them: `error_description` (OAuth-style),
+/// `msg` with a sibling `error_code` (current), and a bare `message`. Fields are tried
+/// most-specific first so the user sees prose rather than a code like
+/// `invalid_credentials` when both are present.
+fn gotrue_error_text(body: &str) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(body).ok()?;
+    for key in ["error_description", "msg", "message", "error_code", "error"] {
+        if let Some(text) = parsed.get(key).and_then(serde_json::Value::as_str) {
+            if !text.is_empty() {
+                return Some(text.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Sign in with an email and password, returning a session to persist.
+///
+/// Calls `POST {endpoint}/auth/v1/token?grant_type=password`. This grant needs no
+/// external identity provider, so it is the one sign-in path that works on a stack whose
+/// operator has not yet registered an OAuth application. It does **not** create accounts:
+/// the user must already exist, so enabling this does not enable signup.
+///
+/// # Errors
+/// [`SignInError::Transport`] when the backend could not be reached,
+/// [`SignInError::Rejected`] when it refused the credentials — wrong password, unknown
+/// user, or an unconfirmed email address, carrying `GoTrue`'s own message — and
+/// [`SignInError::Malformed`] when its answer could not be parsed.
+pub async fn sign_in_with_password(
+    endpoint: &str,
+    anon_key: &str,
+    email: &str,
+    password: &str,
+) -> Result<AuthState, SignInError> {
+    let url = format!("{}{PASSWORD_GRANT_PATH}", endpoint.trim_end_matches('/'));
+    let body = serde_json::json!({ "email": email, "password": password });
+
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("apikey", anon_key)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| SignInError::Transport(format!("sign-in request to {url} failed: {e}")))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body_text = response.text().await.unwrap_or_default();
+        let detail = gotrue_error_text(&body_text).unwrap_or_else(|| {
+            if body_text.is_empty() {
+                format!("{endpoint} refused the sign-in and sent no explanation")
+            } else {
+                body_text.clone()
+            }
+        });
+        return Err(SignInError::Rejected {
+            status: status.as_u16(),
+            detail,
+        });
+    }
+
+    let parsed: TokenResponse = response
+        .json()
+        .await
+        .map_err(|e| SignInError::Malformed(format!("sign-in returned malformed JSON: {e}")))?;
+
+    Ok(parsed.into_auth_state())
 }
 
 /// Load the auth file, refreshing the token if it is expired.
@@ -425,5 +543,209 @@ mod tests {
         let returned = result.expect("auth state should be loaded from disk");
         assert_eq!(returned.access_token, state.access_token);
         assert_eq!(returned.refresh_token, state.refresh_token);
+    }
+    // --- password sign-in ---------------------------------------------------
+
+    /// Canned-response server that records the raw request it received.
+    ///
+    /// The recording is the point: the interesting assertions are about *which* grant
+    /// endpoint was called and what was sent with it, neither of which is observable
+    /// from the returned `AuthState`.
+    async fn recording_stub(
+        status_line: &'static str,
+        body: &'static str,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<String>>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind ephemeral port");
+        let url = format!("http://{}", listener.local_addr().expect("local addr"));
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let recorder = std::sync::Arc::clone(&seen);
+        tokio::spawn(async move {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut buf = [0u8; 8192];
+            let n = tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
+                .await
+                .unwrap_or(0);
+            *recorder.lock().expect("record request") =
+                String::from_utf8_lossy(&buf[..n]).to_string();
+            let response = format!(
+                "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
+        });
+        (url, seen)
+    }
+
+    const PASSWORD_SESSION: &str = r#"{"access_token":"at","refresh_token":"rt","expires_in":3600,"user":{"email":"you@example.edu"}}"#;
+
+    #[tokio::test]
+    async fn sign_in_with_password_calls_the_password_grant_with_the_anon_key() {
+        let (url, seen) = recording_stub("200 OK", PASSWORD_SESSION).await;
+        sign_in_with_password(&url, "anon-key", "you@example.edu", "hunter2")
+            .await
+            .expect("stub returns a valid session");
+
+        let request = seen.lock().expect("read recorded request").clone();
+        assert!(
+            request.contains("grant_type=password"),
+            "must use the password grant, not the refresh grant: {request}"
+        );
+        assert!(
+            request.contains("apikey: anon-key"),
+            "GoTrue rejects the grant without the project anon key: {request}"
+        );
+        assert!(
+            request.contains("you@example.edu") && request.contains("hunter2"),
+            "credentials must reach the backend: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn sign_in_with_password_recomputes_expiry_from_expires_in() {
+        // Self-hosted GoTrue does not always send the absolute `expires_at`, so the
+        // session's expiry has to come from `expires_in`. The stub body omits it.
+        let before = chrono::Utc::now().timestamp();
+        let (url, _seen) = recording_stub("200 OK", PASSWORD_SESSION).await;
+        let state = sign_in_with_password(&url, "anon", "you@example.edu", "pw")
+            .await
+            .expect("stub returns a valid session");
+
+        assert!(
+            state.expires_at >= before + 3600 && state.expires_at <= before + 3605,
+            "expires_at should be ~1h out, got {} (now {before})",
+            state.expires_at
+        );
+        assert_eq!(state.user_email.as_deref(), Some("you@example.edu"));
+        assert!(
+            state.is_valid(),
+            "a fresh 1h session must not read as expired"
+        );
+    }
+
+    #[tokio::test]
+    async fn sign_in_with_password_surfaces_gotrues_own_refusal_message() {
+        let (url, _seen) = recording_stub(
+            "400 Bad Request",
+            r#"{"code":400,"error_code":"invalid_credentials","msg":"Invalid login credentials"}"#,
+        )
+        .await;
+        let error = sign_in_with_password(&url, "anon", "you@example.edu", "wrong")
+            .await
+            .expect_err("a 400 must not read as success");
+
+        match error {
+            SignInError::Rejected { status, detail } => {
+                assert_eq!(status, 400);
+                assert_eq!(
+                    detail, "Invalid login credentials",
+                    "the user should see GoTrue's prose, not its error code"
+                );
+            }
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn sign_in_with_password_separates_unreachable_from_refused() {
+        // Port 1 on loopback refuses instantly. A transport failure must not be reported
+        // as a credential problem — that is the mistake `RefreshError` exists to avoid.
+        let error = sign_in_with_password("http://127.0.0.1:1", "anon", "you@example.edu", "pw")
+            .await
+            .expect_err("nothing is listening on port 1");
+        assert!(
+            matches!(error, SignInError::Transport(_)),
+            "expected Transport, got {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn sign_in_with_password_reports_an_unreadable_success_body() {
+        let (url, _seen) = recording_stub("200 OK", "this is not json").await;
+        let error = sign_in_with_password(&url, "anon", "you@example.edu", "pw")
+            .await
+            .expect_err("a 200 with a junk body is not a session");
+        assert!(
+            matches!(error, SignInError::Malformed(_)),
+            "expected Malformed, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn gotrue_error_text_reads_every_shape_gotrue_ships() {
+        // GoTrue has used all three over the versions a self-hosted stack might run.
+        let cases = [
+            (
+                r#"{"error_description":"Email not confirmed"}"#,
+                "Email not confirmed",
+            ),
+            (
+                r#"{"msg":"Invalid login credentials"}"#,
+                "Invalid login credentials",
+            ),
+            (
+                r#"{"message":"signups not allowed"}"#,
+                "signups not allowed",
+            ),
+            (r#"{"error":"invalid_grant"}"#, "invalid_grant"),
+        ];
+        for (body, expected) in cases {
+            assert_eq!(
+                gotrue_error_text(body).as_deref(),
+                Some(expected),
+                "failed to read {body}"
+            );
+        }
+    }
+
+    #[test]
+    fn gotrue_error_text_prefers_prose_over_a_code() {
+        // Current GoTrue sends both; `invalid_credentials` tells the user less than the
+        // sentence next to it does.
+        let body =
+            r#"{"code":400,"error_code":"invalid_credentials","msg":"Invalid login credentials"}"#;
+        assert_eq!(
+            gotrue_error_text(body).as_deref(),
+            Some("Invalid login credentials")
+        );
+    }
+
+    #[test]
+    fn gotrue_error_text_declines_bodies_it_cannot_read() {
+        // Falling back to the raw body is the caller's job, so these must be None rather
+        // than a guess.
+        for body in [
+            "",
+            "<html>502 Bad Gateway</html>",
+            "{}",
+            r#"{"unexpected":"shape"}"#,
+            r#"{"msg":""}"#,
+        ] {
+            assert!(
+                gotrue_error_text(body).is_none(),
+                "should not have extracted a message from {body:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sign_in_error_display_keeps_the_status_visible() {
+        let rejected = SignInError::Rejected {
+            status: 400,
+            detail: "Invalid login credentials".to_string(),
+        };
+        let shown = rejected.to_string();
+        assert!(shown.contains("Invalid login credentials"), "{shown}");
+        assert!(shown.contains("400"), "{shown}");
+
+        // Transport and Malformed already carry a full sentence, so Display must not
+        // decorate them with a status they do not have.
+        assert_eq!(
+            SignInError::Transport("host is down".to_string()).to_string(),
+            "host is down"
+        );
     }
 }

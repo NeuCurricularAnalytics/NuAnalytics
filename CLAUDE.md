@@ -76,10 +76,33 @@ written at default umask (0644), unlike the auth file (0600, `auth.rs:88-93`).
 `docs/db-migration-todo.md` is the live work list for making the backend a true deployment
 target. Items marked `[verified]` were observed in practice, not theorised. Sections 1
 (importer defects), 2 (backend portability) and 3 (diagnosability) are **done**, as is
-`db doctor` from §4. What is left: `db bootstrap` and `deploy/selfhost/` in §4, both
-blocked on a decision rather than effort and written up with options in the doc, and §5
-data integrity, whose fix is a SQL migration adding `created_by` with matching RLS
-policies — no Rust.
+`db doctor` from §4. Read **"Where a fresh installer gets stuck"** near the top before
+picking an item — it is the measured walkthrough and it orders the remaining work by how
+much each thing blocks.
+
+**Every deployment is a fresh install** (true as of 2026-09-18 — the author's is the only
+one). So there is no schema migration path to preserve, and
+`docs/database/rls-patch.sql` and `schema-patch-v2.sql` are obsolete: both say in their
+own headers that they are for pre-existing databases and that `schema.sql` already
+contains everything in them.
+
+Configuring the tool against a backend is no longer the hard part — two `config set`
+commands, `db login`, and `db doctor`. What is left for a new operator is the five-file
+hand-applied schema (`db bootstrap`), and a `PGRST_DB_MAX_ROWS` cap that truncates at
+1000 rows with HTTP 200 while the MCP tools ask for 5,000 — wrong analytics, no error,
+and detectable via `cip_codes`' known 2,173 rows.
+
+**There are two ways to sign in and OAuth is only one of them.** `db login --email <addr>`
+uses GoTrue's `grant_type=password`, which needs no external identity provider, so it is
+the way into a stack whose operator has not registered an OAuth app. Both grants return
+the same body and share one `TokenResponse`/`into_auth_state` in `auth.rs`, which is where
+`expires_at` is recomputed from `expires_in` (self-hosted GoTrue does not always send the
+absolute field). Sign-in failures are a typed `SignInError` split like `RefreshError` —
+`Transport` means never reached, `Rejected` means answered and refused — and rejections
+quote GoTrue's own text via `gotrue_error_text`, which tries `error_description`, `msg`,
+`message`, `error_code`, `error` in that order because GoTrue has shipped all of those
+shapes. Do not add a cause of our own to a rejection. The password is prompted via
+`rpassword` and must never become an argument.
 
 **`nuanalytics db doctor` is the first thing to run against an unfamiliar deployment.** It
 walks configuration → reachability → anon-key read → session → authenticated read → schema
