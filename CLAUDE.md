@@ -66,20 +66,37 @@ which is the intended behaviour: the tool reports
 
 ## Config precedence surprises
 
-Local `nuanalytics.toml` > home `config.toml` > compiled defaults
-(`config.rs:492-530`) — but `config set` writes to **home**. A user with a project-local
-file can run `config set`, see it succeed, and still hit the old backend. `config.toml` is
-written at default umask (0644), unlike the auth file (0600, `auth.rs:88-93`).
+Local `nuanalytics.toml` > home `config.toml` > compiled defaults — but `config set`
+writes to **home**. A user with a project-local file can run `config set`, see it succeed,
+and still hit the old backend. `config.toml` is written at default umask (0644), unlike
+the auth file (0600, `auth.rs:88-93`).
+
+**The tiers are merged as `toml::Table`s, before anything is deserialised**
+(`Config::merge_tables`). This is load-bearing, not a style choice: once serde has run, a
+key the file never mentioned is indistinguishable from one written with its default value,
+and the previous struct-level merge had to guess from the value — wrongly, for three
+different kinds of value. A local file that mentioned only `endpoint` silently reset
+`auth_file` to its non-empty default, so `db whoami` reported a signed-in user as signed
+out; `max_plans = 1000` written explicitly was discarded for equalling the default; and
+`verbose = false` could not turn off a `true` from a lower tier. Add a field and it is
+handled automatically — there is no per-field merge list any more.
+
+**An explicitly blank string is treated as absent and never overrides.** Blank means "not
+configured" everywhere in this tool, so a blank in one tier erasing a working value from
+another could only be a footgun. Writing a value is how you override a lower tier;
+blanking a key is how you say nothing. `Config::table_sets_endpoint` follows the same
+rule, so `db status` does not name a file that blanked the endpoint as the file that set
+it.
 
 ## Current work
 
 `docs/db-migration-todo.md` is the live work list for making the backend a true deployment
 target. Items marked `[verified]` were observed in practice, not theorised. Sections 1
 (importer defects), 2 (backend portability), 3 (diagnosability) and 4 (reproducible
-self-hosting) are **done**. What is left is §5 data integrity, whose fix is SQL, and one
-§3 defect: a project-local `nuanalytics.toml` resets every field it does not mention.
-Read **"Where a fresh installer gets stuck"** near the top before picking an item — it is
-the measured walkthrough.
+self-hosting) are **done**. All that is left is §5 data integrity, whose fix is SQL —
+`created_by` plus matching RLS policies — with no Rust. Read **"Where a fresh installer
+gets stuck"** near the top for the measured walkthrough of what setting up a backend
+actually takes.
 
 **Every deployment is a fresh install** (true as of 2026-09-18 — the author's is the only
 one). So there is no schema migration path to preserve, and

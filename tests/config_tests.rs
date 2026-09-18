@@ -1,6 +1,6 @@
 //! Integration tests for configuration management
 
-use nu_analytics::config::{Config, ConfigOverrides};
+use nu_analytics::config::{Config, ConfigOverrides, ConfigSources, EndpointSource, SourceStatus};
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -311,35 +311,115 @@ fn test_get_local_config_file_path() {
     assert!(path.ends_with("nuanalytics.toml"));
 }
 
+/// Write a home and a local config, then load them through the real layering path.
+fn load_layered(home_toml: &str, local_toml: &str) -> (Config, ConfigSources) {
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let home = temp.path().join("config.toml");
+    let local = temp.path().join("nuanalytics.toml");
+    fs::write(&home, home_toml).expect("write home config");
+    fs::write(&local, local_toml).expect("write local config");
+    // `false`: never create or save into the developer's real ~/.config/nuanalytics.
+    let loaded = Config::load_with_sources_from(&home, Some(&local), false);
+    drop(temp);
+    loaded
+}
+
+const HOME_CONFIG: &str = r#"
+[logging]
+level = "info"
+verbose = true
+
+[database]
+endpoint = "https://home.example.edu"
+anon_key = "home-key"
+auth_file = "/home/me/auth.json"
+
+[paths]
+metrics_dir = "/base/metrics"
+
+[degree_analysis]
+max_plans = 9999
+"#;
+
 #[test]
-fn test_merge_from_all_fields() {
-    let mut base = Config::default();
-    base.logging.level = "info".to_string();
-    base.paths.metrics_dir = "/base/metrics".to_string();
-    base.degree_analysis.max_plans = 1000;
+fn a_local_config_overrides_only_the_keys_it_writes() {
+    let (config, sources) = load_layered(
+        HOME_CONFIG,
+        r#"
+[logging]
+level = "debug"
+verbose = false
 
-    let mut local = Config::default();
-    local.logging.level = "debug".to_string();
-    local.degree_analysis.max_plans = 500; // non-default
+[database]
+endpoint = "https://local.example.edu"
 
-    base.merge_from(&local);
+[degree_analysis]
+max_plans = 1000
+"#,
+    );
 
-    assert_eq!(base.logging.level, "debug"); // overwritten
-    assert_eq!(base.paths.metrics_dir, "/base/metrics"); // preserved (local empty)
-    assert_eq!(base.degree_analysis.max_plans, 500); // overwritten (non-default)
+    // Written by the local file, so the local file wins.
+    assert_eq!(config.logging.level, "debug");
+    assert!(
+        !config.logging.verbose,
+        "a local file must be able to turn verbose off, not only on"
+    );
+    assert_eq!(config.database.endpoint, "https://local.example.edu");
+    assert_eq!(
+        config.degree_analysis.max_plans, 1000,
+        "a value written explicitly is a choice even when it equals the default"
+    );
+
+    // Never mentioned by the local file, so the home config stands.
+    assert_eq!(config.database.anon_key, "home-key");
+    assert_eq!(
+        config.database.auth_file, "/home/me/auth.json",
+        "auth_file has a non-empty default, which used to overwrite the home value and \
+         make `db whoami` report a signed-in user as signed out"
+    );
+    assert_eq!(config.paths.metrics_dir, "/base/metrics");
+
+    assert_eq!(sources.endpoint_from, EndpointSource::LocalConfig);
 }
 
 #[test]
-fn test_merge_from_verbose_only_sets_true() {
-    let mut base = Config::default();
-    base.logging.verbose = true;
+fn a_blank_value_in_a_local_config_says_nothing_rather_than_clearing() {
+    // Blank means "not configured" throughout the tool, so a blank in one tier must not
+    // erase a working value from another. Writing a value is how you override.
+    let (config, sources) = load_layered(
+        HOME_CONFIG,
+        r#"
+[database]
+endpoint = ""
+anon_key = ""
 
-    let local = Config::default(); // verbose is false (default)
+[logging]
+level = ""
+"#,
+    );
 
-    base.merge_from(&local);
+    assert_eq!(config.database.endpoint, "https://home.example.edu");
+    assert_eq!(config.database.anon_key, "home-key");
+    assert_eq!(config.logging.level, "info");
+    assert_eq!(
+        sources.endpoint_from,
+        EndpointSource::HomeConfig,
+        "a local file that blanked the endpoint did not set one, so `db status` must \
+         point at the home config"
+    );
+}
 
-    // verbose should stay true - we only set to true, never to false
-    assert!(base.logging.verbose);
+#[test]
+fn a_malformed_local_config_is_reported_and_leaves_the_home_config_standing() {
+    let (config, sources) = load_layered(HOME_CONFIG, "this is not [valid toml\n");
+
+    assert_eq!(config.database.endpoint, "https://home.example.edu");
+    assert_eq!(config.database.auth_file, "/home/me/auth.json");
+    assert!(
+        matches!(sources.local_status, SourceStatus::Malformed(_)),
+        "the broken file must be reported, not silently ignored: {:?}",
+        sources.local_status
+    );
 }
 
 #[test]

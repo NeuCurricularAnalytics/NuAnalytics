@@ -63,10 +63,9 @@ backend without it being a hassle" is **yes**, in four commands:
     nuanalytics db login --email <addr>
     nuanalytics db doctor            # confirms all eight checks
 
-**One known defect still in the way:** a project-local `nuanalytics.toml` resets
-`auth_file` and every other field it does not mention (§3, found-while-doing), turning a
-working session into *"Not signed in"*. It has a workaround -- do not keep a project-local
-config -- but it is the last thing on this list that can waste someone's afternoon.
+Nothing known is in the way any more. The project-local config defect that used to be
+listed here -- a `nuanalytics.toml` resetting `auth_file` and turning a working session
+into *"Not signed in"* -- is fixed in §3.
 
 The walkthrough is what found the sign-in barrier and the row cap; neither was in this
 document before 2026-09-18.
@@ -327,33 +326,43 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
 
 ### Found while doing §3 [verified]
 
-- [ ] **A project-local config silently resets every field it does not mention.**
-      `merge_from` (`config.rs:568`) overrides whenever the incoming value is non-empty,
-      but by the time it runs, serde has already filled absent keys with their
-      `#[serde(default = ...)]` values — which for `auth_file` is a *non-empty* relative
-      path (`default_auth_file`, `config.rs:77`). So a `nuanalytics.toml` containing only
+- [x] **A project-local config silently reset every field it did not mention.** *(done)*
+      -- the tiers are now merged as `toml::Table`s **before** deserialisation
+      (`Config::merge_tables`), so "the file did not mention this key" is observable
+      again. After serde runs it is not, which is why the old struct-level `merge_from`
+      had to guess from the value whether a key had been written -- and each guess was
+      wrong for some legitimate value. `merge_from` is deleted; there is no per-field
+      merge list to maintain, so a new field is handled automatically.
 
-          [database]
-          endpoint = "https://nu.lionelle.com"
+      **Three symptoms, one cause.** Reproduced in an isolated `HOME` with a local file
+      setting only `[database] endpoint`, then re-run after the fix:
 
-      silently replaces the home config's `auth_file` with `.debug/dauth.json`, resolved
-      against the current directory. `db whoami` then reports **"Not signed in"** for a
-      user who is signed in; the tool simply looked in the wrong file.
-      **[verified]** Reproduced against this machine's own configuration.
+      | Local file says | Home has | Before | After |
+      |---|---|---|---|
+      | nothing about `auth_file` | `/home/me/auth.json` | `.debug/dauth.json` | `/home/me/auth.json` |
+      | `max_plans = 1000` | `9999` | `9999` (discarded) | `1000` |
+      | `verbose = false` | `true` | `true` (cannot disable) | `false` |
 
-      `endpoint`, `anon_key` and `management_key` escape this only by accident — their
-      defaults are `""`, and an empty value cannot override.
-      Every other field with a non-empty default is affected, including `logging.level`,
-      `logging.file` and both `paths.*` entries.
+      Only the first was recorded here before; the other two were found by reproducing it.
+      The second and third are the *opposite* failure -- a value the user wrote being
+      thrown away -- and came from the non-string branches comparing against the default
+      and testing truthiness.
 
-      **Fix:** merge only keys the file actually contains. Either deep-merge at the
-      `toml::Table` level before deserializing (removes the empty-string heuristic
-      entirely and is the conventional shape for layered config), or pass the parsed
-      table alongside and gate each field on key presence. Prefer the former, but note it
-      changes semantics for an explicit `endpoint = ""` in a local file, which currently
-      cannot override — and per `CLAUDE.md` an empty endpoint is refilled from the
-      compiled defaults and then **saved**, so that interaction needs a test before the
-      change lands.
+      **An explicitly blank string is treated as absent and never overrides**, which is
+      the semantic decision this needed. Blank means "not configured" everywhere in this
+      tool, so a blank in one tier erasing a working value from another could only ever be
+      a footgun; the point of the endpoint being blank is to drive the user to configure
+      one, not to unconfigure someone else's. Writing a value is how you override a lower
+      tier; blanking a key is how you say nothing. `table_sets_endpoint` follows the same
+      rule, so `db status` no longer names a file that blanked the endpoint as the file
+      that set it.
+
+      A local file that is malformed, or that parses but does not describe a valid config,
+      is reported through `SourceStatus::Malformed` and leaves the tiers below it standing
+      rather than taking the whole configuration down.
+
+      Mutation-tested: replacing nested tables wholesale instead of merging them fails
+      three tests, and dropping the blank-is-absent rule fails two.
 
 ## 4. Making self-hosting reproducible — DONE
 

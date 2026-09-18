@@ -607,7 +607,20 @@ impl Config {
     /// "#)?;
     /// ```
     pub fn from_toml(toml_str: &str) -> Result<Self, toml::de::Error> {
-        let mut config: Self = toml::from_str(toml_str)?;
+        Self::from_table(toml::from_str(toml_str)?)
+    }
+
+    /// Build a config from an already-parsed TOML table.
+    ///
+    /// Exists so the tiers can be merged as tables *before* anything is deserialised.
+    /// Once serde has run, an absent key is indistinguishable from one written with its
+    /// default value, and every attempt to tell them apart by inspecting the value gets
+    /// some legitimate value wrong — see [`Config::merge_tables`].
+    ///
+    /// # Errors
+    /// Returns the deserialisation error if the table does not describe a valid config.
+    pub fn from_table(table: toml::Table) -> Result<Self, toml::de::Error> {
+        let mut config: Self = table.try_into()?;
 
         // Expand variables in config values
         config.logging.file = Self::expand_variables(&config.logging.file);
@@ -721,19 +734,30 @@ impl Config {
             ..ConfigSources::default()
         };
 
-        // Tier 2: project-local config.
+        // Tier 2: project-local config, overlaid as a raw table.
+        //
+        // Merged before deserialisation so that "the file did not mention this key" stays
+        // observable — see `merge_tables`. The previous struct-level merge could not see
+        // it and silently reset every field the local file omitted whose default was
+        // non-empty, `auth_file` chief among them.
         let mut local_set_endpoint = false;
         if let Some(local_path) = local {
             if local_path.exists() {
                 sources.local = Some(local_path.to_path_buf());
-                let (parsed, status) = Self::read_config_file(local_path);
+                let (parsed, status) = Self::read_config_table(local_path);
                 sources.local_status = status;
-                if let Some(local_config) = parsed {
-                    // Recorded, not inferred by diffing the merged value: a local file
-                    // that repeats the home endpoint would otherwise be reported as
-                    // "sets no endpoint", pointing the user at the wrong file to edit.
-                    local_set_endpoint = !local_config.database.endpoint.is_empty();
-                    config.merge_from(&local_config);
+                if let Some(local_table) = parsed {
+                    local_set_endpoint = Self::table_sets_endpoint(&local_table);
+                    // A local file that fails to deserialise leaves the lower tiers
+                    // standing rather than taking the whole config down with it.
+                    if let Some(merged) = Self::overlay_onto(&config, &local_table) {
+                        config = merged;
+                    } else {
+                        sources.local_status = SourceStatus::Malformed(
+                            "does not describe a valid configuration".to_string(),
+                        );
+                        local_set_endpoint = false;
+                    }
                 }
             }
         }
@@ -751,6 +775,83 @@ impl Config {
         };
 
         (config, sources)
+    }
+
+    /// Overlay one config tier's raw TOML onto another, key by key.
+    ///
+    /// Merging at the table level rather than the struct level is what makes "the file
+    /// did not mention this key" observable. After `serde` has run it is not: absent keys
+    /// have already been filled with their defaults, so a struct-level merge has to guess
+    /// from the value whether it was written, and every such guess is wrong for some
+    /// legitimate value. The three that bit in practice, all now fixed by this:
+    ///
+    /// - `auth_file` defaults to a *non-empty* path, so a local file that never mentioned
+    ///   it silently replaced the home config's — and `db whoami` then reported
+    ///   "Not signed in" for a signed-in user, having looked in the wrong file.
+    /// - `max_plans = 1000` written explicitly equals `default_max_plans()`, so it was
+    ///   read as "unset" and discarded.
+    /// - `verbose = false` could not turn off a `true` from a lower tier, because the
+    ///   merge only acted when the incoming value was `true`.
+    ///
+    /// **An explicitly empty string is treated as absent** and never overrides. Blank
+    /// means "not configured" throughout this tool — `endpoint = ""` makes it report
+    /// `Database not configured` rather than pointing somewhere — so letting a blank in
+    /// one tier erase a working value from another would only ever be a footgun. Writing
+    /// a value is how you override; blanking a key is how you say nothing.
+    fn merge_tables(base: &mut toml::Table, overlay: &toml::Table) {
+        for (key, incoming) in overlay {
+            if matches!(incoming.as_str(), Some("")) {
+                continue;
+            }
+            match (base.get_mut(key), incoming) {
+                (Some(toml::Value::Table(existing)), toml::Value::Table(nested)) => {
+                    Self::merge_tables(existing, nested);
+                }
+                _ => {
+                    base.insert(key.clone(), incoming.clone());
+                }
+            }
+        }
+    }
+
+    /// Read one config file as a raw table, reporting why it could not be used.
+    ///
+    /// The table-returning counterpart of [`Config::read_config_file`], used by the
+    /// loader so the tiers can be merged before deserialisation. A malformed file yields
+    /// `None` with the reason, so it is reported and skipped rather than silently
+    /// replacing the tier below it.
+    fn read_config_table(path: &Path) -> (Option<toml::Table>, SourceStatus) {
+        match fs::read_to_string(path) {
+            Ok(content) => match content.parse::<toml::Table>() {
+                Ok(table) => (Some(table), SourceStatus::Loaded),
+                Err(e) => (None, SourceStatus::Malformed(e.to_string())),
+            },
+            Err(e) => (None, SourceStatus::Unreadable(e.to_string())),
+        }
+    }
+
+    /// Whether a file actually wrote `[database] endpoint`, as opposed to inheriting one.
+    ///
+    /// Presence, not emptiness: a local file repeating the home endpoint must still be
+    /// named as the file that set it, or `db status` sends the user to edit the wrong one.
+    fn table_sets_endpoint(table: &toml::Table) -> bool {
+        table
+            .get("database")
+            .and_then(toml::Value::as_table)
+            .and_then(|db| db.get("endpoint"))
+            .and_then(toml::Value::as_str)
+            .is_some_and(|endpoint| !endpoint.is_empty())
+    }
+
+    /// Apply a raw config table on top of an already-built config.
+    ///
+    /// Round-trips through a `toml::Table` so the overlay happens key by key, then
+    /// deserialises once. Returns `None` if the result is not a valid config, which the
+    /// caller reports rather than letting a bad local file erase the tiers below it.
+    fn overlay_onto(base: &Self, overlay: &toml::Table) -> Option<Self> {
+        let mut merged = toml::Table::try_from(base).ok()?;
+        Self::merge_tables(&mut merged, overlay);
+        Self::from_table(merged).ok()
     }
 
     /// Read and parse one config file, reporting why it could not be used.
@@ -794,78 +895,6 @@ impl Config {
         }
 
         defaults.clone()
-    }
-
-    /// Merge non-empty values from another config into this one
-    ///
-    /// Used to apply local directory config on top of home directory config.
-    /// Only non-empty string values and non-default numeric values are merged.
-    ///
-    /// # Arguments
-    /// * `other` - The config to merge values from (higher precedence)
-    pub fn merge_from(&mut self, other: &Self) {
-        // Merge logging fields
-        if !other.logging.level.is_empty() {
-            self.logging.level.clone_from(&other.logging.level);
-        }
-        if !other.logging.file.is_empty() {
-            self.logging.file.clone_from(&other.logging.file);
-        }
-        if other.logging.verbose {
-            self.logging.verbose = true;
-        }
-
-        // Merge database fields
-        if !other.database.anon_key.is_empty() {
-            self.database.anon_key.clone_from(&other.database.anon_key);
-        }
-        if !other.database.endpoint.is_empty() {
-            self.database.endpoint.clone_from(&other.database.endpoint);
-        }
-        if !other.database.auth_file.is_empty() {
-            self.database
-                .auth_file
-                .clone_from(&other.database.auth_file);
-        }
-        if !other.database.management_key.is_empty() {
-            self.database
-                .management_key
-                .clone_from(&other.database.management_key);
-        }
-
-        // Merge paths fields
-        if !other.paths.metrics_dir.is_empty() {
-            self.paths.metrics_dir.clone_from(&other.paths.metrics_dir);
-        }
-        if !other.paths.reports_dir.is_empty() {
-            self.paths.reports_dir.clone_from(&other.paths.reports_dir);
-        }
-
-        // Merge audit fields (only if non-default)
-        if other.audit.prerequisite_chain_threshold != default_prerequisite_chain_threshold() {
-            self.audit.prerequisite_chain_threshold = other.audit.prerequisite_chain_threshold;
-        }
-
-        // Merge degree_analysis fields
-        if other.degree_analysis.calc_strategy != default_calc_strategy() {
-            self.degree_analysis
-                .calc_strategy
-                .clone_from(&other.degree_analysis.calc_strategy);
-        }
-        if other.degree_analysis.sample_plan_count != default_sample_plan_count() {
-            self.degree_analysis.sample_plan_count = other.degree_analysis.sample_plan_count;
-        }
-        if other.degree_analysis.max_plans != default_max_plans() {
-            self.degree_analysis.max_plans = other.degree_analysis.max_plans;
-        }
-        if other.degree_analysis.ignore_duplicates != default_ignore_duplicates() {
-            self.degree_analysis.ignore_duplicates = other.degree_analysis.ignore_duplicates;
-        }
-        if other.degree_analysis.sampling_strategy != default_sampling_strategy() {
-            self.degree_analysis
-                .sampling_strategy
-                .clone_from(&other.degree_analysis.sampling_strategy);
-        }
     }
 
     /// Save configuration to file
@@ -1260,60 +1289,158 @@ mod tests {
         assert!(path.ends_with("nuanalytics.toml"));
     }
 
+    // ── merge_tables ────────────────────────────────────────────────────────
+
+    /// Overlay TOML text onto a base config, as the loader does for a local file.
+    fn overlay(base: &Config, toml_text: &str) -> Config {
+        let table = toml_text.parse::<toml::Table>().expect("valid TOML");
+        Config::overlay_onto(base, &table).expect("overlay yields a valid config")
+    }
+
     #[test]
-    fn test_merge_from_overwrites_non_empty() {
+    fn a_written_key_overrides_and_an_absent_one_does_not() {
         let mut base = Config::default();
         base.logging.level = "info".to_string();
         base.paths.metrics_dir = "/base/metrics".to_string();
 
-        let mut local = Config::default();
-        local.logging.level = "debug".to_string();
-        // Leave metrics_dir empty - should not overwrite
+        let merged = overlay(&base, "[logging]\nlevel = \"debug\"\n");
 
-        base.merge_from(&local);
-
-        assert_eq!(base.logging.level, "debug");
-        assert_eq!(base.paths.metrics_dir, "/base/metrics"); // unchanged
+        assert_eq!(merged.logging.level, "debug");
+        assert_eq!(
+            merged.paths.metrics_dir, "/base/metrics",
+            "a key the overlay never mentioned must be left alone"
+        );
     }
 
     #[test]
-    fn test_merge_from_preserves_base_when_other_empty() {
+    fn an_absent_key_does_not_reset_a_field_whose_default_is_non_empty() {
+        // The defect this merge exists to fix. `auth_file` defaults to a non-empty path,
+        // so a struct-level merge could not tell "the file omitted it" from "the file set
+        // it to the default" — and a local file mentioning only an endpoint silently
+        // repointed the session file, making `db whoami` report "Not signed in".
+        let mut base = Config::default();
+        base.database.auth_file = "/home/me/.config/nuanalytics/auth.json".to_string();
+
+        let merged = overlay(
+            &base,
+            "[database]\nendpoint = \"https://local.example.edu\"\n",
+        );
+
+        assert_eq!(
+            merged.database.auth_file, "/home/me/.config/nuanalytics/auth.json",
+            "a local file that never mentioned auth_file must not change it"
+        );
+        assert_eq!(merged.database.endpoint, "https://local.example.edu");
+    }
+
+    #[test]
+    fn a_value_equal_to_the_default_still_overrides() {
+        // Written explicitly, so it is a choice, not an absence. The old merge compared
+        // against `default_max_plans()` and discarded anything equal to it.
+        let mut base = Config::default();
+        base.degree_analysis.max_plans = 9999;
+
+        let merged = overlay(
+            &base,
+            &format!("[degree_analysis]\nmax_plans = {}\n", default_max_plans()),
+        );
+
+        assert_eq!(merged.degree_analysis.max_plans, default_max_plans());
+    }
+
+    #[test]
+    fn a_boolean_can_be_turned_off_as_well_as_on() {
+        // The old merge only acted when the incoming value was `true`, so a local file
+        // could enable verbose logging but never disable it.
+        let mut base = Config::default();
+        base.logging.verbose = true;
+        assert!(
+            !overlay(&base, "[logging]\nverbose = false\n")
+                .logging
+                .verbose
+        );
+
+        base.logging.verbose = false;
+        assert!(
+            overlay(&base, "[logging]\nverbose = true\n")
+                .logging
+                .verbose
+        );
+    }
+
+    #[test]
+    fn an_explicitly_blank_string_is_ignored_rather_than_clearing_the_tier_below() {
+        // Deliberate: blank means "not configured" everywhere in this tool, so a blank in
+        // one tier erasing a working value from another could only ever be a footgun.
+        // Writing a value is how you override; blanking a key is how you say nothing.
+        let mut base = Config::default();
+        base.database.endpoint = "https://home.example.edu".to_string();
+        base.database.anon_key = "home-key".to_string();
+        base.logging.level = "warn".to_string();
+
+        let merged = overlay(
+            &base,
+            "[database]\nendpoint = \"\"\nanon_key = \"\"\n\n[logging]\nlevel = \"\"\n",
+        );
+
+        assert_eq!(merged.database.endpoint, "https://home.example.edu");
+        assert_eq!(merged.database.anon_key, "home-key");
+        assert_eq!(merged.logging.level, "warn");
+    }
+
+    #[test]
+    fn an_empty_overlay_changes_nothing_at_all() {
         let mut base = Config::default();
         base.logging.level = "warn".to_string();
         base.database.anon_key = "secret-token".to_string();
+        base.database.auth_file = "/custom/auth.json".to_string();
+        base.degree_analysis.max_plans = 4242;
 
-        let local = Config::default(); // all empty
+        let merged = overlay(&base, "");
 
-        base.merge_from(&local);
-
-        assert_eq!(base.logging.level, "warn");
-        assert_eq!(base.database.anon_key, "secret-token");
+        assert_eq!(merged.logging.level, "warn");
+        assert_eq!(merged.database.anon_key, "secret-token");
+        assert_eq!(merged.database.auth_file, "/custom/auth.json");
+        assert_eq!(merged.degree_analysis.max_plans, 4242);
     }
 
     #[test]
-    fn test_merge_from_non_default_numeric_values() {
+    fn merging_reaches_into_nested_tables_rather_than_replacing_them() {
+        // Replacing `[database]` wholesale would drop every sibling key, which is the
+        // same silent-reset bug in a different shape.
         let mut base = Config::default();
-        base.degree_analysis.max_plans = 1000;
+        base.database.endpoint = "https://home.example.edu".to_string();
+        base.database.anon_key = "home-key".to_string();
+        base.database.auth_file = "/custom/auth.json".to_string();
 
-        let mut local = Config::default();
-        local.degree_analysis.max_plans = 500; // non-default value
+        let merged = overlay(
+            &base,
+            "[database]\nendpoint = \"https://local.example.edu\"\n",
+        );
 
-        base.merge_from(&local);
-
-        assert_eq!(base.degree_analysis.max_plans, 500);
+        assert_eq!(merged.database.endpoint, "https://local.example.edu");
+        assert_eq!(merged.database.anon_key, "home-key");
+        assert_eq!(merged.database.auth_file, "/custom/auth.json");
     }
 
     #[test]
-    fn test_merge_from_verbose_flag() {
-        let mut base = Config::default();
-        base.logging.verbose = false;
+    fn table_sets_endpoint_reports_presence_not_inherited_value() {
+        let written = "[database]\nendpoint = \"https://x.example.edu\"\n"
+            .parse::<toml::Table>()
+            .expect("valid");
+        assert!(Config::table_sets_endpoint(&written));
 
-        let mut local = Config::default();
-        local.logging.verbose = true;
+        // Blank is "said nothing", matching how the merge treats it — otherwise
+        // `db status` would name this file as the one to edit.
+        let blank = "[database]\nendpoint = \"\"\n"
+            .parse::<toml::Table>()
+            .expect("valid");
+        assert!(!Config::table_sets_endpoint(&blank));
 
-        base.merge_from(&local);
-
-        assert!(base.logging.verbose);
+        let silent = "[logging]\nlevel = \"debug\"\n"
+            .parse::<toml::Table>()
+            .expect("valid");
+        assert!(!Config::table_sets_endpoint(&silent));
     }
 
     #[test]
