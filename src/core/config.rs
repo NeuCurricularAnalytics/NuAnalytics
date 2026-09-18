@@ -70,6 +70,18 @@ pub struct DatabaseConfig {
     /// <https://app.supabase.com/account/tokens>
     #[serde(default)]
     pub management_key: String,
+    /// Supabase project reference for the Management API, e.g. `abcdefgh`.
+    ///
+    /// Explicit rather than derived from `endpoint`: the project ref used to be the first
+    /// subdomain label, which yielded `Some("db")` for `https://db.example.edu` and
+    /// `Some("localhost:8000")` for a local stack — a meaningless ref sent to
+    /// `api.supabase.com`. Host sniffing also breaks a legitimate cloud project served
+    /// through a custom domain.
+    ///
+    /// Blank means "not a Supabase-cloud project", which is the correct default for a
+    /// self-hosted deployment. Only `db exec-sql` uses it.
+    #[serde(default)]
+    pub project_ref: String,
 }
 
 /// Default auth-file path: `.debug/dauth.json` in debug builds,
@@ -94,6 +106,7 @@ impl Default for DatabaseConfig {
             enabled: false,
             auth_file: default_auth_file(),
             management_key: default_management_key(),
+            project_ref: String::new(),
         }
     }
 }
@@ -347,6 +360,17 @@ impl DatabaseConfig {
     pub fn endpoint_label(&self) -> &str {
         endpoint_label(&self.endpoint)
     }
+}
+
+/// Strip trailing slashes from a backend endpoint.
+///
+/// Applied once where the endpoint enters the system rather than at each URL builder:
+/// `auth` trimmed it and the SDK trimmed it, but the `PostgREST` URL builders did not, so
+/// an endpoint stored as `https://host/` produced `https://host//rest/v1/...`. A
+/// hand-edited config is the likeliest source, so the client normalises defensively too.
+#[must_use]
+pub fn normalize_endpoint(endpoint: &str) -> &str {
+    endpoint.trim_end_matches('/')
 }
 
 /// The endpoint, or an explicit marker when blank.
@@ -931,6 +955,7 @@ impl Config {
             "endpoint" => Some(self.database.endpoint.clone()),
             "auth_file" | "auth-file" => Some(self.database.auth_file.clone()),
             "management_key" | "management-key" => Some(self.database.management_key.clone()),
+            "project_ref" | "project-ref" => Some(self.database.project_ref.clone()),
             "metrics_dir" | "metrics-dir" => Some(self.paths.metrics_dir.clone()),
             "reports_dir" | "reports-dir" => Some(self.paths.reports_dir.clone()),
             "prerequisite_chain_threshold" => {
@@ -994,10 +1019,15 @@ impl Config {
                     .map_err(|_| format!("Invalid boolean value for 'verbose': '{value}'"))?;
             }
             "anon_key" | "anon-key" | "token" => self.database.anon_key = value.to_string(),
-            "endpoint" => self.database.endpoint = value.to_string(),
+            "endpoint" => {
+                self.database.endpoint = normalize_endpoint(value).to_string();
+            }
             "auth_file" | "auth-file" => self.database.auth_file = value.to_string(),
             "management_key" | "management-key" => {
                 self.database.management_key = value.to_string();
+            }
+            "project_ref" | "project-ref" => {
+                self.database.project_ref = value.to_string();
             }
             "metrics_dir" | "metrics-dir" => self.paths.metrics_dir = value.to_string(),
             "reports_dir" | "reports-dir" => self.paths.reports_dir = value.to_string(),
@@ -1093,6 +1123,10 @@ impl Config {
                 .database
                 .management_key
                 .clone_from(&defaults.database.management_key),
+            "project_ref" | "project-ref" => self
+                .database
+                .project_ref
+                .clone_from(&defaults.database.project_ref),
             "metrics_dir" | "metrics-dir" => self
                 .paths
                 .metrics_dir

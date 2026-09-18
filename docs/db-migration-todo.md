@@ -123,9 +123,19 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       while `HD2024.zip` succeeds by the same method. The current year must come through the
       Data Center UI. Document that rather than implying `curl -O` always works.
 
-## 2. Backend portability
+## 2. Backend portability — DONE
 
-- [ ] **`db exec-sql` assumes Supabase cloud.** `SUPABASE_MGMT_API_BASE`
+- [x] **`db exec-sql` assumes Supabase cloud.** *(done)* — gated on an explicit
+      `database.project_ref`, checked **before** the `management_key` check so a
+      self-hosted user is told the command does not apply rather than sent to create a
+      Supabase PAT first. Hostname sniffing is gone from the decision path;
+      `extract_project_ref` became `suggest_project_ref`, which only fills in a hint and
+      only for a genuine `*.supabase.co` host with a single label — so `https://db.example.edu`,
+      `http://localhost:8000` and `https://a.b.supabase.co` all yield no suggestion
+      instead of a bogus ref. Help text reworded, and it now says what a self-hosted user
+      should do instead (`psql -f <file>`). Verified live against `nu.lionelle.com` and a
+      simulated cloud endpoint.
+      ~~Original:~~ `SUPABASE_MGMT_API_BASE`
       (`src/cli/commands/db.rs:20`) posts to `api.supabase.com`, and `extract_project_ref`
       (`:383-393`) takes the first subdomain label — so `https://db.example.edu` yields
       `Some("db")` rather than `None`, and the request goes out with a meaningless project
@@ -136,11 +146,22 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       `management_key` check at `:397-403`, otherwise self-hosted users are told to go
       create a Supabase PAT. Reword the `ExecSql` help text at `src/cli/args.rs:628` to
       match.
-- [ ] **Normalize a trailing slash on `database.endpoint`.** `auth.rs:165` trims it and the
+- [x] **Normalize a trailing slash on `database.endpoint`.** *(done)* — one
+      `config::normalize_endpoint`, applied where the endpoint enters the system: the
+      client constructor (so a hand-edited config is also covered) and `Config::set` (so
+      the stored value stays clean). Not applied per URL builder, which is what let the
+      three sites disagree in the first place.
+      ~~Original:~~ `auth.rs:165` trims it and the
       SDK does too, but `client.rs:374` and `:411` do not, so an endpoint ending in `/`
       produces `…//rest/v1/…`. `Config::set` does no validation. Normalize in one place.
-- [ ] **Remove the baked-in default endpoint and anon key** from
-      `src/assets/DefaultCLIConfigRelease.toml` and `DefaultCLIConfigDebug.toml`. With a
+- [x] **Remove the baked-in default endpoint and anon key** from
+      `src/assets/DefaultCLIConfigRelease.toml` and `DefaultCLIConfigDebug.toml`.
+      *(done — B6)* Both ship `endpoint`, `anon_key` and `management_key` blank, and
+      `config::tests::default_assets_never_ship_database_credentials` now guards it by
+      reading **both** files as raw text — only one is compiled per build profile, so
+      asserting through `Config::from_defaults()` would leave the other unchecked. The two
+      sub-bullets below remain true and are the reason the guard exists.
+      ~~Original:~~ With a
       user-supplied backend there is no correct default, and shipping one is what makes the
       next two bugs possible:
       - `merge_defaults` (`src/core/config.rs:285-290`) refills an *empty* endpoint from the
@@ -149,7 +170,7 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       - `config unset database.endpoint` resets to that default (pinned by the test at
         `config.rs:1115-1123`). Users must be told to `set`, never `unset`.
 
-## 3. Diagnosability
+## 3. Diagnosability — DONE
 
 - [x] **`db whoami` does not print the endpoint** *(done)* — `whoami` now prints a
       `Backend:` line, and both not-signed-in arms name the endpoint too ("Not signed in
@@ -227,9 +248,16 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       `ping: ✓ authenticated read succeeded`. Harmless but it reads like a bug in the tool
       and undermines trust in the rest of the output. Render the line after the refresh, or
       label it "token age (auto-refreshes)".
-- [ ] **No `db logout --remote`, and `db login` cannot re-auth a live session.** Offboarding
-      is server-side only (delete the `auth.users` row); `clear_auth_state` is local
-      (`auth.rs:104-106`). Worth a note in `db logout`'s help that it revokes nothing.
+- [x] **No `db logout --remote`, and `db login` cannot re-auth a live session.** *(noted,
+      not implemented)* — `db logout`'s help and output now state plainly that it removes
+      the local token only, that the token stays valid at the named backend until it
+      expires, and that offboarding means deleting the `auth.users` row. The output line
+      changed from "Signed out", which read as revocation.
+
+      A real `--remote` is still absent and is a deliberate non-goal for now: GoTrue
+      validates only the JWT signature and `exp`, so even a server-side revocation leaves
+      up to a one-hour tail. Anything that claimed to revoke immediately would be
+      asserting more than it can deliver.
 - [x] **`db status` tells a not-configured user to log in** *(done)* — remediation now
       comes from `DatabaseError::next_steps(endpoint)` in the library, shared with the MCP
       server so the two cannot drift. Verified on a blank config: it points at

@@ -233,6 +233,7 @@ anon_key = "eyJhbGciOiJIUzI1NiI..."   # JWT-format anon key — see below
 enabled = true
 auth_file = "$NU_ANALYTICS/auth.json"
 management_key = ""                    # set this only if you run `db exec-sql`
+project_ref = ""                       # Supabase-cloud project ref; blank = self-hosted
 
 [paths]
 metrics_dir = "./metrics"
@@ -263,6 +264,7 @@ anon_key = "eyJhbGciOiJIUzI1NiI..."
 enabled = true
 auth_file = ".debug/dauth.json"        # separate from any active release session
 management_key = ""
+project_ref = ""
 
 [paths]
 metrics_dir = ".debug/metrics"
@@ -283,7 +285,13 @@ sampling_strategy = "shuffled"
 > development database. They identify the project but do not grant access
 > — you still need `nuanalytics db login` to obtain a user JWT before any
 > database tool will work (see [Database setup](database/setup.md) for
-> the full flow). `management_key` is a separate Supabase Personal Access
+> the full flow). `project_ref` is the Supabase-cloud project reference used by
+> `db exec-sql` only; it is **not** derived from `endpoint`, because a custom-domain
+> cloud project has no `.supabase.co` in its URL and a self-hosted host would yield a
+> meaningless value. Leave it blank for a self-hosted deployment — that backend has no
+> Management API, so apply SQL directly instead.
+>
+> `management_key` is a separate Supabase Personal Access
 > Token used by `db exec-sql` for DDL; generate one at
 > <https://app.supabase.com/account/tokens> only if you need it.
 

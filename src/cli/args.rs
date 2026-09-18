@@ -614,20 +614,32 @@ pub enum DbSubcommand {
         #[arg(long, value_name = "PROVIDER", default_value = "github")]
         provider: String,
     },
-    /// Sign out and remove the saved session token.
+    /// Remove the locally saved session token. Revokes nothing server-side.
+    ///
+    /// This deletes the auth file and nothing else. The access token stays valid at the
+    /// backend until it expires (up to an hour), and the refresh token is not revoked, so
+    /// this is not an offboarding step. To remove someone's access, delete their
+    /// `auth.users` row on the backend.
     Logout,
     /// Show the currently signed-in user (if any).
     Whoami,
-    /// Execute an SQL file against the database via the Supabase Management API.
+    /// Execute an SQL file via the Supabase Management API. Cloud projects only.
     ///
-    /// Requires `database.management_key` (a Supabase Personal Access Token) to be set:
+    /// This is a Supabase-cloud path. A self-hosted stack has no Management API and no
+    /// project ref — apply SQL to it directly instead (`psql -f <file>`).
+    ///
+    /// Requires two settings, both explicit:
     ///
     /// ```sh
+    /// nuanalytics config set database.project_ref <ref>
     /// nuanalytics config set database.management_key <pat>
     /// ```
     ///
-    /// Get a PAT at <https://app.supabase.com/account/tokens>. The PAT gives DDL
-    /// access (CREATE TABLE, INSERT, etc.) which the project anon key cannot do.
+    /// `project_ref` is not derived from `database.endpoint`: a custom-domain cloud
+    /// project has no `.supabase.co` in its URL, and a self-hosted host would otherwise
+    /// yield a meaningless ref. Get a PAT at
+    /// <https://app.supabase.com/account/tokens>; it gives DDL access (CREATE TABLE,
+    /// INSERT, ...) which the project anon key cannot do.
     ///
     /// Examples:
     /// ```sh

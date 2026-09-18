@@ -435,7 +435,14 @@ fn run_logout(config: &Config) {
         Some(state) if state.is_valid() => {
             let email = state.user_email.as_deref().unwrap_or("unknown");
             clear_auth_state(&path);
-            println!("✓ Signed out ({email})");
+            println!("✓ Local session cleared ({email})");
+            // Stated rather than implied: "Signed out" read as revocation, and the token
+            // is still accepted by the backend until it expires.
+            println!(
+                "  Note: this removed the local token only. It stays valid at {} until it",
+                endpoint_or_unset(&config.database)
+            );
+            println!("  expires; nothing was revoked server-side.");
         }
         Some(_) => {
             clear_auth_state(&path);
@@ -478,26 +485,60 @@ fn run_whoami(config: &Config) {
 // exec-sql
 // ============================================================================
 
-/// Extract the Supabase project reference from the configured endpoint URL.
+/// Suggest a Supabase project ref from a `*.supabase.co` endpoint.
 ///
-/// Parses the leading subdomain from a Supabase URL. Returns `None` if the
-/// URL is empty or has no subdomain before the first `.`.
-///
-/// `"https://abcdefgh.supabase.co"` → `Some("abcdefgh")`
-fn extract_project_ref(endpoint: &str) -> Option<String> {
+/// Used **only** to fill in a hint when `database.project_ref` is unset — never to decide
+/// where a request goes. Deriving the ref from the host was the original defect: the first
+/// subdomain label gave `Some("db")` for `https://db.example.edu` and
+/// `Some("localhost:8000")` for a local stack, and that meaningless ref was then sent to
+/// `api.supabase.com`. Host matching is also wrong in the other direction — a real cloud
+/// project served through a custom domain has no `.supabase.co` in its URL.
+fn suggest_project_ref(endpoint: &str) -> Option<&str> {
     let host = endpoint
         .trim_start_matches("https://")
-        .trim_start_matches("http://");
-    let subdomain = host.split('.').next()?;
-    if subdomain.is_empty() {
+        .trim_start_matches("http://")
+        .split('/')
+        .next()?;
+    // Anchored to the real cloud host, and only when there is exactly one label in front.
+    let label = host.strip_suffix(".supabase.co")?;
+    if label.is_empty() || label.contains('.') || label.contains(':') {
         None
     } else {
-        Some(subdomain.to_string())
+        Some(label)
     }
 }
 
 /// Read a SQL file from disk and execute it against the Supabase Management API.
 fn run_exec_sql(config: &Config, file: &std::path::Path) {
+    // Checked before the management key: this command only works against Supabase cloud,
+    // and a self-hosted user was previously told to go create a Supabase PAT before ever
+    // being told the command does not apply to their deployment.
+    if config.database.project_ref.is_empty() {
+        eprintln!("✗ `db exec-sql` targets the Supabase Management API, which needs");
+        eprintln!("  `database.project_ref` to be set explicitly:");
+        eprintln!();
+        if let Some(suggestion) = suggest_project_ref(&config.database.endpoint) {
+            eprintln!("    nuanalytics config set database.project_ref {suggestion}");
+            eprintln!(
+                "  (suggested from the endpoint {}; confirm it in the Supabase dashboard)",
+                config.database.endpoint
+            );
+        } else {
+            eprintln!("    nuanalytics config set database.project_ref <ref>");
+            eprintln!(
+                "  The endpoint {} is not a Supabase-cloud URL. If this is a",
+                endpoint_or_unset(&config.database)
+            );
+            eprintln!("  self-hosted stack there is no project ref and no Management API —");
+            eprintln!(
+                "  apply SQL directly instead, e.g. `psql -f {}`.",
+                file.display()
+            );
+        }
+        return;
+    }
+    let project_ref = config.database.project_ref.clone();
+
     if config.database.management_key.is_empty() {
         eprintln!("✗ `database.management_key` is not set.");
         eprintln!("  1. Go to https://app.supabase.com/account/tokens");
@@ -505,14 +546,6 @@ fn run_exec_sql(config: &Config, file: &std::path::Path) {
         eprintln!("  3. Run: nuanalytics config set database.management_key <token>");
         return;
     }
-
-    let Some(project_ref) = extract_project_ref(&config.database.endpoint) else {
-        eprintln!(
-            "✗ Cannot determine project ref from endpoint: {}",
-            config.database.endpoint
-        );
-        return;
-    };
 
     let sql = match std::fs::read_to_string(file) {
         Ok(s) => s,
@@ -1441,46 +1474,44 @@ mod tests {
         assert_eq!(result, None);
     }
 
-    // --- extract_project_ref -----------------------------------------------
+    // --- suggest_project_ref -----------------------------------------------
 
     #[test]
-    fn test_extract_project_ref_supabase_url() {
+    fn test_suggest_project_ref_only_fires_for_supabase_cloud_hosts() {
+        // A suggestion, never a decision: deriving the ref from the host is what sent
+        // `db` and `localhost:8000` to api.supabase.com as project refs.
         assert_eq!(
-            extract_project_ref("https://abcdefgh.supabase.co"),
-            Some("abcdefgh".to_string())
+            suggest_project_ref("https://abcdefgh.supabase.co"),
+            Some("abcdefgh")
         );
-    }
-
-    #[test]
-    fn test_extract_project_ref_http_scheme() {
         assert_eq!(
-            extract_project_ref("http://myproject.example.com"),
-            Some("myproject".to_string())
+            suggest_project_ref("https://abcdefgh.supabase.co/"),
+            Some("abcdefgh"),
+            "a trailing slash must not defeat the suggestion"
         );
+
+        // Every one of these previously produced a bogus ref.
+        for endpoint in [
+            "https://db.example.edu",
+            "http://localhost:8000",
+            "https://nu.lionelle.com",
+            "https://api.db.example.com",
+            "https://.supabase.co",
+            "https://",
+            "",
+        ] {
+            assert_eq!(
+                suggest_project_ref(endpoint),
+                None,
+                "{endpoint} is not a Supabase-cloud project URL"
+            );
+        }
     }
 
     #[test]
-    fn test_extract_project_ref_empty() {
-        assert_eq!(extract_project_ref(""), None);
-    }
-
-    #[test]
-    fn test_extract_project_ref_scheme_only() {
-        assert_eq!(extract_project_ref("https://"), None);
-    }
-
-    #[test]
-    fn test_extract_project_ref_dot_start() {
-        assert_eq!(extract_project_ref("https://.supabase.co"), None);
-    }
-
-    #[test]
-    fn test_extract_project_ref_multiple_subdomains() {
-        // Only the first segment is returned
-        assert_eq!(
-            extract_project_ref("https://api.db.example.com"),
-            Some("api".to_string())
-        );
+    fn test_suggest_project_ref_rejects_a_nested_supabase_subdomain() {
+        // `a.b.supabase.co` has no single project label, so there is nothing to suggest.
+        assert_eq!(suggest_project_ref("https://a.b.supabase.co"), None);
     }
 
     // ---- OAuth callback failure reporting -----------------------------------

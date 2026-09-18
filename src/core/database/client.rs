@@ -163,8 +163,10 @@ impl DbClient {
                 DatabaseError::ConnectionError(format!("HTTP client build failed: {e}"))
             })?;
         Ok(Self {
+            // Normalised here so every URL builder downstream can interpolate it
+            // directly; a trailing slash otherwise yielded `host//rest/v1/...`.
+            endpoint: crate::core::config::normalize_endpoint(endpoint).to_string(),
             http,
-            endpoint: endpoint.to_string(),
             anon_key: anon_key.to_string(),
             session: Arc::new(RwLock::new(state)),
             auth_path,
@@ -693,7 +695,7 @@ mod tests {
             endpoint: "https://example.supabase.co".to_string(),
             anon_key: "anon".to_string(),
             auth_file: auth_file.to_string(),
-            management_key: String::new(),
+            ..DatabaseConfig::default()
         }
     }
 
@@ -1144,7 +1146,7 @@ mod tests {
             endpoint: "http://127.0.0.1:1".to_string(),
             anon_key: "anon".to_string(),
             auth_file: path.display().to_string(),
-            management_key: String::new(),
+            ..DatabaseConfig::default()
         };
 
         let err = DbClient::from_config(&config)
@@ -1206,5 +1208,32 @@ mod tests {
             on_disk.access_token, "refreshed-token",
             "the rotated session must be persisted so sibling processes see it"
         );
+    }
+
+    #[test]
+    fn a_trailing_slash_on_the_endpoint_does_not_double_up_in_urls() {
+        // `auth` trimmed the slash and the SDK trimmed it, but the PostgREST builders did
+        // not, so `https://host/` produced `https://host//rest/v1/institutions`.
+        let client = DbClient::new("https://host.example.com/", "anon", "jwt".to_string())
+            .expect("a trailing slash must be accepted");
+        let url = build_select_url(
+            &client.endpoint,
+            "institutions",
+            "unitid",
+            &QueryFilters::default(),
+            None,
+        );
+        assert!(
+            url.starts_with("https://host.example.com/rest/v1/institutions"),
+            "got: {url}"
+        );
+        assert!(!url.contains("//rest/v1"), "doubled slash in: {url}");
+    }
+
+    #[test]
+    fn several_trailing_slashes_are_all_stripped() {
+        let client = DbClient::new("https://host.example.com///", "anon", "jwt".to_string())
+            .expect("client");
+        assert_eq!(client.endpoint, "https://host.example.com");
     }
 }
