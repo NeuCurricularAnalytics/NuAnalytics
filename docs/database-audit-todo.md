@@ -277,9 +277,20 @@ space that `carnegie_class` seeds, so none can orphan. `CARNEGIE`/`C00CARNEGIE` 
 deliberately **not** added as fallbacks: their code space includes 40 and 51-60, which the
 lookup table has no rows for.
 
-Two guards added, because nothing pinned this: the precedence test no longer asserts the
-wrong order as if intended, and `hd_carnegie_candidates_are_listed_newest_first` fails if
-the list is ever reordered.
+**The first guard written for this did not work,** and the mistake is worth recording
+because it is the same shape as the defect. `hd_carnegie_candidates_are_listed_newest_first`
+asserted against a *hand-written copy* of the candidate list, so reverting the production
+order to the buggy one failed nothing. Column resolution has since been extracted into
+`HdCols::for_hd`, mirroring `DemoCols::for_completions`, and the test now drives that
+function with the real HD2022 header set (all four vintages present, `C18BASIC` placed
+first so header order cannot be what makes it pass). Reverting the order now fails.
+
+Verified against the real files as well as synthetic headers: `hd2022.csv` has all four
+Carnegie columns and resolves to `C21BASIC`; `hd2025.csv` has only `C21BASIC`.
+
+The symmetric gap on the completions side was closed at the same time —
+`DemoCols::for_completions` had **no test at all**, so a transposed candidate
+(`hispanic_men: col!("CHISPW")`) would have swapped two demographics across 1.2M rows.
 
 Found in the same pass and fixed: `nonresident_alien_men` had a `CNRALT` fallback, but the
 `T` suffix is the men+women **total** — latent today because `CNRALM` is present, and it

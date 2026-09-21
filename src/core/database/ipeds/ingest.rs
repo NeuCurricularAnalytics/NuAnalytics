@@ -80,7 +80,7 @@ pub fn is_relevant_cip(code: &str) -> bool {
 ///
 /// Returns the CSV content as a `String`. For zip files, the first `.csv` entry
 /// in the archive is extracted.
-fn read_file_or_zip(path: &Path) -> DatabaseResult<String> {
+pub(crate) fn read_file_or_zip(path: &Path) -> DatabaseResult<String> {
     let bytes = std::fs::read(path)
         .map_err(|e| DatabaseError::IngestError(format!("Cannot read {}: {e}", path.display())))?;
 
@@ -166,7 +166,7 @@ const NOT_APPLICABLE: &str = ".";
 ///
 /// **Not for count columns.** See [`parse_ipeds_count`], where `99` is a number and
 /// negatives are impossible.
-fn parse_ipeds_code(val: &str) -> Option<i32> {
+pub(crate) fn parse_ipeds_code(val: &str) -> Option<i32> {
     let v = val.trim();
     if v == NOT_APPLICABLE || v.is_empty() {
         None
@@ -196,13 +196,29 @@ fn parse_ipeds_count(val: &str) -> Option<i32> {
     v.parse().ok().filter(|&n| n >= 0)
 }
 
+/// Carnegie classification source columns, **newest vintage first**.
+///
+/// Order is load-bearing and `find_col` takes the first match. HD2022 and HD2023 carry
+/// `C21BASIC` *and* `C18BASIC`, and they disagree for 1,275 of 6,256 institutions — so
+/// listing `C18BASIC` first imported 2018-vintage codes under the 2021 label that
+/// `lookup-seed.sql` and `schema.sql` both apply to this column. `CCBASIC` is the
+/// pre-2015 name; `CBASIC` never existed in any survey year.
+///
+/// Deliberately excludes `CARNEGIE`/`C00CARNEGIE`: their code space includes 40 and
+/// 51-60, which the `carnegie_class` lookup table has no rows for.
+///
+/// Shared with `db validate`'s provenance check, which reports which of these the stored
+/// data actually agrees with. It must be the same list, not a copy — a copy is how the
+/// first guard for this silently stopped guarding anything.
+pub(crate) const HD_CARNEGIE_CANDIDATES: &[&str] = &["C21BASIC", "C18BASIC", "C15BASIC", "CCBASIC"];
+
 /// Column indexes for the HD (institution directory) survey.
 ///
 /// Mirrors [`DemoCols`] for the completions survey. Every field is optional because IPEDS
 /// renames and drops columns between survey years; a missing column yields `None` rather
 /// than failing the import.
 #[derive(Debug, Default, Clone, Copy)]
-struct HdCols {
+pub(crate) struct HdCols {
     city: Option<usize>,
     state: Option<usize>,
     sector: Option<usize>,
@@ -215,13 +231,38 @@ struct HdCols {
     inst_size: Option<usize>,
 }
 
+impl HdCols {
+    /// Build column indices from IPEDS HD (institution directory) survey headers.
+    ///
+    /// A function rather than an inline literal so the **candidate order** is testable.
+    /// Order decides which column wins when a survey year ships several vintages of the
+    /// same measure, and getting it wrong is silent — see the Carnegie note below.
+    pub(crate) fn for_hd(headers: &[String]) -> Self {
+        macro_rules! col {
+            ($($n:expr),+) => { find_col(headers, &[$($n),+]) };
+        }
+        Self {
+            city: col!("CITY"),
+            state: col!("STABBR"),
+            sector: col!("SECTOR"),
+            control: col!("CONTROL"),
+            iclevel: col!("ICLEVEL"),
+            carnegie: find_col(headers, HD_CARNEGIE_CANDIDATES),
+            hbcu: col!("HBCU"),
+            tribal: col!("TRIBAL"),
+            locale: col!("LOCALE"),
+            inst_size: col!("INSTSIZE"),
+        }
+    }
+}
+
 /// Build one [`Institution`] row from an HD record.
 ///
 /// Split out of `ingest_institutions` so the parser choice is testable: every column here
 /// is categorical and must use [`parse_ipeds_code`], and nothing else in the suite would
 /// catch this being switched to [`parse_ipeds_count`] — which would store `SECTOR = 99`
 /// as sector ninety-nine.
-fn build_institution(
+pub(crate) fn build_institution(
     unitid: i32,
     name: String,
     year: u16,
@@ -267,7 +308,7 @@ fn parse_ipeds_bool(val: &str) -> Option<bool> {
 ///
 /// IPEDS column names change between survey years; pass multiple candidates in
 /// priority order (most recent first) and the first match wins.
-fn find_col(headers_upper: &[String], candidates: &[&str]) -> Option<usize> {
+pub(crate) fn find_col(headers_upper: &[String], candidates: &[&str]) -> Option<usize> {
     candidates
         .iter()
         .find_map(|&name| headers_upper.iter().position(|h| h == name))
@@ -291,12 +332,12 @@ fn require_col(
 }
 
 /// Uppercase all CSV headers once, for reuse across all [`find_col`] calls.
-fn uppercase_headers(record: &csv::StringRecord) -> Vec<String> {
+pub(crate) fn uppercase_headers(record: &csv::StringRecord) -> Vec<String> {
     record.iter().map(str::to_uppercase).collect()
 }
 
 /// Open a CSV reader from file content.
-fn open_csv(content: &str) -> csv::Reader<&[u8]> {
+pub(crate) fn open_csv(content: &str) -> csv::Reader<&[u8]> {
     csv::ReaderBuilder::new()
         .flexible(true)
         .from_reader(content.as_bytes())
@@ -340,33 +381,9 @@ pub async fn ingest_institutions(
         .clone();
     let headers = uppercase_headers(&raw_headers);
 
-    // Column index lookups — multiple candidate names per field for cross-year compatibility
-    macro_rules! col {
-        ($($name:expr),+) => { find_col(&headers, &[$($name),+]) };
-    }
-
     let col_unitid = require_col(&headers, &["UNITID"], path)?;
     let col_name = require_col(&headers, &["INSTNM"], path)?;
-    let cols = HdCols {
-        city: col!("CITY"),
-        state: col!("STABBR"),
-        sector: col!("SECTOR"),
-        control: col!("CONTROL"),
-        iclevel: col!("ICLEVEL"),
-        // Carnegie classification column changed names across survey cycles. **Newest
-        // first** — HD2022 and HD2023 carry C21BASIC *and* C18BASIC, and `find_col`
-        // takes the first match, so listing C18BASIC first silently imported
-        // 2018-vintage codes for those years. They disagree for 1,275 of 6,256
-        // institutions in HD2022, and `lookup-seed.sql` labels this column as the 2021
-        // classification. `CCBASIC` is the pre-2015 name; `CBASIC` never existed.
-        // Do not add `CARNEGIE`/`C00CARNEGIE`: different code space (40, 51-60), which
-        // `carnegie_class` has no rows for.
-        carnegie: col!("C21BASIC", "C18BASIC", "C15BASIC", "CCBASIC"),
-        hbcu: col!("HBCU"),
-        tribal: col!("TRIBAL"),
-        locale: col!("LOCALE"),
-        inst_size: col!("INSTSIZE"),
-    };
+    let cols = HdCols::for_hd(&headers);
 
     let mut batch: Vec<Institution> = Vec::with_capacity(UPSERT_BATCH_SIZE);
     let mut stats = IngestStats::default();
@@ -951,17 +968,106 @@ mod tests {
     }
 
     #[test]
-    fn hd_carnegie_candidates_are_listed_newest_first() {
-        // Guards the fix directly: `ingest_institutions` builds this list inline, so
-        // this pins the ordering contract that silently corrupted 20% of the column.
-        let all_four = ["C21BASIC", "C18BASIC", "C15BASIC", "CCBASIC"]
-            .map(str::to_string)
-            .to_vec();
+    fn hd_carnegie_resolves_to_the_newest_vintage_present() {
+        // Drives `HdCols::for_hd` itself, not a copy of its candidate list — an earlier
+        // version of this test asserted against a hand-written duplicate and therefore
+        // passed even with the production order reverted.
+        //
+        // These are the real HD2022/HD2023 headers: all four vintages at once. C18BASIC
+        // is placed first so header order cannot be what makes the test pass.
+        let headers: Vec<String> = ["C18BASIC", "C21BASIC", "C15BASIC", "CCBASIC"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
         assert_eq!(
-            find_col(&all_four, &["C21BASIC", "C18BASIC", "C15BASIC", "CCBASIC"]),
-            Some(0),
-            "with every vintage present, the 2021 classification must win"
+            HdCols::for_hd(&headers).carnegie,
+            Some(1),
+            "C21BASIC is at index 1; picking index 0 means the 2018 vintage won"
         );
+
+        // HD2024/HD2025 ship only the 2021 column.
+        let only_2021 = vec!["C21BASIC".to_string()];
+        assert_eq!(HdCols::for_hd(&only_2021).carnegie, Some(0));
+
+        // A year with neither must yield None rather than a wrong column.
+        let neither = vec!["INSTNM".to_string(), "CARNEGIE".to_string()];
+        assert_eq!(
+            HdCols::for_hd(&neither).carnegie,
+            None,
+            "CARNEGIE uses a different code space and must not be adopted"
+        );
+    }
+
+    #[test]
+    fn demo_cols_resolves_each_field_to_its_own_column() {
+        // The completions counterpart of the HD test. Nothing drove
+        // `DemoCols::for_completions` before, so a transposed candidate — `hispanic_men:
+        // col!("CHISPW")` — would have swapped two demographics across 1.2M rows with
+        // nothing to notice. Real IPEDS names, deliberately not in struct order.
+        let names = [
+            "CUNKNW", "CTOTALT", "CWHITM", "CNRALM", "CAIANW", "CTOTALM", "C2MORW", "CHISPM",
+            "CBKAAW", "CASIAM", "CNHPIW", "CTOTALW", "CNRALW", "CHISPW", "CAIANM", "CASIAW",
+            "CBKAAM", "CNHPIM", "CWHITW", "C2MORM", "CUNKNM",
+        ];
+        let headers: Vec<String> = names.iter().map(|s| (*s).to_string()).collect();
+        let c = DemoCols::for_completions(&headers);
+        let at = |name: &str| Some(names.iter().position(|n| *n == name).expect("present"));
+
+        assert_eq!(c.total, at("CTOTALT"));
+        assert_eq!(c.total_men, at("CTOTALM"));
+        assert_eq!(c.total_women, at("CTOTALW"));
+        assert_eq!(c.nonresident_alien_men, at("CNRALM"));
+        assert_eq!(c.nonresident_alien_women, at("CNRALW"));
+        assert_eq!(c.hispanic_men, at("CHISPM"));
+        assert_eq!(c.hispanic_women, at("CHISPW"));
+        assert_eq!(c.american_indian_men, at("CAIANM"));
+        assert_eq!(c.american_indian_women, at("CAIANW"));
+        assert_eq!(c.asian_men, at("CASIAM"));
+        assert_eq!(c.asian_women, at("CASIAW"));
+        assert_eq!(c.black_men, at("CBKAAM"));
+        assert_eq!(c.black_women, at("CBKAAW"));
+        assert_eq!(c.native_hawaiian_men, at("CNHPIM"));
+        assert_eq!(c.native_hawaiian_women, at("CNHPIW"));
+        assert_eq!(c.white_men, at("CWHITM"));
+        assert_eq!(c.white_women, at("CWHITW"));
+        assert_eq!(c.two_or_more_men, at("C2MORM"));
+        assert_eq!(c.two_or_more_women, at("C2MORW"));
+        assert_eq!(c.unknown_race_men, at("CUNKNM"));
+        assert_eq!(c.unknown_race_women, at("CUNKNW"));
+    }
+
+    #[test]
+    fn demo_cols_never_adopts_a_total_column_for_a_gendered_field() {
+        // CNRALT is men+women. If CNRALM is absent the field must stay None rather than
+        // quietly receive the combined figure, which would inflate a denominator.
+        let headers = vec!["CNRALT".to_string(), "CNRALW".to_string()];
+        let c = DemoCols::for_completions(&headers);
+        assert_eq!(c.nonresident_alien_men, None);
+        assert_eq!(c.nonresident_alien_women, Some(1));
+    }
+
+    #[test]
+    fn hd_cols_resolves_each_field_to_its_own_column() {
+        // Guards against a transposed candidate, the HD counterpart of the completions
+        // column test. Uses the real IPEDS names in a deliberately shuffled order.
+        let headers: Vec<String> = [
+            "INSTSIZE", "STABBR", "TRIBAL", "SECTOR", "LOCALE", "CITY", "HBCU", "ICLEVEL",
+            "C21BASIC", "CONTROL",
+        ]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+        let cols = HdCols::for_hd(&headers);
+        assert_eq!(cols.inst_size, Some(0));
+        assert_eq!(cols.state, Some(1));
+        assert_eq!(cols.tribal, Some(2));
+        assert_eq!(cols.sector, Some(3));
+        assert_eq!(cols.locale, Some(4));
+        assert_eq!(cols.city, Some(5));
+        assert_eq!(cols.hbcu, Some(6));
+        assert_eq!(cols.iclevel, Some(7));
+        assert_eq!(cols.carnegie, Some(8));
+        assert_eq!(cols.control, Some(9));
     }
 
     #[test]

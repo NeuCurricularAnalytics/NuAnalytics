@@ -688,6 +688,38 @@ pub enum DbSubcommand {
         #[arg(long)]
         print: bool,
     },
+    /// Check the stored data against the IPEDS file it was imported from.
+    ///
+    /// `db doctor` asks whether the deployment is set up correctly; this asks whether
+    /// what is in it is *right*. Two checks run:
+    ///
+    /// - **Fidelity** — every column compared against the survey file, with mismatch
+    ///   counts and examples. Catches a stale year, a partial import, or rows that never
+    ///   landed. It parses the file with the importer's own code, so it cannot detect a
+    ///   parsing defect — both sides would share it.
+    /// - **Provenance** — for measures IPEDS ships under several column names in the
+    ///   same file, which one the stored data actually agrees with. Pick the wrong
+    ///   vintage and every row count still ties; only the meaning is wrong. This is the
+    ///   check a count comparison cannot make.
+    ///
+    /// The year is taken from `--year` and used only to build comparable rows; it does
+    /// not filter the backend.
+    ///
+    /// Exits 1 if any column disagrees or the data came from an unintended column.
+    ///
+    /// Examples:
+    /// ```sh
+    /// nuanalytics db validate ~/Downloads/HD2025.zip --year 2025
+    /// nuanalytics db validate ./hd2025.csv --year 2025
+    /// ```
+    Validate {
+        /// IPEDS survey file to compare against — `.csv` or `.zip`.
+        #[arg(value_name = "FILE")]
+        file: std::path::PathBuf,
+        /// Survey year the file is from.
+        #[arg(long, value_name = "YEAR")]
+        year: u16,
+    },
     /// Diagnose a whole deployment: config source, reachability, RLS behaviour, session,
     /// schema completeness and seed data.
     ///

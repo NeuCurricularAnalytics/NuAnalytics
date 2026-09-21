@@ -13,7 +13,7 @@ use nu_analytics::config::{Config, ConfigSources};
 use nu_analytics::database::import::{execute_import, ImportOptions, ImportOutcome, ImportResult};
 use nu_analytics::database::{
     auth_file_path, bootstrap, clear_auth_state, doctor, ipeds, load_auth_state, save_auth_state,
-    sign_in_with_password, AuthState, DatabaseError, DbClient, SignInError,
+    sign_in_with_password, validate, AuthState, DatabaseError, DbClient, SignInError,
 };
 
 use crate::args::DbSubcommand;
@@ -32,6 +32,7 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
         DbSubcommand::ExecSql { file } => run_exec_sql(config, &file),
         DbSubcommand::Status => run_status(config, sources),
         DbSubcommand::Bootstrap { print } => run_bootstrap(config, print),
+        DbSubcommand::Validate { file, year } => run_validate(config, &file, year),
         DbSubcommand::Doctor => run_doctor(config, sources),
         DbSubcommand::IpedsImport {
             dir,
@@ -81,6 +82,170 @@ pub(super) fn make_runtime() -> Option<tokio::runtime::Runtime> {
         Err(e) => {
             eprintln!("✗ Failed to create async runtime: {e}");
             None
+        }
+    }
+}
+
+// ============================================================================
+// Validate — compare stored data against the survey file it came from
+// ============================================================================
+
+/// Compare a local IPEDS file against the backend and print the disagreements.
+fn run_validate(config: &Config, file: &std::path::Path, year: u16) {
+    let Some(rt) = make_runtime() else { return };
+    if let Err(e) = rt.block_on(do_validate(config, file, year)) {
+        eprintln!("✗ {e}");
+        std::process::exit(1);
+    }
+}
+
+/// Read the file, fetch the backend, and report both checks.
+///
+/// # Errors
+/// Returns a message when the file cannot be read or the backend cannot be reached.
+/// A *disagreement* is not an error — it is the result, and it sets the exit code.
+async fn do_validate(config: &Config, file: &std::path::Path, year: u16) -> Result<(), String> {
+    let client = DbClient::from_config(&config.database)
+        .await
+        .map_err(|e| format!("{e}"))?;
+
+    let from_file = validate::read_institutions(file, year).map_err(|e| format!("{e}"))?;
+    let from_db = validate::fetch_institutions(&client)
+        .await
+        .map_err(|e| format!("{e}"))?;
+
+    println!("File:     {}", file.display());
+    println!("Backend:  {}", config.database.endpoint);
+    println!();
+
+    let report = validate::diff_institutions(&from_file, &from_db);
+    print_coverage(&report.coverage);
+    println!();
+    print_columns(&report);
+
+    let provenance = validate::read_carnegie_candidates(file).map_err(|e| format!("{e}"))?;
+    let wrong_source = report_provenance(&from_db, &provenance);
+
+    println!();
+    let failing = report.failing_columns();
+    if failing == 0 && !wrong_source {
+        println!("✓ every column matches {}", file.display());
+        return Ok(());
+    }
+    println!(
+        "✗ {failing} column(s) disagree, {} value(s) total",
+        report.total_mismatches()
+    );
+    std::process::exit(1);
+}
+
+/// Print how many rows each side had.
+fn print_coverage(coverage: &validate::Coverage) {
+    println!("Rows");
+    println!("  compared            {}", coverage.in_both);
+    let marker = if coverage.missing_from_db == 0 {
+        "✓"
+    } else {
+        "✗"
+    };
+    println!(
+        "  {marker} in file, not stored {}",
+        coverage.missing_from_db
+    );
+    // Not a fault: `institutions` accumulates across survey years, so rows from earlier
+    // years are expected to outlive the file being checked.
+    println!(
+        "  · stored, not in file {}  (earlier survey years — expected)",
+        coverage.absent_from_file
+    );
+}
+
+/// Print the per-column comparison, worst first.
+fn print_columns(report: &validate::FidelityReport) {
+    println!("Columns");
+    for column in &report.columns {
+        if column.mismatched == 0 {
+            println!("  ✓ {:<16} {} compared", column.column, column.compared);
+            continue;
+        }
+        println!(
+            "  ✗ {:<16} {} of {} differ ({:.1}%)",
+            column.column,
+            column.mismatched,
+            column.compared,
+            column.mismatch_rate()
+        );
+        for m in &column.examples {
+            println!("      unitid {}: file={} db={}", m.key, m.in_file, m.in_db);
+        }
+    }
+}
+
+/// Print which source column the stored data agrees with. Returns `true` if it is the
+/// wrong one.
+fn report_provenance(
+    from_db: &std::collections::BTreeMap<i32, nu_analytics::database::Institution>,
+    candidates: &[validate::CandidateValues],
+) -> bool {
+    if candidates.len() < 2 {
+        // One vintage in the file means nothing to confuse it with.
+        return false;
+    }
+    let stored: std::collections::BTreeMap<i32, Option<i32>> = from_db
+        .iter()
+        .map(|(unitid, inst)| (*unitid, inst.carnegie_class))
+        .collect();
+    let report = validate::diff_provenance("carnegie_class", &stored, candidates);
+
+    println!();
+    println!(
+        "Provenance  (carnegie_class — this file carries {} vintages)",
+        candidates.len()
+    );
+    for c in &report.candidates {
+        let marker = if c.is_exact() { "✓" } else { " " };
+        println!(
+            "  {marker} {:<10} {} of {} rows agree",
+            c.source_column, c.agreements, c.compared
+        );
+    }
+    match (report.sole_exact_match(), report.expected.as_deref()) {
+        (Some(actual), Some(expected)) if actual.source_column != expected => {
+            println!(
+                "  ✗ stored data came from {}, but the importer reads {expected} first",
+                actual.source_column
+            );
+            println!("    Re-import this year to correct it.");
+            true
+        }
+        (Some(actual), _) => {
+            println!(
+                "  ✓ stored data came from {}, as intended",
+                actual.source_column
+            );
+            false
+        }
+        (None, _) => {
+            // Either several candidates are identical in this file, or none matches
+            // exactly — often because a *different* discrepancy is also in play. Neither
+            // establishes a wrong source, so neither is reported as one. But if one
+            // candidate clearly leads the expected column, say so: that is an
+            // observation, and withholding it would hide the only evidence available.
+            println!("  · no single column matches exactly — cannot attribute a source");
+            if let Some((best, expected)) = report.best_beats_expected() {
+                println!(
+                    "  ! {} agrees with {} rows against {}'s {} — the stored data looks",
+                    best.source_column,
+                    best.agreements,
+                    expected.source_column,
+                    expected.agreements
+                );
+                println!(
+                    "    like it came from {}. Re-import to settle it.",
+                    best.source_column
+                );
+            }
+            false
         }
     }
 }

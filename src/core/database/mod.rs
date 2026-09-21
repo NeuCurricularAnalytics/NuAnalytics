@@ -31,6 +31,7 @@ pub mod import;
 pub mod ipeds;
 pub mod models;
 pub mod query;
+pub mod validate;
 
 /// Supabase table name constants — use these instead of raw string literals.
 pub mod tables {
