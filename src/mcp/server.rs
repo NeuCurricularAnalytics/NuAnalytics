@@ -451,7 +451,7 @@ impl NuAnalyticsMcpServer {
     /// Search institutions from the IPEDS database
     #[cfg(feature = "database")]
     #[tool(
-        description = "Search institutions from the IPEDS database. Filter by name, state, Carnegie classification (15=R1, 16=R2, 21=R1-2021), control (1=public, 2=private nonprofit), HBCU/tribal status, or minimum size (inst_size_min: 2=1000+ students). Returns UNITID and metadata. Use get_lookup_codes(\"carnegie_class\") for the full classification list."
+        description = "Search institutions from the IPEDS database. Filter by name, state, Carnegie classification (15=R1, 16=R2, 17=Doctoral/Professional), control (1=public, 2=private nonprofit), HBCU/tribal status, or minimum size (inst_size_min: 2=1000+ students). Returns UNITID and metadata. Use get_lookup_codes(\"carnegie_class\") for the full classification list."
     )]
     fn search_institutions(
         &self,
@@ -892,7 +892,7 @@ impl ServerHandler for NuAnalyticsMcpServer {
             "\n\n## Database Query Workflow (IPEDS data available)\n\
             \n\
             Discover codes first (optional):\n\
-            - get_lookup_codes(\"carnegie_class\") → R1=15, R2=16, R1-2021=21\n\
+            - get_lookup_codes(\"carnegie_class\") → R1=15, R2=16, Doctoral/Professional=17\n\
             - get_lookup_codes(\"award_levels\")   → associate=3, bachelors=5, masters=7, doctoral=9\n\
             - search_cip_codes(\"computer science\") or prefix=\"11.\" → find CIP codes\n\
             \n\

@@ -21,7 +21,7 @@ pub struct Institution {
     pub control: Option<i32>,
     /// Institution level (1=4-year, 2=2-year, 3=less-than-2-year)
     pub iclevel: Option<i32>,
-    /// Carnegie classification (15=R1, 16=R2, 21=R1 in 2021 scheme, etc.)
+    /// Carnegie classification, 2021 Basic (15=R1, 16=R2, 21=Baccalaureate Arts & Sciences)
     pub carnegie_class: Option<i32>,
     /// Historically Black College or University
     pub hbcu: Option<bool>,

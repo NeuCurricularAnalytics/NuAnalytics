@@ -8,7 +8,7 @@
 //!
 //! | Parameter | Key codes |
 //! |-----------|-----------|
-//! | `carnegie_class` | 15=R1, 16=R2, 21=R1-2021, 22=R2-2021 |
+//! | `carnegie_class` | 15=R1, 16=R2, 17=Doctoral/Professional (2021 Basic) |
 //! | `award_level` | 3=associate, 5=bachelors, 7=masters, 9=doctoral |
 //! | `control` | 1=public, 2=private nonprofit, 3=for-profit |
 //! | `inst_size` | 1=<1000, 2=1000-4999, 3=5000-9999, 4=10000-19999, 5=20000+ |

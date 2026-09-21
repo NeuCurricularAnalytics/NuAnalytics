@@ -11,18 +11,28 @@
 //! | `C_A` (completions) | `C{year}_A.csv` | `UNITID`, `CIPCODE`, `AWLEVEL` |
 //!
 //! The `C_A` file is read in a single pass that produces two outputs:
-//! - `completions` table — CS-relevant rows (CIP 11.*, 30.7001, 30.7099)
-//! - `institution_completions` table — totals across **all** CIP codes per institution,
+//! - `completions` table — **every** row of the file, all CIP codes and both
+//!   `MAJORNUM` values. There is no CIP filter on ingest; callers filter at query time.
+//!   Measured against `C2025_A.csv`: 313,566 rows in, 313,566 rows stored.
+//! - `institution_completion_totals` table — totals across all CIP codes per institution,
 //!   used as the denominator for demographic representation calculations
 //!
 //! ## IPEDS sentinel values
-//! `"."`, `"-2"`, and `"99"` are treated as missing/inapplicable and mapped to `None`.
+//! `"."` and empty mean "no value" in every column. Beyond that the two kinds of column
+//! disagree, so they have separate parsers: `parse_ipeds_code` for categorical codes and
+//! `parse_ipeds_count` for counts. A code column stores everything else, `99` and the
+//! negatives included, because `lookup-seed.sql` gives each of them a label. A count
+//! column stores `99` as ninety-nine and rejects negatives as impossible.
 //!
 //! ## Column name variants
 //! IPEDS column names change across survey years. `find_col` (an internal
 //! helper) accepts multiple
 //! candidate names and matches case-insensitively, e.g. Carnegie class uses
-//! `C18BASIC`, `C21BASIC`, or `C15BASIC` depending on the year.
+//! `C21BASIC`, `C18BASIC`, `C15BASIC` or `CCBASIC` depending on the year.
+//!
+//! **Candidate order is load-bearing, newest first.** `find_col` returns the first
+//! candidate present, and several HD years carry more than one vintage of the same
+//! measure — HD2022 has all four Carnegie columns at once.
 
 use std::io::{Cursor, Read};
 use std::path::Path;
@@ -37,7 +47,7 @@ use crate::core::database::tables;
 pub struct IngestStats {
     /// Total rows read from the source file
     pub rows_read: usize,
-    /// Rows that passed CIP or validity filters
+    /// Rows with a parsable UNITID and a non-empty name. No CIP filter is applied.
     pub rows_filtered: usize,
     /// Rows successfully upserted to the database
     pub rows_upserted: usize,
@@ -137,15 +147,110 @@ fn decode_ipeds_bytes(bytes: &[u8], source: &str) -> String {
     }
 }
 
-/// Parse an IPEDS integer field, returning `None` for sentinel values.
+/// IPEDS "not applicable" — the only in-band marker meaning "there is no value here".
+/// Every other code IPEDS emits is modelled in `lookup-seed.sql` and stored as-is.
+const NOT_APPLICABLE: &str = ".";
+
+/// Parse an IPEDS **categorical code** field, returning `None` only when there is no code.
 ///
-/// Sentinels: `"."` (not applicable), `"-2"` (not reported), `"99"` (privacy-suppressed).
-fn parse_ipeds_int(val: &str) -> Option<i32> {
+/// Missing is [`NOT_APPLICABLE`] and empty. **Every other code is stored, including the
+/// negatives and `99`**, because `lookup-seed.sql` models them as real rows with labels:
+/// `institution_sector (99, 'Not classified')`, `institution_size (-2, 'Not applicable')`
+/// and `(-1, 'Not reported')`, `institution_control (-3, 'Not available')`. Nulling them
+/// would collapse "IPEDS told us it is not classified" into "we have no value", and leave
+/// seed rows that no row could ever reference.
+///
+/// Verified against `HD2025.csv`: every value in all six categorical columns has a
+/// matching lookup row, so this cannot produce an orphan. A future survey year that
+/// introduces a code the seeds do not carry *would* — `db validate` is what catches that.
+///
+/// **Not for count columns.** See [`parse_ipeds_count`], where `99` is a number and
+/// negatives are impossible.
+fn parse_ipeds_code(val: &str) -> Option<i32> {
     let v = val.trim();
-    if v == "." || v == "-2" || v == "99" || v.is_empty() {
+    if v == NOT_APPLICABLE || v.is_empty() {
         None
     } else {
         v.parse().ok()
+    }
+}
+
+/// Parse an IPEDS **count** field, returning `None` for sentinels and impossible values.
+///
+/// Differs from [`parse_ipeds_code`] in both directions:
+///
+/// - **`99` is a number here, not a sentinel** — ninety-nine graduates. In `C2025_A.csv`
+///   the 21 count columns hold `99` 566 times and every one carries the imputation flag
+///   `R` (Reported); `IPEDS` marks suppression in the parallel `X`-prefixed flag columns,
+///   never with an in-band value.
+/// - **Every negative is missing.** A count cannot be negative, and
+///   [`accumulate_demo_totals`] sums these into the institution totals that every
+///   representation ratio divides by, so one negative would silently shrink a
+///   denominator. `-1`, `-2` and `-3` are meaningful as *categorical* codes and
+///   meaningless here.
+fn parse_ipeds_count(val: &str) -> Option<i32> {
+    let v = val.trim();
+    if v == NOT_APPLICABLE || v.is_empty() {
+        return None;
+    }
+    v.parse().ok().filter(|&n| n >= 0)
+}
+
+/// Column indexes for the HD (institution directory) survey.
+///
+/// Mirrors [`DemoCols`] for the completions survey. Every field is optional because IPEDS
+/// renames and drops columns between survey years; a missing column yields `None` rather
+/// than failing the import.
+#[derive(Debug, Default, Clone, Copy)]
+struct HdCols {
+    city: Option<usize>,
+    state: Option<usize>,
+    sector: Option<usize>,
+    control: Option<usize>,
+    iclevel: Option<usize>,
+    carnegie: Option<usize>,
+    hbcu: Option<usize>,
+    tribal: Option<usize>,
+    locale: Option<usize>,
+    inst_size: Option<usize>,
+}
+
+/// Build one [`Institution`] row from an HD record.
+///
+/// Split out of `ingest_institutions` so the parser choice is testable: every column here
+/// is categorical and must use [`parse_ipeds_code`], and nothing else in the suite would
+/// catch this being switched to [`parse_ipeds_count`] — which would store `SECTOR = 99`
+/// as sector ninety-nine.
+fn build_institution(
+    unitid: i32,
+    name: String,
+    year: u16,
+    cols: &HdCols,
+    record: &csv::StringRecord,
+) -> Institution {
+    let code = |col: Option<usize>| col.and_then(|i| record.get(i)).and_then(parse_ipeds_code);
+    let text = |col: Option<usize>| {
+        col.and_then(|i| record.get(i))
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+    };
+    let flag = |col: Option<usize>| col.and_then(|i| record.get(i)).and_then(parse_ipeds_bool);
+
+    Institution {
+        unitid,
+        name,
+        city: text(cols.city),
+        state: text(cols.state),
+        sector: code(cols.sector),
+        control: code(cols.control),
+        iclevel: code(cols.iclevel),
+        carnegie_class: code(cols.carnegie),
+        hbcu: flag(cols.hbcu),
+        tribal: flag(cols.tribal),
+        locale: code(cols.locale),
+        inst_size: code(cols.inst_size),
+        updated_year: Some(i32::from(year)),
     }
 }
 
@@ -242,17 +347,26 @@ pub async fn ingest_institutions(
 
     let col_unitid = require_col(&headers, &["UNITID"], path)?;
     let col_name = require_col(&headers, &["INSTNM"], path)?;
-    let col_city = col!("CITY");
-    let col_state = col!("STABBR");
-    let col_sector = col!("SECTOR");
-    let col_control = col!("CONTROL");
-    let col_iclevel = col!("ICLEVEL");
-    // Carnegie classification column changed names across survey cycles
-    let col_carnegie = col!("C18BASIC", "C21BASIC", "C15BASIC", "CBASIC");
-    let col_hbcu = col!("HBCU");
-    let col_tribal = col!("TRIBAL");
-    let col_locale = col!("LOCALE");
-    let col_inst_size = col!("INSTSIZE");
+    let cols = HdCols {
+        city: col!("CITY"),
+        state: col!("STABBR"),
+        sector: col!("SECTOR"),
+        control: col!("CONTROL"),
+        iclevel: col!("ICLEVEL"),
+        // Carnegie classification column changed names across survey cycles. **Newest
+        // first** — HD2022 and HD2023 carry C21BASIC *and* C18BASIC, and `find_col`
+        // takes the first match, so listing C18BASIC first silently imported
+        // 2018-vintage codes for those years. They disagree for 1,275 of 6,256
+        // institutions in HD2022, and `lookup-seed.sql` labels this column as the 2021
+        // classification. `CCBASIC` is the pre-2015 name; `CBASIC` never existed.
+        // Do not add `CARNEGIE`/`C00CARNEGIE`: different code space (40, 51-60), which
+        // `carnegie_class` has no rows for.
+        carnegie: col!("C21BASIC", "C18BASIC", "C15BASIC", "CCBASIC"),
+        hbcu: col!("HBCU"),
+        tribal: col!("TRIBAL"),
+        locale: col!("LOCALE"),
+        inst_size: col!("INSTSIZE"),
+    };
 
     let mut batch: Vec<Institution> = Vec::with_capacity(UPSERT_BATCH_SIZE);
     let mut stats = IngestStats::default();
@@ -275,39 +389,7 @@ pub async fn ingest_institutions(
 
         stats.rows_filtered += 1;
 
-        macro_rules! get_int {
-            ($col:expr) => {
-                $col.and_then(|i| record.get(i)).and_then(parse_ipeds_int)
-            };
-        }
-        macro_rules! get_str {
-            ($col:expr) => {
-                $col.and_then(|i| record.get(i))
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(String::from)
-            };
-        }
-
-        batch.push(Institution {
-            unitid,
-            name,
-            city: get_str!(col_city),
-            state: get_str!(col_state),
-            sector: get_int!(col_sector),
-            control: get_int!(col_control),
-            iclevel: get_int!(col_iclevel),
-            carnegie_class: get_int!(col_carnegie),
-            hbcu: col_hbcu
-                .and_then(|i| record.get(i))
-                .and_then(parse_ipeds_bool),
-            tribal: col_tribal
-                .and_then(|i| record.get(i))
-                .and_then(parse_ipeds_bool),
-            locale: get_int!(col_locale),
-            inst_size: get_int!(col_inst_size),
-            updated_year: Some(i32::from(year)),
-        });
+        batch.push(build_institution(unitid, name, year, &cols, &record));
 
         if batch.len() >= UPSERT_BATCH_SIZE {
             flush_batch(
@@ -393,7 +475,9 @@ impl DemoCols {
             total: col!("CTOTALT"),
             total_men: col!("CTOTALM"),
             total_women: col!("CTOTALW"),
-            nonresident_alien_men: col!("CNRALM", "CNRALT"),
+            // No CNRALT fallback: the T suffix is the men+women total, so were CNRALM
+            // ever absent this field would silently receive the combined figure.
+            nonresident_alien_men: col!("CNRALM"),
             nonresident_alien_women: col!("CNRALW"),
             hispanic_men: col!("CHISPM", "CHISPAM"),
             hispanic_women: col!("CHISPW", "CHISPAW"),
@@ -417,7 +501,8 @@ impl DemoCols {
 
 /// Ingest IPEDS C (completions by award level) CSV into the `completions` table.
 ///
-/// Only rows whose CIP code matches [`is_relevant_cip`] are ingested.
+/// **Every row is ingested** — all CIP codes, both `MAJORNUM` values. CIP filtering is a
+/// query-time concern, so nothing is discarded here.
 ///
 /// # Errors
 ///
@@ -471,6 +556,14 @@ pub async fn ingest_completions(
         stats.rows_filtered += 1;
 
         let raw_cip = record.get(col_cipcode).unwrap_or("").trim().to_string();
+        // Parsed raw rather than through `parse_ipeds_code`: these two are part of the
+        // `completions` unique key, and IPEDS does not use sentinels in them — AWLEVEL is
+        // 1..=21 and MAJORNUM is 1 or 2. Verified across all 313,566 rows of C2025_A.
+        // A sentinel here would not be caught by swapping in `parse_ipeds_code` — it
+        // returns `None` for "." exactly as this does. The row would land in the
+        // `award_level = 0` bucket that `flush_institution_totals` writes as NULL
+        // ("all levels combined"), quietly inflating that total. If one ever appears the
+        // fix is to skip the row and count it in `rows_skipped`, not to change parsers.
         let award_level: Option<i32> = record.get(col_awlevel).and_then(|v| v.trim().parse().ok());
         let major_num: Option<i32> = col_majornum
             .and_then(|i| record.get(i))
@@ -526,7 +619,7 @@ fn accumulate_demo_totals(
         .or_default();
     macro_rules! add {
         ($f:ident, $col:expr) => {
-            if let Some(v) = $col.and_then(|i| record.get(i)).and_then(parse_ipeds_int) {
+            if let Some(v) = $col.and_then(|i| record.get(i)).and_then(parse_ipeds_count) {
                 acc.$f += i64::from(v);
             }
         };
@@ -564,9 +657,9 @@ fn build_completion(
     demo: &DemoCols,
     record: &csv::StringRecord,
 ) -> Completion {
-    macro_rules! get_int {
+    macro_rules! get_count {
         ($col:expr) => {
-            $col.and_then(|i| record.get(i)).and_then(parse_ipeds_int)
+            $col.and_then(|i| record.get(i)).and_then(parse_ipeds_count)
         };
     }
     Completion {
@@ -576,27 +669,27 @@ fn build_completion(
         award_level,
         major_num,
         year: Some(i32::from(year)),
-        total: get_int!(demo.total),
-        total_men: get_int!(demo.total_men),
-        total_women: get_int!(demo.total_women),
-        nonresident_alien_men: get_int!(demo.nonresident_alien_men),
-        nonresident_alien_women: get_int!(demo.nonresident_alien_women),
-        hispanic_men: get_int!(demo.hispanic_men),
-        hispanic_women: get_int!(demo.hispanic_women),
-        american_indian_men: get_int!(demo.american_indian_men),
-        american_indian_women: get_int!(demo.american_indian_women),
-        asian_men: get_int!(demo.asian_men),
-        asian_women: get_int!(demo.asian_women),
-        black_men: get_int!(demo.black_men),
-        black_women: get_int!(demo.black_women),
-        native_hawaiian_men: get_int!(demo.native_hawaiian_men),
-        native_hawaiian_women: get_int!(demo.native_hawaiian_women),
-        white_men: get_int!(demo.white_men),
-        white_women: get_int!(demo.white_women),
-        two_or_more_men: get_int!(demo.two_or_more_men),
-        two_or_more_women: get_int!(demo.two_or_more_women),
-        unknown_race_men: get_int!(demo.unknown_race_men),
-        unknown_race_women: get_int!(demo.unknown_race_women),
+        total: get_count!(demo.total),
+        total_men: get_count!(demo.total_men),
+        total_women: get_count!(demo.total_women),
+        nonresident_alien_men: get_count!(demo.nonresident_alien_men),
+        nonresident_alien_women: get_count!(demo.nonresident_alien_women),
+        hispanic_men: get_count!(demo.hispanic_men),
+        hispanic_women: get_count!(demo.hispanic_women),
+        american_indian_men: get_count!(demo.american_indian_men),
+        american_indian_women: get_count!(demo.american_indian_women),
+        asian_men: get_count!(demo.asian_men),
+        asian_women: get_count!(demo.asian_women),
+        black_men: get_count!(demo.black_men),
+        black_women: get_count!(demo.black_women),
+        native_hawaiian_men: get_count!(demo.native_hawaiian_men),
+        native_hawaiian_women: get_count!(demo.native_hawaiian_women),
+        white_men: get_count!(demo.white_men),
+        white_women: get_count!(demo.white_women),
+        two_or_more_men: get_count!(demo.two_or_more_men),
+        two_or_more_women: get_count!(demo.two_or_more_women),
+        unknown_race_men: get_count!(demo.unknown_race_men),
+        unknown_race_women: get_count!(demo.unknown_race_women),
     }
 }
 
@@ -740,13 +833,89 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_ipeds_int_sentinels() {
-        assert_eq!(parse_ipeds_int("."), None);
-        assert_eq!(parse_ipeds_int("-2"), None);
-        assert_eq!(parse_ipeds_int("99"), None);
-        assert_eq!(parse_ipeds_int(""), None);
-        assert_eq!(parse_ipeds_int("42"), Some(42));
-        assert_eq!(parse_ipeds_int("0"), Some(0));
+    fn parse_ipeds_code_stores_every_code_the_lookup_tables_label() {
+        // `lookup-seed.sql` gives 99 and -2 labels, so nulling them would collapse
+        // "IPEDS said not classified" into "we have no value" and strand seed rows that
+        // nothing could ever reference.
+        assert_eq!(parse_ipeds_code("99"), Some(99)); // institution_sector 'Not classified'
+        assert_eq!(parse_ipeds_code("-2"), Some(-2)); // institution_size 'Not applicable'
+        assert_eq!(parse_ipeds_code("42"), Some(42));
+        assert_eq!(parse_ipeds_code("0"), Some(0));
+
+        // Only a literal "no value" is missing.
+        assert_eq!(parse_ipeds_code("."), None);
+        assert_eq!(parse_ipeds_code(""), None);
+    }
+
+    #[test]
+    fn parse_ipeds_count_treats_99_as_a_number() {
+        assert_eq!(parse_ipeds_count("99"), Some(99));
+        assert_eq!(parse_ipeds_count("."), None);
+        assert_eq!(parse_ipeds_count(""), None);
+        assert_eq!(parse_ipeds_count("42"), Some(42));
+        assert_eq!(parse_ipeds_count("0"), Some(0));
+    }
+
+    #[test]
+    fn parse_ipeds_count_rejects_every_negative_not_just_minus_two() {
+        // `accumulate_demo_totals` sums these into the institution totals that every
+        // representation ratio divides by, so a negative shrinks a denominator rather
+        // than failing. -1 and -3 are real *categorical* codes and impossible counts.
+        for impossible in ["-1", "-2", "-3", "-100"] {
+            assert_eq!(
+                parse_ipeds_count(impossible),
+                None,
+                "{impossible} is not a possible number of graduates"
+            );
+        }
+    }
+
+    #[test]
+    fn the_parsers_differ_only_over_negatives() {
+        // Guards the split: drift anywhere outside the one documented difference means
+        // a parser has grown a rule the other needs. Note 99 is NOT a difference — both
+        // keep it, for different reasons (a labelled code; ninety-nine graduates).
+        // Driven from expected values, not just parser-vs-parser: asserting only that
+        // the two agree would still pass if both regressed the same way — e.g. if each
+        // started nulling "99" again.
+        for (input, expected) in [
+            (".", None),
+            ("", None),
+            ("0", Some(0)),
+            ("42", Some(42)),
+            ("99", Some(99)),
+            ("1000", Some(1000)),
+            ("not-a-number", None),
+        ] {
+            assert_eq!(
+                parse_ipeds_code(input),
+                expected,
+                "code parser on {input:?}"
+            );
+            assert_eq!(
+                parse_ipeds_count(input),
+                expected,
+                "count parser on {input:?}"
+            );
+        }
+        // The difference: negatives are labelled lookup codes, and impossible counts.
+        for negative in ["-1", "-2", "-3"] {
+            assert!(parse_ipeds_code(negative).is_some(), "{negative} is a code");
+            assert_eq!(
+                parse_ipeds_count(negative),
+                None,
+                "{negative} is not a count"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_ipeds_code_keeps_the_negative_codes_the_lookup_tables_model() {
+        // `lookup-seed.sql` has real rows for -1 ("Not reported"), -2 ("Not applicable")
+        // and -3 ("Not available").
+        assert_eq!(parse_ipeds_code("-1"), Some(-1));
+        assert_eq!(parse_ipeds_code("-2"), Some(-2));
+        assert_eq!(parse_ipeds_code("-3"), Some(-3));
     }
 
     #[test]
@@ -768,14 +937,30 @@ mod tests {
 
     #[test]
     fn test_find_col_tries_candidates_in_order() {
+        // Candidate order decides, not header order — which is why the Carnegie
+        // candidates must be listed newest first. HD2022 and HD2023 really do carry
+        // both of these columns, and they disagree for 1,275 of 6,256 institutions,
+        // so listing C18BASIC first imported the 2018 vintage under a 2021 label.
         let headers = vec!["C21BASIC".to_string(), "C18BASIC".to_string()];
+        assert_eq!(find_col(&headers, &["C18BASIC", "C21BASIC"]), Some(1));
+        assert_eq!(find_col(&headers, &["C21BASIC", "C18BASIC"]), Some(0));
+
+        // Reversing the headers must not change the answer; only candidate order does.
+        let swapped = vec!["C18BASIC".to_string(), "C21BASIC".to_string()];
+        assert_eq!(find_col(&swapped, &["C21BASIC", "C18BASIC"]), Some(1));
+    }
+
+    #[test]
+    fn hd_carnegie_candidates_are_listed_newest_first() {
+        // Guards the fix directly: `ingest_institutions` builds this list inline, so
+        // this pins the ordering contract that silently corrupted 20% of the column.
+        let all_four = ["C21BASIC", "C18BASIC", "C15BASIC", "CCBASIC"]
+            .map(str::to_string)
+            .to_vec();
         assert_eq!(
-            find_col(&headers, &["C18BASIC", "C21BASIC"]),
-            Some(1) // C18BASIC is at index 1
-        );
-        assert_eq!(
-            find_col(&headers, &["C21BASIC", "C18BASIC"]),
-            Some(0) // C21BASIC is at index 0, wins regardless of candidate order
+            find_col(&all_four, &["C21BASIC", "C18BASIC", "C15BASIC", "CCBASIC"]),
+            Some(0),
+            "with every vintage present, the 2021 classification must win"
         );
     }
 
@@ -859,9 +1044,115 @@ mod tests {
     }
 
     #[test]
-    fn test_build_completion_sentinel_demo_becomes_none() {
+    fn build_institution_keeps_the_codes_the_lookup_tables_label() {
         use csv::StringRecord;
-        // Column 0 has sentinel "99" — should parse to None via parse_ipeds_int
+        // The guard in the opposite direction to the count fix: nothing else in the
+        // suite fails if this call site is switched to parse_ipeds_count, which would
+        // null every negative code and strand the lookup rows that label them.
+        let record = StringRecord::from(vec!["99", "1", "Boston", "MA", "-2", ".", "-2"]);
+        let cols = HdCols {
+            sector: Some(0),
+            iclevel: Some(1),
+            city: Some(2),
+            state: Some(3),
+            inst_size: Some(4),
+            locale: Some(5),
+            carnegie: Some(6),
+            ..HdCols::default()
+        };
+        let inst = build_institution(100_654, "Test College".to_string(), 2025, &cols, &record);
+
+        assert_eq!(inst.sector, Some(99), "sector 99 is 'Not classified'");
+        assert_eq!(
+            inst.inst_size,
+            Some(-2),
+            "-2 is 'Not applicable', a labelled code — parse_ipeds_count would null it"
+        );
+        assert_eq!(
+            inst.carnegie_class,
+            Some(-2),
+            "C21BASIC=-2 is 'not in the Carnegie universe' — 2,262 of 5,985 HD2025 rows, \
+             the single largest effect of storing these codes rather than nulling them"
+        );
+        assert_eq!(inst.iclevel, Some(1), "a plain code must survive");
+        assert_eq!(inst.locale, None, "\".\" is the one value meaning no code");
+        assert_eq!(inst.city.as_deref(), Some("Boston"));
+        assert_eq!(inst.updated_year, Some(2025));
+    }
+
+    #[test]
+    fn build_institution_leaves_absent_columns_none() {
+        use csv::StringRecord;
+        // IPEDS drops and renames columns between years, so every HdCols field is
+        // optional. A missing column must not read whatever is at index 0.
+        let record = StringRecord::from(vec!["7"]);
+        let inst = build_institution(1, "X".to_string(), 2024, &HdCols::default(), &record);
+        assert_eq!(inst.sector, None);
+        assert_eq!(inst.city, None);
+        assert_eq!(inst.hbcu, None);
+    }
+
+    #[test]
+    fn build_completion_maps_every_demographic_column_to_its_own_field() {
+        use csv::StringRecord;
+        // 21 distinct values, so a transposed get_count! pair fails loudly instead of
+        // silently swapping two demographics. Every other build_completion test drives
+        // only the first three columns, so the remaining 18 were never executed — and
+        // the corpus is about to be re-imported on this code.
+        let record = StringRecord::from((1..=21).map(|i| i.to_string()).collect::<Vec<_>>());
+        let demo = DemoCols {
+            total: Some(0),
+            total_men: Some(1),
+            total_women: Some(2),
+            nonresident_alien_men: Some(3),
+            nonresident_alien_women: Some(4),
+            hispanic_men: Some(5),
+            hispanic_women: Some(6),
+            american_indian_men: Some(7),
+            american_indian_women: Some(8),
+            asian_men: Some(9),
+            asian_women: Some(10),
+            black_men: Some(11),
+            black_women: Some(12),
+            native_hawaiian_men: Some(13),
+            native_hawaiian_women: Some(14),
+            white_men: Some(15),
+            white_women: Some(16),
+            two_or_more_men: Some(17),
+            two_or_more_women: Some(18),
+            unknown_race_men: Some(19),
+            unknown_race_women: Some(20),
+        };
+        let c = build_completion(1, "11.0101", None, None, 2024, &demo, &record);
+
+        // Column index i holds the value i+1.
+        assert_eq!(c.total, Some(1));
+        assert_eq!(c.total_men, Some(2));
+        assert_eq!(c.total_women, Some(3));
+        assert_eq!(c.nonresident_alien_men, Some(4));
+        assert_eq!(c.nonresident_alien_women, Some(5));
+        assert_eq!(c.hispanic_men, Some(6));
+        assert_eq!(c.hispanic_women, Some(7));
+        assert_eq!(c.american_indian_men, Some(8));
+        assert_eq!(c.american_indian_women, Some(9));
+        assert_eq!(c.asian_men, Some(10));
+        assert_eq!(c.asian_women, Some(11));
+        assert_eq!(c.black_men, Some(12));
+        assert_eq!(c.black_women, Some(13));
+        assert_eq!(c.native_hawaiian_men, Some(14));
+        assert_eq!(c.native_hawaiian_women, Some(15));
+        assert_eq!(c.white_men, Some(16));
+        assert_eq!(c.white_women, Some(17));
+        assert_eq!(c.two_or_more_men, Some(18));
+        assert_eq!(c.two_or_more_women, Some(19));
+        assert_eq!(c.unknown_race_men, Some(20));
+        assert_eq!(c.unknown_race_women, Some(21));
+    }
+
+    #[test]
+    fn build_completion_keeps_99_and_nulls_only_the_real_sentinels() {
+        use csv::StringRecord;
+        // Column 0 is a real count of 99; columns 1 and 2 are genuine sentinels.
         let record = StringRecord::from(vec!["99", ".", "-2"]);
         let demo = DemoCols {
             total: Some(0),
@@ -870,9 +1161,33 @@ mod tests {
             ..empty_demo_cols()
         };
         let c = build_completion(1, "11.0101", None, None, 2024, &demo, &record);
-        assert_eq!(c.total, None);
+        assert_eq!(
+            c.total,
+            Some(99),
+            "99 completions is a count, not a sentinel"
+        );
         assert_eq!(c.total_men, None);
         assert_eq!(c.total_women, None);
+    }
+
+    #[test]
+    fn accumulate_demo_totals_counts_a_value_of_99() {
+        use csv::StringRecord;
+        // The same rule one level up: institution totals are the denominator for every
+        // representation ratio, so a dropped 99 skews the ratio, not just the count.
+        let mut totals = std::collections::HashMap::new();
+        let demo = DemoCols {
+            total: Some(0),
+            ..empty_demo_cols()
+        };
+        accumulate_demo_totals(
+            &mut totals,
+            10,
+            Some(5),
+            &demo,
+            &StringRecord::from(vec!["99"]),
+        );
+        assert_eq!(totals[&(10, 5)].total, 99);
     }
 
     #[test]
@@ -908,8 +1223,11 @@ mod tests {
             total_men: Some(0),
             ..empty_demo_cols()
         };
-        let record = StringRecord::from(vec!["99"]); // sentinel → None → 0 added
-        accumulate_demo_totals(&mut totals, 1, Some(5), &demo, &record);
+        // "." and "-2" are genuine sentinels for a count column; "99" is not.
+        for sentinel in [".", "-2", ""] {
+            let record = StringRecord::from(vec![sentinel]);
+            accumulate_demo_totals(&mut totals, 1, Some(5), &demo, &record);
+        }
         assert_eq!(totals[&(1, 5)].total_men, 0);
     }
 

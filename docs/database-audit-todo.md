@@ -186,16 +186,112 @@ Not to be confused with the `shortest.csv` plan export ("Shortest Path"), which 
 
 Each step ends with `/check-rs` green and the validator from Step 2 re-run.
 
-### Step 1 — Split the IPEDS integer parser *(code, small)*
-`parse_ipeds_int` serves two kinds of column and gets one of them wrong. Split it:
+### Step 1 — Split the IPEDS integer parser *(code)* — **DONE**
 
-- `parse_ipeds_code` — categorical HD columns. Keeps `"."`, `"-2"`, `"99"` as missing.
-- `parse_ipeds_count` — completions counts. `"."`, `"-2"` and empty are missing; **`99` is
-  a number.**
+`parse_ipeds_int` served two kinds of column and got one wrong. Now two functions:
 
-Check every call site individually rather than swapping the default; the HD columns
-genuinely need the old behaviour. Add a test asserting `parse_ipeds_count("99") == Some(99)`
-and that the HD path still nulls `SECTOR = 99`.
+- `parse_ipeds_code` — categorical HD columns. Only `"."` and empty are missing; every
+  code is stored, including `99` and the negatives, because `lookup-seed.sql` labels
+  them. (See the decision block below — the first cut of this nulled `99`/`-2`.)
+- `parse_ipeds_count` — completions counts. `"."` and empty are missing, **`99` is the
+  number ninety-nine**, and **every negative is missing**.
+
+The macros at each call site were renamed `get_code!` / `get_count!`, so the column kind
+is now visible where it is used rather than inferred.
+
+**Measured recovery, `C2025_A.csv`:** 566 values across the 21 count columns were being
+nulled, totalling **56,034 graduates** — 24 values / 2,376 graduates within CIP 11. About
+four times that across the four imported years, pending Step 3.
+
+Two things the review changed beyond the original plan:
+
+- **Rejecting every negative count, not just `-2`.** The first cut kept only `-2` as a
+  sentinel while the doc claimed "a count cannot be negative" — and a test had
+  incidentally locked in `parse_ipeds_count("-1") == Some(-1)`. `accumulate_demo_totals`
+  sums these into the denominator of every representation ratio, so a negative would
+  shrink it silently. The rule now matches its documentation.
+- **`build_institution` + `HdCols` extracted** from the 110-line `ingest_institutions`,
+  mirroring `build_completion`/`DemoCols` on the completions side. Not cosmetic: the HD
+  call site had **no test at all**, so switching it to `parse_ipeds_count` compiled and
+  the whole suite still passed — re-corrupting `SECTOR`/`LOCALE`/`INSTSIZE` = 99 in the
+  opposite direction. That mutation now fails a test.
+
+Also fixed here: two tests that had **encoded the defect** by using `"99"` as their
+sentinel example, and the module/function docs claiming the completions ingest filters to
+CS CIP codes (it does not — that is F4, fixed in this file at the same time).
+
+**[decided 2026-09-21] Categorical codes are now stored, not nulled.** Option 1 of the
+three that were on the table: `parse_ipeds_code` drops only `"."` and empty. `99` and the
+negatives are kept, because `lookup-seed.sql` gives each of them a label and nulling them
+collapsed "IPEDS told us it is not classified" into "we have no value" while stranding
+seed rows nothing could reference.
+
+Checked before changing it: every value in all six categorical columns of `HD2025.csv`
+has a matching lookup row, so this cannot create an orphan. A future survey year adding a
+code the seeds do not carry would — that is one of the things Step 2's `db validate`
+should catch.
+
+**Effect on re-import, measured against `HD2025.csv`:** 2,537 institution fields stop
+being `NULL`.
+
+| Column | Rows | Value | Now means |
+|---|---|---|---|
+| `C21BASIC` | 2,262 | `-2` | Not applicable (not in the Carnegie universe) |
+| `INSTSIZE` | 258 | `-2` | Not applicable |
+| `SECTOR` | 17 | `99` | Not classified |
+
+The Carnegie figure is the notable one: **38% of institutions** had their classification
+nulled when IPEDS had actually told us they are outside the Carnegie universe — a
+different fact from "unknown", and one that any analysis grouping by Carnegie class was
+silently folding into the missing bucket.
+
+A consequence worth knowing: the two parsers now differ **only** over negatives. Both keep
+`99` — as a labelled code on one side, as ninety-nine graduates on the other.
+
+### F8 — The Carnegie column was read from the wrong survey vintage **[measured]** — FIXED
+
+`ingest_institutions` listed the Carnegie candidates as
+`("C18BASIC", "C21BASIC", "C15BASIC", "CBASIC")`, and `find_col` returns the **first**
+candidate present. HD2022 and HD2023 carry `C21BASIC`, `C18BASIC`, `C15BASIC` *and*
+`CCBASIC` simultaneously — so those years imported the **2018** classification, while
+HD2024/HD2025 (which carry only `C21BASIC`) imported the 2021 one. Meanwhile `schema.sql`
+documents the column as "C21BASIC" and `lookup-seed.sql` titles it "Carnegie
+Classification 2021 Basic".
+
+Proven against the live backend, not inferred. Of the 6,256 institutions stamped
+`updated_year = 2022`, the two columns disagree for **1,275**, and on every one of those:
+
+| `carnegie_class` agrees with | Rows |
+|---|---|
+| HD2022 `C18BASIC` | **1,275 / 1,275** |
+| HD2022 `C21BASIC` | 0 / 1,275 |
+
+So the live column is 2018-vintage data under a 2021 label, for 20% of institutions.
+This also inflated F2's `carnegie_class` mismatch count: part of that 3,397 was the wrong
+column, not three years of reclassification.
+
+**Fixed:** candidates reordered newest-first and the dead name corrected —
+`("C21BASIC", "C18BASIC", "C15BASIC", "CCBASIC")`. `CBASIC` is not an IPEDS column in any
+of HD2022-2025; the pre-2015 name is `CCBASIC`. All four share the `{-2, 1..=33}` code
+space that `carnegie_class` seeds, so none can orphan. `CARNEGIE`/`C00CARNEGIE` were
+deliberately **not** added as fallbacks: their code space includes 40 and 51-60, which the
+lookup table has no rows for.
+
+Two guards added, because nothing pinned this: the precedence test no longer asserts the
+wrong order as if intended, and `hd_carnegie_candidates_are_listed_newest_first` fails if
+the list is ever reordered.
+
+Found in the same pass and fixed: `nonresident_alien_men` had a `CNRALT` fallback, but the
+`T` suffix is the men+women **total** — latent today because `CNRALM` is present, and it
+would have inflated a denominator if it ever fired.
+
+### F9 — MCP tool descriptions gave the wrong Carnegie codes — FIXED
+
+Nine call sites across `src/mcp/` told the model `21=R1-2021, 22=R2-2021`. Under the 2021
+Basic classification that `lookup-seed.sql` implements, **21 and 22 are Baccalaureate
+Colleges**; R1 and R2 are 15 and 16, and 17 is Doctoral/Professional. A model following
+the tool description would have filtered for liberal-arts colleges when asked for R1
+institutions, and nothing in the output would have looked wrong.
 
 ### Step 2 — `nuanalytics db validate <ipeds-file>` *(code)*
 Turn this audit into a command. Given a local HD or C file, compare it against the backend
@@ -210,12 +306,24 @@ separates missing from unreachable.
 report zero mismatches.
 
 ### Step 3 — Re-import, oldest year first *(operational)*
-After Step 1 lands, re-import so the corrected parser is applied and the newest HD wins:
+After Step 1 lands, re-import so the corrected parsers are applied and the newest HD wins:
 
     2022 → 2023 → 2024 → 2025,  HD then C for each year
 
+Three things change in the stored data, all from Step 1:
+- counts of exactly `99` stop being `NULL` (~566 values and 56,034 graduates per year, on
+  the 2025 measurement);
+- negative counts, if any year has them, become `NULL` instead of subtracting from a
+  total — 2025 has none, the earlier years are unchecked;
+- `99`/`-2` categorical codes are stored instead of nulled (2,537 institution fields on
+  HD2025, mostly Carnegie).
+
 Completions is ~1.2M rows over four years; budget accordingly. Verify with Step 2, and
 confirm `updated_year = 2025` for all 5,985 current institutions.
+
+Two IPEDS files in `~/Downloads` are **not** imported today and should be settled here
+rather than left ambiguous: `C2025_B.zip` and `C2025_C.zip`. Decide whether they belong
+in the corpus before re-importing, so the year is loaded once.
 
 ### Step 4 — Stop an older year from overwriting a newer one *(code)*
 `updated_year` is written and never read, which is what made F2 possible and invisible.

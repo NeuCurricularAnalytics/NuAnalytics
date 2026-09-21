@@ -20,9 +20,9 @@ pub struct SearchInstitutionsRequest {
     /// Two-letter state abbreviation (e.g. `\"MA\"`, `\"CA\"`)
     #[schemars(description = "Two-letter state abbreviation")]
     pub state: Option<String>,
-    /// Carnegie classification code (15=R1 doctoral, 16=R2 doctoral, 21=R1 2021-scheme, 22=R2 2021-scheme). Use `get_lookup_codes` for full list.
+    /// Carnegie classification code (15=R1 doctoral, 16=R2 doctoral, 17=doctoral/professional). Use `get_lookup_codes` for full list.
     #[schemars(
-        description = "Carnegie classification (15=R1, 16=R2, 21=R1-2021, 22=R2-2021). Use get_lookup_codes(\"carnegie_class\") for full list."
+        description = "Carnegie classification, 2021 Basic (15=R1, 16=R2, 17=Doctoral/Professional). Use get_lookup_codes(\"carnegie_class\") for full list."
     )]
     #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
     pub carnegie_class: Option<i32>,
