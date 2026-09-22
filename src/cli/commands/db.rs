@@ -93,9 +93,18 @@ pub(super) fn make_runtime() -> Option<tokio::runtime::Runtime> {
 /// Compare a local IPEDS file against the backend and print the disagreements.
 fn run_validate(config: &Config, file: &std::path::Path, year: u16) {
     let Some(rt) = make_runtime() else { return };
-    if let Err(e) = rt.block_on(do_validate(config, file, year)) {
-        eprintln!("✗ {e}");
-        std::process::exit(1);
+    // The exit happens here rather than inside the async block so the runtime shuts
+    // down normally.
+    let code = match rt.block_on(do_validate(config, file, year)) {
+        Ok(verdict) => verdict.exit_code(),
+        Err(e) => {
+            eprintln!("✗ {e}");
+            1
+        }
+    };
+    drop(rt);
+    if code != 0 {
+        std::process::exit(code);
     }
 }
 
@@ -104,19 +113,29 @@ fn run_validate(config: &Config, file: &std::path::Path, year: u16) {
 /// # Errors
 /// Returns a message when the file cannot be read or the backend cannot be reached.
 /// A *disagreement* is not an error — it is the result, and it sets the exit code.
-async fn do_validate(config: &Config, file: &std::path::Path, year: u16) -> Result<(), String> {
+async fn do_validate(
+    config: &Config,
+    file: &std::path::Path,
+    year: u16,
+) -> Result<validate::Verdict, String> {
     let client = DbClient::from_config(&config.database)
         .await
         .map_err(|e| format!("{e}"))?;
+
+    let kind = validate::survey_kind_of(file).map_err(|e| format!("{e}"))?;
+    println!("File:     {}", file.display());
+    println!("Survey:   {}", kind.label());
+    println!("Backend:  {}", config.database.endpoint);
+    println!();
+
+    if kind == validate::SurveyKind::Completions {
+        return validate_completions(&client, file, year).await;
+    }
 
     let from_file = validate::read_institutions(file, year).map_err(|e| format!("{e}"))?;
     let from_db = validate::fetch_institutions(&client)
         .await
         .map_err(|e| format!("{e}"))?;
-
-    println!("File:     {}", file.display());
-    println!("Backend:  {}", config.database.endpoint);
-    println!();
 
     let report = validate::diff_institutions(&from_file, &from_db);
     print_coverage(&report.coverage);
@@ -126,20 +145,120 @@ async fn do_validate(config: &Config, file: &std::path::Path, year: u16) -> Resu
     let provenance = validate::read_carnegie_candidates(file).map_err(|e| format!("{e}"))?;
     let wrong_source = report_provenance(&from_db, &provenance);
 
-    println!();
-    let failing = report.failing_columns();
-    if failing == 0 && !wrong_source {
-        println!("✓ every column matches {}", file.display());
-        return Ok(());
-    }
-    println!(
-        "✗ {failing} column(s) disagree, {} value(s) total",
-        report.total_mismatches()
-    );
-    std::process::exit(1);
+    let verdict = validate::institutions_verdict(&report, wrong_source);
+    announce(&verdict, file);
+    Ok(verdict)
 }
 
-/// Print how many rows each side had.
+/// Compare a completions file: exact row count, then values over a bounded sample.
+async fn validate_completions(
+    client: &DbClient,
+    file: &std::path::Path,
+    year: u16,
+) -> Result<validate::Verdict, String> {
+    let (rows_in_file, dropped_from_file, from_file) =
+        validate::read_completions(file, year).map_err(|e| format!("{e}"))?;
+    let unitids: std::collections::BTreeSet<i32> = from_file.keys().map(|k| k.unitid).collect();
+
+    // `QueryFilters::in_list` drops an empty list, so an empty sample would fetch the
+    // whole year unfiltered and then report it as rows the file does not contain.
+    if unitids.is_empty() {
+        return Err(format!(
+            "no rows in {} could be keyed — the file is missing UNITID, CIPCODE, AWLEVEL \
+             or MAJORNUM, so there is nothing to compare",
+            file.display()
+        ));
+    }
+
+    let year_filter = nu_analytics::database::QueryFilters::new().eq("year", Some(year));
+    let rows_in_db = client
+        .count_rows_filtered(nu_analytics::database::tables::COMPLETIONS, &year_filter)
+        .await
+        .map_err(|e| format!("{e}"))?;
+    let (dropped_from_db, from_db) = validate::fetch_completions(client, year, &unitids)
+        .await
+        .map_err(|e| format!("{e}"))?;
+
+    let report = validate::diff_completions(
+        (rows_in_file, rows_in_db),
+        unitids.len(),
+        (dropped_from_file, dropped_from_db),
+        &from_file,
+        &from_db,
+    );
+
+    println!("Rows for {year}");
+    let marker = if report.counts_agree() { "✓" } else { "✗" };
+    println!("  {marker} in file    {}", report.rows_in_file);
+    println!("  {marker} in backend {}", report.rows_in_db);
+    println!();
+    println!(
+        "Values  (sample: {} institutions, {} rows — the count above covers every row)",
+        report.sampled_institutions, report.coverage.in_both
+    );
+    if report.coverage.missing_from_db > 0 {
+        println!(
+            "  ✗ {} sampled row(s) absent from the backend",
+            report.coverage.missing_from_db
+        );
+    }
+    if report.coverage.absent_from_file > 0 {
+        println!(
+            "  ✗ {} stored row(s) for sampled institutions are not in this file",
+            report.coverage.absent_from_file
+        );
+    }
+    if report.dropped_from_file > 0 || report.dropped_from_db > 0 {
+        println!(
+            "  ! {} file row(s) and {} stored row(s) could not be keyed — not checked",
+            report.dropped_from_file, report.dropped_from_db
+        );
+    }
+    for column in &report.columns {
+        if column.mismatched == 0 {
+            continue;
+        }
+        println!(
+            "  ✗ {:<24} {} of {} differ",
+            column.column, column.mismatched, column.compared
+        );
+        for m in &column.examples {
+            println!("      {}: file={} db={}", m.key, m.in_file, m.in_db);
+        }
+    }
+    if report.failing_columns() == 0 && report.coverage.in_both > 0 {
+        println!(
+            "  ✓ all {} columns match across the sample",
+            report.columns.len()
+        );
+    }
+
+    let verdict = validate::completions_verdict(&report);
+    announce(&verdict, file);
+    Ok(verdict)
+}
+
+/// Print the verdict. The exit code is set by the caller, not here.
+fn announce(verdict: &validate::Verdict, file: &std::path::Path) {
+    println!();
+    match verdict {
+        validate::Verdict::Clean => println!("✓ backend matches {}", file.display()),
+        validate::Verdict::Inconclusive(reasons) => {
+            println!("✗ inconclusive — nothing was actually checked:");
+            for reason in reasons {
+                println!("  - {reason}");
+            }
+        }
+        validate::Verdict::Failed(reasons) => {
+            println!("✗ mismatch:");
+            for reason in reasons {
+                println!("  - {reason}");
+            }
+        }
+    }
+}
+
+/// Print how many rows each side had./// Print how many rows each side had.
 fn print_coverage(coverage: &validate::Coverage) {
     println!("Rows");
     println!("  compared            {}", coverage.in_both);
@@ -155,7 +274,8 @@ fn print_coverage(coverage: &validate::Coverage) {
     // Not a fault: `institutions` accumulates across survey years, so rows from earlier
     // years are expected to outlive the file being checked.
     println!(
-        "  · stored, not in file {}  (earlier survey years — expected)",
+        "  · stored, not in file {}  (institutions accumulate across survey years — \
+         not a fault on its own)",
         coverage.absent_from_file
     );
 }
@@ -188,7 +308,10 @@ fn report_provenance(
     candidates: &[validate::CandidateValues],
 ) -> bool {
     if candidates.len() < 2 {
-        // One vintage in the file means nothing to confuse it with.
+        // One vintage in the file means nothing to confuse it with — but say so, or the
+        // reader cannot tell the check from a skipped one.
+        println!();
+        println!("Provenance  · one Carnegie vintage in this file — nothing to attribute");
         return false;
     }
     let stored: std::collections::BTreeMap<i32, Option<i32>> = from_db

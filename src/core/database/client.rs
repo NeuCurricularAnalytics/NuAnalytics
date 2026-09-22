@@ -373,7 +373,25 @@ impl DbClient {
     /// As [`Self::select`], plus [`DatabaseError::ParseError`] when the backend answers
     /// without a usable `Content-Range`.
     pub async fn count_rows(&self, table: &str) -> DatabaseResult<u64> {
-        let url = format!("{}{REST_API_PREFIX}/{table}?select=*", self.endpoint);
+        self.count_rows_filtered(table, &QueryFilters::new()).await
+    }
+
+    /// Row count for a table, restricted by `filters`.
+    ///
+    /// Same mechanism as [`DbClient::count_rows`] — `Prefer: count=exact` with an empty
+    /// `Range`, so the count is exact and no rows are transferred. `count=exact` is not
+    /// subject to `PGRST_DB_MAX_ROWS`, which is what makes it usable as a reference
+    /// figure when a capped select cannot be.
+    ///
+    /// # Errors
+    /// [`DatabaseError::ConnectionError`] when the backend could not be reached, and
+    /// [`DatabaseError::ParseError`] when it answers without a usable `Content-Range`.
+    pub async fn count_rows_filtered(
+        &self,
+        table: &str,
+        filters: &QueryFilters,
+    ) -> DatabaseResult<u64> {
+        let url = build_select_url(&self.endpoint, table, "*", filters, None);
         let token = self.current_token().await?;
         let response = self
             .http

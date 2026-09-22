@@ -458,7 +458,7 @@ struct DemoAccum {
 }
 
 /// Column indices for IPEDS demographic breakdown fields.
-struct DemoCols {
+pub(crate) struct DemoCols {
     total: Option<usize>,
     total_men: Option<usize>,
     total_women: Option<usize>,
@@ -484,7 +484,7 @@ struct DemoCols {
 
 impl DemoCols {
     /// Build column indices from IPEDS C (Completions) survey headers.
-    fn for_completions(headers: &[String]) -> Self {
+    pub(crate) fn for_completions(headers: &[String]) -> Self {
         macro_rules! col {
             ($($n:expr),+) => { find_col(headers, &[$($n),+]) };
         }
@@ -665,7 +665,7 @@ fn accumulate_demo_totals(
 }
 
 /// Build a [`Completion`] row from a single parsed CSV record.
-fn build_completion(
+pub(crate) fn build_completion(
     unitid: i32,
     raw_cip: &str,
     award_level: Option<i32>,
@@ -765,7 +765,7 @@ async fn flush_institution_totals(
 /// IPEDS CSV files use dot notation (e.g. `"11.0101"`), but this function also
 /// handles plain integer format (`"110101"`) for robustness. Both inputs produce
 /// the same output.
-fn normalize_cip(raw: &str) -> String {
+pub(crate) fn normalize_cip(raw: &str) -> String {
     let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
     if digits.len() == 6 {
         format!("{}.{}", &digits[..2], &digits[2..])

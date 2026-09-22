@@ -336,6 +336,23 @@ Two IPEDS files in `~/Downloads` are **not** imported today and should be settle
 rather than left ambiguous: `C2025_B.zip` and `C2025_C.zip`. Decide whether they belong
 in the corpus before re-importing, so the year is loaded once.
 
+**Only the 2025 files are on this machine.** `~/Downloads` holds `HD2025`, `C2025_A/B/C`
+and `IC2025`; a four-year re-import needs eight files and six are missing (`HD2022`,
+`HD2023`, `HD2024`, `C2022_A`, `C2023_A`, `C2024_A`). They are public downloads from
+`nces.ed.gov/ipeds/datacenter/data/<NAME>.zip`, a few MB each.
+
+**Re-importing 2025 alone already fixes most of it**, and is worth doing first:
+
+| Finding | Fixed by HD2025 + C2025_A alone? |
+|---|---|
+| F2 institutions 2022-era | **Yes, fully.** HD2025 is the newest year, so it wins for all 5,985 current institutions. The 530 historical rows keep their own years, which is correct. |
+| F8 Carnegie wrong vintage | **Yes, for every current institution** — HD2025 carries only `C21BASIC`. |
+| Categorical `99`/`-2` nulled | Yes, for institutions. |
+| F1 `99` counts nulled | **2025 only.** 2022-2024 keep their nulls until those files are fetched. |
+
+So the split is: one import pass fixes every institution-level finding, and completions
+stay partially wrong for three years until the other files are downloaded.
+
 ### Step 4 — Stop an older year from overwriting a newer one *(code)*
 `updated_year` is written and never read, which is what made F2 possible and invisible.
 Before importing an HD file, compare its year against the maximum `updated_year` present;
