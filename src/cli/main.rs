@@ -175,8 +175,13 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
                 verbose,
             );
         }
-        DegreeSubcommand::Convert { files, out, pretty } => {
-            commands::degree::run_convert(&files, out.as_deref(), pretty, verbose);
+        DegreeSubcommand::Convert {
+            files,
+            out,
+            pretty,
+            format,
+        } => {
+            commands::degree::run_convert(&files, out.as_deref(), pretty, format, verbose);
         }
         DegreeSubcommand::Schema { out } => {
             commands::degree::run_schema(out.as_deref());

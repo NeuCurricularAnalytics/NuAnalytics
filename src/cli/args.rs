@@ -168,6 +168,26 @@ pub enum ConfigSubcommand {
 /// `degree` used to be a flat command driven by action flags
 /// (`--validate`, `--analyze`, …). It is now a subcommand dispatcher;
 /// each action takes its own file list and per-action flags.
+/// Serialisation format for a unified degree.
+#[derive(Copy, Clone, PartialEq, Eq, clap::ValueEnum, Debug)]
+pub enum DegreeFormat {
+    /// Unified degree JSON — what the analysis pipeline reads and the database stores.
+    Json,
+    /// The same degree as YAML, for hand editing.
+    Yaml,
+}
+
+impl DegreeFormat {
+    /// Suffix this format writes, replacing the input file's stem extension.
+    #[must_use]
+    pub const fn extension(self) -> &'static str {
+        match self {
+            Self::Json => "unified.json",
+            Self::Yaml => "unified.yaml",
+        }
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum DegreeSubcommand {
     /// Validate a degree program YAML file's structure, requirements, and
@@ -371,6 +391,14 @@ pub enum DegreeSubcommand {
         /// Pretty-print the JSON output (default is compact, one line).
         #[arg(long)]
         pretty: bool,
+
+        /// Output format. JSON is what the analysis pipeline reads and the database
+        /// stores; YAML is the same degree in a form that is easier to hand-edit.
+        ///
+        /// Input is auto-detected either way, so a degree can be authored in YAML,
+        /// converted to JSON for storage, and converted back for editing.
+        #[arg(long, value_name = "FORMAT", default_value = "json")]
+        format: DegreeFormat,
     },
 
     /// Print the JSON Schema for the unified degree format.

@@ -1,5 +1,6 @@
 //! Degree command handler for validating degree program YAML files
 
+use crate::args::DegreeFormat;
 use std::collections::HashMap as StdHashMap;
 
 use nu_analytics::config::Config;
@@ -2031,11 +2032,17 @@ fn slug_filename(name: &str) -> String {
 }
 
 /// Run `degree convert` over one or more inputs, emitting unified JSON.
-pub fn run_convert(files: &[PathBuf], out: Option<&Path>, pretty: bool, verbose: bool) {
+pub fn run_convert(
+    files: &[PathBuf],
+    out: Option<&Path>,
+    pretty: bool,
+    out_format: DegreeFormat,
+    verbose: bool,
+) {
     // Directory mode when -o is a directory, or when multiple inputs share one -o.
     let dir_mode = out.is_some_and(looks_like_directory) || (out.is_some() && files.len() > 1);
     run_batch(files, |path| {
-        convert_file(path, out, dir_mode, pretty, verbose)
+        convert_file(path, out, dir_mode, pretty, out_format, verbose)
     });
 }
 
@@ -2047,6 +2054,7 @@ fn convert_file(
     out: Option<&Path>,
     dir_mode: bool,
     pretty: bool,
+    out_format: DegreeFormat,
     verbose: bool,
 ) -> Result<(), String> {
     let contents = std::fs::read_to_string(input)
@@ -2058,7 +2066,7 @@ fn convert_file(
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) {
             if let Some(programs) = nu_analytics::core::degree::extract_cluster_programs(&value) {
                 let out_dir = cluster_out_dir(input, out);
-                return convert_cluster(input, &programs, &out_dir, pretty, verbose);
+                return convert_cluster(out_format, input, &programs, &out_dir, pretty, verbose);
             }
             // Valid JSON that is neither a cluster file, an ai-landscape program
             // (`courses` category map), nor a unified degree (top-level `degree`)
@@ -2074,12 +2082,16 @@ fn convert_file(
         }
     }
 
-    let out_path = resolve_convert_output(input, out, dir_mode);
-    convert_single(input, &out_path, &contents, pretty, verbose)
+    let out_path = resolve_convert_output(input, out, dir_mode, out_format);
+    convert_single(input, &out_path, &contents, pretty, out_format, verbose)
 }
 
 /// Filename suffix for `degree convert` output (unified JSON).
-const CONVERT_OUTPUT_SUFFIX: &str = ".unified.json";
+/// Suffix for converted output, per format. `.unified.json` is what the pipeline and
+/// the importer look for; `.unified.yaml` is the hand-editable twin.
+fn convert_output_suffix(out_format: DegreeFormat) -> String {
+    format!(".{}", out_format.extension())
+}
 
 /// Separator between school and program in a cluster output filename.
 const CLUSTER_NAME_SEP: &str = "__";
@@ -2092,15 +2104,20 @@ fn file_stem_or<'a>(input: &'a Path, default: &'a str) -> &'a str {
         .unwrap_or(default)
 }
 
-/// Output path for `degree convert`: `<stem>.unified.json` (next to input, or
+/// Output path for `degree convert`: `<stem>.unified.{json,yaml}` (next to input, or
 /// inside an `-o` directory), or the verbatim `-o` file for a single input.
-fn resolve_convert_output(input: &Path, out: Option<&Path>, dir_mode: bool) -> PathBuf {
+fn resolve_convert_output(
+    input: &Path,
+    out: Option<&Path>,
+    dir_mode: bool,
+    out_format: DegreeFormat,
+) -> PathBuf {
     let stem = file_stem_or(input, "degree");
     resolve_output_path(
         input,
         out,
         dir_mode,
-        &format!("{stem}{CONVERT_OUTPUT_SUFFIX}"),
+        &format!("{stem}{}", convert_output_suffix(out_format)),
     )
 }
 
@@ -2111,6 +2128,7 @@ fn convert_single(
     out_path: &Path,
     contents: &str,
     pretty: bool,
+    out_format: DegreeFormat,
     verbose: bool,
 ) -> Result<(), String> {
     use nu_analytics::core::degree::json_parser::{
@@ -2135,7 +2153,9 @@ fn convert_single(
 
     let mut value = to_unified_value(&program)
         .map_err(|e| format!("Failed to build unified JSON for {}: {e}", input.display()))?;
-    write_unified_value(&mut value, &warnings, out_path, pretty)?;
+    write_converted(
+        &program, &mut value, &warnings, out_path, pretty, out_format,
+    )?;
 
     println!("✓ Converted {} -> {}", input.display(), out_path.display());
     report_warnings(&warnings, verbose);
@@ -2145,6 +2165,7 @@ fn convert_single(
 /// Expand a cluster pipeline file into one unified JSON per program, written as
 /// `<school-stem>__<program>.unified.json` under `out_dir`.
 fn convert_cluster(
+    out_format: DegreeFormat,
     input: &Path,
     programs: &[(String, nu_analytics::core::degree::LandscapeProgram)],
     out_dir: &Path,
@@ -2170,6 +2191,7 @@ fn convert_cluster(
             out_dir,
             &mut used_stems,
             pretty,
+            out_format,
             verbose,
         )?;
     }
@@ -2199,6 +2221,7 @@ fn write_cluster_program(
     out_dir: &Path,
     used_stems: &mut HashSet<String>,
     pretty: bool,
+    out_format: DegreeFormat,
     verbose: bool,
 ) -> Result<usize, String> {
     use nu_analytics::core::degree::{convert_landscape, json_parser::to_unified_value};
@@ -2216,8 +2239,15 @@ fn write_cluster_program(
         safe_filename(name)
     );
     let stem = unique_stem(base, used_stems);
-    let out_path = out_dir.join(format!("{stem}{CONVERT_OUTPUT_SUFFIX}"));
-    write_unified_value(&mut value, &result.warnings, &out_path, pretty)?;
+    let out_path = out_dir.join(format!("{stem}{}", convert_output_suffix(out_format)));
+    write_converted(
+        &result.program,
+        &mut value,
+        &result.warnings,
+        &out_path,
+        pretty,
+        out_format,
+    )?;
     if verbose {
         println!("  ✓ {}", out_path.display());
     }
@@ -2241,6 +2271,42 @@ fn cluster_out_dir(input: &Path, out: Option<&Path>) -> PathBuf {
 
 /// Embed `conversion_warnings` (when any), create parent dirs, then write
 /// `value` to `out_path` as JSON (pretty or compact).
+/// Write a converted degree in the requested format.
+///
+/// The two formats are **not** the same document serialised two ways. JSON is the
+/// unified shape — `to_unified_value`, with prerequisites structured. YAML is the
+/// `DegreeProgram` shape, which is what `parse_degree_yaml` reads and what people
+/// hand-author.
+///
+/// Writing unified-shaped YAML looks fine and round-trips lossily: serde drops the
+/// fields the reader's struct does not name, so `external_credits`, `external_note` and
+/// `external_requirement` came back `null`. Each format must be written in the shape its
+/// own reader parses.
+fn write_converted(
+    program: &nu_analytics::core::DegreeProgram,
+    value: &mut serde_json::Value,
+    warnings: &[String],
+    out_path: &Path,
+    pretty: bool,
+    out_format: DegreeFormat,
+) -> Result<(), String> {
+    match out_format {
+        DegreeFormat::Json => write_unified_value(value, warnings, out_path, pretty),
+        DegreeFormat::Yaml => {
+            if let Some(parent) = out_path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+                }
+            }
+            let text = nu_analytics::core::degree::serialize_degree_yaml(program)
+                .map_err(|e| format!("Failed to serialize YAML for {}: {e}", out_path.display()))?;
+            std::fs::write(out_path, text)
+                .map_err(|e| format!("Failed to write {}: {e}", out_path.display()))
+        }
+    }
+}
+
 fn write_unified_value(
     value: &mut serde_json::Value,
     warnings: &[String],
@@ -3571,18 +3637,53 @@ courses:
     }
 
     #[test]
+    fn yaml_and_json_conversion_round_trips_without_losing_fields() {
+        // The two formats are different shapes, not one document serialised twice:
+        // JSON is the unified shape, YAML is the `DegreeProgram` shape its own parser
+        // reads. Writing unified-shaped YAML round-tripped lossily — serde silently
+        // drops fields the reader's struct does not name — so this pins that a degree
+        // survives JSON -> YAML -> JSON.
+        use nu_analytics::core::degree::{
+            json_parser::to_unified_value, parse_degree_yaml, serialize_degree_yaml,
+        };
+        let json = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/assets/degrees/bowdoin-college-computer-science.unified.json"),
+        )
+        .expect("fixture");
+        let original = nu_analytics::core::degree::json_parser::parse_degree_json(&json)
+            .expect("parse fixture");
+
+        let yaml = serialize_degree_yaml(&original).expect("to yaml");
+        let back = parse_degree_yaml(&yaml).expect("from yaml");
+
+        let a = to_unified_value(&original).expect("unified a");
+        let b = to_unified_value(&back).expect("unified b");
+        assert_eq!(
+            serde_json::to_string(&a).expect("a"),
+            serde_json::to_string(&b).expect("b"),
+            "a degree must survive a YAML round trip unchanged"
+        );
+    }
+
+    #[test]
     fn test_resolve_convert_output_branches() {
         let input = Path::new("degrees/neu.json");
         assert_eq!(
-            resolve_convert_output(input, None, false),
+            resolve_convert_output(input, None, false, DegreeFormat::Json),
             PathBuf::from("degrees/neu.unified.json")
         );
         assert_eq!(
-            resolve_convert_output(input, Some(Path::new("out")), true),
+            resolve_convert_output(input, Some(Path::new("out")), true, DegreeFormat::Json),
             PathBuf::from("out/neu.unified.json")
         );
         assert_eq!(
-            resolve_convert_output(input, Some(Path::new("out/explicit.json")), false),
+            resolve_convert_output(
+                input,
+                Some(Path::new("out/explicit.json")),
+                false,
+                DegreeFormat::Json
+            ),
             PathBuf::from("out/explicit.json")
         );
     }
