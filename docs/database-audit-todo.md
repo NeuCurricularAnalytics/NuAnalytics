@@ -383,6 +383,19 @@ Verified after:
   where before the re-import `C18BASIC` led at 3,835. F8 confirmed fixed from the data
   side, not just the code.
 
+**Independent confirmation, not just the tool agreeing with itself:**
+
+- Every one of the 5,985 institutions in HD2025 matches the stored row on all 9 compared
+  columns — **zero** mismatches, checked directly against the CSV rather than through
+  `db validate`.
+- All 530 institutions absent from HD2025 match the HD file of the year their
+  `updated_year` claims — **530 of 530** on name. The table is exactly "HD2025 for
+  everything current, last-known record for everything closed".
+- Whole-table check of F1, bypassing the sample entirely: rows with `total = 99` in the
+  backend versus `CTOTALT = 99` in the source file — **172/172, 166/166, 191/191,
+  169/169** across the four years. 698 values that were `NULL` before. Rows with
+  `total IS NULL` are 0 on both sides, so nothing was over-corrected.
+
 That last run still reports 9 columns differing on HD2022, which is **correct**: the
 `institutions` table has one row per institution, not one per year, so it holds HD2025
 values and a 2022 file legitimately disagrees. `carnegie_class` matches because the 2021
@@ -396,11 +409,30 @@ class as the single unexplained `db doctor` failure seen on 2026-09-18. It fails
 and a retry succeeds, so it is a nuisance rather than a correctness risk, but
 `fetch_completions` has no retry where `send_get` has one for a 401. Worth adding.
 
-### Step 4 — Stop an older year from overwriting a newer one *(code)*
-`updated_year` is written and never read, which is what made F2 possible and invisible.
-Before importing an HD file, compare its year against the maximum `updated_year` present;
-if it is older, refuse unless `--force`, naming both years. Cheap — one `count_rows`-style
-probe — and it turns a silent overwrite into a question.
+### Step 4 — Stop an older year from overwriting a newer one *(code)* — **DONE 2026-09-21**
+
+`ipeds::downgrade_refusal(importing, newest_stored, force)` reads `updated_year` — which
+had been written on every row since the beginning and never once read — and refuses an HD
+import older than what is already stored, unless `--force`.
+
+Guards only the HD half. Completions carry `year` in their natural key, so years cannot
+overwrite one another; institutions have one row per `unitid` and no year dimension, so
+the last import wins outright. That asymmetry is what made F2 possible.
+
+Verified live against the freshly loaded backend:
+
+    $ nuanalytics db ipeds-import --institutions HD2022.zip --year 2022
+    ✗ refusing to import HD2022: the institutions table already holds data from 2025,
+      and this import would overwrite every shared institution with the older year's
+      values. Import oldest-year-first, or pass --force if that is what you want.
+    exit 1
+
+    $ nuanalytics db ipeds-import --institutions HD2025.zip --year 2025
+      ✓ 5985 read, 5985 upserted, 0 skipped      # same or newer is never blocked
+
+The check runs **before** the file is read, so a refusal costs no decompression. An empty
+table never refuses, and a probe failure warns and proceeds rather than blocking an import
+on a transient read.
 
 ### Step 5 — Correct the documentation *(docs)*
 Fix `setup.md`, the `db ipeds-import` help text and the `CHANGELOG` troubleshooting row to

@@ -461,6 +461,37 @@ impl DbClient {
         })
     }
 
+    /// Newest `updated_year` present in `institutions`, or `None` when the table is empty.
+    ///
+    /// One row, ordered descending — the column is what tells an import whether it would
+    /// be walking backwards over newer data.
+    ///
+    /// # Errors
+    /// Whatever [`DbClient::select`] reports, plus [`DatabaseError::ParseError`] if the
+    /// answer is not the expected shape.
+    pub async fn newest_updated_year(&self) -> DatabaseResult<Option<i32>> {
+        let url = format!(
+            "{}{REST_API_PREFIX}/{}?select=updated_year&updated_year=not.is.null\
+             &order=updated_year.desc&limit=1",
+            self.endpoint,
+            tables::INSTITUTIONS
+        );
+        let token = self.current_token().await?;
+        let response = self.send_get(&url, &token).await?;
+        if !response.status().is_success() {
+            return Err(self.classify_failure(response).await);
+        }
+        let body: serde_json::Value = response.json().await.map_err(|e| {
+            DatabaseError::ParseError(format!("cannot read the newest updated_year: {e}"))
+        })?;
+        Ok(body
+            .as_array()
+            .and_then(|rows| rows.first())
+            .and_then(|row| row.get("updated_year"))
+            .and_then(serde_json::Value::as_i64)
+            .and_then(|y| i32::try_from(y).ok()))
+    }
+
     /// Status code from a read that sends only the anon key, no user JWT.
     ///
     /// The deployment check this answers: row-level security should *filter* an

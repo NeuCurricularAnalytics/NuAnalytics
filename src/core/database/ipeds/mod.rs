@@ -13,4 +13,6 @@
 
 pub mod ingest;
 
-pub use ingest::{ingest_completions, ingest_institutions, is_relevant_cip, IngestStats};
+pub use ingest::{
+    downgrade_refusal, ingest_completions, ingest_institutions, is_relevant_cip, IngestStats,
+};

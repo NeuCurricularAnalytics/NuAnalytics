@@ -753,6 +753,14 @@ pub enum DbSubcommand {
         /// Path to the `C_A` (completions) CSV or ZIP file
         #[arg(long, value_name = "FILE")]
         completions: Option<std::path::PathBuf>,
+        /// Import an HD file older than the data already stored.
+        ///
+        /// Institutions are keyed on `unitid` with no year dimension, so the last HD
+        /// import wins outright. Importing an older year over a newer one silently
+        /// replaces current attributes with stale ones; this is refused unless you say
+        /// you mean it. Completions are unaffected — `year` is part of their key.
+        #[arg(long)]
+        force: bool,
         /// Academic year for the data (e.g. 2023 for 2023-2024 data)
         #[arg(long, default_value = "2023")]
         year: u16,

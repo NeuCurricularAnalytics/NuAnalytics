@@ -80,6 +80,40 @@ pub fn is_relevant_cip(code: &str) -> bool {
 ///
 /// Returns the CSV content as a `String`. For zip files, the first `.csv` entry
 /// in the archive is extracted.
+/// Explain why importing `importing` would discard newer data, or `None` if it is safe.
+///
+/// The `institutions` table holds one row per institution, not one per year, and the
+/// upsert is last-write-wins on `unitid` — so whichever HD file runs *last* decides every
+/// attribute. `HD2022` having been imported after the later years left 5,784 of 5,985
+/// institutions carrying 2022 values under a table the schema documents as current, and
+/// `carnegie_class` wrong for 57% of them. Nothing detected it for months.
+///
+/// `updated_year` recorded enough to catch it and was never read. This reads it.
+///
+/// Completions are unaffected — `year` is part of their natural key, so years cannot
+/// overwrite one another — which is why this guards only the HD half.
+#[must_use]
+pub fn downgrade_refusal(
+    importing: u16,
+    newest_stored: Option<i32>,
+    force: bool,
+) -> Option<String> {
+    if force {
+        return None;
+    }
+    let newest = newest_stored?;
+    if i32::from(importing) >= newest {
+        return None;
+    }
+    let mut msg = format!(
+        "refusing to import HD{importing}: the institutions table already holds data from {newest},"
+    );
+    msg.push_str(" and this import would overwrite every shared institution with the");
+    msg.push_str(" older year's values. Import oldest-year-first, or pass --force if");
+    msg.push_str(" that is what you want.");
+    Some(msg)
+}
+
 /// Choose which CSV to read from an IPEDS archive, preferring the **revised** release.
 ///
 /// `C2022_A.zip` and `C2023_A.zip` each hold two: the provisional `c2022_a.csv` and the
@@ -975,6 +1009,40 @@ mod tests {
             w.finish().expect("finish zip");
         }
         buf
+    }
+
+    #[test]
+    fn importing_an_older_hd_year_is_refused() {
+        // The exact situation that left 5,784 of 5,985 institutions on 2022 data.
+        let refusal = downgrade_refusal(2022, Some(2025), false).expect("must refuse");
+        assert!(refusal.contains("HD2022"), "{refusal}");
+        assert!(
+            refusal.contains("2025"),
+            "must name what it would overwrite: {refusal}"
+        );
+        assert!(
+            refusal.contains("--force"),
+            "must say how to proceed: {refusal}"
+        );
+    }
+
+    #[test]
+    fn importing_the_same_or_a_newer_year_is_allowed() {
+        // Re-importing the newest year is the ordinary repair path and must not be
+        // blocked; a newer year is the whole point of the table.
+        assert!(downgrade_refusal(2025, Some(2025), false).is_none());
+        assert!(downgrade_refusal(2026, Some(2025), false).is_none());
+    }
+
+    #[test]
+    fn an_empty_table_never_refuses() {
+        // A first import has nothing to overwrite, whichever year it is.
+        assert!(downgrade_refusal(2022, None, false).is_none());
+    }
+
+    #[test]
+    fn force_overrides_the_refusal() {
+        assert!(downgrade_refusal(2022, Some(2025), true).is_none());
     }
 
     #[test]

@@ -38,8 +38,16 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
             dir,
             institutions,
             completions,
+            force,
             year,
-        } => run_ipeds_import(config, dir.as_deref(), institutions, completions, year),
+        } => run_ipeds_import(
+            config,
+            dir.as_deref(),
+            institutions,
+            completions,
+            year,
+            force,
+        ),
         DbSubcommand::Import {
             files,
             variant,
@@ -1257,6 +1265,7 @@ fn run_ipeds_import(
     institutions_path: Option<std::path::PathBuf>,
     completions_path: Option<std::path::PathBuf>,
     year: u16,
+    force: bool,
 ) {
     let Some(rt) = make_runtime() else { return };
 
@@ -1277,6 +1286,18 @@ fn run_ipeds_import(
     let mut failures: Vec<String> = Vec::new();
 
     if let Some(path) = inst_path {
+        // Checked before reading the file: the refusal is about what is already stored,
+        // so there is no point decompressing a 1 MB archive to be told no.
+        let newest = rt
+            .block_on(client.newest_updated_year())
+            .unwrap_or_else(|e| {
+                eprintln!("  ℹ Could not read the newest stored year ({e}); not guarding");
+                None
+            });
+        if let Some(refusal) = ipeds::downgrade_refusal(year, newest, force) {
+            eprintln!("✗ {refusal}");
+            std::process::exit(1);
+        }
         println!("Importing institutions from {} ...", path.display());
         match rt.block_on(ipeds::ingest_institutions(&client, &path, year)) {
             Ok(stats) => println!(
