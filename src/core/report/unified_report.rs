@@ -119,6 +119,19 @@ pub fn build_degree_report(
                     "complexity": degree_stats.total_complexity,
                     "delay": degree_stats.longest_delay,
                     "credits": degree_stats.total_credits,
+                    // Computed by the aggregator since PR #24 and dropped here until
+                    // 2026-09-22: the per-course block below picks up new fields
+                    // automatically because it serialises the whole stats struct, but
+                    // this block is hand-written, so a new degree-level metric has to be
+                    // added by hand or it is silently discarded.
+                    //
+                    // Only the mean is carried. A degree-level *minimum* is 1 for every
+                    // degree — each plan must contain a course with no prerequisites —
+                    // and a degree-level *maximum* is `delay` under another name, since
+                    // the longest requisite path ends at a course whose incoming chain
+                    // is that path. Measured across all 13 fixtures: min was 1.0 in
+                    // every one, and max equalled `delay.max` in 13 of 13.
+                    "avg_chain_length": degree_stats.avg_chain_length,
                 }
             }),
         );

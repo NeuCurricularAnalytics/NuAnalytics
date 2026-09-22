@@ -368,7 +368,6 @@ pub struct AnalysisResponse {
     /// Aggregate average chain length per plan (mean of per-course chain lengths)
     pub avg_chain_length: Option<MetricStatsJson>,
     /// Aggregate minimum chain length per plan (shortest chain in each plan)
-    pub min_chain_length: Option<MetricStatsJson>,
 
     /// Selected special plans
     pub selected_plans: Vec<PlanSummaryJson>,
@@ -765,7 +764,6 @@ fn parse_error_response(error: &str) -> AnalysisResponse {
         longest_delay: None,
         total_credits: None,
         avg_chain_length: None,
-        min_chain_length: None,
         selected_plans: vec![],
         per_course_metrics: vec![],
         target_course_stats: None,
@@ -1001,7 +999,6 @@ fn build_response(
         longest_delay: Some(metric_stats_json(&degree_stats.longest_delay)),
         total_credits: Some(metric_stats_json(&degree_stats.total_credits)),
         avg_chain_length: Some(metric_stats_json(&degree_stats.avg_chain_length)),
-        min_chain_length: Some(metric_stats_json(&degree_stats.min_chain_length)),
         selected_plans,
         per_course_metrics,
         target_course_stats: artifacts.target_course_stats.clone(),

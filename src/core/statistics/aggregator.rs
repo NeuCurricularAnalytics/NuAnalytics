@@ -219,8 +219,6 @@ pub struct AggregatedDegreeStats {
     pub total_credits: MetricStats,
     /// Average chain length per plan (mean of per-course chain lengths)
     pub avg_chain_length: MetricStats,
-    /// Minimum chain length per plan (shortest chain in each plan)
-    pub min_chain_length: MetricStats,
 }
 
 /// Quantile storage mode - either exact or approximate
@@ -305,7 +303,6 @@ pub struct MetricsAggregator {
     /// Degree-level average chain length accumulator
     degree_avg_chain_length: WelfordAccumulator,
     /// Degree-level minimum chain length accumulator
-    degree_min_chain_length: WelfordAccumulator,
     /// Storage for degree complexity quantiles
     degree_complexity_quantiles: QuantileStorage,
     /// Storage for degree delay quantiles
@@ -327,7 +324,6 @@ impl MetricsAggregator {
             degree_delay: WelfordAccumulator::new(),
             degree_credits: WelfordAccumulator::new(),
             degree_avg_chain_length: WelfordAccumulator::new(),
-            degree_min_chain_length: WelfordAccumulator::new(),
             degree_complexity_quantiles: QuantileStorage::new(exact_mode, reservoir_size),
             degree_delay_quantiles: QuantileStorage::new(exact_mode, reservoir_size),
             plan_count: 0,
@@ -356,18 +352,12 @@ impl MetricsAggregator {
         } else {
             0.0
         };
-        let min_chain_length: usize = course_metrics
-            .values()
-            .map(|m| m.chain_length)
-            .min()
-            .unwrap_or(0);
 
         // Update Welford accumulators for mean/stddev
         self.degree_complexity.push(total_complexity as f64);
         self.degree_delay.push(longest_delay as f64);
         self.degree_credits.push(total_credits);
         self.degree_avg_chain_length.push(avg_chain_length);
-        self.degree_min_chain_length.push(min_chain_length as f64);
 
         // Update quantile storage
         self.degree_complexity_quantiles
@@ -407,7 +397,6 @@ impl MetricsAggregator {
             ),
             total_credits: MetricStats::from_welford_only(&self.degree_credits),
             avg_chain_length: MetricStats::from_welford_only(&self.degree_avg_chain_length),
-            min_chain_length: MetricStats::from_welford_only(&self.degree_min_chain_length),
         }
     }
 
@@ -446,8 +435,6 @@ impl MetricsAggregator {
         self.degree_credits.merge(&other.degree_credits);
         self.degree_avg_chain_length
             .merge(&other.degree_avg_chain_length);
-        self.degree_min_chain_length
-            .merge(&other.degree_min_chain_length);
         self.degree_complexity_quantiles
             .merge(&other.degree_complexity_quantiles);
         self.degree_delay_quantiles
