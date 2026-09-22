@@ -1299,7 +1299,7 @@ fn run_ipeds_import(
         match rt.block_on(ipeds::ingest_completions(&client, &path, year)) {
             Ok(stats) => {
                 println!(
-                    "  ✓ {} rows read, {} matched CS CIP codes, {} upserted, {} skipped",
+                    "  ✓ {} rows read, {} with a usable UNITID, {} upserted, {} skipped",
                     stats.rows_read, stats.rows_filtered, stats.rows_upserted, stats.rows_skipped
                 );
                 completions_ok = true;

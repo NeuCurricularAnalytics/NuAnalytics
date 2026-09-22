@@ -80,6 +80,40 @@ pub fn is_relevant_cip(code: &str) -> bool {
 ///
 /// Returns the CSV content as a `String`. For zip files, the first `.csv` entry
 /// in the archive is extracted.
+/// Choose which CSV to read from an IPEDS archive, preferring the **revised** release.
+///
+/// `C2022_A.zip` and `C2023_A.zip` each hold two: the provisional `c2022_a.csv` and the
+/// revised `c2022_a_rv.csv`. IPEDS publishes the provisional file first and supersedes it
+/// months later with corrections, shipping both in the same archive. Taking the first
+/// entry — which is what this did — imported the superseded data: for 2022 that is 904
+/// differing totals over the shared rows, 229 rows the revision adds, and 51 it retracts.
+///
+/// Matched on the `_rv` stem suffix, case-insensitively, since the archives are
+/// inconsistent about case (`c2022_a_rv.csv` but `C2023_a_RV.csv`).
+fn pick_csv_entry<R: std::io::Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+) -> Option<usize> {
+    let names: Vec<(usize, String)> = (0..archive.len())
+        .filter_map(|i| archive.by_index(i).ok().map(|f| (i, f.name().to_string())))
+        .filter(|(_, name)| {
+            std::path::Path::new(name)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
+        })
+        .collect();
+    let is_revised = |name: &str| {
+        std::path::Path::new(name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .is_some_and(|stem| stem.to_ascii_lowercase().ends_with("_rv"))
+    };
+    names
+        .iter()
+        .find(|(_, name)| is_revised(name))
+        .or_else(|| names.first())
+        .map(|(i, _)| *i)
+}
+
 pub(crate) fn read_file_or_zip(path: &Path) -> DatabaseResult<String> {
     let bytes = std::fs::read(path)
         .map_err(|e| DatabaseError::IngestError(format!("Cannot read {}: {e}", path.display())))?;
@@ -88,17 +122,9 @@ pub(crate) fn read_file_or_zip(path: &Path) -> DatabaseResult<String> {
         let cursor = Cursor::new(bytes);
         let mut archive = zip::ZipArchive::new(cursor)
             .map_err(|e| DatabaseError::IngestError(format!("Cannot open zip: {e}")))?;
-        let csv_index = (0..archive.len())
-            .find(|&i| {
-                archive.by_index(i).is_ok_and(|f| {
-                    std::path::Path::new(f.name())
-                        .extension()
-                        .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
-                })
-            })
-            .ok_or_else(|| {
-                DatabaseError::IngestError(format!("No CSV entry found inside {}", path.display()))
-            })?;
+        let csv_index = pick_csv_entry(&mut archive).ok_or_else(|| {
+            DatabaseError::IngestError(format!("No CSV entry found inside {}", path.display()))
+        })?;
         let mut file = archive
             .by_index(csv_index)
             .map_err(|e| DatabaseError::IngestError(format!("Cannot read zip entry: {e}")))?;
@@ -933,6 +959,76 @@ mod tests {
         assert_eq!(parse_ipeds_code("-1"), Some(-1));
         assert_eq!(parse_ipeds_code("-2"), Some(-2));
         assert_eq!(parse_ipeds_code("-3"), Some(-3));
+    }
+
+    /// Build an in-memory zip holding the named entries.
+    fn zip_with(entries: &[(&str, &str)]) -> Vec<u8> {
+        use std::io::Write as _;
+        let mut buf = Vec::new();
+        {
+            let mut w = zip::ZipWriter::new(Cursor::new(&mut buf));
+            for (name, body) in entries {
+                w.start_file(*name, zip::write::SimpleFileOptions::default())
+                    .expect("start entry");
+                w.write_all(body.as_bytes()).expect("write entry");
+            }
+            w.finish().expect("finish zip");
+        }
+        buf
+    }
+
+    #[test]
+    fn a_revised_csv_wins_over_the_provisional_one() {
+        // IPEDS ships both in one archive and the revised file supersedes the other.
+        // Taking the first entry imported 904 superseded totals for 2022 alone.
+        for entries in [
+            // provisional first, as the real C2022_A.zip is ordered
+            vec![
+                ("c2022_a.csv", "PROVISIONAL"),
+                ("c2022_a_rv.csv", "REVISED"),
+            ],
+            // and the other way round, so entry order is not what makes this pass
+            vec![
+                ("c2022_a_rv.csv", "REVISED"),
+                ("c2022_a.csv", "PROVISIONAL"),
+            ],
+            // the 2023 archive spells it differently
+            vec![
+                ("C2023_a.csv", "PROVISIONAL"),
+                ("C2023_a_RV.csv", "REVISED"),
+            ],
+        ] {
+            let bytes = zip_with(&entries);
+            let mut archive =
+                zip::ZipArchive::new(Cursor::new(bytes.as_slice())).expect("open zip");
+            let idx = pick_csv_entry(&mut archive).expect("a csv");
+            let name = archive.by_index(idx).expect("entry").name().to_string();
+            assert!(
+                name.to_ascii_lowercase().contains("_rv"),
+                "picked {name} instead of the revised file"
+            );
+        }
+    }
+
+    #[test]
+    fn the_only_csv_is_used_when_there_is_no_revision() {
+        // HD files and the newer C files ship a single entry.
+        let bytes = zip_with(&[("hd2025.csv", "ONLY")]);
+        let mut archive = zip::ZipArchive::new(Cursor::new(bytes.as_slice())).expect("open zip");
+        let idx = pick_csv_entry(&mut archive).expect("a csv");
+        assert_eq!(archive.by_index(idx).expect("entry").name(), "hd2025.csv");
+    }
+
+    #[test]
+    fn non_csv_entries_are_ignored() {
+        let bytes = zip_with(&[("readme.txt", "notes"), ("data.CSV", "rows")]);
+        let mut archive = zip::ZipArchive::new(Cursor::new(bytes.as_slice())).expect("open zip");
+        let idx = pick_csv_entry(&mut archive).expect("a csv");
+        assert_eq!(archive.by_index(idx).expect("entry").name(), "data.CSV");
+
+        let none = zip_with(&[("readme.txt", "notes")]);
+        let mut archive = zip::ZipArchive::new(Cursor::new(none.as_slice())).expect("open zip");
+        assert!(pick_csv_entry(&mut archive).is_none());
     }
 
     #[test]

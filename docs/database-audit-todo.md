@@ -304,6 +304,36 @@ Colleges**; R1 and R2 are 15 and 16, and 17 is Doctoral/Professional. A model fo
 the tool description would have filtered for liberal-arts colleges when asked for R1
 institutions, and nothing in the output would have looked wrong.
 
+### F10 — The importer read the *provisional* IPEDS file when a revised one was present **[measured]** — FIXED
+
+`C2022_A.zip` and `C2023_A.zip` each contain **two** CSVs: the provisional release
+(`c2022_a.csv`) and the revised one (`c2022_a_rv.csv`). IPEDS publishes the provisional
+first and supersedes it months later with corrections, shipping both in the same archive.
+`read_file_or_zip` took the first CSV entry it found, which is the provisional.
+
+Measured by diffing the two entries inside each archive:
+
+| Archive | Provisional rows | Revised rows | Only in provisional | Only in revised | `CTOTALT` differs |
+|---|---|---|---|---|---|
+| `C2022_A.zip` | 300,877 | 301,055 | 51 | 229 | **904** |
+| `C2023_A.zip` | 303,292 | 303,460 | 41 | 209 | **681** |
+
+The stored row counts matched the *provisional* files exactly, confirming which was read.
+HD files and the 2024/2025 completions archives ship a single CSV and were unaffected.
+
+**Fixed:** `pick_csv_entry` prefers an entry whose stem ends `_rv`, matched
+case-insensitively because the archives are inconsistent (`c2022_a_rv.csv` but
+`C2023_a_RV.csv`). Guarded by a test that builds archives in both entry orders, so entry
+order cannot be what makes it pass.
+
+Third instance of the same shape as F8 and the `CNRALT` fallback: **several plausible
+sources present, first match wins, wrong one chosen, row counts unaffected.** Worth
+treating as a known hazard class in this importer rather than three separate bugs.
+
+Note this is also why the clear-then-reimport was the right call rather than an upsert
+over the top: the revised files *retract* 51 (2022) and 41 (2023) rows, and an upsert
+would have left those in place.
+
 ### Step 2 — `nuanalytics db validate <ipeds-file>` *(code)*
 Turn this audit into a command. Given a local HD or C file, compare it against the backend
 and report per-column mismatch counts with examples — which is exactly the by-hand work
@@ -316,42 +346,55 @@ separates missing from unreachable.
 **Gate for the whole plan:** `db validate HD2025.csv` and `db validate C2025_A.csv` both
 report zero mismatches.
 
-### Step 3 — Re-import, oldest year first *(operational)*
-After Step 1 lands, re-import so the corrected parsers are applied and the newest HD wins:
+### Step 3 — Re-import, oldest year first *(operational)* — **DONE 2026-09-21**
 
-    2022 → 2023 → 2024 → 2025,  HD then C for each year
+All four years cleared and re-imported with the corrected parsers, oldest first so the
+newest HD wins. Every count matches what the source files predict:
 
-Three things change in the stored data, all from Step 1:
-- counts of exactly `99` stop being `NULL` (~566 values and 56,034 graduates per year, on
-  the 2025 measurement);
-- negative counts, if any year has them, become `NULL` instead of subtracting from a
-  total — 2025 has none, the earlier years are unchecked;
-- `99`/`-2` categorical codes are stored instead of nulled (2,537 institution fields on
-  HD2025, mostly Carnegie).
+| | Before | After | Expected from files |
+|---|---|---|---|
+| institutions | 6,515 | **6,515** | 6,515 |
+| completions 2022 | 300,877 | **301,055** | 301,055 |
+| completions 2023 | 303,292 | **303,460** | 303,460 |
+| completions 2024 | 307,707 | **307,707** | 307,707 |
+| completions 2025 | 313,566 | **313,566** | 313,566 |
+| completions total | 1,225,442 | **1,225,788** | 1,225,788 |
 
-Completions is ~1.2M rows over four years; budget accordingly. Verify with Step 2, and
-confirm `updated_year = 2025` for all 5,985 current institutions.
+The +346 is the revised files' net effect (F10): 438 rows added, 92 retracted.
 
-Two IPEDS files in `~/Downloads` are **not** imported today and should be settled here
-rather than left ambiguous: `C2025_B.zip` and `C2025_C.zip`. Decide whether they belong
-in the corpus before re-importing, so the year is loaded once.
+**The six missing source files were fetched before anything was deleted.** Only
+`HD2025`/`C2025_A` were on the machine; clearing first would have destroyed ~912,000 rows
+of 2022-2024 completions with no way to restore them. `nces.ed.gov/ipeds/datacenter/data/`
+serves the rest; the 2025 pair is not at that path, which is presumably why they were
+downloaded by hand originally.
 
-**Only the 2025 files are on this machine.** `~/Downloads` holds `HD2025`, `C2025_A/B/C`
-and `IC2025`; a four-year re-import needs eight files and six are missing (`HD2022`,
-`HD2023`, `HD2024`, `C2022_A`, `C2023_A`, `C2024_A`). They are public downloads from
-`nces.ed.gov/ipeds/datacenter/data/<NAME>.zip`, a few MB each.
+**Cleared only the three IPEDS data tables.** `cip_codes`, the seven lookups and
+`degree_types` are SQL-seeded and cannot be restored without `psql`, so they were left
+alone and verified intact afterwards (2,173 / 12 / 34 / 9).
 
-**Re-importing 2025 alone already fixes most of it**, and is worth doing first:
+Verified after:
 
-| Finding | Fixed by HD2025 + C2025_A alone? |
-|---|---|
-| F2 institutions 2022-era | **Yes, fully.** HD2025 is the newest year, so it wins for all 5,985 current institutions. The 530 historical rows keep their own years, which is correct. |
-| F8 Carnegie wrong vintage | **Yes, for every current institution** — HD2025 carries only `C21BASIC`. |
-| Categorical `99`/`-2` nulled | Yes, for institutions. |
-| F1 `99` counts nulled | **2025 only.** 2022-2024 keep their nulls until those files are fetched. |
+- `db doctor` — 8 passed, 0 failed.
+- `db validate HD2025.zip` — **all 11 columns clean**, 0 rows missing. Was 10 columns and
+  5,332 values before.
+- `db validate C{2022,2023,2024,2025}_A.zip` — exact row counts and **all 21 columns
+  clean** across every sample. The `99` values are stored as numbers now.
+- `db validate HD2022.zip` — provenance reports **`C21BASIC` 6,256 of 6,256 rows agree**,
+  where before the re-import `C18BASIC` led at 3,835. F8 confirmed fixed from the data
+  side, not just the code.
 
-So the split is: one import pass fixes every institution-level finding, and completions
-stay partially wrong for three years until the other files are downloaded.
+That last run still reports 9 columns differing on HD2022, which is **correct**: the
+`institutions` table has one row per institution, not one per year, so it holds HD2025
+values and a 2022 file legitimately disagrees. `carnegie_class` matches because the 2021
+classification is published once and does not drift. Worth knowing before reading an
+older-year validate run as a fault.
+
+**[verified] `db validate` hits a transient `error decoding response body`** roughly one
+run in five against this backend — a truncated response body over the Cloudflare tunnel,
+not year-specific (2025 failed then passed; 2024 failed then passed three times). Same
+class as the single unexplained `db doctor` failure seen on 2026-09-18. It fails loudly
+and a retry succeeds, so it is a nuisance rather than a correctness risk, but
+`fetch_completions` has no retry where `send_get` has one for a 401. Worth adding.
 
 ### Step 4 — Stop an older year from overwriting a newer one *(code)*
 `updated_year` is written and never read, which is what made F2 possible and invisible.
