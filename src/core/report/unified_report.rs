@@ -67,6 +67,7 @@ pub fn build_degree_report(
     aggregator: &MetricsAggregator,
     selected: &crate::core::degree::SelectedPlans,
     sample_type: &str,
+    params: &RunParameters<'_>,
 ) -> Result<Value, Box<dyn Error>> {
     // Start from the unified program (degree, requirements, courses w/ prereqs).
     let mut value = to_unified_value(program).map_err(|e| Box::<dyn Error>::from(e.to_string()))?;
@@ -115,6 +116,22 @@ pub fn build_degree_report(
             json!({
                 "variations_run": aggregator.plan_count(),
                 "sample_type": sample_type,
+                // How this run was produced. Recorded because a run is only
+                // reproducible — and only comparable against another run — if the
+                // parameters and the seed are known. Until 2026-09-22 the report
+                // carried none of this, so the matching database columns existed and
+                // were always NULL, and two runs of the same degree under different
+                // `--include` sets were indistinguishable after the fact.
+                "parameters": {
+                    "max_plans": params.max_plans,
+                    "sample_plan_count": params.sample_count,
+                    "sampling_strategy": params.sampling_strategy,
+                    "calc_strategy": params.calc_strategy,
+                    "ignore_duplicates": params.ignore_duplicates,
+                    "included_courses": params.included_courses,
+                    "random_seed": params.random_seed,
+                    "analyzer_version": env!("CARGO_PKG_VERSION"),
+                },
                 "metrics": {
                     "complexity": degree_stats.total_complexity,
                     "delay": degree_stats.longest_delay,
@@ -144,6 +161,30 @@ pub fn build_degree_report(
     Ok(value)
 }
 
+/// How an analysis run was produced, recorded alongside its results.
+///
+/// Everything here is needed to re-derive the same numbers: the enumeration cap and
+/// strategy decide which plans exist, the seed decides which are sampled, and the
+/// analyzer version decides what is computed from them. A run missing any of these can
+/// be read but not reproduced, which is the difference between history and an anecdote.
+#[derive(Debug, Clone)]
+pub struct RunParameters<'a> {
+    /// Enumeration cap.
+    pub max_plans: usize,
+    /// How many plans were sampled for export.
+    pub sample_count: usize,
+    /// `sequential` | `shuffled` | `stratified`.
+    pub sampling_strategy: &'a str,
+    /// `mean` | `median`.
+    pub calc_strategy: &'a str,
+    /// Whether duplicate plans were collapsed.
+    pub ignore_duplicates: bool,
+    /// Courses forced into every plan, if any.
+    pub included_courses: &'a [String],
+    /// Seed the enumeration used, when one was set.
+    pub random_seed: Option<u64>,
+}
+
 /// Write the unified report JSON to `<out_dir>/<degree_id>_report.json`.
 ///
 /// # Errors
@@ -153,9 +194,10 @@ pub fn export_degree_report_json(
     aggregator: &MetricsAggregator,
     selected: &crate::core::degree::SelectedPlans,
     sample_type: &str,
+    params: &RunParameters<'_>,
     out_dir: &Path,
 ) -> Result<PathBuf, Box<dyn Error>> {
-    let value = build_degree_report(program, aggregator, selected, sample_type)?;
+    let value = build_degree_report(program, aggregator, selected, sample_type, params)?;
     std::fs::create_dir_all(out_dir)?;
     let path = out_dir.join(format!(
         "{}_report.json",

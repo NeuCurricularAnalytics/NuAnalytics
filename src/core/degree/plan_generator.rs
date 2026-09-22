@@ -207,6 +207,26 @@ impl std::str::FromStr for SamplingStrategy {
     }
 }
 
+/// Derive a stable enumeration seed from a degree's canonical text.
+///
+/// Analysis must be reproducible: the same degree analysed twice has to enumerate the
+/// same plans, or two runs of identical inputs disagree and nothing downstream —
+/// comparing a metric across analyzer versions, backfilling a metric onto a stored run —
+/// can be trusted. Until 2026-09-22 the CLI left the seed unset and took thread-local
+/// entropy, so three runs of one degree gave 496, 497 and 493 plans and metric means
+/// differing in the third decimal.
+///
+/// Content-derived rather than random so it needs no storage to reproduce, and so two
+/// machines analysing the same degree agree.
+#[must_use]
+pub fn default_seed_for_document(canonical: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    canonical.hash(&mut hasher);
+    hasher.finish()
+}
+
 /// Configuration for plan generation
 #[derive(Debug, Clone)]
 pub struct PlanGeneratorConfig {

@@ -235,6 +235,32 @@ fn institution_ref(resolved_unitid: Option<i32>, institution: Option<&str>) -> S
 }
 
 /// Compute the deterministic `program_key` for a degree.
+/// A fresh run identifier.
+///
+/// Random rather than derived: see the note at its use site in
+/// [`build_analysis_run`]. 128 bits of `fastrand`, hex-encoded — collision is not a
+/// practical concern at a few thousand runs, and unlike a content hash a collision here
+/// cannot be caused by forgetting to hash a field.
+fn new_run_id() -> String {
+    format!(
+        "run_{:032x}",
+        u128::from(fastrand::u64(..)) << 64 | u128::from(fastrand::u64(..))
+    )
+}
+
+/// The catalog year this import is for, as the course tables key on it.
+///
+/// Empty string rather than `None` when a degree carries no catalog year: the column is
+/// `NOT NULL DEFAULT ''` because Postgres treats NULLs as distinct in a UNIQUE
+/// constraint, which would let duplicate course rows through for the ~4% of the corpus
+/// with no year. Derived the same way as [`program_key`] so the two never disagree.
+fn catalog_year_of(degree: &crate::core::models::Degree, opts: &ImportOptions) -> String {
+    opts.catalog_year
+        .clone()
+        .or_else(|| degree.catalog_year.clone())
+        .unwrap_or_default()
+}
+
 fn program_key(
     degree: &crate::core::models::Degree,
     opts: &ImportOptions,
@@ -334,6 +360,7 @@ fn build_course(
     course_code: &str,
     institution_ref: &str,
     resolved_unitid: Option<i32>,
+    catalog_year: &str,
     generation: i64,
 ) -> StoredCourse {
     let (credit_min, credit_max) = course.credit_range.as_ref().map_or((None, None), |r| {
@@ -342,6 +369,7 @@ fn build_course(
     StoredCourse {
         id: None,
         institution_ref: institution_ref.to_string(),
+        catalog_year: catalog_year.to_string(),
         unitid: resolved_unitid,
         course_code: course_code.to_string(),
         prefix: (!course.prefix.is_empty()).then(|| course.prefix.clone()),
@@ -520,6 +548,7 @@ pub fn build_import_plan(
 
     let inst_ref = institution_ref(resolved_unitid, degree.institution.as_deref());
     let program_key = program_key(degree, opts, resolved_unitid);
+    let catalog_year = catalog_year_of(degree, opts);
 
     let document = to_unified_value(&program)
         .map_err(|e| DatabaseError::ParseError(format!("failed to build document: {e}")))?;
@@ -540,12 +569,14 @@ pub fn build_import_plan(
             key,
             &inst_ref,
             resolved_unitid,
+            &catalog_year,
             generation,
         ));
         program_courses.push(StoredProgramCourse {
             id: None,
             program_key: program_key.clone(),
             institution_ref: inst_ref.clone(),
+            catalog_year: catalog_year.clone(),
             course_code: (*key).clone(),
             credit_hours_override: None,
             name_as_listed: None,
@@ -669,6 +700,52 @@ struct BuildRunArgs<'a> {
     generation: i64,
 }
 
+/// The parameters an analysis ran under, as recorded in a report's `analysis.parameters`.
+///
+/// Every field is optional rather than defaulted: reports written before 2026-09-22
+/// carry none of this, and "the report did not say" is a different fact from "the run
+/// used the default". Conflating them would make an old run look reproducible when it
+/// is not.
+#[derive(Debug, Default)]
+struct RunParams {
+    calc_strategy: Option<String>,
+    sampling_strategy: Option<String>,
+    analyzer_version: Option<String>,
+    max_plans: Option<i32>,
+    random_seed: Option<i64>,
+    included_courses: Option<Vec<String>>,
+    /// Derived: `ignore_duplicates` off means every combination was kept.
+    full_run: Option<bool>,
+}
+
+impl RunParams {
+    fn from_analysis(analysis: &Value) -> Self {
+        let Some(p) = analysis.get("parameters") else {
+            return Self::default();
+        };
+        let text = |k: &str| p.get(k).and_then(Value::as_str).map(str::to_string);
+        Self {
+            calc_strategy: text("calc_strategy"),
+            sampling_strategy: text("sampling_strategy"),
+            analyzer_version: text("analyzer_version"),
+            max_plans: p.get("max_plans").and_then(Value::as_i64).map(i64_to_i32),
+            random_seed: p.get("random_seed").and_then(Value::as_i64),
+            included_courses: p
+                .get("included_courses")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                }),
+            full_run: p
+                .get("ignore_duplicates")
+                .and_then(Value::as_bool)
+                .map(|dedup| !dedup),
+        }
+    }
+}
+
 /// Build the [`StoredAnalysisRun`] from a report's `analysis` block.
 fn build_analysis_run(args: BuildRunArgs) -> Result<StoredAnalysisRun, DatabaseError> {
     let BuildRunArgs {
@@ -704,14 +781,33 @@ fn build_analysis_run(args: BuildRunArgs) -> Result<StoredAnalysisRun, DatabaseE
         };
     let analyzed_document = if is_full { None } else { Some(document) };
 
-    let run_key = content_hash(&format!(
-        "{program_key}|{analyzed_document_hash}|{variant}|{}|{}|{}|{}|{}|{}",
+    let params = RunParams::from_analysis(analysis);
+
+    // Identity is a random surrogate, not a hash of the inputs. A content hash as the
+    // primary key fails *closed*: omit one field — `included_courses` was omitted for
+    // months — and two genuinely different runs collide, and `run_key UNIQUE` destroys
+    // one. The same hash kept as an advisory fingerprint fails *open*: the same mistake
+    // leaves a duplicate row that can be seen and deleted. Given the omission is the
+    // predictable error, it should cost a redundant row rather than a lost run.
+    let run_key = new_run_id();
+
+    let config_fingerprint = content_hash(&format!(
+        "{program_key}|{analyzed_document_hash}|{variant}|{}|{}|{}|{}|{}|{}|{}|{}",
         variations_run.map(|v| v.to_string()).unwrap_or_default(),
         sample_type.clone().unwrap_or_default(),
-        "", // calc_strategy (None for now)
-        "", // max_plans (None for now)
-        "", // full_run (None for now)
-        "", // include_joined (None for now)
+        params.calc_strategy.clone().unwrap_or_default(),
+        params.sampling_strategy.clone().unwrap_or_default(),
+        params.max_plans.map(|v| v.to_string()).unwrap_or_default(),
+        params.full_run.map(|v| v.to_string()).unwrap_or_default(),
+        params
+            .included_courses
+            .clone()
+            .unwrap_or_default()
+            .join(","),
+        params
+            .random_seed
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
     ));
 
     let (complexity_mean, delay_mean, credits_mean) =
@@ -733,15 +829,19 @@ fn build_analysis_run(args: BuildRunArgs) -> Result<StoredAnalysisRun, DatabaseE
         analyzed_document,
         variations_run,
         sample_type,
-        calc_strategy: None,
-        sampling_strategy: None,
-        max_plans: None,
-        full_run: None,
-        included_courses: None,
+        calc_strategy: params.calc_strategy,
+        sampling_strategy: params.sampling_strategy,
+        max_plans: params.max_plans,
+        full_run: params.full_run,
+        included_courses: params.included_courses,
         degree_metrics,
         complexity_mean,
         delay_mean,
         credits_mean,
+        analyzer_version: params.analyzer_version,
+        random_seed: params.random_seed,
+        config_fingerprint: Some(config_fingerprint),
+        backfilled_metrics: None,
         generation,
         created_at: None,
         updated_at: None,
@@ -784,6 +884,7 @@ fn build_course_metrics(
             centrality_mean: metric_mean(metrics, "centrality"),
             delay_mean: metric_mean(metrics, "delay"),
             blocking_mean: metric_mean(metrics, "blocking"),
+            chain_length_mean: metric_mean(metrics, "chain_length"),
             metrics: Some(metrics_value),
             generation,
         });

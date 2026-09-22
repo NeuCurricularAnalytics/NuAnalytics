@@ -1316,6 +1316,8 @@ struct AnalysisContext<'a> {
     dag: DAG,
     graph: &'a CourseGraph,
     gen_config: PlanGeneratorConfig,
+    /// `mean` | `median` — recorded on the analysis run so it can be reproduced.
+    calc_strategy: String,
     verbose: bool,
     /// Map from course key to all equivalent courses (including itself)
     /// Built from requirement definitions using `{A, B, C}` syntax
@@ -1825,7 +1827,19 @@ fn analyze_program(
         school: build_school_from_program(program),
         dag: build_dag_from_graph(&graph_result.graph),
         graph: &graph_result.graph,
+        calc_strategy: options
+            .calc_strategy
+            .clone()
+            .unwrap_or_else(|| config.degree_analysis.calc_strategy.clone()),
         gen_config: PlanGeneratorConfig {
+            // Derived from the degree's own text, so the same degree always enumerates
+            // the same plans. Left unset, shuffled sampling took thread-local entropy
+            // and three runs of one degree disagreed in the third decimal — which made
+            // the corpus unreproducible and a metric backfill impossible.
+            random_seed: Some(nu_analytics::core::degree::default_seed_for_document(
+                &nu_analytics::core::degree::serialize_degree_json(program, false)
+                    .unwrap_or_default(),
+            )),
             max_plans: options
                 .max_plans
                 .unwrap_or(config.degree_analysis.max_plans),
@@ -2609,11 +2623,21 @@ fn generate_analysis_outputs(
         // degree- and course-level metrics) for downstream viz/DB. Grouped with
         // the other metrics-dir exports, so `--no-csv` suppresses it too.
         let sample_type = sampling_strategy_label(&ctx.gen_config.sampling_strategy);
+        let run_params = nu_analytics::core::report::unified_report::RunParameters {
+            max_plans: ctx.gen_config.max_plans,
+            sample_count: ctx.gen_config.sample_count,
+            sampling_strategy: sample_type,
+            calc_strategy: &ctx.calc_strategy,
+            ignore_duplicates: ctx.gen_config.ignore_duplicates,
+            included_courses: &ctx.gen_config.include_courses,
+            random_seed: ctx.gen_config.random_seed,
+        };
         match nu_analytics::core::report::unified_report::export_degree_report_json(
             ctx.program,
             aggregator,
             selected,
             sample_type,
+            &run_params,
             &metrics_dir,
         ) {
             Ok(path) => outputs_generated.push(format!("Report JSON: {}", path.display())),

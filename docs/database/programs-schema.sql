@@ -105,6 +105,14 @@ CREATE TABLE IF NOT EXISTS courses (
     id                 BIGSERIAL PRIMARY KEY,
     institution_ref    TEXT NOT NULL,
     unitid             INTEGER,
+    -- Part of the uniqueness key: a course definition belongs to a catalog year, the
+    -- same way `programs.program_key` embeds one. Without it a 2026-2027 import would
+    -- overwrite the definitions a 2025-2026 program was analysed against, and every
+    -- SQL query against the older program would silently describe a degree that never
+    -- existed. NOT NULL with an empty default because Postgres treats NULLs as distinct
+    -- in a UNIQUE constraint, which would let duplicates through for the ~4% of degrees
+    -- that carry no catalog year.
+    catalog_year       TEXT NOT NULL DEFAULT '',
     course_code        TEXT NOT NULL,      -- the DegreeProgram course-map key, e.g. "CMPSC121"
     prefix             TEXT,
     number             TEXT,
@@ -120,7 +128,7 @@ CREATE TABLE IF NOT EXISTS courses (
     generation         BIGINT NOT NULL DEFAULT 0,
     created_at         TIMESTAMPTZ DEFAULT NOW(),
     updated_at         TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (institution_ref, course_code)
+    UNIQUE (institution_ref, catalog_year, course_code)
 );
 
 -- =============================================================================
@@ -132,6 +140,7 @@ CREATE TABLE IF NOT EXISTS program_courses (
     id                    BIGSERIAL PRIMARY KEY,
     program_key           TEXT NOT NULL,
     institution_ref       TEXT NOT NULL,
+    catalog_year          TEXT NOT NULL DEFAULT '',  -- joins courses; see the note there
     course_code           TEXT NOT NULL,
     credit_hours_override REAL,
     name_as_listed        TEXT,
@@ -217,6 +226,18 @@ CREATE TABLE IF NOT EXISTS analysis_runs (
     delay_mean             REAL,
     credits_mean           REAL,
 
+    -- provenance and reproduction
+    analyzer_version       TEXT,       -- crate version that produced the numbers
+    random_seed            BIGINT,     -- required to re-enumerate the same plans, which is
+                                       -- what makes `db remetric` safe and history comparable
+    -- Advisory duplicate check, NOT the identity. `run_key` is a random surrogate, so
+    -- omitting a field from this fingerprint costs a redundant row you can see and
+    -- delete; using a content hash as the key made the same mistake destroy a run.
+    config_fingerprint     TEXT,
+    -- Metrics written by `db remetric` rather than by the run itself, so a patched row
+    -- says so and the history stays honest.
+    backfilled_metrics     TEXT[],
+
     generation             BIGINT NOT NULL DEFAULT 0,
     created_at             TIMESTAMPTZ DEFAULT NOW(),
     updated_at             TIMESTAMPTZ DEFAULT NOW()
@@ -237,7 +258,8 @@ CREATE TABLE IF NOT EXISTS analysis_course_metrics (
     centrality_mean REAL,
     delay_mean      REAL,
     blocking_mean   REAL,
-    metrics         JSONB,                -- {complexity,centrality,delay,blocking} each {min..q3}
+    chain_length_mean REAL,            -- longest incoming prerequisite chain, per course
+    metrics         JSONB,                -- {complexity,centrality,delay,blocking,chain_length} each {min..q3}
     generation      BIGINT NOT NULL DEFAULT 0,
     UNIQUE (run_key, course_code)
 );
@@ -280,10 +302,10 @@ CREATE INDEX IF NOT EXISTS idx_programs_impossible   ON programs (has_impossible
 CREATE INDEX IF NOT EXISTS idx_courses_prefix_number ON courses (prefix, number);
 CREATE INDEX IF NOT EXISTS idx_courses_name_trgm     ON courses USING GIN (name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_courses_unitid        ON courses (unitid);
-CREATE INDEX IF NOT EXISTS idx_courses_inst_ref      ON courses (institution_ref);
+CREATE INDEX IF NOT EXISTS idx_courses_inst_ref      ON courses (institution_ref, catalog_year);
 
 CREATE INDEX IF NOT EXISTS idx_program_courses_pk     ON program_courses (program_key);
-CREATE INDEX IF NOT EXISTS idx_program_courses_lookup ON program_courses (institution_ref, course_code);
+CREATE INDEX IF NOT EXISTS idx_program_courses_lookup ON program_courses (institution_ref, catalog_year, course_code);
 
 CREATE INDEX IF NOT EXISTS idx_program_reqs_pk       ON program_requirements (program_key);
 CREATE INDEX IF NOT EXISTS idx_program_reqs_parent   ON program_requirements (program_key, parent_path);

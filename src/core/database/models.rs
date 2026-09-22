@@ -296,6 +296,9 @@ pub struct StoredCourse {
     pub id: Option<i64>,
     /// Catalog partition (unitid-as-text or institution slug)
     pub institution_ref: String,
+    /// Catalog year this definition belongs to; part of the uniqueness key so a later
+    /// year cannot overwrite the courses an earlier program was analysed against.
+    pub catalog_year: String,
     /// Resolved IPEDS unit id (no FK)
     pub unitid: Option<i32>,
     /// Course-map key, e.g. "CMPSC121"
@@ -340,8 +343,10 @@ pub struct StoredProgramCourse {
     pub id: Option<i64>,
     /// Parent program natural key
     pub program_key: String,
-    /// Joins to `courses` on (`institution_ref`, `course_code`)
+    /// Joins to `courses` on (`institution_ref`, `catalog_year`, `course_code`)
     pub institution_ref: String,
+    /// Catalog year of the course definition this row points at.
+    pub catalog_year: String,
     /// Course-map key
     pub course_code: String,
     /// Program-specific credit override when it diverges from the canonical course
@@ -440,6 +445,18 @@ pub struct StoredAnalysisRun {
     pub delay_mean: Option<f32>,
     /// Promoted mean credits
     pub credits_mean: Option<f32>,
+    /// Crate version that produced these numbers
+    pub analyzer_version: Option<String>,
+    /// Seed the plan enumeration used; required to reproduce the same plans, which is
+    /// what makes a metric backfill safe and cross-version comparison meaningful.
+    pub random_seed: Option<i64>,
+    /// Advisory duplicate check — **not** the identity. `run_key` is a random surrogate,
+    /// so a field omitted from this fingerprint costs a redundant row rather than a
+    /// destroyed one.
+    pub config_fingerprint: Option<String>,
+    /// Metrics written by a backfill rather than by the run itself.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backfilled_metrics: Option<Vec<String>>,
     /// Sync generation stamp
     pub generation: i64,
     /// Creation timestamp (ISO 8601)
@@ -472,6 +489,8 @@ pub struct StoredAnalysisCourseMetric {
     pub delay_mean: Option<f32>,
     /// Promoted mean blocking
     pub blocking_mean: Option<f32>,
+    /// Mean longest incoming prerequisite chain for this course across the run's plans
+    pub chain_length_mean: Option<f32>,
     /// Full 7-stat breakdown {complexity, centrality, delay, blocking}
     pub metrics: Option<serde_json::Value>,
     /// Sync generation stamp
