@@ -30,6 +30,7 @@ pub mod error;
 pub mod import;
 pub mod ipeds;
 pub mod models;
+pub mod prune;
 pub mod query;
 pub mod validate;
 

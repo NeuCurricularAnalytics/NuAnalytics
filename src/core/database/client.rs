@@ -615,6 +615,55 @@ impl DbClient {
             })
     }
 
+    /// Delete rows matching `filters`, returning how many went.
+    ///
+    /// **Refuses an empty filter.** `DELETE` with no predicate empties the table, and the
+    /// difference between "delete this program's old runs" and "delete every run" is one
+    /// `Option` that happened to be `None`. Callers that genuinely want everything must
+    /// say so with an explicit always-true filter.
+    ///
+    /// # Errors
+    /// [`DatabaseError::QueryError`] when the filter is empty or the backend refuses,
+    /// [`DatabaseError::ConnectionError`] when it could not be reached, and
+    /// [`DatabaseError::ParseError`] when the row count cannot be read back.
+    pub async fn delete_where(&self, table: &str, filters: &QueryFilters) -> DatabaseResult<u64> {
+        if filters.is_empty() {
+            return Err(DatabaseError::QueryError(format!(
+                "refusing to delete from {table} with no filter — that would empty the table"
+            )));
+        }
+        let url = build_select_url(&self.endpoint, table, "*", filters, None);
+        let token = self.current_token().await?;
+        let response = self
+            .http
+            .delete(&url)
+            .header("apikey", &self.anon_key)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Prefer", "count=exact")
+            .send()
+            .await
+            .map_err(|e| {
+                DatabaseError::ConnectionError(format!("request to {} failed: {e}", self.endpoint))
+            })?;
+
+        if !response.status().is_success() {
+            return Err(self.classify_failure(response).await);
+        }
+        // `Content-Range` is `*/<deleted>` for a delete with count=exact.
+        response
+            .headers()
+            .get("content-range")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|r| r.rsplit('/').next())
+            .and_then(|total| total.trim().parse::<u64>().ok())
+            .ok_or_else(|| {
+                DatabaseError::ParseError(format!(
+                    "{} did not report how many rows it deleted from {table}",
+                    self.endpoint
+                ))
+            })
+    }
+
     /// Upsert a batch of records.
     ///
     /// Requires the same authenticated session as [`Self::select`]; with the

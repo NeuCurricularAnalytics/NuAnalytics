@@ -12,8 +12,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use nu_analytics::config::{Config, ConfigSources};
 use nu_analytics::database::import::{execute_import, ImportOptions, ImportOutcome, ImportResult};
 use nu_analytics::database::{
-    auth_file_path, bootstrap, clear_auth_state, doctor, ipeds, load_auth_state, save_auth_state,
-    sign_in_with_password, validate, AuthState, DatabaseError, DbClient, SignInError,
+    auth_file_path, bootstrap, clear_auth_state, doctor, ipeds, load_auth_state, prune,
+    save_auth_state, sign_in_with_password, validate, AuthState, DatabaseError, DbClient,
+    SignInError,
 };
 
 use crate::args::DbSubcommand;
@@ -33,6 +34,11 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
         DbSubcommand::Status => run_status(config, sources),
         DbSubcommand::Bootstrap { print } => run_bootstrap(config, print),
         DbSubcommand::Validate { file, year } => run_validate(config, &file, year),
+        DbSubcommand::Prune {
+            keep,
+            analyzer_version,
+            dry_run,
+        } => run_prune(config, keep, analyzer_version.as_deref(), dry_run),
         DbSubcommand::Doctor => run_doctor(config, sources),
         DbSubcommand::IpedsImport {
             dir,
@@ -92,6 +98,133 @@ pub(super) fn make_runtime() -> Option<tokio::runtime::Runtime> {
             None
         }
     }
+}
+
+// ============================================================================
+// Prune — bound the stored analysis history
+// ============================================================================
+
+/// Child tables whose rows belong to a run and go with it.
+///
+/// They key on `run_key`, so orphaning them would leave metrics and plans pointing at a
+/// run that no longer exists — invisible to every query that starts from `analysis_runs`.
+const RUN_CHILD_TABLES: [&str; 2] = [
+    nu_analytics::database::tables::ANALYSIS_COURSE_METRICS,
+    nu_analytics::database::tables::ANALYSIS_PLANS,
+];
+
+/// Drop old analysis runs, keeping a bounded history.
+fn run_prune(config: &Config, keep: Option<usize>, analyzer_version: Option<&str>, dry_run: bool) {
+    let Some(rt) = make_runtime() else { return };
+    if let Err(e) = rt.block_on(do_prune(config, keep, analyzer_version, dry_run)) {
+        eprintln!("✗ {e}");
+        std::process::exit(1);
+    }
+}
+
+/// Read every run, plan the deletion, report it, and carry it out unless `dry_run`.
+async fn do_prune(
+    config: &Config,
+    keep: Option<usize>,
+    analyzer_version: Option<&str>,
+    dry_run: bool,
+) -> Result<(), String> {
+    let client = DbClient::from_config(&config.database)
+        .await
+        .map_err(|e| format!("{e}"))?;
+
+    let runs = fetch_run_refs(&client).await?;
+    println!("Backend:  {}", config.database.endpoint);
+    println!("{} analysis run(s) stored", runs.len());
+
+    let plan = match (keep, analyzer_version) {
+        (Some(n), _) => prune::plan_keep_newest(&runs, n),
+        (None, Some(v)) => prune::plan_by_analyzer_version(&runs, v),
+        (None, None) => {
+            return Err("pass --keep <N> or --analyzer-version <V>".to_string());
+        }
+    };
+
+    println!(
+        "  {} group(s), {} run(s) kept, {} to delete",
+        plan.groups,
+        plan.kept,
+        plan.doomed.len()
+    );
+    for run in plan.doomed.iter().take(5) {
+        println!(
+            "    {} {} {} {}",
+            run.program_key,
+            run.variant,
+            run.created_at.as_deref().unwrap_or("(no timestamp)"),
+            run.analyzer_version.as_deref().unwrap_or("(no version)")
+        );
+    }
+    if plan.doomed.len() > 5 {
+        println!("    ... and {} more", plan.doomed.len() - 5);
+    }
+
+    if plan.is_empty() {
+        println!("✓ nothing to prune");
+        return Ok(());
+    }
+    if dry_run {
+        println!("nothing written (--dry-run)");
+        return Ok(());
+    }
+
+    // Children first. A run deleted before its children leaves rows keyed to a run that
+    // no longer exists, and nothing starting from `analysis_runs` would ever find them.
+    let keys: Vec<String> = plan.doomed.iter().map(|r| r.run_key.clone()).collect();
+    let mut children = 0u64;
+    for table in RUN_CHILD_TABLES {
+        children += delete_by_run_keys(&client, table, &keys).await?;
+    }
+    let runs_deleted = delete_by_run_keys(
+        &client,
+        nu_analytics::database::tables::ANALYSIS_RUNS,
+        &keys,
+    )
+    .await?;
+
+    println!("✓ deleted {runs_deleted} run(s) and {children} child row(s)");
+    Ok(())
+}
+
+/// Delete rows of `table` whose `run_key` is in `keys`, in chunks.
+///
+/// Chunked because the keys go into the URL as an `in.(…)` list and a few thousand of
+/// them would exceed what the gateway will accept.
+async fn delete_by_run_keys(
+    client: &DbClient,
+    table: &str,
+    keys: &[String],
+) -> Result<u64, String> {
+    const CHUNK: usize = 100;
+    let mut total = 0;
+    for chunk in keys.chunks(CHUNK) {
+        let filters = nu_analytics::database::QueryFilters::new().in_list("run_key", chunk);
+        total += client
+            .delete_where(table, &filters)
+            .await
+            .map_err(|e| format!("deleting from {table}: {e}"))?;
+    }
+    Ok(total)
+}
+
+/// Read the metadata every run needs for a prune decision.
+async fn fetch_run_refs(client: &DbClient) -> Result<Vec<prune::RunRef>, String> {
+    let filters = nu_analytics::database::QueryFilters::new();
+    let body = client
+        .select(
+            nu_analytics::database::tables::ANALYSIS_RUNS,
+            "run_key,program_key,variant,created_at,analyzer_version",
+            &filters,
+            Some(100_000),
+        )
+        .await
+        .map_err(|e| format!("{e}"))?;
+    serde_json::from_value(body).map_err(|e| format!("cannot read stored runs: {e}"))
 }
 
 // ============================================================================

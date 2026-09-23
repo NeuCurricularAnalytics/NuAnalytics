@@ -748,6 +748,41 @@ pub enum DbSubcommand {
         #[arg(long, value_name = "YEAR")]
         year: u16,
     },
+    /// Drop old analysis runs, keeping a bounded history per program.
+    ///
+    /// Runs accumulate — every re-analysis appends rather than replacing, which is what
+    /// lets you compare a metric across analyzer versions. This bounds that.
+    ///
+    /// History is kept per **program and variant**: `full` and `trimmed` are different
+    /// analyses of one degree, not competing versions of it, so a burst of `full`
+    /// re-runs never evicts a degree's only `trimmed` run.
+    ///
+    /// Always reports what it would remove before removing it; pass `--dry-run` to stop
+    /// there.
+    ///
+    /// Examples:
+    /// ```sh
+    /// nuanalytics db prune --keep 3 --dry-run
+    /// nuanalytics db prune --keep 3
+    /// nuanalytics db prune --analyzer-version 0.5.3
+    /// ```
+    Prune {
+        /// Keep this many newest runs per program and variant; delete older ones.
+        #[arg(long, value_name = "N", conflicts_with = "analyzer_version")]
+        keep: Option<usize>,
+
+        /// Delete every run produced by this analyzer version, regardless of age.
+        ///
+        /// A correctness decision rather than a retention policy — "that release
+        /// computed the metric wrongly" — so it is not softened by a keep floor and may
+        /// empty a program's history.
+        #[arg(long, value_name = "VERSION")]
+        analyzer_version: Option<String>,
+
+        /// Report what would be deleted and stop.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Diagnose a whole deployment: config source, reachability, RLS behaviour, session,
     /// schema completeness and seed data.
     ///
