@@ -2525,6 +2525,8 @@ fn process_plan_variants(
     let mut plans_processed = 0;
     let mut seen_fingerprints = HashSet::new();
     let progress_interval = (ctx.gen_config.max_plans / 20).max(100);
+    // Same set for every plan, so build it once.
+    let include_set: HashSet<String> = ctx.gen_config.include_courses.iter().cloned().collect();
 
     for variant in generator.generate() {
         if plans_processed >= ctx.gen_config.max_plans {
@@ -2541,7 +2543,6 @@ fn process_plan_variants(
         }
 
         // Expand courses to include all prerequisites
-        let include_set: HashSet<String> = ctx.gen_config.include_courses.iter().cloned().collect();
         let expanded_courses = expand_courses_with_prerequisites(
             &variant.courses,
             ctx.graph,
@@ -2551,11 +2552,11 @@ fn process_plan_variants(
         );
 
         // Build plan-specific DAG and compute metrics
-        let plan_dag = build_dag_for_plan(
+        let plan_dag = nu_analytics::core::degree::build_plan_dag(
             &expanded_courses,
             ctx.graph,
-            &include_set,
             &ctx.equivalences,
+            &include_set,
         );
         let course_metrics = match compute_all_metrics(&plan_dag) {
             Ok(metrics) => metrics,
@@ -3350,144 +3351,6 @@ fn placeholder_credits(course_key: &str) -> f32 {
     } else {
         3.0
     }
-}
-
-/// Build a DAG containing only the courses in a specific plan
-///
-/// Filters the full course graph to include only courses in the plan and
-/// their prerequisite relationships within the plan. For OR-prerequisites,
-/// only adds edges to prerequisites that are actually in the plan.
-///
-/// When multiple OR-group options are in the plan, prefers:
-/// 1. Included courses (explicitly specified by user)
-/// 2. Courses needed by more other courses in the plan
-///
-/// For required prerequisites, if the exact prereq isn't in the plan but an
-/// equivalent course is (per the equivalences map), uses the equivalent.
-fn build_dag_for_plan(
-    courses: &[String],
-    graph: &CourseGraph,
-    include_courses: &HashSet<String>,
-    equivalences: &HashMap<String, HashSet<String>>,
-) -> DAG {
-    let plan_courses: HashSet<&str> = courses.iter().map(String::as_str).collect();
-    let mut dag = DAG::new();
-
-    for course_key in courses {
-        dag.add_course(course_key.clone());
-
-        // Add prerequisites that are also in the plan
-        if let Some(node) = graph.get(course_key) {
-            // Group prerequisites by OR-group
-            let mut or_groups: std::collections::HashMap<usize, Vec<&str>> =
-                std::collections::HashMap::new();
-            let mut required_prereqs: Vec<&str> = Vec::new();
-
-            for edge in &node.prerequisites {
-                // Skip corequisites
-                if edge.prereq_type
-                    == nu_analytics::core::models::course_graph::PrerequisiteType::Corequisite
-                {
-                    continue;
-                }
-
-                if edge.prereq_type
-                    == nu_analytics::core::models::course_graph::PrerequisiteType::Required
-                {
-                    required_prereqs.push(&edge.prerequisite);
-                } else if let Some(group) = edge.or_group {
-                    // Optional (OR-group) prerequisite
-                    or_groups.entry(group).or_default().push(&edge.prerequisite);
-                }
-            }
-
-            // Add required prerequisites that are in the plan (directly or via equivalence)
-            for prereq in required_prereqs {
-                if plan_courses.contains(prereq) {
-                    dag.add_prerequisite(course_key.clone(), prereq);
-                } else if let Some(equiv) =
-                    find_equivalent_in_plan_set(prereq, equivalences, &plan_courses)
-                {
-                    dag.add_prerequisite(course_key.clone(), equiv);
-                }
-            }
-
-            // For each OR-group, add only ONE prerequisite to avoid spurious edges
-            // Prefer included courses, then courses needed by more other courses
-            for (_group, options) in or_groups {
-                // Find options that are in the plan
-                let in_plan: Vec<&str> = options
-                    .iter()
-                    .filter(|&&opt| plan_courses.contains(opt))
-                    .copied()
-                    .collect();
-
-                if in_plan.is_empty() {
-                    continue;
-                }
-
-                // If only one option, use it
-                if in_plan.len() == 1 {
-                    dag.add_prerequisite(course_key.clone(), in_plan[0]);
-                    continue;
-                }
-
-                // Multiple options - first check if any is an included course
-                let included_option = in_plan
-                    .iter()
-                    .find(|&&opt| include_courses.contains(opt))
-                    .copied();
-
-                if let Some(prereq) = included_option {
-                    dag.add_prerequisite(course_key.clone(), prereq);
-                    continue;
-                }
-
-                // No included course - prefer the one needed by other courses
-                // Count how many OTHER courses in the plan need each option
-                let best_prereq = in_plan
-                    .iter()
-                    .max_by_key(|&&opt| {
-                        // Count courses that have this as a prerequisite
-                        courses
-                            .iter()
-                            .filter(|&other| {
-                                other.as_str() != course_key
-                                    && graph.get(other).is_some_and(|n| {
-                                        n.prerequisites.iter().any(|e| e.prerequisite == opt)
-                                    })
-                            })
-                            .count()
-                    })
-                    .copied();
-
-                if let Some(prereq) = best_prereq {
-                    dag.add_prerequisite(course_key.clone(), prereq);
-                }
-            }
-        }
-    }
-
-    dag
-}
-
-/// Find an equivalent course that is in the plan set.
-///
-/// Returns the first equivalent course found, or None if no equivalent is in the plan.
-fn find_equivalent_in_plan_set<'a>(
-    course: &str,
-    equivalences: &HashMap<String, HashSet<String>>,
-    plan_courses: &HashSet<&'a str>,
-) -> Option<&'a str> {
-    // Lexicographic minimum for the same reason as the MCP twin
-    // (`analyze::find_equivalent_in_plan`): iterating a HashSet picks a hash-order
-    // dependent equivalent, which lands in the DAG and shifts scheduled terms.
-    equivalences.get(course).and_then(|equivs| {
-        equivs
-            .iter()
-            .filter_map(|eq| plan_courses.get(eq.as_str()).copied())
-            .min()
-    })
 }
 
 /// Print a separator between sections

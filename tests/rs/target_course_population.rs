@@ -46,6 +46,17 @@ struct Case {
     earliest_term: usize,
 }
 
+// Baselines re-recorded 2026-09-23 when the OR-group DAG defect was fixed: the MCP path
+// had been adding an edge for *every* in-plan option of an OR-group, so courses carried
+// prerequisites the degree never required. Three of twenty moved — Bowdoin CSCI3465 6->4,
+// Liberty CSCN354 9->6, Liberty CSIS316 2->6.
+//
+// The last one moved *later*, which looks wrong for a change that only removes
+// constraints. It is not: `term_scheduler` balances credits across terms (~15 a
+// semester) rather than scheduling each course as early as its prerequisites allow. Once
+// other courses are freed to move earlier they consume capacity, and CSIS316 is packed
+// into a later term. Term placement is a packing, so it is not monotonic in the
+// prerequisite set.
 const CASES: &[Case] = &[
     Case {
         label: "Tulane",
@@ -81,7 +92,7 @@ const CASES: &[Case] = &[
         label: "Bowdoin",
         degree_json: BOWDOIN,
         course: "CSCI3465",
-        earliest_term: 6,
+        earliest_term: 4,
     },
     Case {
         label: "NMSU",
@@ -99,13 +110,13 @@ const CASES: &[Case] = &[
         label: "Liberty",
         degree_json: LIBERTY,
         course: "CSIS316",
-        earliest_term: 2,
+        earliest_term: 6,
     },
     Case {
         label: "Liberty",
         degree_json: LIBERTY,
         course: "CSCN354",
-        earliest_term: 9,
+        earliest_term: 6,
     },
     Case {
         label: "RIC",
@@ -378,7 +389,9 @@ fn calc_ready_plans_is_empty_when_no_course_id_matches_the_calculus_list() {
         stats.error
     );
     assert_eq!(stats.all_plans.plans_containing, 30);
-    assert_eq!(stats.all_plans.earliest_term, Some(4));
+    // 4 -> 3 when the OR-group DAG defect was fixed: ICS311 had been carrying every
+    // in-plan option of an OR-group as a prerequisite instead of one.
+    assert_eq!(stats.all_plans.earliest_term, Some(3));
     assert_eq!(
         stats.calc_ready_plans.plans_containing, 0,
         "UHM numbers calculus MATH241/242, which the default calculus_courses list omits"

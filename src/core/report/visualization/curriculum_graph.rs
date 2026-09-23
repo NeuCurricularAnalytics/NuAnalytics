@@ -408,7 +408,12 @@ fn build_edges_from_courses(
 
     let mut edges = Vec::new();
 
-    for &course_key in plan_courses {
+    // Sorted: `plan_courses` is a `HashSet`, so an unordered walk emits the same edges in
+    // a different order on every run, and this list is serialised into the report.
+    let mut ordered: Vec<&str> = plan_courses.iter().copied().collect();
+    ordered.sort_unstable();
+
+    for course_key in ordered {
         let Some(course) = school.get_course(course_key) else {
             continue;
         };
@@ -463,9 +468,18 @@ fn select_best_prereq_path<'a>(
         if plan_courses.contains(p.as_str()) {
             return Some(p.clone());
         }
+        // Lexicographic minimum, not the first hit: `equivalences` values are `HashSet`s,
+        // so `find` returns whichever the per-process hash order yields and the drawn
+        // edge changes between runs on the same plan. Same rule as
+        // `core::degree::plan_dag::equivalent_in_plan`, so the picture and the metrics
+        // resolve an equivalence to the same course.
         equivalences
             .get(p)
-            .and_then(|eq| eq.iter().find(|e| plan_courses.contains(e.as_str())))
+            .and_then(|eq| {
+                eq.iter()
+                    .filter(|e| plan_courses.contains(e.as_str()))
+                    .min()
+            })
             .cloned()
     };
 
@@ -492,6 +506,32 @@ fn select_best_prereq_path<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn select_best_prereq_path_resolves_an_equivalence_deterministically() {
+        // `equivalences` values are `HashSet`s, so taking the first hit drew a different
+        // edge on each run for the same plan. Rebuilt inside the loop on purpose: a set
+        // allocated once keeps one iteration order for the life of the process, so
+        // hoisting it would sample a single order and a first-hit implementation could
+        // pass by luck.
+        let dnf = vec![vec!["MATH140".to_string()]];
+        let plan: HashSet<&str> = ["MATH152", "MATH241", "MATH999"].into_iter().collect();
+        for _ in 0..50 {
+            let mut equivalences = HashMap::new();
+            equivalences.insert(
+                "MATH140".to_string(),
+                ["MATH152", "MATH241", "MATH999"]
+                    .into_iter()
+                    .map(String::from)
+                    .collect::<HashSet<_>>(),
+            );
+            assert_eq!(
+                select_best_prereq_path(&dnf, &plan, &equivalences),
+                vec!["MATH152".to_string()],
+                "the lexicographic minimum, not whichever the hash order yielded"
+            );
+        }
+    }
 
     #[test]
     fn test_expand_critical_path_plain() {

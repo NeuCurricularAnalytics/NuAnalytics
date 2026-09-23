@@ -28,6 +28,7 @@ pub mod gen_ed_tracker;
 pub mod json_parser;
 pub mod landscape_convert;
 pub mod normalize;
+pub mod plan_dag;
 pub mod plan_generator;
 pub mod plan_selector;
 pub mod plan_validation;
@@ -75,6 +76,9 @@ pub use validation::{
     validate_degree_program, validate_degree_program_with_options, ValidationError,
     ValidationOptions, ValidationResult, ValidationWarning,
 };
+
+// Re-export the shared per-plan DAG builder
+pub use plan_dag::build_plan_dag;
 
 // Re-export plan generation types
 pub use plan_generator::{

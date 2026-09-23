@@ -367,7 +367,6 @@ pub struct AnalysisResponse {
     pub total_credits: Option<MetricStatsJson>,
     /// Aggregate average chain length per plan (mean of per-course chain lengths)
     pub avg_chain_length: Option<MetricStatsJson>,
-    /// Aggregate minimum chain length per plan (shortest chain in each plan)
 
     /// Selected special plans
     pub selected_plans: Vec<PlanSummaryJson>,
@@ -810,6 +809,9 @@ fn run_plan_analysis(
     let mut plans_processed = 0;
     let mut time_limit_reached = false;
     let mut seen_fingerprints = HashSet::new();
+    // Same set for every plan, so build it once. `include_courses` is the request's
+    // forced-course list; it resolves an OR-group to the branch the caller pinned.
+    let include_set: HashSet<String> = gen_config.include_courses.iter().cloned().collect();
 
     for variant in generator.generate() {
         if plans_processed >= max {
@@ -834,7 +836,12 @@ fn run_plan_analysis(
         }
 
         let expanded = expand_with_prereqs(&variant.courses, ctx.graph, ctx.equivalences);
-        let plan_dag = build_plan_dag(&expanded, ctx.graph, ctx.equivalences);
+        let plan_dag = crate::core::degree::build_plan_dag(
+            &expanded,
+            ctx.graph,
+            ctx.equivalences,
+            &include_set,
+        );
 
         let Ok(course_metrics) = compute_all_metrics(&plan_dag) else {
             continue;
@@ -1358,78 +1365,6 @@ fn expand_with_prereqs(
     let mut result: Vec<String> = expanded.into_iter().collect();
     result.sort();
     result
-}
-
-/// Build a DAG for the plan, considering course equivalences.
-///
-/// When a prerequisite isn't in the plan but an equivalent course is,
-/// adds an edge from the equivalent to maintain proper sequencing.
-fn build_plan_dag(
-    courses: &[String],
-    graph: &CourseGraph,
-    equivalences: &HashMap<String, HashSet<String>>,
-) -> DAG {
-    let plan_set: HashSet<&str> = courses.iter().map(String::as_str).collect();
-    let mut dag = DAG::new();
-
-    for key in courses {
-        dag.add_course(key.clone());
-        if let Some(node) = graph.get(key) {
-            let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
-
-            for edge in &node.prerequisites {
-                if edge.prereq_type
-                    == crate::core::models::course_graph::PrerequisiteType::Corequisite
-                {
-                    continue;
-                }
-                if edge.prereq_type == crate::core::models::course_graph::PrerequisiteType::Required
-                {
-                    // Try direct match first
-                    if plan_set.contains(edge.prerequisite.as_str()) {
-                        dag.add_prerequisite(key.clone(), &edge.prerequisite);
-                    } else {
-                        // Check for equivalent course in plan
-                        if let Some(equiv_in_plan) =
-                            find_equivalent_in_plan(&edge.prerequisite, equivalences, &plan_set)
-                        {
-                            dag.add_prerequisite(key.clone(), equiv_in_plan);
-                        }
-                    }
-                } else if let Some(group) = edge.or_group {
-                    or_groups.entry(group).or_default().push(&edge.prerequisite);
-                }
-            }
-
-            for (_group, options) in or_groups {
-                for opt in options.iter().filter(|o| plan_set.contains(**o)) {
-                    dag.add_prerequisite(key.clone(), opt);
-                }
-            }
-        }
-    }
-    dag
-}
-
-/// Find an equivalent course that is in the plan.
-///
-/// Returns the first equivalent course found in the plan set, or None.
-fn find_equivalent_in_plan<'a>(
-    course: &str,
-    equivalences: &HashMap<String, HashSet<String>>,
-    plan_set: &HashSet<&'a str>,
-) -> Option<&'a str> {
-    // Lexicographic minimum, not the first hit: `equivs` is a HashSet, so when a course
-    // has several equivalents in the plan, `find_map` picks whichever the per-process
-    // hash order happens to yield first. That choice becomes a DAG edge, which changes
-    // delay factors and therefore the scheduled term — an observed source of run-to-run
-    // variation in term_distribution.
-    equivalences.get(course).and_then(|equivs| {
-        equivs
-            .iter()
-            .filter_map(|eq| plan_set.get(eq.as_str()).copied())
-            .min()
-    })
 }
 
 fn build_expanded_variant(
@@ -2531,38 +2466,6 @@ courses:
     fn test_gen_elective_placeholders_remainder_below_threshold_dropped() {
         // 4.0 → 1 full + remainder 1.0 < 1.5 → no seminar emitted
         assert_eq!(gen_elective_placeholders(4.0), vec!["ELEC_01"]);
-    }
-
-    #[test]
-    fn test_find_equivalent_in_plan_returns_match_when_present() {
-        let mut equivs: HashMap<String, HashSet<String>> = HashMap::new();
-        equivs.insert(
-            "MATH101".to_string(),
-            std::iter::once("MATH102".to_string()).collect(),
-        );
-        let plan: HashSet<&str> = ["MATH102", "CS101"].into_iter().collect();
-        assert_eq!(
-            find_equivalent_in_plan("MATH101", &equivs, &plan),
-            Some("MATH102")
-        );
-    }
-
-    #[test]
-    fn test_find_equivalent_in_plan_returns_none_when_absent() {
-        let mut equivs: HashMap<String, HashSet<String>> = HashMap::new();
-        equivs.insert(
-            "MATH101".to_string(),
-            std::iter::once("MATH102".to_string()).collect(),
-        );
-        let plan: HashSet<&str> = std::iter::once("CS101").collect();
-        assert_eq!(find_equivalent_in_plan("MATH101", &equivs, &plan), None);
-    }
-
-    #[test]
-    fn test_find_equivalent_in_plan_unknown_course_returns_none() {
-        let equivs: HashMap<String, HashSet<String>> = HashMap::new();
-        let plan: HashSet<&str> = std::iter::once("CS101").collect();
-        assert_eq!(find_equivalent_in_plan("MATH101", &equivs, &plan), None);
     }
 
     // ---- target_course_stats ------------------------------------------------

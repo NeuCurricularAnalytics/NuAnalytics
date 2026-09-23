@@ -441,6 +441,23 @@ impl CourseGraph {
             .map(|(course, prereq, _)| (course, prereq))
     }
 
+    /// Build a graph from nodes directly, for tests elsewhere in the crate.
+    ///
+    /// `from_degree_program` needs a whole `DegreeProgram`, which is far more than a unit
+    /// test of graph traversal should have to construct. It also runs
+    /// `build_reverse_edges`, so this does too — a graph whose `dependents` were empty
+    /// would let a test pass against an index production always populates. Not public:
+    /// production code builds graphs from a degree.
+    #[cfg(test)]
+    pub(crate) fn from_nodes(nodes: Vec<CourseNode>) -> Self {
+        let mut graph = Self::default();
+        for node in nodes {
+            graph.nodes.insert(node.key.clone(), node);
+        }
+        build_reverse_edges(&mut graph);
+        graph
+    }
+
     /// Get a course node by key
     #[must_use]
     pub fn get(&self, key: &str) -> Option<&CourseNode> {
