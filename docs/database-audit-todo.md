@@ -434,6 +434,39 @@ The check runs **before** the file is read, so a refusal costs no decompression.
 table never refuses, and a probe failure warns and proceeds rather than blocking an import
 on a transient read.
 
+### F11 — `db remetric` is blocked on the analysis-pipeline split **[measured]** — NOT BUILT
+
+An in-place metric backfill needs something that analyses a degree and returns its
+metrics. There is exactly one such entry point, `build_artifacts`, and it lives in
+`src/mcp/tools/analyze.rs` — gated behind the `mcp` feature. The CLI's only entry points,
+`run_analyze` and `run_analyze_from_db`, write files and print; they return nothing.
+
+So `remetric` would have to compute through the **MCP** pipeline, which still treats an
+OR-group as an AND (`analyze.rs:1370`, adds an edge per in-plan option instead of one).
+The corpus was produced by the **CLI** pipeline, and the two disagree — measured 19% apart
+on median complexity for the same degree in `clean-up-analysis-todo.md`. A `remetric`
+built on it would recompute `complexity_mean`, find it does not match the stored value,
+and correctly refuse every run. It would be a command that never succeeds.
+
+Making it "work" would mean dropping the verification step, which is the one thing that
+stops it silently overwriting a historical record with numbers from a different pipeline.
+
+**So it is deliberately not built**, and re-import is the supported path instead:
+
+| | re-import | remetric |
+|---|---|---|
+| corpus (files on disk) | analyse + import | blocked |
+| database-only programs | `degree analyze --from-db` | blocked |
+| history | appends a run | would patch in place |
+
+Re-import also uses the pipeline that produced the existing numbers, so results stay
+comparable — which `remetric` on the MCP path would not.
+
+**This reframes `clean-up-analysis-todo.md`.** That plan reads as a tidiness exercise; it
+is also the blocker for in-place metric backfill. `remetric` becomes buildable after its
+Step 1 (fix the OR-group DAG) and Step 3 (extract a shared `core::analysis`), at which
+point there is one pipeline, one set of numbers, and verification can pass.
+
 ### Step 5 — Correct the documentation *(docs)*
 Fix `setup.md`, the `db ipeds-import` help text and the `CHANGELOG` troubleshooting row to
 describe the table that exists: all CIP codes, both major numbers, ~313k rows per year.

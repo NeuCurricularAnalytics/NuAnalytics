@@ -228,8 +228,12 @@ CREATE TABLE IF NOT EXISTS analysis_runs (
 
     -- provenance and reproduction
     analyzer_version       TEXT,       -- crate version that produced the numbers
-    random_seed            BIGINT,     -- required to re-enumerate the same plans, which is
-                                       -- what makes `db remetric` safe and history comparable
+    -- TEXT, not BIGINT: the seed is a u64 and the enumeration routinely produces values
+    -- above i64::MAX, which a BIGINT cannot hold — they arrived as NULL, silently
+    -- defeating the reproducibility this column exists for. It is an opaque token, never
+    -- range-queried, so storing the digits is both correct and clearer than a bit-cast
+    -- that would display as negative.
+    random_seed            TEXT,
     -- Advisory duplicate check, NOT the identity. `run_key` is a random surrogate, so
     -- omitting a field from this fingerprint costs a redundant row you can see and
     -- delete; using a content hash as the key made the same mistake destroy a run.

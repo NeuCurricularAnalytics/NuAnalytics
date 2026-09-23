@@ -1622,7 +1622,7 @@ fn run_import_batch(
         }
     }
 
-    print_import_summary(&tally, total, dry);
+    print_import_summary(&tally, total, dry, &opts.variant);
     write_import_failures(&failures);
 }
 
@@ -1811,7 +1811,19 @@ fn print_blocked_guidance(result: &ImportResult) {
 }
 
 /// Print the final batch summary line(s).
-fn print_import_summary(tally: &ImportTally, total: usize, dry: &str) {
+///
+/// `variant` is the run label; a non-`full` batch deliberately leaves the program
+/// projection alone, so its counters describe what did *not* need doing rather than a
+/// failure. Importing 1,088 trimmed reports read as `0 created, 371 skipped` with `717
+/// needs-confirmation` while every one of the 1,088 runs landed correctly.
+fn print_import_summary(tally: &ImportTally, total: usize, dry: &str, variant: &str) {
+    let programs_untouched = !variant.eq_ignore_ascii_case("full");
+    if programs_untouched {
+        println!(
+            "✓ attached {total} analysis run(s) as variant `{variant}`{dry}\n               the counters below are for the program projection, which `--variant` \
+             leaves alone"
+        );
+    }
     println!(
         "✓ imported {created} created, {updated} updated, {skipped} skipped of {total}{dry}",
         created = tally.created,

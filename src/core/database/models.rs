@@ -447,9 +447,11 @@ pub struct StoredAnalysisRun {
     pub credits_mean: Option<f32>,
     /// Crate version that produced these numbers
     pub analyzer_version: Option<String>,
-    /// Seed the plan enumeration used; required to reproduce the same plans, which is
-    /// what makes a metric backfill safe and cross-version comparison meaningful.
-    pub random_seed: Option<i64>,
+    /// Seed the plan enumeration used, as digits.
+    ///
+    /// Text because the seed is a `u64` and commonly exceeds `i64::MAX`; as a `BIGINT`
+    /// those values silently became `NULL`. It is an identifier, not a measurement.
+    pub random_seed: Option<String>,
     /// Advisory duplicate check — **not** the identity. `run_key` is a random surrogate,
     /// so a field omitted from this fingerprint costs a redundant row rather than a
     /// destroyed one.

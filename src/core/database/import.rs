@@ -278,7 +278,20 @@ fn program_key(
         .unwrap_or_default();
     let dtype = &degree.degree_type;
     if let Some(u) = resolved_unitid {
-        format!("prog:{u}|{cip}|{cat}|{dtype}")
+        // The degree id (or its name) is part of the key, not decoration. Without it,
+        // `unitid|cip|catalog_year|degree_type` collides for any two programs an
+        // institution offers under one CIP in one year — three of Illinois State's AI
+        // certificates shared a key, and 47 of 1,088 corpus degrees were lost to the
+        // last writer. Worse than losing the row: each still got its own analysis run,
+        // so runs ended up pointing at a `programs.document` describing a different
+        // degree. Note the fingerprint tier below already hashed the name, which is a
+        // fair hint this omission was an oversight rather than a decision.
+        let discriminator = opts
+            .degree_id
+            .clone()
+            .or_else(|| degree.id.clone())
+            .unwrap_or_else(|| degree.name.clone());
+        format!("prog:{u}|{cip}|{cat}|{dtype}|{discriminator}")
     } else if let Some(id) = opts.degree_id.clone().or_else(|| degree.id.clone()) {
         format!("prog:{id}|{cat}")
     } else {
@@ -712,7 +725,7 @@ struct RunParams {
     sampling_strategy: Option<String>,
     analyzer_version: Option<String>,
     max_plans: Option<i32>,
-    random_seed: Option<i64>,
+    random_seed: Option<String>,
     included_courses: Option<Vec<String>>,
     /// Derived: `ignore_duplicates` off means every combination was kept.
     full_run: Option<bool>,
@@ -729,7 +742,12 @@ impl RunParams {
             sampling_strategy: text("sampling_strategy"),
             analyzer_version: text("analyzer_version"),
             max_plans: p.get("max_plans").and_then(Value::as_i64).map(i64_to_i32),
-            random_seed: p.get("random_seed").and_then(Value::as_i64),
+            // `as_u64` then stringify: the seed spans the whole u64 range and `as_i64`
+            // returns None above i64::MAX, which is how it arrived NULL.
+            random_seed: p
+                .get("random_seed")
+                .and_then(Value::as_u64)
+                .map(|s| s.to_string()),
             included_courses: p
                 .get("included_courses")
                 .and_then(Value::as_array)
@@ -804,10 +822,7 @@ fn build_analysis_run(args: BuildRunArgs) -> Result<StoredAnalysisRun, DatabaseE
             .clone()
             .unwrap_or_default()
             .join(","),
-        params
-            .random_seed
-            .map(|v| v.to_string())
-            .unwrap_or_default(),
+        params.random_seed.clone().unwrap_or_default(),
     ));
 
     let (complexity_mean, delay_mean, credits_mean) =
@@ -1213,7 +1228,9 @@ async fn write_import_plan(
             .upsert_batch(
                 tables::COURSES,
                 plan.courses,
-                &["institution_ref", "course_code"],
+                // Must match the table's UNIQUE key exactly, catalog year included, or
+                // PostgREST answers 42P10 — there is no constraint to conflict on.
+                &["institution_ref", "catalog_year", "course_code"],
             )
             .await?;
         client
@@ -1355,7 +1372,36 @@ mod tests {
         let report = sample_report();
         let (plan, _) = build_import_plan(&report, &opts(), Some(167_358), 1).unwrap();
         let key = &plan.program.as_ref().unwrap().program_key;
-        assert_eq!(key, "prog:167358|11.0701|2024-2025|BS");
+        assert_eq!(key, "prog:167358|11.0701|2024-2025|BS|Computer Science");
+    }
+
+    #[test]
+    fn two_programs_sharing_cip_year_and_type_get_different_keys() {
+        // The collision that lost 47 of 1,088 corpus degrees: one institution offering
+        // several programs under one CIP in one catalog year. Without a discriminator
+        // they share a key, `programs.document` keeps only the last, and the earlier
+        // runs end up describing a degree that is no longer stored under that key.
+        let named = |name: &str| {
+            sample_report().replace(
+                r#""name": "Computer Science""#,
+                &format!(r#""name": "{name}""#),
+            )
+        };
+        let a = named("Undergraduate Certificate in AI for Business");
+        let b = named("Undergraduate Certificate in AI for Construction");
+        let key = |text: &str| {
+            build_import_plan(text, &opts(), Some(136_172), 1)
+                .unwrap()
+                .0
+                .program
+                .unwrap()
+                .program_key
+        };
+        assert_ne!(
+            key(&a),
+            key(&b),
+            "two different programs must not share a program_key"
+        );
     }
 
     #[test]
