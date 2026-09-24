@@ -58,9 +58,10 @@ CREATE TABLE IF NOT EXISTS programs (
     id                          BIGSERIAL PRIMARY KEY,
     program_key                 TEXT UNIQUE NOT NULL,
 
-    -- Ownership. Defaults to the signed-in user; the RLS policies below let only the
-    -- owner write. `NULL` stays writable by anyone so rows created before this column
-    -- existed remain editable -- see the policies for why that disjunct is load-bearing.
+    -- Attribution only: who imported this row. Writes are NOT restricted by it -- the
+    -- policies below stay open to any authenticated member, so `db import --replace`
+    -- works regardless of who created the row. The column is here so damage is
+    -- traceable, and so ownership can be turned on later without a second migration.
     created_by                  UUID DEFAULT auth.uid(),
 
     -- identity / provenance
@@ -147,7 +148,7 @@ CREATE TABLE IF NOT EXISTS courses (
 CREATE TABLE IF NOT EXISTS program_courses (
     id                    BIGSERIAL PRIMARY KEY,
     program_key           TEXT NOT NULL,
-    -- Ownership; see `programs.created_by`.
+    -- Attribution; see `programs.created_by`.
     created_by            UUID DEFAULT auth.uid(),
     institution_ref       TEXT NOT NULL,
     catalog_year          TEXT NOT NULL DEFAULT '',  -- joins courses; see the note there
@@ -178,7 +179,7 @@ CREATE TABLE IF NOT EXISTS program_courses (
 CREATE TABLE IF NOT EXISTS program_requirements (
     id                 BIGSERIAL PRIMARY KEY,
     program_key        TEXT NOT NULL,
-    -- Ownership; see `programs.created_by`.
+    -- Attribution; see `programs.created_by`.
     created_by         UUID DEFAULT auth.uid(),
     req_path           TEXT NOT NULL,
     parent_path        TEXT,               -- NULL for top-level; else parent req_path
@@ -389,9 +390,7 @@ DROP POLICY IF EXISTS "auth read programs"  ON programs;
 CREATE POLICY "auth read programs"  ON programs FOR SELECT USING (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "auth write programs" ON programs;
 DROP POLICY IF EXISTS "owner write programs" ON programs;
-CREATE POLICY "owner write programs" ON programs FOR ALL
-    USING (created_by = auth.uid() OR created_by IS NULL)
-    WITH CHECK (created_by = auth.uid() OR created_by IS NULL);
+CREATE POLICY "auth write programs" ON programs FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
 
 -- courses
 DROP POLICY IF EXISTS "auth read courses"  ON courses;
@@ -404,18 +403,14 @@ DROP POLICY IF EXISTS "auth read program_courses"  ON program_courses;
 CREATE POLICY "auth read program_courses"  ON program_courses FOR SELECT USING (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "auth write program_courses" ON program_courses;
 DROP POLICY IF EXISTS "owner write program_courses" ON program_courses;
-CREATE POLICY "owner write program_courses" ON program_courses FOR ALL
-    USING (created_by = auth.uid() OR created_by IS NULL)
-    WITH CHECK (created_by = auth.uid() OR created_by IS NULL);
+CREATE POLICY "auth write program_courses" ON program_courses FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
 
 -- program_requirements
 DROP POLICY IF EXISTS "auth read program_requirements"  ON program_requirements;
 CREATE POLICY "auth read program_requirements"  ON program_requirements FOR SELECT USING (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "auth write program_requirements" ON program_requirements;
 DROP POLICY IF EXISTS "owner write program_requirements" ON program_requirements;
-CREATE POLICY "owner write program_requirements" ON program_requirements FOR ALL
-    USING (created_by = auth.uid() OR created_by IS NULL)
-    WITH CHECK (created_by = auth.uid() OR created_by IS NULL);
+CREATE POLICY "auth write program_requirements" ON program_requirements FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
 
 -- degree_types (read-only for clients)
 DROP POLICY IF EXISTS "auth read degree_types" ON degree_types;

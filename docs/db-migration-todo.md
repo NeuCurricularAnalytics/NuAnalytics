@@ -531,6 +531,13 @@ Found by running `db ipeds-import` for 2022/2023/2024/2025.
       Two people importing their own version of the same program means the second silently
       overwrites the first's `document` JSONB. `analysis_runs` is unaffected — `run_key` is
       a content hash, so the overwrite is a no-op.
+      **Superseded 2026-09-24 — enforcement is not wanted at this stage.** The fix below
+      was implemented and then reverted: an ownership `USING` clause stops
+      `db import --replace` overwriting a row another member created, and that has to
+      keep working. `created_by` remains on the four tables as **attribution only**, with
+      no policy reading it. Audit Step 6 records the decision. The original write-up
+      follows; it is still the right shape if enforcement is ever turned on.
+
       **Fix (edit the schema, plus one small Rust change):** add
       `created_by uuid DEFAULT auth.uid()` to `programs`, `degrees`, `program_courses`,
       `program_requirements`, and replace their `FOR ALL` policies with

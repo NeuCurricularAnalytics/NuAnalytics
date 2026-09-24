@@ -509,17 +509,41 @@ CIP codes, both major numbers, ~313,000 rows per year — and say why the magnit
 
 `CHANGELOG.md` turned out to contain no such claim.
 
-### Step 6 — Decide the access model for shared reference data *(SQL + decision)*
-F3 and §5 of `db-migration-todo.md` are the same conversation. Options, not mutually
-exclusive:
-1. `created_by` + ownership policies on the four program tables — already specified in §5.
-2. Make the IPEDS tables read-only to ordinary members, with imports run by a separate
-   role. Fits how they are actually used: one person imports, everyone reads.
+### Step 6 — Access model *(decided 2026-09-24 — option 3)*
+F3 and §5 of `db-migration-todo.md` are the same conversation. The options were:
+1. `created_by` + ownership policies on the four program tables — as specified in §5.
+2. Make the IPEDS tables read-only to ordinary members, imports run by a separate role.
 3. Leave writes open but add an audit column so damage is attributable.
 
-Recommend 1 + 2. Needs a decision before implementation.
+**Settled: option 3. Writes stay open to any authenticated member.**
 
-### Step 7 — Decide the fate of the stored-programs tables *(decision)*
+Option 1 was implemented first and then reverted. It works, and it breaks the thing that
+matters more right now: `db import --replace` has to succeed regardless of who created
+the row, and an ownership `USING` clause is precisely what stops it. Enforcement is not
+wanted at this stage.
+
+What is left in place: `created_by UUID DEFAULT auth.uid()` on `programs`, `degrees`,
+`program_courses`, `program_requirements` — **attribution only**, no policy reads it. It
+costs nothing, makes an import traceable, and means turning ownership on later is a
+policy change rather than a second column migration. Drop the column too if you would
+rather not carry an unused one.
+
+Option 2 was dropped outright: letting any member import IPEDS is fine.
+
+Worth knowing if enforcement is ever revisited: the existing rows all have
+`created_by IS NULL`, and a re-import will not claim them — the upsert never sends the
+column. They would need a one-off `UPDATE ... SET created_by = '<uid>' WHERE created_by
+IS NULL` first, or the owner check would have nothing to check.
+
+### Step 7 — Re-import the corpus *(decided: load; the tables are already populated)*
+
+**The choice this step posed no longer exists.** The corpus was loaded on 2026-09-23
+(1,088 programs, 2,176 analysis runs — see the F5 banner), so "drop the tables" would now
+mean discarding real data. What remains is a re-import with `--replace`, to pick up the
+recovered fields and the corrected OR-group tie-break.
+
+The original framing follows, for the reasoning it records.
+
 Either load the corpus with `db import` and make the tables real, or drop them and stop
 carrying six tables, their indexes and 15 policies that serve nothing. Loading is the
 obvious choice if the research questions need cross-degree SQL; dropping is right if the
@@ -587,4 +611,5 @@ and say so in that repo's `README.md`.
    nulled or an institution attribute was stale. Acceptable, or does it want a version
    bump and a note?
 2. **Step 6** — which access model.
-3. **Step 7** — load the corpus, or drop the tables.
+3. ~~**Step 7** — load the corpus, or drop the tables.~~ **Settled**: the corpus is
+   loaded; what remains is the re-import.

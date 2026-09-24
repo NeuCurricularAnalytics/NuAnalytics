@@ -21,19 +21,6 @@ pub enum DatabaseError {
     ParseError(String),
     /// Ingest operation failed
     IngestError(String),
-    /// A write hit a natural-key row that row-level security hides from this user.
-    ///
-    /// Carries the table and the backend's own message. This is *not* the `42501` an RLS
-    /// refusal would suggest: the `merge-duplicates` upsert cannot see the other user's
-    /// row to UPDATE it, so it falls through to an INSERT and trips the natural-key
-    /// unique constraint instead. "duplicate key" alone gives no hint that ownership is
-    /// involved, which is why this variant exists.
-    RowOwnedByAnother {
-        /// Table the conflicting row lives in.
-        table: String,
-        /// The backend's verbatim message.
-        detail: String,
-    },
 }
 
 impl fmt::Display for DatabaseError {
@@ -52,11 +39,6 @@ impl fmt::Display for DatabaseError {
             Self::QueryError(msg) => write!(f, "Database query error: {msg}"),
             Self::ParseError(msg) => write!(f, "Data parse error: {msg}"),
             Self::IngestError(msg) => write!(f, "Data ingest error: {msg}"),
-            Self::RowOwnedByAnother { table, detail } => write!(
-                f,
-                "A row in `{table}` with this natural key already exists and is not \
-                 writable by you — most likely created by another user ({detail})"
-            ),
         }
     }
 }
@@ -110,15 +92,6 @@ impl DatabaseError {
             Self::IngestError(_) => {
                 vec!["the write failed; the message above is the backend's own.".to_string()]
             }
-            // No "run this to fix it" step, because there is none that is safe to
-            // suggest: the row belongs to someone else and overwriting it is exactly
-            // what the ownership policy exists to stop.
-            Self::RowOwnedByAnother { table, .. } => vec![
-                format!("the `{table}` row is owned by another user on {backend}."),
-                "Reads are unaffected — you can still SELECT it. To store your own version, \
-                 import under a different program key, or ask the owner to re-import."
-                    .to_string(),
-            ],
         }
     }
 
@@ -133,7 +106,6 @@ impl DatabaseError {
             Self::QueryError(_) => "query_failed",
             Self::ParseError(_) => "parse_failed",
             Self::IngestError(_) => "ingest_failed",
-            Self::RowOwnedByAnother { .. } => "owned_by_another_user",
         }
     }
 }
@@ -202,8 +174,7 @@ mod tests {
             | DatabaseError::ConnectionError(_)
             | DatabaseError::QueryError(_)
             | DatabaseError::ParseError(_)
-            | DatabaseError::IngestError(_)
-            | DatabaseError::RowOwnedByAnother { .. } => {}
+            | DatabaseError::IngestError(_) => {}
         }
     }
 
@@ -212,7 +183,7 @@ mod tests {
         // `next_steps` is the single source of remediation for both the CLI and the MCP
         // server, so every variant's wording is user-facing. Four were previously
         // asserted nowhere.
-        let cases: [(DatabaseError, &str, &str); 8] = [
+        let cases: [(DatabaseError, &str, &str); 7] = [
             (
                 DatabaseError::NotConfigured,
                 "not_configured",
@@ -248,14 +219,6 @@ mod tests {
                 "ingest_failed",
                 "the write failed",
             ),
-            (
-                DatabaseError::RowOwnedByAnother {
-                    table: "programs".to_string(),
-                    detail: "duplicate key".to_string(),
-                },
-                "owned_by_another_user",
-                "owned by another user",
-            ),
         ];
         for (error, kind, needle) in cases {
             assert_eq!(error.kind(), kind, "kind for {error:?}");
@@ -265,36 +228,12 @@ mod tests {
     }
 
     #[test]
-    fn the_ownership_error_names_the_table_and_suggests_nothing_destructive() {
-        // There is no safe remediation to offer: the row belongs to someone else and
-        // overwriting it is precisely what the ownership policy exists to prevent. A
-        // future edit that helpfully suggests `--force` would undo that.
-        let err = DatabaseError::RowOwnedByAnother {
-            table: "program_requirements".to_string(),
-            detail: "duplicate key value violates unique constraint".to_string(),
-        };
-        assert!(
-            err.to_string().contains("program_requirements"),
-            "must name the table: {err}"
-        );
-        let steps = err.next_steps("https://nu.example.com").join(" ");
-        assert!(
-            !steps.contains("--force") && !steps.contains("delete"),
-            "must not suggest overwriting another user's row: {steps}"
-        );
-    }
-
-    #[test]
     fn next_steps_names_the_backend_or_says_none_is_configured() {
         for error in [
             DatabaseError::NotAuthenticated("x".to_string()),
             DatabaseError::ConnectionError("x".to_string()),
             DatabaseError::QueryError("x".to_string()),
             DatabaseError::ParseError("x".to_string()),
-            DatabaseError::RowOwnedByAnother {
-                table: "programs".to_string(),
-                detail: "x".to_string(),
-            },
         ] {
             let named = error.next_steps("https://nu.example.com").join(" ");
             assert!(

@@ -152,12 +152,13 @@ pub struct Requirement {
     ///
     /// Carried through parse, report and import but **not** consumed by the analysis:
     /// credit totals are unchanged by it. Without it a block worth `external_credits`
-    /// simply reads as credits the program does not account for. 2,082 requirement
-    /// nodes across 508 of the 1,088 corpus degrees set it.
+    /// simply reads as credits the program does not account for. Roughly half the corpus
+    /// sets it on at least one requirement.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_requirement: Option<bool>,
 
-    /// Credits the externally-satisfied block is worth. Always an integer in the corpus.
+    /// Credits the externally-satisfied block is worth. Integral in every corpus degree
+    /// seen so far, hence `u32` rather than a float.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_credits: Option<u32>,
 

@@ -32,7 +32,7 @@ pub struct DegreeProgram {
     /// Caveats the corpus builder recorded about this degree — e.g. "`cip_code` 11.0701
     /// inferred from program name; not stated in the catalog". Provenance, not data:
     /// nothing reads them, but dropping them silently strips a quality caveat from
-    /// 1,087 of the 1,088 corpus degrees.
+    /// nearly every degree in the corpus.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conversion_warnings: Vec<String>,
 
