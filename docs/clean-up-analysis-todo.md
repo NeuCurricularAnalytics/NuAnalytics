@@ -1,6 +1,9 @@
 # Analysis-pipeline clean-up — plan
 
-Status: **step 1 done (2026-09-23); steps 2-7 not started.**
+Status: **step 1 done (2026-09-23); steps 2–7 not started.**
+
+Completed detail has been trimmed — `git log` has it. What is here is what is left,
+plus the evidence the remaining steps depend on.
 
 Written after a `/check-rs` pass over the whole crate raised "the analysis pipeline exists
 twice". Before planning a merge, the obvious objection was checked: *aren't these two
@@ -58,29 +61,15 @@ Same file, same cap, both reporting `plans_analyzed: 200`:
 A 19% difference in median complexity for the same degree. The MCP numbers are the ones
 served to AI agents.
 
-## 3. Root cause of the divergence
+## 3. Root cause of the divergence — *fixed, kept for the shape of the problem*
 
-`build_plan_dag` (MCP, `analyze.rs:1407`) adds an edge for **every** in-plan option of an
-OR-group:
+The MCP per-plan DAG added an edge for **every** in-plan option of an OR-group; the CLI
+selected exactly one. `A | B` became `A & B` whenever both landed in the plan, inflating
+complexity, delay and centrality — the direction and size of the gap in section 2.
 
-```rust
-for (_group, options) in or_groups {
-    for opt in options.iter().filter(|o| plan_set.contains(**o)) {
-        dag.add_prerequisite(key.clone(), opt);
-    }
-}
-```
-
-`build_dag_for_plan` (CLI, `degree.rs:3327`) selects **exactly one** option per group —
-preferring an `--include-courses` course, else the option most needed by other courses.
-
-The CLI is semantically right: an OR-group means one prerequisite was satisfied, so one
-edge belongs in that plan's DAG. The MCP version treats `A | B` as `A & B` whenever both
-land in the plan, adding spurious edges that inflate complexity, delay and centrality —
-consistent with the direction and size of the gap above.
-
-**This is a correctness bug in its own right and does not need the refactor.** Fix it
-first (step 1), independently, so the merge is not also a behaviour change.
+Both copies are gone (step 1). The pattern is the point: two functions answering the same
+question, neither wrong-looking on its own, disagreeing only in aggregate. Sections 4
+onwards are the remaining instances of that shape.
 
 ## 4. Divergence inventory
 
@@ -121,129 +110,21 @@ Each step ends with `/check-rs` and a green `cargo test` under `--no-default-fea
 `--features database`, and `--all-features`.
 
 ### Step 1 — Fix the OR-group DAG bug in the MCP path — **DONE 2026-09-23**
-Done as a shared function rather than a second fix: both copies were deleted and replaced
-with `src/core/degree/plan_dag.rs` (`build_plan_dag`, `equivalent_in_plan`), which the CLI
-and the MCP server now both call through to. Fixing the MCP copy in place would have left
-the pair free to drift again.
 
-The degree JSON was never at fault and did not change — an `or_group` tag on a
-prerequisite edge already says what it means; one reader mishandled it.
+Both copies were deleted and replaced with `src/core/degree/plan_dag.rs`, which the CLI
+and the MCP server both call. The degree JSON was never at fault and did not change.
 
-**Measured, MCP path, `max_plans=200`, seed 42** (median across plans):
+Two consequences the remaining steps need to know about:
 
-| degree | complexity | longest delay | avg chain |
-|---|---|---|---|
-| Bowdoin | 110 → **89** (−19.1%) | 7 → 5 | 2.71 → 2.43 |
-| Liberty | 365 → **301** (−17.5%) | 10 → 9 | 3.73 → 3.07 |
-| UH Mānoa | 301 → **300** | 6 → 6 | unchanged |
-| Adelphi | 130 → **130** | 4 → 4 | unchanged |
-
-A reduction of the same order as the CLI/MCP gap section 2 measured on CSU — but not the
-same measurement: section 2's 19% was CSU, CLI-vs-MCP; this is Bowdoin, before-vs-after on
-one path. CSU itself was not re-measured. Degrees whose OR-groups never have two options in
-the same plan are untouched, which is the expected shape for this defect.
-
-**The two paths now agree.** Bowdoin at the CLI's own seed (`10047534808470998596`),
-`max_plans=200`, 193 plans on both sides:
-
-| metric | CLI | MCP |
-|---|---|---|
-| complexity med / min / max | 87 / 57 / 112 | 87 / 57 / 112 |
-| longest delay med / min / max | 5 / 4 / 6 | 5 / 4 / 6 |
-| avg chain med / min / max | 2.4319 / 1.8889 / 2.9 | 2.4319 / 1.8889 / 2.9 |
-| total credits median | 32.3834 | **31.6166** |
-
-Every DAG-derived metric matches exactly. Credits still differ — see the `placeholder_credits` note added to
-section 4; it is not a DAG defect.
-
-- Tests: 24 in `plan_dag.rs`, covering one-edge-per-group, multiple groups, required
-  edges kept, the forced-course and most-depended-upon tiers, a group with no in-plan option, corequisites,
-  equivalence matching, and determinism across 50 builds. Six mutations (including
-  restoring the original bug) were applied one at a time; all six are killed.
-- Baselines re-recorded in `tests/rs/target_course_population.rs`: three of twenty cases
-  moved. The note there explains why one moved *later* despite constraints only being
-  removed.
-- **The stored corpus is NOT reproducible with this code — corrected 2026-09-23.** An
-  earlier version of this note said "stored data is unaffected" on the strength of one
-  degree. Re-running 14 degrees from `full_degree/v2/` at their recorded parameters
-  (`max_plans = 10000`, same derived seed) against current code: **10 identical, 4 moved.**
-
-  | degree | complexity | delay | avg chain |
-  |---|---|---|---|
-  | Temple BA CS | 166 → **146** (−12.0%) | 7 → 6 | 1.925 → 1.700 |
-  | North Dakota BS CS | 475 → **417** (−12.2%) | — | 3.745 → 3.234 |
-  | Cal State Long Beach | 221 → 222 | — | float noise only |
-  | Oklahoma State | 249 → 250 | — | float noise only |
-
-  **Cause: the OR-group tie-break changed on the CLI path too**, which the merge did not
-  set out to do. `HEAD~1`'s `build_dag_for_plan` used `.find()` (declaration order) for the
-  forced tier and `max_by_key(count)` with *no* name tiebreak for the reference tier —
-  and `max_by_key` returns the **last** maximum. `plan_dag` uses `.min()` and
-  `min_by_key((Reverse(count), name))`. Same number of edges, different choice on ties,
-  which moves delay, blocking and term placement.
-
-  Both rules are deterministic; the new one is the better-defined of the two (the old one
-  had no tie-break at all, so the answer depended on declaration order).
-
-  **Full-corpus measurement (2026-09-23, all 1,088 degrees, both variants, re-run at the
-  recorded parameters).** The 14-degree sample above over-stated the severity:
-
-  | | full | trimmed |
-  |---|---|---|
-  | identical | 781 (71.8%) | 823 (75.6%) |
-  | moved | 307 (28.2%) | 265 (24.4%) |
-  | median complexity change *among movers* | **−0.52%** | −0.47% |
-  | degrees moving ≥5% | **30 (2.8%)** | 27 (2.5%) |
-  | range | −29.1% … +80.0% | −20.0% … +15.9% |
-
-  So: ~72% unchanged, and most of the movers move by well under a percent. The tail is
-  small and explicable — the +80% is Wisconsin-Madison's *Applications of AI in
-  Engineering* certificate going from complexity 5 to 9, a four-point change on a
-  five-point program where the percentage is meaningless. The genuine outlier is Dakota
-  State AI/ML at −29.1% (141 → 100, longest delay 8 → 5).
-
-  **Decision taken: regenerate and load the new numbers.** The rule is better defined and
-  the corpus is cheap to rebuild (~30 min per variant at `-j 4`).
-
-**Checked against the shipped sample reports** (`../WebScrappedCombinedDataMetrics/samples/`,
-three MCP-generated HTML analyses from 2026-06-09, matched 100% to their degree files by
-course key). Each embeds its full DAG, so it can be audited directly:
-
-- The shipped graphs carry **no OR-group over-constraint** — 7–19 OR-group-bearing targets
-  per graph, every one already a single edge. The defect never reached these artifacts.
-- Regenerated with current code: 15 graphs (5 per degree), all structurally complete
-  (nodes, edges, terms, critical path), **0 OR-group violations**.
-- Shipped vs regenerated differ only in *which plan was selected* — a different valid
-  option, and different electives. Both are internally consistent, with the same rate of
-  equivalence-substituted edges (NEU 7 vs 6, UHM 2 vs 2).
-
-Two defects the sample check turned up, both fixed here, neither caused by this step:
-
-- **The MCP path was dropping `include_courses` before the DAG build**, with a comment
-  asserting there was no equivalent on that path. There is: the request field flows to
-  `gen_config.include_courses`, which was in scope at the call site. So the forced-course
-  tier never fired on MCP while it did on the CLI — the two paths still disagreed whenever
-  `--include` was used, which is exactly what this step set out to end. The "both paths
-  agree" measurement above was taken without `include_courses` and would not have caught
-  it. Both call sites now pass the same set, hoisted out of the per-plan loop.
-- **The rendered graphs were nondeterministic.** `select_best_prereq_path`
-  (`curriculum_graph.rs`) resolved an equivalence with `.find()` over a `HashSet`, and
-  `build_edges_from_courses` iterated the plan as a `HashSet`. Measured: the same degree
-  produced byte-different `graph_spec` output across 7 builds for all three sample
-  degrees. Now byte-identical across 7 builds. Guarded three ways: restoring `.find()`,
-  or removing either sorted walk, each fails a named test.
-
-Two things the review surfaced and this step deliberately did *not* change:
-
-- **Tier 2 of the OR-group choice counts references of every kind**, not just required
-  ones — an option nothing actually requires can outrank one that is genuinely required.
-  Inherited from the CLI copy, so tightening it would move edge selection and re-baseline
-  the `target_course_population` cases a second time. The doc now says "reference" rather
-  than "depend on", which is what the code does; change the code in its own commit.
-- **`find_redundant_prerequisites` (`degree.rs`) holds two more copies of the same
-  partition loop**, with a third variation again — it treats any non-`Required` edge
-  carrying an `or_group` as an option, corequisites included. Both should use
-  `CourseNode::optional_prerequisite_groups`, which is what `plan_dag` now calls. Step 4.
+- **The stored corpus is a generation behind.** The CLI's OR-group tie-break changed as a
+  side effect (`.find()` / `max_by_key` with no tiebreak → `.min()` /
+  `min_by_key((Reverse(count), name))` — same edge count, different choice on ties).
+  Measured over all 1,088 degrees: **781 identical (71.8%), 307 moved**, median change
+  among movers −0.52%, and **30 degrees (2.8%) moved ≥5%**; range −29.1% (Dakota State,
+  delay 8→5) to +80% (a five-point certificate going to nine). Trimmed variant is the
+  same shape. Re-import is tracked in `database-audit-todo.md`.
+- **`build_plan_dag` is the shared per-plan DAG.** Steps 3 and 4 should not move or
+  duplicate it; it is already where it belongs.
 
 ### Step 2 — Pin current behaviour before moving anything
 Add a characterisation test that runs both paths on the same degree and asserts they agree
@@ -379,12 +260,10 @@ to assert `term_distribution` too, and widen the
 
 ## 7. Decisions needed before starting
 
-1. **Step 1 changes published metrics — still open, and bigger than first thought.**
-   Aggregate edge *counts* on the CLI path are unchanged (it already selected one option
-   per OR-group), but the *tie-break* changed, and that moved 4 of 14 sampled v2 degrees,
-   two by ~12%. Two CLI-visible outputs moved: OR-group tie-breaks
-   (declaration-order → lexicographic) and rendered `graph_spec` edge order. See the
-   measurement under step 1.
+1. ~~**Step 1 changes published metrics.**~~ **Settled 2026-09-24: regenerate.** The
+   full-corpus numbers are under step 1 — 72% of degrees unchanged, 2.8% moving ≥5%. Two
+   CLI-visible outputs moved: the OR-group tie-break and rendered `graph_spec` edge order.
+   The regenerated corpus is staged; re-import is item 1 of `database-audit-todo.md`.
 2. **Which side wins where the table above says "confirm".** The `build_dag_from_graph`
    corequisite difference in particular: the CLI omits corequisites from the degree-level
    DAG and the MCP path includes them. One of those is wrong and it is not obvious which.

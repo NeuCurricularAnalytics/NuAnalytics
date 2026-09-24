@@ -90,13 +90,18 @@ it.
 
 ## Current work
 
-`docs/db-migration-todo.md` is the live work list for making the backend a true deployment
-target. Items marked `[verified]` were observed in practice, not theorised. Sections 1
-(importer defects), 2 (backend portability), 3 (diagnosability) and 4 (reproducible
-self-hosting) are **done**. All that is left is §5 data integrity, whose fix is SQL —
-`created_by` plus matching RLS policies — with no Rust. Read **"Where a fresh installer
-gets stuck"** near the top for the measured walkthrough of what setting up a backend
-actually takes.
+**The self-hosting migration is finished** and `docs/db-migration-todo.md` is retired
+(2026-09-24). The durable findings live where they are used: the setup walkthrough and the
+two traps a self-hoster hits — seed tables are read-only through the API, and you need the
+`supabase/postgres` image, not a stock one — are in `docs/database/setup.md`.
+
+`docs/database-audit-todo.md` is the live backend work list, trimmed to what is left:
+re-import the corpus (it predates both the recovered degree fields and the OR-group
+tie-break fix), tidy the corpus repo, and why `db remetric` is deliberately not built.
+It also records the settled decisions that are easy to re-litigate — notably that **writes
+stay open to any authenticated member**: ownership policies were implemented and reverted
+because they stop `db import --replace` overwriting another member's row. `created_by`
+remains on four tables as attribution only, read by no policy.
 
 **Every deployment is a fresh install** (true as of 2026-09-18 — the author's is the only
 one). So there is no schema migration path to preserve, and
@@ -152,9 +157,15 @@ does not have.
 rather than at a call site, and keep to the rule the TODO sets: name the backend, name
 what failed, name the next step, and assert no cause the code has not established.
 
-`docs/clean-up-analysis-todo.md` is a separate, not-yet-started plan for the degree
-analysis pipeline, which exists twice (CLI and MCP) and **disagrees with itself** —
-measured 19% apart on median complexity for the same degree. It opens with evidence that
-the two are the same level of analysis, and that `planner` is not, so `planner` stays out
-of it. Step 1 is a standalone correctness fix needing no refactor: the MCP per-plan DAG
-treats an OR-group as an AND.
+`docs/clean-up-analysis-todo.md` plans the merge of the degree analysis pipeline, which
+still exists twice (CLI and MCP). It opens with evidence that the two are the same level
+of analysis, and that `planner` is not, so `planner` stays out of it. **Step 1 is done**:
+the per-plan DAG now exists once, in `src/core/degree/plan_dag.rs`, called by both — an
+OR-group contributes at most one edge. Steps 2–7 are not started.
+
+Two things in that document are load-bearing before touching metrics. The tie-break change
+in step 1 moved **307 of 1,088 degrees** (2.8% by ≥5%), so the stored corpus is a
+generation behind. And section 6 records, with measurements, why the OR-of-ANDs gap in the
+flat edge model should *not* be "fixed" casually: the real defect is 0.09% of
+course-instances, while the option-choice heuristic it would drag along is 15× more
+frequent and moves metrics far more.

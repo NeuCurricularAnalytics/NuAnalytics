@@ -519,6 +519,23 @@ Config files:
 
 ---
 
+## Two things that will bite a self-hoster
+
+Both observed in practice while standing this stack up, not inferred from reading code.
+
+**The seed tables are read-only through the API — seed them with SQL.** Every RLS policy
+in the schema is `auth.role() = 'authenticated'`, and only 12 of the 31 are write
+(`FOR ALL`) policies. `cip_codes`, the seven lookup tables and `degree_types` have a read
+policy and no write policy, so an authenticated `POST` to `cip_codes` returns `42501`.
+That is deliberate: they are reference data. `db bootstrap` applies the seed files as SQL
+for exactly this reason.
+
+**You need the `supabase/postgres` image, not a plain `postgres:N`.** There is no `GRANT`
+statement anywhere in the schema files. The tables are reachable at all only because the
+Supabase image sets `ALTER DEFAULT PRIVILEGES` for `anon` / `authenticated` /
+`service_role`. On a stock Postgres image every table will exist and every request will
+be denied.
+
 ## Troubleshooting
 
 | Problem | Solution |
