@@ -68,10 +68,10 @@ listed a `json_corrected/` that no longer exists and omitted `v2/`, `metrics/`, 
   evidence and `full_degree/README.md` points at `_audit/rebuild_agent_prompt.md` as the
   rebuild discipline. Deleting it would leave both citing missing files.
 
-A "Generations" section now records the three analysis generations, because the third —
-the one the database holds — was produced outside the corpus repo and **`v2/` there no
-longer matches the database.** If that repo is meant to be the system of record, the
-2026-09-23 run should be copied in as `v3/`.
+A "Generations" section now records the two analysis generations that exist. `v2/` was
+overwritten with the imported run on 2026-09-24, so the corpus repo and the database are
+the same generation — verified on both sides (2,082 external nodes / 508 degrees, 520
+course grade minimums).
 
 Still open: confirm the partial per-course metrics are the expected consequence of plan
 sampling rather than a gap — cheapest via one degree where a named uncovered course is
