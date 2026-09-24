@@ -123,7 +123,8 @@ pub fn serialize_degree_json(
 }
 
 /// Serialize a unified-degree `Value` to a JSON string with `degree` first
-/// (then `requirements`, `courses`, and any `conversion_warnings`).
+/// (then `requirements`, `courses`, and any `conversion_warnings` /
+/// `corrections_applied`).
 ///
 /// The file then opens to the program's identity. Nested objects keep
 /// `serde_json`'s deterministic sorted key order; this only fixes the top-level
@@ -139,6 +140,8 @@ pub fn unified_value_to_string(value: &Value, pretty: bool) -> Result<String, se
         courses: &'a Value,
         #[serde(skip_serializing_if = "Option::is_none")]
         conversion_warnings: Option<&'a Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        corrections_applied: Option<&'a Value>,
     }
     let null = Value::Null;
     let ordered = Ordered {
@@ -146,6 +149,7 @@ pub fn unified_value_to_string(value: &Value, pretty: bool) -> Result<String, se
         requirements: value.get("requirements").unwrap_or(&null),
         courses: value.get("courses").unwrap_or(&null),
         conversion_warnings: value.get("conversion_warnings"),
+        corrections_applied: value.get("corrections_applied"),
     };
     if pretty {
         serde_json::to_string_pretty(&ordered)
@@ -207,6 +211,25 @@ pub fn save_degree_to_json<P: AsRef<Path>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_unified_value_to_string_keeps_corrections_applied() {
+        // The ordering test below pins `conversion_warnings`; nothing pinned this one.
+        // Every file the CLI writes goes through this writer, and `document_hash` is
+        // taken from its output, so a dropped key also silently changes the hash.
+        let value = serde_json::json!({
+            "degree": {"name": "Test"},
+            "requirements": {},
+            "courses": {},
+            "corrections_applied": ["restored a truncated selection pool"],
+        });
+        let out = unified_value_to_string(&value, false).unwrap();
+        let back: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            back["corrections_applied"][0],
+            "restored a truncated selection pool"
+        );
+    }
 
     #[test]
     fn test_unified_value_to_string_puts_degree_first() {

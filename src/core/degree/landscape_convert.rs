@@ -281,6 +281,10 @@ pub fn convert_landscape(src: &LandscapeProgram) -> ConversionResult {
             degree,
             requirements,
             courses,
+            // Conversion warnings travel in `ConversionResult::warnings` and are written
+            // into the output document by the caller, not carried on the program here.
+            conversion_warnings: Vec::new(),
+            corrections_applied: Vec::new(),
         },
         warnings,
     }
@@ -371,6 +375,9 @@ fn assemble_requirements(
                 credit_range: None,
                 constraints: None,
                 options: None,
+                external_requirement: None,
+                external_credits: None,
+                external_note: None,
                 tags: Some(meta.req_tags.iter().map(|s| (*s).to_string()).collect()),
             },
         );
@@ -402,6 +409,9 @@ fn assemble_requirements(
                 credit_range: None,
                 constraints: None,
                 options: None,
+                external_requirement: None,
+                external_credits: None,
+                external_note: None,
                 tags: Some(tags),
             },
         );

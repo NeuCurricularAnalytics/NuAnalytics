@@ -28,6 +28,17 @@ pub struct DegreeProgram {
 
     /// Courses mapping (course key like "ICS111" -> Course)
     pub courses: HashMap<String, Course>,
+
+    /// Caveats the corpus builder recorded about this degree — e.g. "`cip_code` 11.0701
+    /// inferred from program name; not stated in the catalog". Provenance, not data:
+    /// nothing reads them, but dropping them silently strips a quality caveat from
+    /// 1,087 of the 1,088 corpus degrees.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conversion_warnings: Vec<String>,
+
+    /// Hand corrections applied to this degree, recorded by the corpus builder.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub corrections_applied: Vec<String>,
 }
 
 impl DegreeProgram {
@@ -143,6 +154,8 @@ mod tests {
             ),
             requirements: HashMap::new(),
             courses,
+            conversion_warnings: Vec::new(),
+            corrections_applied: Vec::new(),
         }
     }
 

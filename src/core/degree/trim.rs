@@ -941,6 +941,8 @@ mod tests {
             degree: base_degree(major_subjects),
             requirements: HashMap::new(),
             courses: HashMap::new(),
+            conversion_warnings: Vec::new(),
+            corrections_applied: Vec::new(),
         };
         for (key, c) in courses {
             program.courses.insert(key.to_string(), c);
@@ -980,6 +982,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         }
     }
 
@@ -1115,6 +1120,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             ("MATH100", course("MATH", "100", 3.0, None)),
@@ -1146,6 +1154,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             ("BIO100", course("BIO", "100", 4.0, None)),
@@ -1172,6 +1183,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             ("CS530", course("CS", "530", 4.0, None)),
@@ -1200,6 +1214,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             ("BIO100", course("BIO", "100", 4.0, None)),
@@ -1230,6 +1247,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             ("MATH215", course("MATH", "215", 4.0, None)),
@@ -1279,6 +1299,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             ("MATH215", course("MATH", "215", 4.0, None)),
@@ -1330,6 +1353,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             ("CS300", course("CS", "300", 4.0, None)),
@@ -1423,6 +1449,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             ("MATH215", course("MATH", "215", 4.0, None)),
@@ -1477,6 +1506,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             ("CS100", course("CS", "100", 3.0, None)),
@@ -1529,6 +1561,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             // Pattern pool — only referenced via `pattern:`, never by name.
@@ -1579,6 +1614,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             ("ICS300", course("ICS", "300", 3.0, None)),
@@ -1624,6 +1662,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let outer = Requirement {
             name: None,
@@ -1641,6 +1682,9 @@ mod tests {
                 name: "Option A".to_string(),
                 requirements: vec![nested],
             }]),
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![("MATH300", course("MATH", "300", 3.0, None))];
         let program = program_with(Some(vec!["CS"]), courses, vec![("outer", outer)]);
@@ -1669,6 +1713,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             ("CS100", course("CS", "100", 3.0, None)),
@@ -1750,6 +1797,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         let courses = vec![
             ("MATH100", course("MATH", "100", 4.0, None)),

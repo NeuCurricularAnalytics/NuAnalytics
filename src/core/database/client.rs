@@ -55,6 +55,34 @@ const HTTP_TIMEOUT: Duration = Duration::from_mins(1);
 /// unreachable rather than waiting out the full request budget.
 const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Tables whose write policy is ownership-scoped (`created_by = auth.uid()`).
+///
+/// A `23505` naming one of these is the ownership case; a `23505` on any other table is
+/// an ordinary duplicate and must not be reported as an ownership problem. Taken from
+/// `tables::` rather than spelled out, so a rename cannot leave this list matching a
+/// dead name and silently stop diagnosing.
+const OWNED_TABLES: &[&str] = &[
+    tables::PROGRAMS,
+    tables::DEGREES,
+    tables::PROGRAM_COURSES,
+    tables::PROGRAM_REQUIREMENTS,
+];
+
+/// The owned table a `23505` body refers to, if any.
+///
+/// `PostgREST` reports the constraint by name — `degrees_degree_id_key`,
+/// `program_requirements_program_key_req_path_key` — so the table is recoverable from
+/// the message. No two names in `OWNED_TABLES` are substrings of one another
+/// (`program_courses` does not contain `programs`), so a well-formed conflict body names
+/// exactly one; a body that somehow named two would resolve to whichever is declared
+/// first, which is why the walk is over a fixed list rather than a set.
+fn owned_table_in_conflict(body: &str) -> Option<&'static str> {
+    if !body.contains("23505") {
+        return None;
+    }
+    OWNED_TABLES.iter().copied().find(|t| body.contains(t))
+}
+
 /// Whether a `PostgREST` error body reports an undefined relation.
 ///
 /// Keys off SQLSTATE `42P01` first and the message text only as a fallback, because the
@@ -574,6 +602,12 @@ impl DbClient {
                 "{} rejected the session after a forced refresh (401): {body}",
                 self.endpoint
             ));
+        }
+        if let Some(table) = owned_table_in_conflict(&body) {
+            return DatabaseError::RowOwnedByAnother {
+                table: table.to_string(),
+                detail: body,
+            };
         }
         DatabaseError::QueryError(format!("PostgREST error ({status}): {body}"))
     }
@@ -1680,5 +1714,98 @@ mod tests {
             let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
         });
         (url, seen)
+    }
+    #[test]
+    fn a_duplicate_key_on_an_owned_table_is_reported_as_ownership() {
+        // The [verified] case from docs/db-migration-todo.md §5: RLS hides the other
+        // user's row from the UPDATE path, so `merge-duplicates` falls through to an
+        // INSERT and trips the natural key. The backend says "duplicate key"; the user
+        // needs to hear "someone else owns it".
+        let body = r#"{"code":"23505","details":"Key (degree_id)=(x) already exists.","message":"duplicate key value violates unique constraint \"degrees_degree_id_key\""}"#;
+        assert_eq!(owned_table_in_conflict(body), Some("degrees"));
+    }
+
+    #[test]
+    fn a_prefixed_table_name_resolves_to_the_right_table() {
+        // The `program_*` names share a prefix with each other, so a looser match than
+        // whole-name containment would report `programs` for a `program_requirements`
+        // conflict and send the user to the wrong table.
+        for (body, expected) in [
+            (
+                r#"{"code":"23505","message":"violates unique constraint \"program_requirements_program_key_req_path_key\""}"#,
+                "program_requirements",
+            ),
+            (
+                r#"{"code":"23505","message":"violates unique constraint \"program_courses_program_key_course_code_key\""}"#,
+                "program_courses",
+            ),
+            (
+                r#"{"code":"23505","message":"violates unique constraint \"programs_program_key_key\""}"#,
+                "programs",
+            ),
+        ] {
+            assert_eq!(
+                owned_table_in_conflict(body),
+                Some(expected),
+                "body naming {expected} resolved wrongly"
+            );
+        }
+    }
+
+    #[test]
+    fn owned_table_names_do_not_shadow_one_another() {
+        // The guarantee `owned_table_in_conflict` relies on to skip a tie-break: if a
+        // future table is added whose name contains another's, at most one match no
+        // longer holds and the function needs an explicit ordering rule.
+        for a in OWNED_TABLES {
+            for b in OWNED_TABLES {
+                assert!(
+                    a == b || !a.contains(b),
+                    "`{a}` contains `{b}`; a 23505 could match both"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_duplicate_key_on_a_shared_table_is_not_an_ownership_problem() {
+        // `completions` and the other IPEDS tables are shared by design — writes there
+        // are open to every member, so a duplicate there is an ordinary conflict.
+        let body = r#"{"code":"23505","message":"duplicate key value violates unique constraint \"completions_pkey\""}"#;
+        assert_eq!(owned_table_in_conflict(body), None);
+    }
+
+    #[test]
+    fn a_non_duplicate_error_on_an_owned_table_is_left_alone() {
+        // Only 23505 has the ownership reading. A missing relation on `programs` is a
+        // bootstrap problem and must keep saying so.
+        let body = r#"{"code":"42P01","message":"relation \"programs\" does not exist"}"#;
+        assert_eq!(owned_table_in_conflict(body), None);
+    }
+    #[tokio::test]
+    async fn a_conflict_on_an_owned_table_reaches_the_caller_as_ownership() {
+        // `owned_table_in_conflict` is unit-tested above, but nothing pinned it into
+        // `classify_failure` — deleting the call site there left every test green and
+        // the user back to reading "duplicate key".
+        let url = stub_server(
+            "409 Conflict",
+            r#"{"code":"23505","message":"duplicate key value violates unique constraint \"programs_program_key_key\""}"#,
+        )
+        .await;
+        let client = DbClient::new(&url, "anon", "jwt".to_string()).expect("client");
+        let rows = vec![serde_json::json!({"program_key": "x"})];
+        match client
+            .upsert_batch("programs", rows, &["program_key"])
+            .await
+        {
+            Err(DatabaseError::RowOwnedByAnother { table, detail }) => {
+                assert_eq!(table, "programs");
+                assert!(
+                    detail.contains("23505"),
+                    "the backend's own body must be carried through: {detail}"
+                );
+            }
+            other => panic!("expected RowOwnedByAnother, got {other:?}"),
+        }
     }
 }

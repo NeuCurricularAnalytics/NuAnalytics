@@ -4,6 +4,10 @@ pub mod cli_degree;
 pub mod course_graph;
 pub mod course_syntax;
 pub mod cross_listing;
+/// Guards that parsing a degree and serializing it back drops no field. Uses the
+/// vendored fixtures, so it carries their `mcp` gate.
+#[cfg(feature = "mcp")]
+pub mod degree_fidelity;
 /// Fixtures and the analysis helper the target-course modules share. Needs `mcp`,
 /// which is where the analysis pipeline lives.
 #[cfg(feature = "mcp")]

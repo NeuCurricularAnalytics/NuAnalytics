@@ -991,6 +991,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
 
         let result = req_resolver.resolve_requirement("core", &req);
@@ -1030,6 +1033,9 @@ mod tests {
             credit_range: None,
             constraints: None,
             options: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
 
         let result = req_resolver.resolve_requirement("electives", &req);

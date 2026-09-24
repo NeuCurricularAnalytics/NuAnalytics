@@ -160,6 +160,10 @@ CREATE TABLE institution_completion_totals (
 CREATE TABLE degrees (
     id           BIGSERIAL PRIMARY KEY,
     degree_id    TEXT UNIQUE NOT NULL,
+    -- Ownership. Defaults to the signed-in user; the RLS policy below lets only the owner
+    -- write. `NULL` stays writable by anyone so rows created before this column existed
+    -- remain editable.
+    created_by   UUID DEFAULT auth.uid(),
     unitid       INTEGER,   -- no FK; use LEFT JOIN institutions
     cip_code     TEXT,      -- no FK; use LEFT JOIN cip_codes
     catalog_year TEXT,
@@ -233,4 +237,9 @@ CREATE POLICY "auth read institution_size"              ON institution_size     
 CREATE POLICY "auth write institutions"                  ON institutions                  FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
 CREATE POLICY "auth write completions"                   ON completions                   FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
 CREATE POLICY "auth write institution_completion_totals" ON institution_completion_totals  FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "auth write degrees"                       ON degrees                       FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+-- Dropped explicitly: permissive policies OR together, so leaving the old blanket
+-- `auth write degrees` in place on an existing database would make the ownership check
+-- a silent no-op.
+DROP POLICY IF EXISTS "auth write degrees"               ON degrees;
+DROP POLICY IF EXISTS "owner write degrees"              ON degrees;
+CREATE POLICY "owner write degrees"                      ON degrees                       FOR ALL USING (created_by = auth.uid() OR created_by IS NULL) WITH CHECK (created_by = auth.uid() OR created_by IS NULL);

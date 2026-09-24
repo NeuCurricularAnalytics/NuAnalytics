@@ -90,6 +90,18 @@ pub struct Degree {
     /// Generalizes the ai-landscape `ai_program` enum so any program type fits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
+
+    /// Final URL after redirects, when the scrape followed one. Provenance only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_url_final: Option<String>,
+
+    /// Set by the corpus builder when a degree needs a human look. Provenance only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs_review: Option<bool>,
+
+    /// Catalog wording behind `gpa_minimum`, when the number alone loses the condition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpa_minimum_note: Option<String>,
 }
 
 /// A requirement in a degree program
@@ -134,6 +146,24 @@ pub struct Requirement {
     /// Mutually exclusive paths (for type: `one_of`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<Vec<RequirementOption>>,
+
+    /// True when this block is satisfied outside the modelled program — a general
+    /// education slate handled by another office, transfer credit, and so on.
+    ///
+    /// Carried through parse, report and import but **not** consumed by the analysis:
+    /// credit totals are unchanged by it. Without it a block worth `external_credits`
+    /// simply reads as credits the program does not account for. 2,082 requirement
+    /// nodes across 508 of the 1,088 corpus degrees set it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_requirement: Option<bool>,
+
+    /// Credits the externally-satisfied block is worth. Always an integer in the corpus.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_credits: Option<u32>,
+
+    /// Catalog wording explaining how the block is satisfied elsewhere.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_note: Option<String>,
 
     /// Classification tags for this requirement group (e.g., `["core"]`,
     /// `["ai","required"]`, `["elective"]`). Generalizes the ai-landscape
@@ -293,6 +323,9 @@ impl Degree {
             major_subjects: None,
             allow_double_counting: None,
             tags: None,
+            source_url_final: None,
+            needs_review: None,
+            gpa_minimum_note: None,
         }
     }
 
@@ -330,6 +363,9 @@ impl Degree {
             major_subjects: None,
             allow_double_counting: Some(allow_double_counting),
             tags: None,
+            source_url_final: None,
+            needs_review: None,
+            gpa_minimum_note: None,
         }
     }
 

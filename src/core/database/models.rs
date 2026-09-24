@@ -353,6 +353,8 @@ pub struct StoredProgramCourse {
     pub credit_hours_override: Option<f32>,
     /// Program-specific course name when it diverges
     pub name_as_listed: Option<String>,
+    /// Minimum passing grade as the catalog words it ("C", "C-"). Fidelity only.
+    pub grade_minimum: Option<String>,
     /// Sync generation stamp (swept per program)
     pub generation: i64,
 }
@@ -401,6 +403,13 @@ pub struct StoredProgramRequirement {
     pub is_impossible: bool,
     /// Derived from `constraints.exclude_used` (+ program default)
     pub allow_double_count: Option<bool>,
+    /// Satisfied outside the modelled program (gen-ed owned elsewhere, transfer credit).
+    /// Carried for fidelity; no metric reads it.
+    pub external_requirement: Option<bool>,
+    /// Credits the externally-satisfied block is worth.
+    pub external_credits: Option<i32>,
+    /// Catalog wording for how the block is satisfied elsewhere.
+    pub external_note: Option<String>,
     /// Sync generation stamp (swept per program)
     pub generation: i64,
 }

@@ -183,10 +183,27 @@ section 4; it is not a DAG defect.
   which moves delay, blocking and term placement.
 
   Both rules are deterministic; the new one is the better-defined of the two (the old one
-  had no tie-break at all, so the answer depended on declaration order). But it means the
-  v2 corpus and the current binary disagree. **Decide explicitly**: regenerate v2 against
-  this code and record the delta, or restore the old tie-break to keep v2 valid. The
-  sample is 14 of 1,088 — widen it before deciding if the answer matters.
+  had no tie-break at all, so the answer depended on declaration order).
+
+  **Full-corpus measurement (2026-09-23, all 1,088 degrees, both variants, re-run at the
+  recorded parameters).** The 14-degree sample above over-stated the severity:
+
+  | | full | trimmed |
+  |---|---|---|
+  | identical | 781 (71.8%) | 823 (75.6%) |
+  | moved | 307 (28.2%) | 265 (24.4%) |
+  | median complexity change *among movers* | **−0.52%** | −0.47% |
+  | degrees moving ≥5% | **30 (2.8%)** | 27 (2.5%) |
+  | range | −29.1% … +80.0% | −20.0% … +15.9% |
+
+  So: ~72% unchanged, and most of the movers move by well under a percent. The tail is
+  small and explicable — the +80% is Wisconsin-Madison's *Applications of AI in
+  Engineering* certificate going from complexity 5 to 9, a four-point change on a
+  five-point program where the percentage is meaningless. The genuine outlier is Dakota
+  State AI/ML at −29.1% (141 → 100, longest delay 8 → 5).
+
+  **Decision taken: regenerate and load the new numbers.** The rule is better defined and
+  the corpus is cheap to rebuild (~30 min per variant at `-j 4`).
 
 **Checked against the shipped sample reports** (`../WebScrappedCombinedDataMetrics/samples/`,
 three MCP-generated HTML analyses from 2026-06-09, matched 100% to their degree files by

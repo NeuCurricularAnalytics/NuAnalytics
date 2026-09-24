@@ -22,8 +22,11 @@
 --     `generation` last (the commit marker) and stale children
 --     (generation < programs.generation) are filtered at read time / GC'd later.
 --
--- Safe to run on a live database: every object uses IF NOT EXISTS and policies
--- are dropped before being (re)created, so the file is idempotent.
+-- Safe to run on a live database: every object uses IF NOT EXISTS, columns added after
+-- a table first shipped are `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (see "later
+-- columns" below -- `CREATE TABLE IF NOT EXISTS` does NOT add a column to a table that
+-- already exists), and policies are dropped before being (re)created. The file is
+-- idempotent.
 
 -- Trigram index support for course-name substring search ("all calculus courses").
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
@@ -54,6 +57,11 @@ CREATE TABLE IF NOT EXISTS degree_types (
 CREATE TABLE IF NOT EXISTS programs (
     id                          BIGSERIAL PRIMARY KEY,
     program_key                 TEXT UNIQUE NOT NULL,
+
+    -- Ownership. Defaults to the signed-in user; the RLS policies below let only the
+    -- owner write. `NULL` stays writable by anyone so rows created before this column
+    -- existed remain editable -- see the policies for why that disjunct is load-bearing.
+    created_by                  UUID DEFAULT auth.uid(),
 
     -- identity / provenance
     degree_id                   TEXT,           -- Degree.id (may be null; non-unique here)
@@ -139,11 +147,16 @@ CREATE TABLE IF NOT EXISTS courses (
 CREATE TABLE IF NOT EXISTS program_courses (
     id                    BIGSERIAL PRIMARY KEY,
     program_key           TEXT NOT NULL,
+    -- Ownership; see `programs.created_by`.
+    created_by            UUID DEFAULT auth.uid(),
     institution_ref       TEXT NOT NULL,
     catalog_year          TEXT NOT NULL DEFAULT '',  -- joins courses; see the note there
     course_code           TEXT NOT NULL,
     credit_hours_override REAL,
     name_as_listed        TEXT,
+    -- Minimum passing grade as the catalog words it ("C", "C-", "B"). Fidelity only;
+    -- the analysis does not read it.
+    grade_minimum         TEXT,
     generation            BIGINT NOT NULL DEFAULT 0,
     UNIQUE (program_key, course_code)
 );
@@ -165,6 +178,8 @@ CREATE TABLE IF NOT EXISTS program_courses (
 CREATE TABLE IF NOT EXISTS program_requirements (
     id                 BIGSERIAL PRIMARY KEY,
     program_key        TEXT NOT NULL,
+    -- Ownership; see `programs.created_by`.
+    created_by         UUID DEFAULT auth.uid(),
     req_path           TEXT NOT NULL,
     parent_path        TEXT,               -- NULL for top-level; else parent req_path
     map_key            TEXT,               -- top-level requirements-map key (NULL for nested)
@@ -183,6 +198,13 @@ CREATE TABLE IF NOT EXISTS program_requirements (
     req_constraints    JSONB,              -- RequirementConstraints
     is_impossible      BOOLEAN NOT NULL DEFAULT false,  -- count > resolvable pool (queryable, not dropped)
     allow_double_count BOOLEAN,            -- derived from constraints.exclude_used (+ program default)
+    -- Satisfied outside the modelled program: a gen-ed slate another office owns,
+    -- transfer credit, and so on. Columns rather than JSONB because "which programs
+    -- push credit outside themselves, and how much" is a cross-degree question. Carried
+    -- for fidelity only -- the analysis does not add `external_credits` to any total.
+    external_requirement BOOLEAN,
+    external_credits   INTEGER,
+    external_note      TEXT,
     generation         BIGINT NOT NULL DEFAULT 0,
     UNIQUE (program_key, req_path)
 );
@@ -340,6 +362,25 @@ ALTER TABLE program_courses         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE program_requirements    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE degree_types            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE analysis_runs           ENABLE ROW LEVEL SECURITY;
+-- =============================================================================
+-- Later columns
+--
+-- Added after these tables first shipped. `CREATE TABLE IF NOT EXISTS` above is a no-op
+-- on an existing database, so without these an instance created before 2026-09-23 would
+-- reach the policies below and fail with `42703 column "created_by" does not exist`.
+-- =============================================================================
+ALTER TABLE programs             ADD COLUMN IF NOT EXISTS created_by           UUID DEFAULT auth.uid();
+ALTER TABLE program_courses      ADD COLUMN IF NOT EXISTS created_by           UUID DEFAULT auth.uid();
+ALTER TABLE program_courses      ADD COLUMN IF NOT EXISTS grade_minimum        TEXT;
+ALTER TABLE program_requirements ADD COLUMN IF NOT EXISTS created_by           UUID DEFAULT auth.uid();
+ALTER TABLE program_requirements ADD COLUMN IF NOT EXISTS external_requirement BOOLEAN;
+ALTER TABLE program_requirements ADD COLUMN IF NOT EXISTS external_credits     INTEGER;
+ALTER TABLE program_requirements ADD COLUMN IF NOT EXISTS external_note        TEXT;
+ALTER TABLE analysis_course_metrics ADD COLUMN IF NOT EXISTS chain_length_mean REAL;
+ALTER TABLE courses              ADD COLUMN IF NOT EXISTS catalog_year         TEXT NOT NULL DEFAULT '';
+ALTER TABLE program_courses      ADD COLUMN IF NOT EXISTS catalog_year         TEXT NOT NULL DEFAULT '';
+
+
 ALTER TABLE analysis_course_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE analysis_plans          ENABLE ROW LEVEL SECURITY;
 
@@ -347,7 +388,10 @@ ALTER TABLE analysis_plans          ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "auth read programs"  ON programs;
 CREATE POLICY "auth read programs"  ON programs FOR SELECT USING (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "auth write programs" ON programs;
-CREATE POLICY "auth write programs" ON programs FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "owner write programs" ON programs;
+CREATE POLICY "owner write programs" ON programs FOR ALL
+    USING (created_by = auth.uid() OR created_by IS NULL)
+    WITH CHECK (created_by = auth.uid() OR created_by IS NULL);
 
 -- courses
 DROP POLICY IF EXISTS "auth read courses"  ON courses;
@@ -359,13 +403,19 @@ CREATE POLICY "auth write courses" ON courses FOR ALL USING (auth.role() = 'auth
 DROP POLICY IF EXISTS "auth read program_courses"  ON program_courses;
 CREATE POLICY "auth read program_courses"  ON program_courses FOR SELECT USING (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "auth write program_courses" ON program_courses;
-CREATE POLICY "auth write program_courses" ON program_courses FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "owner write program_courses" ON program_courses;
+CREATE POLICY "owner write program_courses" ON program_courses FOR ALL
+    USING (created_by = auth.uid() OR created_by IS NULL)
+    WITH CHECK (created_by = auth.uid() OR created_by IS NULL);
 
 -- program_requirements
 DROP POLICY IF EXISTS "auth read program_requirements"  ON program_requirements;
 CREATE POLICY "auth read program_requirements"  ON program_requirements FOR SELECT USING (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "auth write program_requirements" ON program_requirements;
-CREATE POLICY "auth write program_requirements" ON program_requirements FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "owner write program_requirements" ON program_requirements;
+CREATE POLICY "owner write program_requirements" ON program_requirements FOR ALL
+    USING (created_by = auth.uid() OR created_by IS NULL)
+    WITH CHECK (created_by = auth.uid() OR created_by IS NULL);
 
 -- degree_types (read-only for clients)
 DROP POLICY IF EXISTS "auth read degree_types" ON degree_types;

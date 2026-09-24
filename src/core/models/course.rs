@@ -163,6 +163,12 @@ pub struct Course {
     )]
     pub prerequisites_raw: Option<String>,
 
+    /// Minimum grade this course must be passed with to count, as the catalog words it
+    /// (`"C"`, `"C-"`, `"B"`). Carried through for fidelity; the analysis does not read
+    /// it. 520 courses in the corpus set one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grade_minimum: Option<String>,
+
     /// Terms typically offered (e.g., `["fall", "spring"]`)
     #[serde(skip_serializing_if = "Option::is_none", alias = "typically_offered")]
     pub typically_offered: Option<Vec<String>>,
@@ -217,6 +223,7 @@ impl Course {
             canonical_name: None,
             // Extended fields default to None
             prerequisites_raw: None,
+            grade_minimum: None,
             typically_offered: None,
             gen_ed_attributes: None,
             cross_listed_as: None,
@@ -255,6 +262,7 @@ impl Course {
             credit_hours: credits.unwrap_or(0.0),
             canonical_name: None,
             prerequisites_raw,
+            grade_minimum: None,
             typically_offered: None,
             gen_ed_attributes: None,
             cross_listed_as: None,

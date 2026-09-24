@@ -1391,6 +1391,9 @@ mod tests {
                 credit_range: None,
                 constraints: None,
                 options: None,
+                external_requirement: None,
+                external_credits: None,
+                external_note: None,
             },
         );
 
@@ -1421,6 +1424,9 @@ mod tests {
                 credit_range: None,
                 constraints: None,
                 options: None,
+                external_requirement: None,
+                external_credits: None,
+                external_note: None,
             },
         );
 
@@ -1482,6 +1488,9 @@ mod tests {
                 credit_range: None,
                 constraints: None,
                 options: None,
+                external_requirement: None,
+                external_credits: None,
+                external_note: None,
             },
         );
         let generator = PlanGenerator::new(&reqs, &courses, PlanGeneratorConfig::default());
@@ -1603,6 +1612,9 @@ mod tests {
                 credit_range: None,
                 constraints: None,
                 options: None,
+                external_requirement: None,
+                external_credits: None,
+                external_note: None,
             },
         );
 

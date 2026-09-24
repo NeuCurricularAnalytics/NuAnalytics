@@ -494,6 +494,9 @@ fn build_requirement_row(
             .and_then(|c| serde_json::to_value(c).ok()),
         is_impossible: requirement_is_impossible(req),
         allow_double_count: allow_double_count(req, ctx.program_default),
+        external_requirement: req.external_requirement,
+        external_credits: req.external_credits.map(u32_to_i32),
+        external_note: req.external_note.clone(),
         generation: ctx.generation,
     }
 }
@@ -593,6 +596,7 @@ pub fn build_import_plan(
             course_code: (*key).clone(),
             credit_hours_override: None,
             name_as_listed: None,
+            grade_minimum: course.grade_minimum.clone(),
             generation,
         });
     }
@@ -1525,6 +1529,9 @@ mod tests {
             }),
             options: None,
             tags: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         // exclude_used = true → no double counting.
         assert_eq!(allow_double_count(&mk(Some(true)), Some(true)), Some(false));
@@ -1558,8 +1565,110 @@ mod tests {
             constraints: None,
             options: None,
             tags: None,
+            external_requirement: None,
+            external_credits: None,
+            external_note: None,
         };
         assert!(requirement_is_impossible(&req));
+    }
+
+    /// A report carrying the fields the model used to drop on the floor.
+    fn report_with_recovered_fields() -> String {
+        r#"{
+  "degree": {"name":"T","degree_type":"bs","system_type":"semester",
+             "institution":"T","total_credits":6,"cip_code":"11.0101"},
+  "requirements": {
+    "core":   {"type":"all","name":"Core","courses":["CS101"]},
+    "gen_ed": {"type":"all","name":"Gen Ed","external_requirement":true,
+               "external_credits":40,"external_note":"satisfied by the college core"}
+  },
+  "courses": {
+    "CS101": {"name":"Intro","prefix":"CS","number":"101","credit_hours":3,
+              "grade_minimum":"C-"}
+  },
+  "conversion_warnings": ["cip_code inferred from program name"]
+}"#
+        .to_string()
+    }
+
+    #[test]
+    fn the_import_plan_carries_the_recovered_fields_into_typed_columns() {
+        // These reach the database only if every hop keeps them: source JSON -> model ->
+        // report -> import plan -> column. The model and report hops have their own
+        // guards (`tests/rs/degree_fidelity.rs`); this one pins the last hop, which is
+        // the one that turns them into something SQL can filter on.
+        let (plan, _) = build_import_plan(&report_with_recovered_fields(), &opts(), Some(1), 1)
+            .expect("report builds an import plan");
+
+        let ext: Vec<_> = plan
+            .requirements
+            .iter()
+            .filter(|r| r.external_requirement == Some(true))
+            .collect();
+        assert_eq!(ext.len(), 1, "one externally-satisfied requirement");
+        assert_eq!(ext[0].external_credits, Some(40));
+        assert_eq!(
+            ext[0].external_note.as_deref(),
+            Some("satisfied by the college core")
+        );
+
+        // The other requirement must NOT be marked external: a blanket default would
+        // make every gen-ed block look externally satisfied.
+        assert!(
+            plan.requirements
+                .iter()
+                .any(|r| r.external_requirement.is_none()),
+            "a plain requirement must leave external_requirement unset"
+        );
+
+        let cs101 = plan
+            .program_courses
+            .iter()
+            .find(|c| c.course_code == "CS101")
+            .expect("CS101 row");
+        assert_eq!(cs101.grade_minimum.as_deref(), Some("C-"));
+
+        // `document` is the column documented as the lossless source of truth, so the
+        // provenance that has no typed column must still be inside it.
+        let doc =
+            serde_json::to_string(&plan.program.as_ref().expect("program row").document).unwrap();
+        assert!(
+            doc.contains("cip_code inferred from program name"),
+            "conversion_warnings must survive into programs.document"
+        );
+    }
+
+    #[test]
+    fn owned_rows_omit_created_by_so_the_column_default_claims_them() {
+        // `created_by UUID DEFAULT auth.uid()` fires only when the column is ABSENT from
+        // the INSERT. An explicit `"created_by": null` suppresses the default, and the
+        // policy's `OR created_by IS NULL` disjunct means that insert still succeeds —
+        // producing an unowned, globally-writable row, which is the thing ownership
+        // exists to prevent. `upsert_batch` deliberately keeps `None`-valued fields (to
+        // avoid PGRST102), so adding an `Option` field here without `skip_serializing_if`
+        // would send the null rather than omit it.
+        let (plan, _) = build_import_plan(&report_with_recovered_fields(), &opts(), Some(1), 1)
+            .expect("report builds an import plan");
+
+        let mut rows =
+            vec![serde_json::to_value(plan.program.as_ref().expect("program row")).unwrap()];
+        rows.extend(
+            plan.program_courses
+                .iter()
+                .map(|r| serde_json::to_value(r).unwrap()),
+        );
+        rows.extend(
+            plan.requirements
+                .iter()
+                .map(|r| serde_json::to_value(r).unwrap()),
+        );
+
+        for row in rows {
+            assert!(
+                row.get("created_by").is_none(),
+                "an owned-table row must omit `created_by` entirely, not send null: {row}"
+            );
+        }
     }
 
     #[test]

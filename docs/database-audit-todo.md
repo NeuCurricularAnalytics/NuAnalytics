@@ -103,6 +103,24 @@ data is right and the documentation is wrong, which is the more dangerous direct
 invites someone to size a query for ~15k rows when the table holds 313k per year, which
 is exactly the interaction that makes a `PGRST_DB_MAX_ROWS` cap bite.
 
+### F5 — ~~The entire stored-programs half of the schema is empty~~ **[stale — corpus loaded 2026-09-23]**
+
+**Superseded.** The counts below were true when the audit ran. The corpus was imported on
+2026-09-23 (programs `created_at` 15:34 UTC) and the tables now hold:
+
+| Table | Rows |
+|---|---|
+| `programs` | 1,088 |
+| `analysis_runs` | 2,176 (both variants) |
+| `program_courses` | 49,434 |
+| `program_requirements` | 13,585 |
+| `analysis_course_metrics` | 78,178 |
+| `analysis_plans` | 13,874 |
+| `degrees` | 0 — genuinely unused; `programs` superseded it |
+
+So Step 7 is **not** a first load: it is a re-import with `--replace`, to pick up the
+recovered fields and the corrected OR-group tie-break. The original measurement follows.
+
 ### F5 — The entire stored-programs half of the schema is empty **[measured]**
 
 | Table | Rows |

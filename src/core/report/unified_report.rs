@@ -210,6 +210,11 @@ pub fn export_degree_report_json(
 /// Serialize a built report `Value` to pretty JSON with `degree` first, then the
 /// analysis summary, requirements, and selected plans, with the large `courses`
 /// block last. Nested objects keep `serde_json`'s deterministic sorted key order.
+///
+/// This struct is the report's field list: a key absent from it is dropped, whatever the
+/// model carries. `conversion_warnings` and `corrections_applied` are listed for that
+/// reason — `db import` reads this file, so anything missing here can never reach the
+/// database.
 fn report_value_to_pretty(value: &Value) -> Result<String, serde_json::Error> {
     #[derive(Serialize)]
     struct Ordered<'a> {
@@ -218,6 +223,10 @@ fn report_value_to_pretty(value: &Value) -> Result<String, serde_json::Error> {
         requirements: &'a Value,
         selected_plans: &'a Value,
         courses: &'a Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        conversion_warnings: Option<&'a Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        corrections_applied: Option<&'a Value>,
     }
     let null = Value::Null;
     let ordered = Ordered {
@@ -226,6 +235,8 @@ fn report_value_to_pretty(value: &Value) -> Result<String, serde_json::Error> {
         requirements: value.get("requirements").unwrap_or(&null),
         selected_plans: value.get("selected_plans").unwrap_or(&null),
         courses: value.get("courses").unwrap_or(&null),
+        conversion_warnings: value.get("conversion_warnings"),
+        corrections_applied: value.get("corrections_applied"),
     };
     serde_json::to_string_pretty(&ordered)
 }
@@ -366,6 +377,77 @@ mod tests {
         assert!(v.get("q1").is_some() && v.get("q3").is_some());
     }
 
+    fn no_plans() -> crate::core::degree::SelectedPlans {
+        crate::core::degree::SelectedPlans {
+            shortest: None,
+            longest: None,
+            calc_ready_shortest: None,
+            random_samples: Vec::new(),
+            total_plans_seen: 0,
+            calc_ready_suppressed: false,
+        }
+    }
+
+    fn run_parameters() -> RunParameters<'static> {
+        RunParameters {
+            max_plans: 1,
+            sample_count: 0,
+            sampling_strategy: "shuffled",
+            calc_strategy: "mean",
+            ignore_duplicates: false,
+            included_courses: &[],
+            random_seed: None,
+        }
+    }
+
+    #[test]
+    fn the_written_report_keeps_the_provenance_blocks() {
+        // `report_value_to_pretty`'s struct is the report's field list, and `db import`
+        // reads this file — a key missing there can never reach the database. Nothing
+        // else exercises it: the CLI tests only count report files, and the fidelity
+        // guard stops at `to_unified_value`, one hop short.
+        let mut program = sample_program();
+        program.conversion_warnings = vec!["cip_code inferred from program name".to_string()];
+        program.corrections_applied = vec!["restored a truncated selection pool".to_string()];
+
+        let value = build_degree_report(
+            &program,
+            &aggregator_with_two_plans(),
+            &no_plans(),
+            "shuffled",
+            &run_parameters(),
+        )
+        .expect("report builds");
+        let written: Value =
+            serde_json::from_str(&report_value_to_pretty(&value).expect("serializes")).unwrap();
+
+        assert_eq!(
+            written["conversion_warnings"][0],
+            "cip_code inferred from program name"
+        );
+        assert_eq!(
+            written["corrections_applied"][0],
+            "restored a truncated selection pool"
+        );
+    }
+
+    #[test]
+    fn a_report_with_no_provenance_omits_the_keys_entirely() {
+        // Empty is absent, not `[]`: a reader must be able to tell "nothing was recorded"
+        // from "recorded nothing".
+        let value = build_degree_report(
+            &sample_program(),
+            &aggregator_with_two_plans(),
+            &no_plans(),
+            "shuffled",
+            &run_parameters(),
+        )
+        .expect("report builds");
+        let out = report_value_to_pretty(&value).expect("serializes");
+        assert!(!out.contains("conversion_warnings"), "{out}");
+        assert!(!out.contains("corrections_applied"), "{out}");
+    }
+
     fn aggregator_with_two_plans() -> MetricsAggregator {
         let mut agg = MetricsAggregator::default();
         for c in [10usize, 20] {
@@ -398,6 +480,8 @@ mod tests {
             degree,
             requirements: HashMap::new(),
             courses: HashMap::new(),
+            conversion_warnings: Vec::new(),
+            corrections_applied: Vec::new(),
         }
     }
 
