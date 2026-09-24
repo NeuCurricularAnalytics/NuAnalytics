@@ -1641,6 +1641,76 @@ courses:
         );
     }
 
+    /// Both OR branches are `type: all` courses, so they are in every plan and
+    /// `include_courses` cannot change which plans are generated — only which branch
+    /// becomes a DAG edge. That isolation is the point.
+    const OR_GROUP_INCLUDE_YAML: &str = r#"
+degree:
+  id: or-include
+  institution: T
+  program: T
+  total_credits: 9
+  gpa_minimum: 2.0
+requirements:
+  core:
+    name: Core
+    type: all
+    category: major
+    courses: [ACS101, ZCS101, CS201]
+courses:
+  ACS101: {title: A, prefix: ACS, number: "101", credits: 3}
+  ZCS101: {title: Z, prefix: ZCS, number: "101", credits: 3}
+  CS201:  {title: C, prefix: CS,  number: "201", credits: 3, prerequisites_raw: "ACS101 | ZCS101"}
+"#;
+
+    #[test]
+    fn include_courses_resolves_the_or_group_in_the_plan_dag() {
+        // `include_courses` reaching the *generator* was already covered; this covers it
+        // reaching `build_plan_dag`, which it silently did not until 2026-09-23. Blocking
+        // factor counts the edge: 1 for the branch that got it, 0 for the one that did not.
+        fn blocking(include: Option<&[String]>, course: &str) -> f64 {
+            let artifacts = build_artifacts(
+                OR_GROUP_INCLUDE_YAML,
+                Some(10),
+                include,
+                Some(1),
+                None,
+                None,
+            )
+            .expect("build_artifacts on valid YAML");
+            artifacts
+                .aggregator
+                .course_stats(course)
+                .unwrap_or_else(|| panic!("{course} was never scored"))
+                .blocking
+                .max
+        }
+
+        // Nothing pinned: neither branch is referenced elsewhere, so the tiers fall through
+        // to the name and ACS101 wins. Asserted so this fails loudly if the fixture stops
+        // producing an OR-group at all, rather than passing on two zeroes.
+        assert!(
+            (blocking(None, "ACS101") - 1.0).abs() < f64::EPSILON,
+            "unpinned: ACS101 should win the name tiebreak and carry the edge"
+        );
+        assert!(
+            blocking(None, "ZCS101").abs() < f64::EPSILON,
+            "unpinned: ZCS101 should not carry the edge"
+        );
+
+        // Pinned: the caller's branch takes the edge. ZCS101 loses the name tiebreak, so
+        // this can only pass because include_courses reached the DAG builder.
+        let pinned = ["ZCS101".to_string()];
+        assert!(
+            (blocking(Some(&pinned), "ZCS101") - 1.0).abs() < f64::EPSILON,
+            "include_courses must resolve the OR-group to the pinned branch"
+        );
+        assert!(
+            blocking(Some(&pinned), "ACS101").abs() < f64::EPSILON,
+            "pinned: ACS101 should no longer carry the edge"
+        );
+    }
+
     #[test]
     fn test_build_artifacts_respects_include_courses() {
         // Every selected plan must contain the forced course.

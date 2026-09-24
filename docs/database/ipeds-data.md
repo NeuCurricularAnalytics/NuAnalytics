@@ -85,7 +85,11 @@ All files are available from the **IPEDS Data Center**:
 - **Rows**: ~200,000+ (one per institution × CIP code × award level × major number)
 - **Key columns**: `UNITID`, `CIPCODE`, `AWLEVEL`, `CTOTALT`, `CTOTALM`, `CTOTALW`, plus one column per race/gender combination
 - **Award levels**: 5 (bachelor's), 7 (master's), 9 (doctoral), others included
-- **After filtering to CS CIP codes**: ~15,000–20,000 rows
+- **Stored**: every row — all CIP codes and both major numbers, ~313,000 per year for
+  recent files. Nothing is filtered on import. CS (`11.*`) is roughly 15,000 of those, so
+  a CS-only query is a small slice of a large table; size queries for the table, not the
+  slice. This is what makes a `PGRST_DB_MAX_ROWS` cap bite — see `db doctor`'s row-limit
+  check.
 
 **CIP code format in the file**: Dot notation — e.g. `11.0101`. NuAnalytics stores
 them in the same format in the database.
@@ -158,8 +162,8 @@ nuanalytics db ipeds-import --year 2024 --dir ~/ipeds/
 Importing institutions from /home/.../HD2024.zip ...
   ✓ 6072 read, 6072 upserted, 0 skipped
 Importing completions from /home/.../C2024_A.zip ...
-  (CS completions → `completions` table; all-major totals → `institution_completion_totals`)
-  ✓ 218462 rows read, 18741 matched CS CIP codes, 18741 upserted, 12 skipped
+  (all completions → `completions` table; all-major totals → `institution_completion_totals`)
+  ✓ 313566 rows read, 313566 with a usable UNITID, 313566 upserted, 0 skipped
 ```
 
 The completions import populates two tables in one pass — no second file needed.

@@ -334,7 +334,7 @@ Note this is also why the clear-then-reimport was the right call rather than an 
 over the top: the revised files *retract* 51 (2022) and 41 (2023) rows, and an upsert
 would have left those in place.
 
-### Step 2 — `nuanalytics db validate <ipeds-file>` *(code)*
+### Step 2 — `nuanalytics db validate <ipeds-file>` *(code)* — **DONE**
 Turn this audit into a command. Given a local HD or C file, compare it against the backend
 and report per-column mismatch counts with examples — which is exactly the by-hand work
 above, and the only way to know Steps 1 and 3 worked.
@@ -343,8 +343,16 @@ Reuse the row-limit lesson: `count=exact` for totals, paged selects for values. 
 "could not check" separately from "mismatched", the way `doctor`'s schema check already
 separates missing from unreachable.
 
-**Gate for the whole plan:** `db validate HD2025.csv` and `db validate C2025_A.csv` both
-report zero mismatches.
+**Gate for the whole plan: MET 2026-09-23.** Built as `src/core/database/validate.rs`;
+the CLI takes `db validate --year <YEAR> <FILE>` and accepts the IPEDS `.zip` directly.
+
+    db validate --year 2025 HD2025.zip
+      5,985 rows compared, 0 in file but not stored, 11/11 columns match
+      (530 stored-not-in-file: institutions accumulate across survey years, not a fault)
+    db validate --year 2025 C2025_A.zip
+      313,566 rows in file, 313,566 in backend; 21/21 columns match across the sample
+
+Zero mismatches on both, which also confirms Steps 1, 3 and 4 worked.
 
 ### Step 3 — Re-import, oldest year first *(operational)* — **DONE 2026-09-21**
 
@@ -467,10 +475,21 @@ is also the blocker for in-place metric backfill. `remetric` becomes buildable a
 Step 1 (fix the OR-group DAG) and Step 3 (extract a shared `core::analysis`), at which
 point there is one pipeline, one set of numbers, and verification can pass.
 
-### Step 5 — Correct the documentation *(docs)*
-Fix `setup.md`, the `db ipeds-import` help text and the `CHANGELOG` troubleshooting row to
-describe the table that exists: all CIP codes, both major numbers, ~313k rows per year.
-State the per-year magnitude explicitly — that number is what makes the row cap matter.
+### Step 5 — Correct the documentation *(docs)* — **DONE 2026-09-23**
+Four places claimed a CS-only or `MAJORNUM=1`-only table. All now state what exists — all
+CIP codes, both major numbers, ~313,000 rows per year — and say why the magnitude matters
+(it is what makes a `PGRST_DB_MAX_ROWS` cap bite):
+
+- `src/cli/args.rs` — `db ipeds-import` help text ("CS CIP codes only")
+- `docs/database/setup.md` — troubleshooting row for `21000 ON CONFLICT affects row twice`,
+  which claimed the fix was filtering to `MAJORNUM=1`; the actual fix was adding
+  `major_num` to the ON CONFLICT target
+- `docs/database/ipeds-data.md` — "After filtering to CS CIP codes: ~15,000–20,000 rows",
+  and a sample import transcript showing "18741 matched CS CIP codes" against output the
+  importer no longer produces
+- `src/core/database/mod.rs` — the `COMPLETIONS` table constant's doc comment
+
+`CHANGELOG.md` turned out to contain no such claim.
 
 ### Step 6 — Decide the access model for shared reference data *(SQL + decision)*
 F3 and §5 of `db-migration-todo.md` are the same conversation. Options, not mutually
@@ -488,20 +507,36 @@ carrying six tables, their indexes and 15 policies that serve nothing. Loading i
 obvious choice if the research questions need cross-degree SQL; dropping is right if the
 JSON corpus is the system of record.
 
-### Step 8 — Carry `chain_length` through to where it is consumed *(code)*
+### Step 8 — Carry `chain_length` through to where it is consumed *(code)* — **DONE**
 Three separate gaps, smallest first:
-1. **Degree-level report.** Extend the hand-written `json!` in `unified_report.rs:118-123`
-   to include `avg_chain_length` and `min_chain_length` from the aggregator, which already
-   computes both. Without this a corpus re-run still loses them.
-2. **Database column.** Add `chain_length_mean` to `analysis_course_metrics` and include
-   `chain_length` in its `metrics` JSONB, or the metric is dropped on import. Fold into
-   the same `programs-schema.sql` edit as Step 6, since every deployment is a fresh
-   install.
-3. **The MCP `None` path** (`analyze.rs:767-768`) — establish whether that is deliberate
-   or an oversight before relying on the field.
+1. **Degree-level report.** — **DONE.** `unified_report.rs` now emits `avg_chain_length`.
+   `min_chain_length` was deliberately *not* added: at degree level it was degenerate
+   (always 1.0, since some course in any plan has no prerequisites). Per-course min/max/avg
+   is the useful form and the aggregator already carries it.
+2. **Database column.** — **DONE in the schema file.** `programs-schema.sql:265` has
+   `chain_length_mean REAL` and `chain_length` is listed in the `metrics` JSONB comment.
+   *Not verified against the live instance* — `db doctor` checks tables, not columns, and
+   these tables are still empty (F5), so nothing has exercised it. Confirm when Step 7 is
+   decided and the corpus is loaded.
+3. **The MCP `None` path** — **resolved: deliberate.** It is the parse-failure response
+   constructor, where `plans_analyzed` is 0 and `complexity`, `longest_delay` and
+   `total_credits` are all `None` too. `avg_chain_length: None` is consistent, not a gap.
 
-### Step 9 — Re-analyse the corpus *(operational, after Step 8)*
-The 1,088 degrees were analysed 2026-06-09 with a binary that had no `chain_length`.
+### Step 9 — Re-analyse the corpus *(operational, after Step 8)* — **DONE**
+Both variants regenerated into `full_degree/v2/` and `trimmed_degree/v2/` — 1,088 degrees
+each, `max_plans = 10000`, seeded per document, `analyzer_version 0.5.4`. The reports carry
+`avg_chain_length` and an `analysis.parameters` block recording seed, caps and strategy, so
+a run is reproducible from the file alone.
+
+**Still valid after the 2026-09-23 OR-group commit.** That commit changed the MCP DAG to
+match the CLI; v2 came from the CLI path, which was already correct. Re-verified: Bowdoin
+through the CLI gives the same complexity 87/57/112, delay 5/4/6, chain 2.4319/1.8889/2.9
+before and after. The one thing that *would* differ on a re-run is the *drawn* graph in an
+HTML report, because the same commit changed equivalence resolution there from "first hash
+hit" to "lexicographic minimum" — a determinism fix. Metrics are unaffected.
+
+Original note: the 1,088 degrees were analysed 2026-06-09 with a binary that had no
+`chain_length`.
 Re-run both variants so the corpus carries it. Do this **after** Step 8.1, or the
 degree-level chain statistics will be missing from the new output too.
 

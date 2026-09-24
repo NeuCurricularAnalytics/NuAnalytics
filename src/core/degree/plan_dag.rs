@@ -123,7 +123,8 @@ fn select_or_group_option<'a>(
         .copied()
 }
 
-/// How many courses in the plan, other than `excluding`, name `course` as a prerequisite.
+/// How many courses in the plan, other than `excluding`, list `course` as a prerequisite
+/// or corequisite.
 ///
 /// References of every kind count, not just required ones — that is the *counting rule*
 /// the CLI used, and tightening it would move edge selection, so it is left alone here
@@ -150,11 +151,16 @@ fn in_plan_references(
 
 /// Find an equivalent of `course` that is in the plan.
 ///
+/// `pub(crate)` for one other caller: `report::visualization::curriculum_graph`, which
+/// draws the graph. The picture and the metrics must resolve an equivalence to the same
+/// course, and two implementations that agree only by comment is the failure mode this
+/// module exists to end.
+///
 /// Lexicographic minimum rather than the first hit: `equivalences` values are `HashSet`s,
 /// so `find_map` would pick whichever the per-process hash order yielded. That choice
 /// becomes a DAG edge, shifts delay factors, and moves the scheduled term — an observed
 /// source of run-to-run variation.
-fn equivalent_in_plan<'a>(
+pub(crate) fn equivalent_in_plan<'a>(
     course: &str,
     equivalences: &HashMap<String, HashSet<String>>,
     plan: &HashSet<&'a str>,
@@ -363,7 +369,11 @@ mod tests {
             ],
         )]);
         let dag = build_plan_dag(&plan(&["CS201"]), &g, &HashMap::new(), &HashSet::new());
-        assert!(deps(&dag, "CS201").is_empty());
+        assert!(
+            deps(&dag, "CS201").is_empty(),
+            "expected no edge on CS201, got {:?}",
+            deps(&dag, "CS201")
+        );
     }
 
     #[test]
@@ -382,7 +392,11 @@ mod tests {
             &HashMap::new(),
             &HashSet::new(),
         );
-        assert!(deps(&dag, "PHY101").is_empty());
+        assert!(
+            deps(&dag, "PHY101").is_empty(),
+            "expected no edge on PHY101, got {:?}",
+            deps(&dag, "PHY101")
+        );
     }
 
     #[test]
@@ -425,9 +439,13 @@ mod tests {
         ]);
         let courses = plan(&["A1", "A2", "A3", "B1", "B2", "T"]);
         let first = build_plan_dag(&courses, &g, &HashMap::new(), &HashSet::new());
-        for _ in 0..50 {
+        for i in 0..50 {
             let again = build_plan_dag(&courses, &g, &HashMap::new(), &HashSet::new());
-            assert_eq!(ordered_deps(&first, "T"), ordered_deps(&again, "T"));
+            assert_eq!(
+                ordered_deps(&first, "T"),
+                ordered_deps(&again, "T"),
+                "build {i} disagreed with build 0"
+            );
         }
         assert_eq!(first.courses, courses, "courses stay in plan order");
     }
@@ -477,7 +495,11 @@ mod tests {
             &HashMap::new(),
             &HashSet::new(),
         );
-        assert!(deps(&dag, "CS201").is_empty());
+        assert!(
+            deps(&dag, "CS201").is_empty(),
+            "expected no edge on CS201, got {:?}",
+            deps(&dag, "CS201")
+        );
     }
 
     #[test]
@@ -535,20 +557,39 @@ mod tests {
     #[test]
     fn a_forced_course_outside_the_plan_does_not_win_the_group() {
         // Forcing only expresses a preference among options the plan actually contains.
-        // Honouring it otherwise would wire an edge to a course nobody is taking.
+        // Honouring it otherwise wires an edge to a course nobody is taking — and
+        // `DAG::add_prerequisite` adds *both* endpoints, so the phantom course would also
+        // land in `dag.courses` and get scored, inflating the metrics.
+        //
+        // Three options with two in the plan, deliberately: with only one in-plan option
+        // `select_or_group_option` returns at its `len() == 1` shortcut and the forced
+        // tier is never reached, so a two-option version of this test passes without
+        // executing the code it names. ZCS102 is the lexicographic maximum so the name
+        // tier cannot mask the result either.
         let g = graph_of(vec![
-            node("CS101", vec![]),
+            node("ACS101", vec![]),
+            node("BCS103", vec![]),
             node(
                 "CS201",
                 vec![
-                    ("CS101", PrerequisiteType::Optional, Some(0)),
-                    ("CS102", PrerequisiteType::Optional, Some(0)),
+                    ("ACS101", PrerequisiteType::Optional, Some(0)),
+                    ("BCS103", PrerequisiteType::Optional, Some(0)),
+                    ("ZCS102", PrerequisiteType::Optional, Some(0)),
                 ],
             ),
         ]);
-        let forced: HashSet<String> = std::iter::once("CS102".to_string()).collect();
-        let dag = build_plan_dag(&plan(&["CS101", "CS201"]), &g, &HashMap::new(), &forced);
-        assert_eq!(deps(&dag, "CS201"), ["CS101"]);
+        let forced: HashSet<String> = std::iter::once("ZCS102".to_string()).collect();
+        let dag = build_plan_dag(
+            &plan(&["ACS101", "BCS103", "CS201"]),
+            &g,
+            &HashMap::new(),
+            &forced,
+        );
+        assert_eq!(deps(&dag, "CS201"), ["ACS101"]);
+        assert!(
+            !dag.courses.contains(&"ZCS102".to_string()),
+            "an out-of-plan option must not be pulled into the DAG as a side effect"
+        );
     }
 
     #[test]
@@ -572,7 +613,11 @@ mod tests {
             std::iter::once("MATH241".to_string()).collect::<HashSet<_>>(),
         );
         let dag = build_plan_dag(&plan(&["MATH241", "CS201"]), &g, &equivs, &HashSet::new());
-        assert!(deps(&dag, "CS201").is_empty());
+        assert!(
+            deps(&dag, "CS201").is_empty(),
+            "expected no edge on CS201, got {:?}",
+            deps(&dag, "CS201")
+        );
     }
 
     #[test]
@@ -587,7 +632,7 @@ mod tests {
             node("CS201", vec![("MATH140", PrerequisiteType::Required, None)]),
         ]);
         let courses = plan(&["MATH241", "MATH152", "MATH999", "CS201"]);
-        for _ in 0..50 {
+        for i in 0..50 {
             // Rebuilt every iteration on purpose. A `HashSet` allocated once keeps one
             // iteration order for the life of the process, so hoisting this would sample
             // a single order 50 times and a first-hit implementation could pass by luck.
@@ -600,7 +645,7 @@ mod tests {
                     .collect::<HashSet<_>>(),
             );
             let dag = build_plan_dag(&courses, &g, &equivs, &HashSet::new());
-            assert_eq!(deps(&dag, "CS201"), ["MATH152"]);
+            assert_eq!(deps(&dag, "CS201"), ["MATH152"], "build {i}");
         }
     }
 
@@ -638,9 +683,16 @@ mod tests {
             "MATH140".to_string(),
             std::iter::once("MATH241".to_string()).collect::<HashSet<_>>(),
         );
-        for e in [&equivs, &HashMap::new()] {
+        for (label, e) in [
+            ("with an unrelated equivalence", &equivs),
+            ("with no equivalences", &HashMap::new()),
+        ] {
             let dag = build_plan_dag(&plan(&["CS101", "CS201"]), &g, e, &HashSet::new());
-            assert!(deps(&dag, "CS201").is_empty());
+            assert!(
+                deps(&dag, "CS201").is_empty(),
+                "{label}: expected no edge on CS201, got {:?}",
+                deps(&dag, "CS201")
+            );
         }
     }
 
@@ -655,14 +707,22 @@ mod tests {
             &HashMap::new(),
             &HashSet::new(),
         );
-        assert!(dag.courses.contains(&"ELEC_01".to_string()));
-        assert!(deps(&dag, "ELEC_01").is_empty());
+        assert!(
+            dag.courses.contains(&"ELEC_01".to_string()),
+            "plan course dropped from the DAG: {:?}",
+            dag.courses
+        );
+        assert!(
+            deps(&dag, "ELEC_01").is_empty(),
+            "expected no edge on ELEC_01, got {:?}",
+            deps(&dag, "ELEC_01")
+        );
     }
 
     #[test]
     fn edges_are_stored_required_first_then_groups_in_ascending_group_order() {
-        // `deps` sorts, so this is the only test that can see the order
-        // `DAG::dependencies` actually holds — the property the `BTreeMap` exists for.
+        // `deps` sorts, so this is the only test that *pins* the order
+        // `DAG::dependencies` holds — the property the `BTreeMap` exists for.
         // Names are chosen to lose under any sort, so a reordering cannot accidentally
         // match the expectation.
         let g = graph_of(vec![

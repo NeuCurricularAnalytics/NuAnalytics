@@ -38,7 +38,8 @@ pub mod validate;
 pub mod tables {
     /// IPEDS institution directory
     pub const INSTITUTIONS: &str = "institutions";
-    /// IPEDS degree completions (filtered to CS CIP codes)
+    /// IPEDS degree completions — every row of the `C_A` file: all CIP codes, both major
+    /// numbers, ~313,000 rows per survey year. Not filtered.
     pub const COMPLETIONS: &str = "completions";
     /// Stored degree program YAML definitions
     pub const DEGREES: &str = "degrees";

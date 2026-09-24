@@ -541,7 +541,7 @@ Config files:
 | Import fails: `23502 null value in column "id"` | Upgrade to latest build — `id` field now skips serialization when null |
 | Import fails: `23503 Key not present in cip_codes` | Run `cip-seed.sql` first (Step 4b), then re-import |
 | Import fails: `23503 Key not present in institutions` | Some IPEDS survey UNITIDs don't appear in HD — run `schema.sql` fresh (no FK constraints) |
-| Import fails: `21000 ON CONFLICT affects row twice` | Upgrade to latest build — completions now filter to MAJORNUM=1 only |
+| Import fails: `21000 ON CONFLICT affects row twice` | Upgrade to latest build — the completions ON CONFLICT target now includes `major_num`, so a CIP appearing at both `MAJORNUM=1` and `2` is two rows rather than a conflict. Nothing is filtered out: the table holds every row of the file, ~313,000 per year |
 | Upsert fails with `42501 permission denied` | RLS INSERT policy is missing — see Step 5 |
 | `db doctor`: `PGRST_DB_MAX_ROWS is capping responses` | Self-hosted only. Upstream defaults the cap to 1000 while the MCP tools request 5,000, so large queries truncate silently with HTTP 200 and analytics come out wrong. Leave `PGRST_DB_MAX_ROWS` unset, or set it to at least 10000 |
 | Completions totals look too low but nothing errored | Run `nuanalytics db doctor` and read the **row limit** check — a row cap produces short answers, not failures |

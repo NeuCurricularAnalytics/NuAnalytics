@@ -167,35 +167,7 @@ pub fn spec_from_components(
     // Build edges from DAG, filtered to courses in the plan.
     let mut edges = Vec::new();
 
-    for (course, prereqs) in &dag.dependencies {
-        if !plan_courses.contains(course.as_str()) {
-            continue;
-        }
-        for prereq in prereqs {
-            if plan_courses.contains(prereq.as_str()) {
-                edges.push(GraphEdge {
-                    from: prereq.clone(),
-                    to: course.clone(),
-                    edge_type: EdgeType::Prerequisite,
-                });
-            }
-        }
-    }
-
-    for (course, coreqs) in &dag.corequisites {
-        if !plan_courses.contains(course.as_str()) {
-            continue;
-        }
-        for coreq in coreqs {
-            if plan_courses.contains(coreq.as_str()) {
-                edges.push(GraphEdge {
-                    from: coreq.clone(),
-                    to: course.clone(),
-                    edge_type: EdgeType::Corequisite,
-                });
-            }
-        }
-    }
+    edges.extend(build_edges_from_dag(dag, &plan_courses));
 
     CurriculumGraphSpec {
         graph_id: graph_id.to_string(),
@@ -396,9 +368,40 @@ fn expand_critical_path(path: &[String]) -> Vec<String> {
     result
 }
 
+/// Build edges from an already-computed `DAG`, keeping only courses in the plan.
+///
+/// Targets are walked in sorted order because `DAG::dependencies` and
+/// `DAG::corequisites` are `HashMap`s: an unordered walk emits the same edges in a
+/// different order on every run, and this list is serialised into the report. The inner
+/// `Vec`s are already ordered by `core::degree::plan_dag`.
+fn build_edges_from_dag(dag: &DAG, plan_courses: &HashSet<&str>) -> Vec<GraphEdge> {
+    let mut edges = Vec::new();
+    for (map, edge_type) in [
+        (&dag.dependencies, EdgeType::Prerequisite),
+        (&dag.corequisites, EdgeType::Corequisite),
+    ] {
+        let mut targets: Vec<&String> = map.keys().collect();
+        targets.sort_unstable();
+        for course in targets {
+            if !plan_courses.contains(course.as_str()) {
+                continue;
+            }
+            for source in &map[course] {
+                if plan_courses.contains(source.as_str()) {
+                    edges.push(GraphEdge {
+                        from: source.clone(),
+                        to: course.clone(),
+                        edge_type: edge_type.clone(),
+                    });
+                }
+            }
+        }
+    }
+    edges
+}
+
 /// Build edges for a plan by re-parsing course prerequisites and resolving
-/// equivalences.  Mirrors the logic of the former `build_plan_edges` in
-/// `degree_report.rs`.
+/// equivalences.
 fn build_edges_from_courses(
     school: &School,
     equivalences: &HashMap<String, HashSet<String>>,
@@ -468,19 +471,17 @@ fn select_best_prereq_path<'a>(
         if plan_courses.contains(p.as_str()) {
             return Some(p.clone());
         }
-        // Lexicographic minimum, not the first hit: `equivalences` values are `HashSet`s,
-        // so `find` returns whichever the per-process hash order yields and the drawn
-        // edge changes between runs on the same plan. Same rule as
-        // `core::degree::plan_dag::equivalent_in_plan`, so the picture and the metrics
-        // resolve an equivalence to the same course.
-        equivalences
-            .get(p)
-            .and_then(|eq| {
-                eq.iter()
-                    .filter(|e| plan_courses.contains(e.as_str()))
-                    .min()
-            })
-            .cloned()
+        // Shared with the metrics DAG rather than reimplemented: it takes the
+        // lexicographic minimum, where a first-hit lookup over the `HashSet` drew a
+        // different edge on every run of the same plan.
+        //
+        // The *scope* still differs on purpose. `plan_dag` substitutes an equivalent only
+        // for a `Required` prerequisite — an OR-group option missing from the plan is left
+        // alone (`an_or_group_does_not_fall_back_to_the_equivalence_table`). Here every
+        // member of the chosen DNF path is resolved, OR-alternatives included, so the
+        // picture can draw an equivalence the metrics did not.
+        crate::core::degree::plan_dag::equivalent_in_plan(p, equivalences, plan_courses)
+            .map(str::to_string)
     };
 
     // First pass: find a fully-satisfied path.
@@ -506,6 +507,88 @@ fn select_best_prereq_path<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edges_from_a_dag_are_emitted_in_sorted_target_order() {
+        // `DAG::dependencies` is a `HashMap`, so an unsorted walk serialises the same
+        // edges in a different order on every run of the same plan. Rebuilt each
+        // iteration on purpose: a map allocated once keeps one iteration order for the
+        // life of the process, so hoisting it would sample a single order.
+        let expected = vec![
+            ("AAA100".to_string(), "BBB200".to_string()),
+            ("BBB200".to_string(), "CCC300".to_string()),
+            ("AAA100".to_string(), "DDD400".to_string()),
+            ("BBB200".to_string(), "EEE500".to_string()),
+        ];
+        for i in 0..50 {
+            let mut dag = DAG::new();
+            for (course, prereq) in [
+                ("DDD400", "AAA100"),
+                ("BBB200", "AAA100"),
+                ("EEE500", "BBB200"),
+                ("CCC300", "BBB200"),
+            ] {
+                dag.add_prerequisite(course.to_string(), prereq);
+            }
+            let plan: HashSet<&str> = ["AAA100", "BBB200", "CCC300", "DDD400", "EEE500"]
+                .into_iter()
+                .collect();
+            let got: Vec<(String, String)> = build_edges_from_dag(&dag, &plan)
+                .into_iter()
+                .map(|e| (e.from, e.to))
+                .collect();
+            assert_eq!(
+                got, expected,
+                "build {i}: edges must follow sorted target order, not hash order"
+            );
+        }
+    }
+
+    #[test]
+    fn edges_from_courses_are_emitted_in_sorted_course_order() {
+        // Same property for the other edge builder, which walks the plan `HashSet`.
+        // The literal order is pinned rather than only run-to-run equality: an
+        // equality-only check would also pass for a consistently wrong ordering.
+        use crate::core::models::Course;
+
+        let mut school = School::new("T".to_string());
+        for (prefix, number, prereq) in [
+            ("AAA", "100", None),
+            ("BBB", "200", Some("AAA100")),
+            ("CCC", "300", Some("BBB200")),
+            ("DDD", "400", Some("AAA100")),
+            ("EEE", "500", Some("BBB200")),
+        ] {
+            let mut c = Course::new(
+                format!("{prefix} {number}"),
+                prefix.to_string(),
+                number.to_string(),
+                3.0,
+            );
+            c.prerequisites_raw = prereq.map(str::to_string);
+            school.add_course(c);
+        }
+        let expected = vec![
+            ("AAA100".to_string(), "BBB200".to_string()),
+            ("BBB200".to_string(), "CCC300".to_string()),
+            ("AAA100".to_string(), "DDD400".to_string()),
+            ("BBB200".to_string(), "EEE500".to_string()),
+        ];
+        for i in 0..50 {
+            let plan: HashSet<&str> = ["AAA100", "BBB200", "CCC300", "DDD400", "EEE500"]
+                .into_iter()
+                .collect();
+            let got: Vec<(String, String)> =
+                build_edges_from_courses(&school, &HashMap::new(), &plan)
+                    .into_iter()
+                    .map(|e| (e.from, e.to))
+                    .collect();
+            assert_eq!(
+                got, expected,
+                "build {i}: edges must follow sorted course order, not the plan set's hash order"
+            );
+        }
+    }
 
     #[test]
     fn select_best_prereq_path_resolves_an_equivalence_deterministically() {

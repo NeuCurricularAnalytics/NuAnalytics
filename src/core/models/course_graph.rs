@@ -446,8 +446,10 @@ impl CourseGraph {
     /// `from_degree_program` needs a whole `DegreeProgram`, which is far more than a unit
     /// test of graph traversal should have to construct. It also runs
     /// `build_reverse_edges`, so this does too — a graph whose `dependents` were empty
-    /// would let a test pass against an index production always populates. Not public:
-    /// production code builds graphs from a degree.
+    /// would let a test pass against an index production always populates. Parity stops
+    /// there: `detect_cycles` and `compute_topological_order` are not run, so `topo_order`
+    /// stays `None`. Crate-visible and `#[cfg(test)]`-only; production code builds graphs
+    /// from a degree.
     #[cfg(test)]
     pub(crate) fn from_nodes(nodes: Vec<CourseNode>) -> Self {
         let mut graph = Self::default();

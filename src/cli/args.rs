@@ -794,8 +794,13 @@ pub enum DbSubcommand {
     /// Import IPEDS data from locally downloaded CSV or ZIP files into Supabase.
     ///
     /// Only two files are needed — the completions file is used in a single pass to
-    /// populate both the `completions` table (CS CIP codes only) and the
+    /// populate both the `completions` table (every row of the file: all CIP codes and
+    /// both major numbers, roughly 313,000 rows per year) and the
     /// `institution_completions` table (all-major totals used for representation ratios).
+    ///
+    /// That per-year magnitude is worth knowing before writing a query against it: it is
+    /// what makes a `PGRST_DB_MAX_ROWS` cap bite, and `db doctor`'s row-limit check is
+    /// what detects it.
     ///
     /// Download from <https://nces.ed.gov/ipeds/use-the-data>:
     /// - HD{year}.csv or HD{year}.zip  (institution directory)
