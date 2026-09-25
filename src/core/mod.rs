@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod degree;
+pub mod json;
 pub mod metrics;
 pub mod metrics_export;
 pub mod models;
@@ -23,6 +24,10 @@ pub use statistics::{CalculationStrategy, DescriptiveStats, MeanStrategy, Median
 // Database integration (feature-gated)
 #[cfg(feature = "database")]
 pub mod database;
+
+/// Read-only query engines shared by the CLI and the MCP server.
+#[cfg(feature = "database")]
+pub mod query;
 
 /// Returns the current version of the `NuAnalytics` crate
 #[must_use]

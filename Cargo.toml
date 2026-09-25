@@ -31,6 +31,13 @@ fastrand = "2.0"
 chrono = "0.4"
 
 # MCP server dependencies (optional feature)
+# Declared directly rather than reached through `rmcp::schemars`, so the query
+# engines in `core::query` derive `JsonSchema` under `--features database` alone,
+# without pulling in rmcp. MUST stay semver-compatible with rmcp's own schemars
+# dependency (rmcp 1.6 asks for "1.0", resolving to 1.2.x) -- two incompatible
+# copies in the graph makes `Parameters<SearchInstitutionsRequest>` stop
+# satisfying rmcp's `JsonSchema` bound, which is a confusing compile error.
+schemars = { version = "1.2", optional = true }
 rmcp = { version = "1.0.0-alpha", features = ["server", "transport-io"], optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "fs", "net", "io-util", "time"], optional = true }
 
@@ -65,7 +72,7 @@ log-info = []
 log-debug = []
 verbose = []
 file-logging = []
-database = ["dep:supabase-client-sdk", "dep:reqwest", "dep:csv", "dep:zip", "dep:tokio", "dep:form_urlencoded", "dep:sha2", "dep:encoding_rs", "dep:rpassword"]
+database = ["dep:schemars", "dep:supabase-client-sdk", "dep:reqwest", "dep:csv", "dep:zip", "dep:tokio", "dep:form_urlencoded", "dep:sha2", "dep:encoding_rs", "dep:rpassword"]
 mcp = ["dep:rmcp", "dep:tokio", "database"]
 
 [profile.release]

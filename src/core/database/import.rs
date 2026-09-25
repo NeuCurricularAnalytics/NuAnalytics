@@ -18,11 +18,11 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use super::error::{DatabaseError, DatabaseResult};
+use super::filters::QueryFilters;
 use super::models::{
     StoredAnalysisCourseMetric, StoredAnalysisPlan, StoredAnalysisRun, StoredCourse, StoredProgram,
     StoredProgramCourse, StoredProgramRequirement,
 };
-use super::query::QueryFilters;
 use super::tables;
 use super::DbClient;
 use crate::core::degree::{parse_degree_auto, serialize_degree_json, to_unified_value};

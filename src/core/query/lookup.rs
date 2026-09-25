@@ -16,8 +16,7 @@
 use std::sync::Arc;
 
 use crate::core::database::{DbClient, QueryFilters};
-use crate::mcp::tools::shared::{error_json, to_json_pretty};
-use rmcp::schemars;
+use crate::core::json::{error_json, to_json_pretty};
 use serde::Deserialize;
 
 /// Names of queryable lookup tables

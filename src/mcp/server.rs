@@ -685,7 +685,7 @@ impl NuAnalyticsMcpServer {
             let db = self.get_db(tool)?;
             let id_owned = id.to_string();
             let yaml = run_db_async_result(move || async move {
-                shared::fetch_yaml_by_degree_id(&db, &id_owned).await
+                crate::core::query::degrees::fetch_yaml_by_degree_id(&db, &id_owned).await
             })?;
             Ok((yaml, None))
         }

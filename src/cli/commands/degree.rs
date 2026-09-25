@@ -648,7 +648,7 @@ async fn resolve_program_rows(
 
     // Tier 1: exact program_key.
     let by_key = QueryFilters::new().eq("program_key", Some(name));
-    let rows = parse_program_rows(
+    let rows = nu_analytics::core::json::parse_json_array::<StoredProgramRow>(
         &client
             .select(tables::PROGRAMS, FROM_DB_COLS, &by_key, Some(1))
             .await?,
@@ -659,7 +659,7 @@ async fn resolve_program_rows(
 
     // Tier 2: exact degree_id.
     let by_id = QueryFilters::new().eq("degree_id", Some(name));
-    let rows = parse_program_rows(
+    let rows = nu_analytics::core::json::parse_json_array::<StoredProgramRow>(
         &client
             .select(
                 tables::PROGRAMS,
@@ -675,30 +675,18 @@ async fn resolve_program_rows(
 
     // Tier 3: name substring (ILIKE '%name%').
     let by_name = QueryFilters::new().ilike("name", Some(name));
-    Ok(parse_program_rows(
-        &client
-            .select(
-                tables::PROGRAMS,
-                FROM_DB_COLS,
-                &by_name,
-                Some(FROM_DB_MAX_ROWS),
-            )
-            .await?,
-    ))
-}
-
-/// Parse a `select` JSON array into [`StoredProgramRow`]s, dropping rows that
-/// fail to deserialize. Mirrors the MCP tools' `parse_json_array` pattern.
-#[cfg(feature = "database")]
-fn parse_program_rows(value: &serde_json::Value) -> Vec<StoredProgramRow> {
-    value
-        .as_array()
-        .map(|rows| {
-            rows.iter()
-                .filter_map(|r| serde_json::from_value(r.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default()
+    Ok(
+        nu_analytics::core::json::parse_json_array::<StoredProgramRow>(
+            &client
+                .select(
+                    tables::PROGRAMS,
+                    FROM_DB_COLS,
+                    &by_name,
+                    Some(FROM_DB_MAX_ROWS),
+                )
+                .await?,
+        ),
+    )
 }
 
 /// Turn a stored `document` JSONB value into a `DegreeProgram`.
@@ -3831,9 +3819,11 @@ courses:
 
     #[cfg(feature = "database")]
     #[test]
-    fn test_parse_program_rows_skips_malformed() {
-        // A valid row, a row missing the required `name` field, and a non-object
-        // — only the valid row should survive.
+    fn test_stored_program_row_parses_the_select_shape() {
+        // Pins `StoredProgramRow`'s contract against what the `programs` select
+        // returns: `name` required, `unitid` optional, malformed rows dropped.
+        // The dropping itself is `core::json::parse_json_array`'s, tested there;
+        // what is local is which columns this row type demands.
         let value = serde_json::json!([
             {
                 "program_key": "prog:1|11.0701|2024-2025|BS",
@@ -3847,18 +3837,11 @@ courses:
             { "program_key": "prog:bad", "document": {} },
             "not-an-object"
         ]);
-        let rows = parse_program_rows(&value);
+        let rows = nu_analytics::core::json::parse_json_array::<StoredProgramRow>(&value);
         assert_eq!(rows.len(), 1, "only the well-formed row parses");
         assert_eq!(rows[0].program_key, "prog:1|11.0701|2024-2025|BS");
         assert_eq!(rows[0].name, "Computer Science");
         assert_eq!(rows[0].unitid, Some(1));
-    }
-
-    #[cfg(feature = "database")]
-    #[test]
-    fn test_parse_program_rows_non_array_is_empty() {
-        assert!(parse_program_rows(&serde_json::json!({})).is_empty());
-        assert!(parse_program_rows(&serde_json::Value::Null).is_empty());
     }
 
     #[cfg(feature = "database")]

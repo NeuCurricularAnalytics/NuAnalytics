@@ -20,18 +20,17 @@ pub mod validate;
 pub mod visualize;
 
 // Database-backed tools (require feature = "database")
+//
+// `cip_codes`, `institutions` and `lookup` moved to `crate::core::query` so the CLI can
+// call the same engines without the `mcp` feature. Re-exported here under their old
+// names: the `#[tool]` handlers in `server.rs` keep one import site and do not change.
 #[cfg(feature = "database")]
-pub mod cip_codes;
-#[cfg(feature = "database")]
-pub mod completions;
+pub use crate::core::query::{cip_codes, completions, institutions, lookup};
+
 #[cfg(feature = "database")]
 pub mod degrees;
 #[cfg(feature = "database")]
 pub mod import;
-#[cfg(feature = "database")]
-pub mod institutions;
-#[cfg(feature = "database")]
-pub mod lookup;
 #[cfg(feature = "database")]
 pub mod scaffold;
 
@@ -57,21 +56,21 @@ pub use visualize::GetCurriculumVisualizationRequest;
 
 // Re-export database tool types
 #[cfg(feature = "database")]
-pub use cip_codes::SearchCipCodesRequest;
+pub use crate::core::query::cip_codes::SearchCipCodesRequest;
 #[cfg(feature = "database")]
-pub use completions::{
+pub use crate::core::query::completions::{
     CompletionDemographicsRequest, GetInstitutionCompletionsRequest,
     GetSchoolsCompletionDemographicsRequest,
 };
 #[cfg(feature = "database")]
-pub use degrees::{
+pub use crate::core::query::degrees::{
     CompareDegreesRequest, GetDegreeRequest, SearchDegreesRequest, StoreDegreeRequest,
 };
 #[cfg(feature = "database")]
+pub use crate::core::query::institutions::{GetInstitutionRequest, SearchInstitutionsRequest};
+#[cfg(feature = "database")]
+pub use crate::core::query::lookup::GetLookupCodesRequest;
+#[cfg(feature = "database")]
 pub use import::ImportDegreeRequest;
-#[cfg(feature = "database")]
-pub use institutions::{GetInstitutionRequest, SearchInstitutionsRequest};
-#[cfg(feature = "database")]
-pub use lookup::GetLookupCodesRequest;
 #[cfg(feature = "database")]
 pub use scaffold::ScaffoldDegreeYamlRequest;

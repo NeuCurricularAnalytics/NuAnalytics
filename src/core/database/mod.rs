@@ -27,11 +27,11 @@ pub mod client;
 pub mod doctor;
 pub mod error;
 #[cfg(feature = "database")]
+pub mod filters;
 pub mod import;
 pub mod ipeds;
 pub mod models;
 pub mod prune;
-pub mod query;
 pub mod validate;
 
 /// Supabase table name constants — use these instead of raw string literals.
@@ -115,8 +115,8 @@ pub use auth::{
 };
 pub use client::DbClient;
 pub use error::{DatabaseError, DatabaseResult};
+pub use filters::QueryFilters;
 pub use models::{
     CipCode, Completion, DemographicRepresentation, Institution, InstitutionCompletionTotal,
     StoredDegree,
 };
-pub use query::QueryFilters;

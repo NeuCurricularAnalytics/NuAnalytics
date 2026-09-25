@@ -32,7 +32,7 @@ use super::auth::{
     RefreshError,
 };
 use super::error::{DatabaseError, DatabaseResult};
-use super::query::{FilterKind, QueryFilters};
+use super::filters::{FilterKind, QueryFilters};
 use super::tables;
 use crate::core::config::DatabaseConfig;
 use std::path::{Path, PathBuf};

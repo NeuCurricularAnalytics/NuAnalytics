@@ -27,12 +27,12 @@ use std::path::Path;
 
 use super::client::DbClient;
 use super::error::{DatabaseError, DatabaseResult};
+use super::filters::QueryFilters;
 use super::ipeds::ingest::{
     build_completion, build_institution, find_col, open_csv, parse_ipeds_code, read_file_or_zip,
     uppercase_headers, DemoCols, HdCols, HD_CARNEGIE_CANDIDATES,
 };
 use super::models::{Completion, Institution};
-use super::query::QueryFilters;
 use super::tables;
 
 /// How a single column compared between file and backend.
