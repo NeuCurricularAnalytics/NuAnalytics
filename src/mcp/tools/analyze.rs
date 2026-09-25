@@ -59,10 +59,7 @@ pub struct AnalyzeDegreeRequest {
     #[schemars(
         description = "Maximum plans to generate (default: 500, higher = more accurate but slower)"
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub max_plans: Option<usize>,
 
     /// Courses to always include in all generated plans
@@ -83,10 +80,7 @@ pub struct AnalyzeDegreeRequest {
     #[schemars(
         description = "Include full graph_spec per selected plan (default false). selected_plans is always a curated 5-6 plans (shortest + longest + optional calc-ready + 3 random) regardless of max_plans. Each spec is ~30 KB; opt in only when rendering. Combine with plan_indices to limit which plans receive a spec."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub include_graph_spec: Option<bool>,
 
     /// Comma-separated `selected_plans` indices that should receive a
@@ -113,10 +107,7 @@ pub struct AnalyzeDegreeRequest {
     #[schemars(
         description = "Include per-course metric medians (complexity, centrality, delay, blocking) for every tracked course in the response. Default false. Adds ~50 entries for a typical CS degree."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub include_per_course_metrics: Option<bool>,
 
     /// Surface synthetic elective placeholders (`ELEC_*`, `FE*`) in the
@@ -127,10 +118,7 @@ pub struct AnalyzeDegreeRequest {
     #[schemars(
         description = "Include synthetic placeholder courses (ELEC_*, FE*) in per_course_metrics. Default false. Each entry then carries placeholder: true."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub include_placeholder_metrics: Option<bool>,
 
     /// Course ID to compute earliest-semester statistics for (e.g. `"CS4100"`).
@@ -154,10 +142,7 @@ pub struct AnalyzeDegreeRequest {
     #[schemars(
         description = "Seed for the random-sample reservoir. Defaults to a stable value derived from the YAML body, so identical inputs always return the same Random Sample plan. Pass an explicit u64 to draw a different sample."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_u64"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_u64")]
     pub random_seed: Option<u64>,
 
     /// Soft wall-clock cap (seconds) on the plan-generation loop. Defaults
@@ -169,10 +154,7 @@ pub struct AnalyzeDegreeRequest {
     #[schemars(
         description = "Wall-clock seconds the plan-generation loop may run before stopping early (default 180, clamped to 1..=600). When tripped, the response carries time_limit_reached=true alongside the existing was_truncated=true. Large degrees (140+ courses, 50K+ plan populations) often hit this before reaching high max_plans values — prefer trusting tool_followups's CV-stable cutoff over bumping max_plans blindly."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_u64"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_u64")]
     pub analysis_timeout_seconds: Option<u64>,
 }
 

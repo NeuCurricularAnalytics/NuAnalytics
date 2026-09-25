@@ -10,8 +10,13 @@ codebase — run `/init` if you want that.
 
 Default features: `log-info`, `log-debug`, `verbose`, `file-logging`, `database`, `mcp`.
 
-    cargo test --features database                  # 1216 tests, clean
+    cargo test --all-features                       # 1340 tests, clean
+    cargo test --no-default-features --features database   # 1092 — the CLI's feature set
     cargo build --features database
+
+**Three feature sets are tested in CI, and the middle one is load-bearing.** The query
+engines live in `src/core/query/` so the CLI can call them without `mcp`; if `core` ever
+imports `crate::mcp` again, only `--no-default-features --features database` catches it.
 
 **Degree fixtures are compiled in, so a missing one is a build error, not a test
 failure.** `tests/rs/degree_fixtures.rs` `include_str!`s 13 real degree builds from

@@ -94,10 +94,7 @@ pub struct ListSampleDegreesRequest {
     #[schemars(
         description = "Include the embedded YAML body for each sample. Default false; pass true when you want the full content in one call."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub include_yaml: Option<bool>,
 }
 

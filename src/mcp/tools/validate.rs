@@ -54,10 +54,7 @@ pub struct ValidateDegreeRequest {
     #[schemars(
         description = "If true, patterns with no matching courses become warnings instead of errors. Default false."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub allow_unmatched_patterns: Option<bool>,
 
     /// Surface upper-level courses (above the lowest-level anchor in the
@@ -69,10 +66,7 @@ pub struct ValidateDegreeRequest {
     #[schemars(
         description = "Emit HiddenPrerequisite warnings for upper-level courses with no declared prerequisites. Default true. Same data audit_degree would surface — opt out when the unprereqed list is expected boilerplate."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub include_hidden_prereq_warnings: Option<bool>,
 }
 

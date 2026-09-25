@@ -57,10 +57,7 @@ pub struct GenerateDegreeReportRequest {
     /// to the analysis pipeline; higher values give more accurate per-course
     /// statistics in the report but slow generation.
     #[schemars(description = "Maximum plans to generate (default 500)")]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub max_plans: Option<usize>,
 
     /// Comma-separated course codes that must appear in every generated plan
@@ -83,10 +80,7 @@ pub struct GenerateDegreeReportRequest {
     #[schemars(
         description = "Also write per-plan CSV files alongside the HTML report (default true when output_dir is set, ignored otherwise)."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub write_plan_csvs: Option<bool>,
 
     /// Whether to write the degree's one-line JSONL summary into `output_dir`.
@@ -94,10 +88,7 @@ pub struct GenerateDegreeReportRequest {
     #[schemars(
         description = "Also write the degree's one-line JSONL summary (default true when output_dir is set, ignored otherwise)."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub write_jsonl_summary: Option<bool>,
 
     /// Whether to append/refresh an `index.csv` row into `output_dir`.
@@ -105,10 +96,7 @@ pub struct GenerateDegreeReportRequest {
     #[schemars(
         description = "Also write the cross-degree index.csv row (default true when output_dir is set, ignored otherwise)."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub write_index_csv: Option<bool>,
 
     /// Force the HTML to be returned inline even when `output_dir` is set.
@@ -117,10 +105,7 @@ pub struct GenerateDegreeReportRequest {
     #[schemars(
         description = "Return the rendered HTML in the response body. Default: true when output_dir is unset, false otherwise."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub return_html_inline: Option<bool>,
 }
 

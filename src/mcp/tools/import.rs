@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use crate::core::database::import::{execute_import, ImportOptions, ImportOutcome, ImportResult};
 use crate::core::database::DbClient;
-use crate::mcp::tools::shared::{self, error_json};
+use crate::core::json::error_json;
 use rmcp::schemars;
 use serde::Deserialize;
 
@@ -58,7 +58,7 @@ pub struct ImportDegreeRequest {
     #[schemars(
         description = "Override the resolved IPEDS UNITID. Set this to disambiguate after an institution_ambiguous result."
     )]
-    #[serde(default, deserialize_with = "shared::deserialize_opt_i32")]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
     pub unitid: Option<i32>,
 
     /// Override the institution name used for resolution / display.
@@ -79,22 +79,22 @@ pub struct ImportDegreeRequest {
 
     /// Overwrite a verified program / skip the confirmation gate.
     #[schemars(description = "Overwrite a verified program / skip the confirmation gate.")]
-    #[serde(default, deserialize_with = "shared::deserialize_opt_bool")]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub force: Option<bool>,
 
     /// Replace an existing (unverified) program.
     #[schemars(description = "Replace an existing (unverified) program.")]
-    #[serde(default, deserialize_with = "shared::deserialize_opt_bool")]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub replace: Option<bool>,
 
     /// Skip the program entirely if it already exists.
     #[schemars(description = "Skip the program entirely if it already exists.")]
-    #[serde(default, deserialize_with = "shared::deserialize_opt_bool")]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub skip_existing: Option<bool>,
 
     /// Build the plan and report counts but write nothing.
     #[schemars(description = "Preview the import (report counts) without writing anything.")]
-    #[serde(default, deserialize_with = "shared::deserialize_opt_bool")]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub dry_run: Option<bool>,
 }
 
@@ -149,7 +149,7 @@ fn resolve_report_text(
             "Must provide exactly one of: json_content or json_path",
         )),
         (Some(c), None) => Ok(c),
-        (None, Some(p)) => shared::read_yaml_file(&p),
+        (None, Some(p)) => crate::core::json::read_yaml_file(&p),
     }
 }
 

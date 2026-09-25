@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crate::core::database::models::{CipCode, Institution};
 use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::mcp::tools::shared::{parse_first, to_json_pretty};
+use crate::core::json::{parse_first, to_json_pretty};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -25,10 +25,7 @@ use serde::{Deserialize, Serialize};
 pub struct ScaffoldDegreeYamlRequest {
     /// IPEDS Unit ID of the institution.
     #[schemars(description = "IPEDS UNITID of the institution (e.g. 167358)")]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_i32"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
     pub unitid: Option<i32>,
 
     /// CIP code in dot notation (e.g. `"11.0101"`).

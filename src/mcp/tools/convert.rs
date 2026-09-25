@@ -12,11 +12,9 @@ use crate::core::degree::{
     convert_landscape, extract_cluster_programs, parse_degree_json_with_warnings, to_unified_value,
     unified_value_to_string,
 };
+use crate::core::json::{deserialize_opt_bool, read_yaml_file, to_json_pretty};
 use crate::mcp::cache::YAML_CACHE;
-use crate::mcp::tools::shared::{
-    deserialize_opt_bool, read_yaml_file, to_json_pretty, ToolFollowup, TOOL_ANALYZE_DEGREE,
-    TOOL_VALIDATE_DEGREE,
-};
+use crate::mcp::tools::shared::{ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_VALIDATE_DEGREE};
 
 /// Request parameters for the `convert_degree` tool.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]

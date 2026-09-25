@@ -48,10 +48,7 @@ pub struct AuditDegreeRequest {
 
     /// Prerequisite chain depth threshold (default: 3)
     #[schemars(description = "Minimum chain length to flag as deep (default: 3)")]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub chain_threshold: Option<usize>,
 
     /// Surface `missing_intermediate_prereqs` findings — heuristic same-subject
@@ -62,10 +59,7 @@ pub struct AuditDegreeRequest {
     #[schemars(
         description = "Include missing-intermediate prerequisite findings (default true). Heuristic: flags courses where a same-subject sibling sits numerically between a declared prereq and the consuming course and shares the same prereq."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub include_missing_intermediate_prereqs: Option<bool>,
 }
 

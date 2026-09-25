@@ -43,26 +43,17 @@ pub struct DegreePipelineRequest {
     #[schemars(
         description = "If true, validate treats unmatched patterns as warnings instead of errors. Default false."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub allow_unmatched_patterns: Option<bool>,
 
     /// Forwarded to `audit_degree`: minimum chain length to flag as deep.
     #[schemars(description = "Minimum prereq chain length to flag as deep (default 3)")]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub chain_threshold: Option<usize>,
 
     /// Forwarded to `analyze_degree`: cap on plans generated.
     #[schemars(description = "Maximum plans to generate (default 500)")]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub max_plans: Option<usize>,
 
     /// Forwarded to `analyze_degree`: comma-separated course codes that
@@ -75,19 +66,13 @@ pub struct DegreePipelineRequest {
     /// Skip the audit stage. The response will carry `audit: null`.
     /// Useful when the caller only wants validate + analyze.
     #[schemars(description = "Skip audit_degree (default false)")]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub skip_audit: Option<bool>,
 
     /// Skip the analyze stage. The response will carry `analyze: null`.
     /// Useful when the caller only wants validate (+ audit).
     #[schemars(description = "Skip analyze_degree (default false)")]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub skip_analyze: Option<bool>,
 }
 

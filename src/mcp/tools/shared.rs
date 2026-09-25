@@ -3,18 +3,7 @@
 use serde::Serialize;
 
 use crate::core::degree::DegreeParseError;
-
-// ─── Moved to `crate::core::json` ────────────────────────────────────────────
-//
-// These helpers are protocol-agnostic, and `core::query` and the CLI both need them
-// without the `mcp` feature. Re-exported here so the tool modules keep one import site
-// and their `deserialize_with = "shared::…"` strings keep resolving. Transitional: a
-// later step rewrites those call sites and removes this block.
-pub use crate::core::json::{
-    deserialize_opt_bool, deserialize_opt_f32, deserialize_opt_f64, deserialize_opt_i32,
-    deserialize_opt_i64, deserialize_opt_u64, deserialize_opt_usize, error_json, parse_comma_list,
-    parse_comma_list_usize, parse_first, parse_json_array, read_yaml_file, to_json_pretty,
-};
+use crate::core::json::error_json;
 
 // ─── DegreeParseError formatting ─────────────────────────────────────────────
 
@@ -192,11 +181,11 @@ pub fn format_yaml_context(yaml: &str, line: usize, column: usize) -> String {
 // than `2023`). Default serde rejects those when the field is typed as
 // `Option<i32>` etc., so requests fail before reaching tool logic.
 //
-// These helpers accept either native or string-encoded values and
-// resolve to `None` for missing/null/empty-string inputs. Apply via
-// `#[serde(default, deserialize_with = "shared::deserialize_opt_<T>")]`.
-// The `default` attribute is required so an absent field stays `None`
-// instead of routing through the deserializer.
+// Those helpers now live in `crate::core::json`, so the query engines and the CLI reach
+// them without the `mcp` feature. Apply via
+// `#[serde(default, deserialize_with = "crate::core::json::deserialize_opt_<T>")]`.
+// The `default` attribute is required so an absent field stays `None` instead of routing
+// through the deserializer.
 
 #[cfg(test)]
 mod tests {

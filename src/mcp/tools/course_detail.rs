@@ -57,18 +57,12 @@ pub struct GetCourseDetailRequest {
     #[schemars(
         description = "Include analysis-derived stats + term placement per selected plan (default true). Set false to skip the analysis pass (~10x faster, static data only)."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub include_analysis: Option<bool>,
 
     /// Forwarded to `analyze_degree` when `include_analysis=true`. Default 500.
     #[schemars(description = "max_plans for the analysis pass (default 500)")]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub max_plans: Option<usize>,
 }
 

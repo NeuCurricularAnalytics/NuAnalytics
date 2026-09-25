@@ -194,8 +194,12 @@ to assert `term_distribution` too, and widen the
 - **`planner` / `src/core/planner/`** — different level of analysis (section 1). Leave it.
 - **Splitting the large files** (`degree.rs` 3.9k, `analyze.rs` 2.7k, `completions.rs`
   2.4k). Step 4 removes ~600 lines from `degree.rs` on its own; re-assess afterwards.
-- **`src/mcp/tools/completions.rs`** — the IPEDS demographics engine has the same
-  trapped-in-`mcp` shape and deserves the same treatment, but independently and later.
+- ~~**`src/mcp/tools/completions.rs`** — the IPEDS demographics engine has the same
+  trapped-in-`mcp` shape.~~ **Done 2026-09-24.** It, `institutions`, `cip_codes`, `lookup`
+  and most of `degrees` now live in `src/core/query/`, with the shared JSON helpers in
+  `src/core/json.rs`. `compare_degrees`' analysis hook is the one piece still in `mcp`,
+  injected as a `CompareMetricsFn` parameter — it collapses into a direct call once
+  step 3 below lands `core::analysis`.
 - **The flat edge model cannot represent OR-of-ANDs — but it is a much smaller problem
   than it first looks, and "fix" it carelessly and you move every metric you own.**
 

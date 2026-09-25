@@ -18,3 +18,13 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --workspace --all-features
+
+      # `core::query` and `core::json` must build and pass without the `mcp` feature:
+      # that is what lets the CLI call the query engines directly. Nothing else enforces
+      # it, and re-coupling `core` to `mcp` would compile fine under --all-features.
+      - name: Run Rust tests (database, no MCP)
+        run: cargo test --workspace --no-default-features --features database
+
+      # The floor: no optional features at all.
+      - name: Run Rust tests (no default features)
+        run: cargo test --workspace --no-default-features

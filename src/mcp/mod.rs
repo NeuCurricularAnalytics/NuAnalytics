@@ -14,11 +14,19 @@
 //! ├── mod.rs              # This file - module exports
 //! ├── server.rs           # MCP server setup and entry point
 //! ├── tools/              # Tool implementations
-//! │   ├── mod.rs          # Tool exports
+//! │   ├── mod.rs          # Tool exports (+ re-exports of the core query engines)
 //! │   ├── schema.rs       # get_degree_schema tool
 //! │   └── validate.rs     # validate_degree tool
 //! └── schema_content.rs   # Static schema documentation
 //! ```
+//!
+//! The database **query** engines are not here. `institutions`, `cip_codes`, `lookup`,
+//! `completions` and most of `degrees` live in [`crate::core::query`] so the CLI can call
+//! the same code without the `mcp` feature; `tools/mod.rs` re-exports them under their
+//! old names, so the `#[tool]` handlers in `server.rs` are unaffected. `core` must stay
+//! free of `crate::mcp` — the CI matrix builds `--features database` alone to enforce it.
+//! The one exception is `compare_degrees`' analysis hook, which `tools/degrees.rs`
+//! injects because the analysis pipeline is still MCP-gated.
 //!
 //! # Usage
 //!

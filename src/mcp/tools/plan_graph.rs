@@ -50,10 +50,7 @@ pub struct RenderPlanGraphRequest {
     /// Index of the random sample to render when `plan_category="sample"`.
     /// 1-indexed (`1` = Sample 1). Default 1.
     #[schemars(description = "1-indexed sample number when plan_category=\"sample\". Default 1.")]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub sample_index: Option<usize>,
 
     /// Raw 0-indexed offset into the analyze response's `selected_plans`
@@ -61,10 +58,7 @@ pub struct RenderPlanGraphRequest {
     #[schemars(
         description = "0-indexed offset into selected_plans (advanced). Mutually exclusive with plan_category."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub plan_index: Option<usize>,
 
     /// Rendering format. Defaults to `"standalone"` (full HTML page).
@@ -76,10 +70,7 @@ pub struct RenderPlanGraphRequest {
 
     /// Forwarded to `analyze_degree`: cap on plans generated.
     #[schemars(description = "Maximum plans to generate during analysis (default 500)")]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_usize"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub max_plans: Option<usize>,
 
     /// Forwarded to `analyze_degree`: courses every generated plan must include.
@@ -94,10 +85,7 @@ pub struct RenderPlanGraphRequest {
     #[schemars(
         description = "Skip rendering and return picker metadata + node_count + a heuristic html_bytes estimate (default false). Use this to budget before paying the full render cost."
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::mcp::tools::shared::deserialize_opt_bool"
-    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub dry_run: Option<bool>,
 }
 
