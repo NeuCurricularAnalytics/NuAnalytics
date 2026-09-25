@@ -1040,6 +1040,13 @@ pub enum QuerySubcommand {
         /// Only tribal colleges.
         #[arg(long)]
         tribal: bool,
+        /// Only schools that hold stored degree programs, with those programs attached.
+        ///
+        /// 582 of 6,515 institutions have any, so this restricts as well as annotates —
+        /// `--limit` then counts schools that actually have programs. The program list is
+        /// nested, so `--format table` shows `program_count` and names the omission.
+        #[arg(long = "with-programs")]
+        with_programs: bool,
         /// Maximum rows (engine default 25, capped at 100).
         #[arg(long, value_name = "N")]
         limit: Option<usize>,

@@ -2123,6 +2123,7 @@ async fn dispatch_query(client: &Arc<DbClient>, subcommand: QuerySubcommand) -> 
             control,
             hbcu,
             tribal,
+            with_programs,
             limit,
         } => {
             query_schools(
@@ -2136,6 +2137,7 @@ async fn dispatch_query(client: &Arc<DbClient>, subcommand: QuerySubcommand) -> 
                     tribal,
                     limit,
                 },
+                with_programs,
             )
             .await
         }
@@ -2199,23 +2201,24 @@ struct SchoolsQuery {
     limit: Option<usize>,
 }
 
-/// Search institutions.
-async fn query_schools(client: &Arc<DbClient>, q: SchoolsQuery) -> String {
+/// Search institutions, optionally joined to the degree programs stored for them.
+async fn query_schools(client: &Arc<DbClient>, q: SchoolsQuery, with_programs: bool) -> String {
     use nu_analytics::core::query::institutions;
-    institutions::execute_search_json(
-        client,
-        institutions::SearchInstitutionsRequest {
-            name: q.name,
-            state: q.state,
-            carnegie_class: q.carnegie_class,
-            control: q.control,
-            hbcu: only(q.hbcu),
-            tribal: only(q.tribal),
-            inst_size_min: None,
-            limit: q.limit,
-        },
-    )
-    .await
+    let req = institutions::SearchInstitutionsRequest {
+        name: q.name,
+        state: q.state,
+        carnegie_class: q.carnegie_class,
+        control: q.control,
+        hbcu: only(q.hbcu),
+        tribal: only(q.tribal),
+        inst_size_min: None,
+        limit: q.limit,
+    };
+    if with_programs {
+        institutions::execute_search_with_programs_json(client, req).await
+    } else {
+        institutions::execute_search_json(client, req).await
+    }
 }
 
 /// Filters for `db query degrees`, mirroring the clap variant's fields.

@@ -49,7 +49,7 @@ trust either.
 
 * `db query schools`      — institutions. `--name` is always a case-insensitive
   substring (`hawaii`), never exact; plus `--state`, `--control`, `--carnegie-class`,
-  `--hbcu`, `--tribal`, `--limit`
+  `--hbcu`, `--tribal`, `--with-programs`, `--limit`
 * `db query degrees`      — stored programs: `--school <unitid>`, `--cip`,
   `--catalog-year`, `--degree-type`, `--kind`, `--limit`
 * `db query metrics`      — analysis runs for one program: `--degree` (program key or
@@ -60,6 +60,14 @@ trust either.
 * `db query lookup`       — an IPEDS lookup table, i.e. what the numeric codes mean
 
 Two behaviours are worth knowing before reading the output.
+
+**`db query schools --with-programs` restricts as well as annotates.** Only 582 of 6,515
+institutions hold a stored program, so a listing that merely attached them would be mostly
+empty arrays; the flag returns just the schools that have programs, and `--limit` counts
+those. It is a client-side join — `programs.unitid` carries no foreign key, so PostgREST
+embedding is unavailable — driven from `programs` and batched, because the alternative
+(scanning all 6,515 institutions to intersect) would cross `PGRST_DB_MAX_ROWS` and
+truncate silently.
 
 **`db query metrics` defaults to the newest run per variant.** Runs *append* — importing a
 program again adds a row rather than replacing one — so a program accumulates runs across
