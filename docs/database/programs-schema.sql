@@ -433,3 +433,77 @@ DROP POLICY IF EXISTS "auth read analysis_plans"  ON analysis_plans;
 CREATE POLICY "auth read analysis_plans"  ON analysis_plans FOR SELECT USING (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "auth write analysis_plans" ON analysis_plans;
 CREATE POLICY "auth write analysis_plans" ON analysis_plans FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+
+-- =============================================================================
+-- query_readonly — the backend half of `nuanalytics db query --sql`
+-- =============================================================================
+-- PostgREST exposes no SQL endpoint, and `db exec-sql` reaches the Supabase
+-- Management API, which needs a project ref a self-hosted deployment does not
+-- have. This function is how arbitrary SELECTs reach both deployments over the
+-- one transport the client already speaks.
+--
+-- Safety rests on two engine-enforced layers. Both were verified against this
+-- deployment; the SQLSTATEs below are the ones actually observed.
+--
+--   1. STABLE makes PostgREST run the call in a READ ONLY transaction, and
+--      Postgres then refuses every write. This is the guarantee. Observed:
+--      SELECT nextval(...) through /rest/v1/rpc/ fails 25006 "cannot execute
+--      nextval() in a read-only transaction" and the sequence does not move.
+--
+--      Be precise about why, because the obvious explanation is wrong: plpgsql
+--      does run a non-volatile function's dynamic SQL through SPI with
+--      read_only = true, but that flag only rejects non-SELECT *commands* — it
+--      does NOT stop a volatile function called inside a SELECT from writing.
+--      The same query_readonly('SELECT nextval(...)') called over psql, in an
+--      ordinary read-write transaction, succeeds and advances the sequence.
+--      The read-only-ness therefore comes from the transaction PostgREST opens
+--      on the strength of this volatility marker.
+--
+--      Consequence worth knowing: this function is only read-only when reached
+--      through PostgREST. Nothing in NuAnalytics calls it another way — the
+--      client speaks nothing but PostgREST — but a direct psql caller gets no
+--      such protection.
+--
+--   2. The wrapping below puts `q` in a scalar subquery position, so it has to
+--      be a SELECT. Observed: bare DML is a syntax error (42601) and a
+--      data-modifying CTE is refused 0A000 "WITH clause containing a
+--      data-modifying statement must be at the top level". This is what
+--      catches a write smuggled past a client-side check with a semicolon.
+--
+-- SECURITY INVOKER with a fixed search_path keeps the caller's own RLS in force
+-- and blocks a search-path hijack. It is NOT a write barrier: this schema
+-- grants authenticated members FOR ALL on several tables.
+--
+-- The client-side check in src/core/query/sql.rs is for a clearer message
+-- before a round trip. It is not part of the guarantee.
+--
+-- max_rows bounds the response. The result is a single jsonb value, so
+-- PGRST_DB_MAX_ROWS does not apply to it and an unbounded query would return
+-- one very large payload rather than being capped.
+--
+-- statement_timeout stops a runaway scan holding a connection open.
+CREATE OR REPLACE FUNCTION public.query_readonly(q text, max_rows integer DEFAULT 1000)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY INVOKER
+SET search_path = public, pg_temp
+SET statement_timeout = '30s'
+AS $$
+DECLARE
+    result jsonb;
+BEGIN
+    IF max_rows IS NULL OR max_rows < 1 THEN
+        RAISE EXCEPTION 'max_rows must be a positive integer, got %', max_rows;
+    END IF;
+    EXECUTE format(
+        'SELECT coalesce(jsonb_agg(t), ''[]''::jsonb) FROM (SELECT * FROM (%s) AS inner_q LIMIT %s) AS t',
+        q, max_rows
+    )
+    INTO result;
+    RETURN result;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.query_readonly(text, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.query_readonly(text, integer) TO authenticated;

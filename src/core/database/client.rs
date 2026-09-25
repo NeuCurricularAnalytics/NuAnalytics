@@ -561,6 +561,65 @@ impl DbClient {
             .map_err(|e| DatabaseError::ParseError(e.to_string()))
     }
 
+    /// Call a Postgres function through `PostgREST`'s `/rpc/` endpoint.
+    ///
+    /// The one code path that is identical on Supabase cloud and a self-hosted stack —
+    /// unlike `db exec-sql`, which needs a Management API project ref. `params` becomes
+    /// the JSON body, so its keys must match the function's argument names.
+    ///
+    /// # Errors
+    /// [`DatabaseError::NotAuthenticated`] when the session is rejected after a forced
+    /// refresh, [`DatabaseError::QueryError`] when the function itself raises (a bad
+    /// query, or a write refused by a non-volatile function),
+    /// [`DatabaseError::ConnectionError`] when the backend could not be reached, and
+    /// [`DatabaseError::ParseError`] when the response is not JSON.
+    pub async fn rpc(
+        &self,
+        function: &str,
+        params: &serde_json::Value,
+    ) -> DatabaseResult<serde_json::Value> {
+        let url = format!("{}{REST_API_PREFIX}/rpc/{function}", self.endpoint);
+
+        let mut token = self.current_token().await?;
+        let mut response = self.send_rpc(&url, &token, params).await?;
+        // Same forced reauth as `select`: a 401 here means the token was rejected
+        // despite looking valid by the clock.
+        if response.status().as_u16() == 401 {
+            token = self.reauthenticate(true).await?;
+            response = self.send_rpc(&url, &token, params).await?;
+        }
+
+        if !response.status().is_success() {
+            return Err(self.classify_failure(response).await);
+        }
+
+        response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|e| DatabaseError::ParseError(e.to_string()))
+    }
+
+    /// POST one RPC call.
+    async fn send_rpc(
+        &self,
+        url: &str,
+        token: &str,
+        params: &serde_json::Value,
+    ) -> DatabaseResult<reqwest::Response> {
+        self.http
+            .post(url)
+            .header("apikey", &self.anon_key)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .json(params)
+            .send()
+            .await
+            .map_err(|e| {
+                DatabaseError::ConnectionError(format!("request to {} failed: {e}", self.endpoint))
+            })
+    }
+
     /// Turn a non-success `PostgREST` response into the right error variant.
     ///
     /// A 401 that survives the forced refresh-and-retry is an authentication failure, not

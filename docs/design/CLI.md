@@ -27,7 +27,8 @@ Deployment:
 * `db status`       — endpoint / anon key / auth file / probe. Exits 1 on a failed read
 * `db doctor`       — full deployment diagnosis, each check gating the next
 * `db exec-sql`     — run arbitrary SQL via the Supabase **Management API**. Cloud only —
-  it needs a project ref, which a self-hosted endpoint does not have
+  it needs a project ref, which a self-hosted endpoint does not have. This is the
+  **write/DDL** path; to read, use `db query --sql`
 
 Data in:
 
@@ -58,6 +59,7 @@ trust either.
   `--cip-codes`, `--year`, `--award-level`, `--group-by`, `--raw`
 * `db query cip`          — the CIP catalogue: `--search`, `--prefix`, `--limit`
 * `db query lookup`       — an IPEDS lookup table, i.e. what the numeric codes mean
+* `db query --sql <FILE>` — one read-only SELECT from a file, plus `--max-rows`
 
 Two behaviours are worth knowing before reading the output.
 
@@ -68,6 +70,54 @@ those. It is a client-side join — `programs.unitid` carries no foreign key, so
 embedding is unavailable — driven from `programs` and batched, because the alternative
 (scanning all 6,515 institutions to intersect) would cross `PGRST_DB_MAX_ROWS` and
 truncate silently.
+
+#### `db query --sql` — the read-only SQL path
+
+```sh
+nuanalytics db query --sql ./report.sql --max-rows 500
+```
+
+**Why a Postgres function rather than a SQL endpoint.** PostgREST exposes none, and
+`db exec-sql` reaches the Supabase *Management API*, which needs a project ref a
+self-hosted deployment does not have. `query_readonly(q text, max_rows integer)` — defined
+at the end of `docs/database/programs-schema.sql` and installed by `db bootstrap` — is
+called over `/rest/v1/rpc/`, the same transport everything else uses, so one code path
+serves cloud and self-hosted alike.
+
+**The read-only guarantee is the engine's, not the CLI's** — and it is worth being exact
+about which engine mechanism, because the obvious answer is wrong. Declaring the function
+`STABLE` makes **PostgREST** run the call in a `READ ONLY` transaction, and Postgres then
+refuses every write. Verified against the live stack:
+
+| sent to `/rest/v1/rpc/query_readonly` | result |
+|---|---|
+| `UPDATE programs SET name = name` | `42601` syntax error — DML cannot sit in a subquery |
+| `SELECT 1) AS x; DROP TABLE programs; --` | `42601` — the smuggled statement cannot parse |
+| `WITH x AS (DELETE … RETURNING 1) SELECT * FROM x` | `0A000` "must be at the top level" |
+| `SELECT nextval('completions_id_seq')` | `25006` read-only transaction; sequence unmoved |
+
+The last row is the one that proves it. plpgsql *does* run a non-volatile function's
+dynamic SQL through SPI with `read_only` set, but that flag only rejects non-`SELECT`
+commands — it does not stop a volatile function called inside a `SELECT` from writing. The
+same `query_readonly('SELECT nextval(…)')` run over `psql`, in an ordinary read-write
+transaction, succeeds and advances the sequence. So the protection comes from the
+transaction PostgREST opens on the strength of the volatility marker, and it applies only
+to callers that go through PostgREST. Nothing here calls it any other way — `DbClient`
+speaks nothing else — but a direct `psql` caller gets no such protection.
+
+`SECURITY INVOKER` with a fixed `search_path` keeps the caller's own RLS in force and
+blocks search-path hijack; it is *not* itself a write barrier, since this schema grants
+authenticated members `FOR ALL` on several tables. The client-side check that refuses a
+non-`SELECT` before the round trip exists for a clearer message, and is deliberately a
+filter on obvious writes rather than a SQL parser.
+
+**`--max-rows` matters more here than elsewhere.** The result comes back as a single
+`jsonb` value, so `PGRST_DB_MAX_ROWS` does not cap it — without a bound a broad query
+returns one very large payload rather than being truncated. Default 1,000, maximum 10,000,
+applied inside the function; the response carries `truncated: true` when the cap is hit.
+The function also sets `statement_timeout = '30s'`.
+
+**`db exec-sql` stays the write/DDL path** and is what `db bootstrap` uses on cloud.
 
 **`db query metrics` defaults to the newest run per variant.** Runs *append* — importing a
 program again adds a row rather than replacing one — so a program accumulates runs across
@@ -97,9 +147,6 @@ otherwise.
 
 
 ### Future Additions
-* `db query --sql <file>` - run a read-only SQL file. Needs a `STABLE` Postgres function
-  (`query_readonly`) plus a `DbClient::rpc` path, because PostgREST exposes no SQL
-  endpoint and `db exec-sql` is cloud-only. `exec-sql` stays as the cloud write/DDL path
 * school - handles schools and programs within schools - degrees are attached to those programs
 * stats  - handles some built in queries and stats requests across the various schools and programs stored in db
 

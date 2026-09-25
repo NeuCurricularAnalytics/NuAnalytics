@@ -1,0 +1,13 @@
+-- Deliberately refused. `db query --sql` is read-only; this file exists so the refusal
+-- can be demonstrated rather than taken on trust.
+--
+--   nuanalytics db query --sql docs/database/examples/refused-write.sql
+--
+-- Expect exit status 1 and:
+--   "a read-only query must start with SELECT or WITH, found \"update\""
+--
+-- The CLI stops this before any round trip, but the CLI is not what makes it safe: the
+-- backend's query_readonly() is declared STABLE, so PostgREST runs it in a READ ONLY
+-- transaction and Postgres refuses the write even if the check is bypassed. See
+-- docs/design/CLI.md for the SQLSTATEs that proves.
+UPDATE programs SET name = 'should never happen'

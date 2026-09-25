@@ -202,7 +202,7 @@ it is:
 | 1 | `docs/database/schema.sql` | Tables, indexes, RLS policies |
 | 2 | `docs/database/cip-seed.sql` | `cip_codes` — 2,173 CIP 2020 codes |
 | 3 | `docs/database/lookup-seed.sql` | `award_levels`, `carnegie_class`, locale, … |
-| 4 | `docs/database/programs-schema.sql` | Stored-programs tables |
+| 4 | `docs/database/programs-schema.sql` | Stored-programs tables, `query_readonly()` |
 | 5 | `docs/database/program-lookup-seed.sql` | `degree_types` |
 
 Files 2 and 3 insert into tables file 1 creates; file 5 seeds a table file 4 creates.
@@ -221,6 +221,52 @@ of this is safe to re-run on a live database.
 > `docs/database/historical/` holds two migrations for databases created before a schema
 > change. **A fresh install must not run them** — everything in them is already in
 > `schema.sql`.
+
+### Step 4c — `query_readonly()`, and reloading the schema cache after any function change
+
+`programs-schema.sql` ends with `query_readonly(q text, max_rows integer)`, the function
+behind `nuanalytics db query --sql`. A deployment created before it was added has every
+table but not the function, and `db query --sql` then reports:
+
+    the backend has no `query_readonly` function: ... PGRST202 ...
+
+Applying the file again installs it — the file is idempotent, and the function block on
+its own touches no table or policy. On a self-hosted stack Postgres is usually not
+published to the host, so go through the container:
+
+```sh
+# self-hosted: apply just the function, atomically
+awk '/^-- query_readonly/{f=1} f' docs/database/programs-schema.sql \
+  | podman exec -i supabase-db psql -U postgres -d postgres \
+      --single-transaction -v ON_ERROR_STOP=1
+```
+
+**Then reload PostgREST's schema cache, or the function stays invisible.** PostgREST
+caches the schema at startup and will keep answering `PGRST202` for a function it has not
+seen, which looks exactly like the function not existing:
+
+```sh
+podman exec supabase-db psql -U postgres -d postgres -c "NOTIFY pgrst, 'reload schema';"
+```
+
+On Supabase cloud, `nuanalytics db exec-sql docs/database/programs-schema.sql` does the
+same thing and the cache reload is automatic.
+
+Confirm it took, including the two properties the read-only guarantee depends on
+(`provolatile = s` is STABLE, `prosecdef = f` is SECURITY INVOKER):
+
+```sh
+podman exec supabase-db psql -U postgres -d postgres -tAc \
+  "select proname, provolatile, prosecdef from pg_proc where proname='query_readonly';"
+# query_readonly|s|f
+```
+
+> **Why STABLE is load-bearing.** PostgREST picks the transaction mode from the function's
+> volatility: a `STABLE` function is called inside a `READ ONLY` transaction, and that is
+> what makes `db query --sql` read-only. Change it to `VOLATILE` and the endpoint silently
+> becomes writable — no error, no warning. See
+> [CLI.md](../design/CLI.md#db-query---sql--the-read-only-sql-path) for the verification
+> table.
 
 ---
 

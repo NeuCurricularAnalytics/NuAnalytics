@@ -664,6 +664,10 @@ pub enum DbSubcommand {
     /// This is a Supabase-cloud path. A self-hosted stack has no Management API and no
     /// project ref — apply SQL to it directly instead (`psql -f <file>`).
     ///
+    /// This is the write and DDL path. To *read*, use `db query --sql <FILE>`, which goes
+    /// through a `STABLE` Postgres function over the normal REST transport and so works
+    /// on both cloud and self-hosted deployments.
+    ///
     /// Requires two settings, both explicit:
     ///
     /// ```sh
@@ -796,22 +800,38 @@ pub enum DbSubcommand {
     /// Read-only. Results print as JSON by default because the usual caller is a script
     /// or an LLM; `--format table` is for reading in a terminal.
     ///
-    /// The filters are deliberately a small set, for quick questions — "which schools in
-    /// Hawaii", "what degrees does this one have".
+    /// The subcommand filters are deliberately a small set, for quick questions — "which
+    /// schools in Hawaii", "what degrees does this one have". Anything more goes through
+    /// `--sql`, which runs one read-only SELECT from a file.
     ///
     /// Examples:
     /// ```sh
     /// nuanalytics db query schools --state HI
-    /// nuanalytics db query schools --name hawaii --format table
+    /// nuanalytics db query schools --with-programs --format table
     /// nuanalytics db query degrees --school 141574
     /// nuanalytics db query metrics --degree <PROGRAM_KEY> --variant trimmed
     /// nuanalytics db query demographics --school 141574 --cip 11.
     /// nuanalytics db query cip --search computer
     /// nuanalytics db query lookup --table carnegie_class
+    /// nuanalytics db query --sql ./report.sql --max-rows 500
     /// ```
     Query {
         #[command(subcommand)]
-        subcommand: QuerySubcommand,
+        subcommand: Option<QuerySubcommand>,
+        /// Run one read-only SELECT read from FILE.
+        ///
+        /// Goes through the backend's `query_readonly` function, which is declared
+        /// `STABLE` — Postgres itself refuses any write inside it, so the guarantee is
+        /// the engine's rather than a keyword check. Use `db exec-sql` for writes and
+        /// DDL; that path is Supabase cloud only.
+        #[arg(long, value_name = "FILE")]
+        sql: Option<std::path::PathBuf>,
+        /// Row cap for `--sql` (default 1000, max 10000).
+        ///
+        /// The result comes back as a single JSON value, so the backend's own row limit
+        /// does not apply to it — without a cap a broad query returns one huge payload.
+        #[arg(long = "max-rows", value_name = "N", requires = "sql")]
+        max_rows: Option<usize>,
         /// Output format: `json` (default, machine-readable) or `table`.
         #[arg(long, value_enum, default_value = "json", global = true)]
         format: crate::output::OutputFormat,

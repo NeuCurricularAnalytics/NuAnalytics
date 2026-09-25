@@ -42,7 +42,12 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
             dry_run,
         } => run_prune(config, keep, analyzer_version.as_deref(), dry_run),
         DbSubcommand::Doctor => run_doctor(config, sources),
-        DbSubcommand::Query { subcommand, format } => run_query(config, subcommand, format),
+        DbSubcommand::Query {
+            subcommand,
+            sql,
+            max_rows,
+            format,
+        } => run_query(config, subcommand, sql.as_deref(), max_rows, format),
         DbSubcommand::IpedsImport {
             dir,
             institutions,
@@ -2277,7 +2282,13 @@ async fn query_metrics(
 /// The engines report failure in their JSON payload rather than by returning an error, so
 /// this is also where a payload carrying `error` becomes exit status 1 — a script reading
 /// stdout needs the two to agree.
-fn run_query(config: &Config, subcommand: QuerySubcommand, format: OutputFormat) {
+fn run_query(
+    config: &Config,
+    subcommand: Option<QuerySubcommand>,
+    sql_file: Option<&std::path::Path>,
+    max_rows: Option<usize>,
+    format: OutputFormat,
+) {
     // Not `return`: this function's contract is that the exit status agrees with what
     // was printed, and returning here would exit 0 having printed nothing to stdout.
     let Some(rt) = make_runtime() else {
@@ -2285,7 +2296,31 @@ fn run_query(config: &Config, subcommand: QuerySubcommand, format: OutputFormat)
     };
     let client = Arc::new(connect_or_exit(&rt, config));
 
-    let json = rt.block_on(dispatch_query(&client, subcommand));
+    let json = match (subcommand, sql_file) {
+        // clap cannot express "conflicts with a subcommand", so the check lives here.
+        (Some(_), Some(_)) => serde_json::json!({
+            "error": "--sql runs instead of a subcommand, not alongside one",
+            "tip": "Drop one: `db query --sql <FILE>`, or `db query schools ...`",
+        })
+        .to_string(),
+        (Some(sub), None) => rt.block_on(dispatch_query(&client, sub)),
+        (None, Some(path)) => match std::fs::read_to_string(path) {
+            Ok(sql) => rt.block_on(nu_analytics::core::query::sql::execute_json(
+                &client, &sql, max_rows,
+            )),
+            // Named payload rather than a bare eprintln so a caller reading stdout sees
+            // the failure in the same shape as every other one.
+            Err(e) => serde_json::json!({
+                "error": format!("cannot read {}: {e}", path.display()),
+            })
+            .to_string(),
+        },
+        (None, None) => serde_json::json!({
+            "error": "nothing to run: give a subcommand or --sql <FILE>",
+            "tip": "`nuanalytics db query --help` lists the subcommands",
+        })
+        .to_string(),
+    };
 
     println!("{}", crate::output::render(&json, format));
 
