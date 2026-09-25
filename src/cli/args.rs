@@ -791,6 +791,31 @@ pub enum DbSubcommand {
     /// were applied, which this reports table by table. Exits 1 on any hard failure —
     /// missing seed data is a warning, not a failure.
     Doctor,
+    /// Read the database: schools, degrees, analysis metrics, IPEDS demographics, CIP codes, or the lookup tables.
+    ///
+    /// Read-only. Results print as JSON by default because the usual caller is a script
+    /// or an LLM; `--format table` is for reading in a terminal.
+    ///
+    /// The filters are deliberately a small set, for quick questions — "which schools in
+    /// Hawaii", "what degrees does this one have".
+    ///
+    /// Examples:
+    /// ```sh
+    /// nuanalytics db query schools --state HI
+    /// nuanalytics db query schools --name hawaii --format table
+    /// nuanalytics db query degrees --school 141574
+    /// nuanalytics db query metrics --degree <PROGRAM_KEY> --variant trimmed
+    /// nuanalytics db query demographics --school 141574 --cip 11.
+    /// nuanalytics db query cip --search computer
+    /// nuanalytics db query lookup --table carnegie_class
+    /// ```
+    Query {
+        #[command(subcommand)]
+        subcommand: QuerySubcommand,
+        /// Output format: `json` (default, machine-readable) or `table`.
+        #[arg(long, value_enum, default_value = "json", global = true)]
+        format: crate::output::OutputFormat,
+    },
     /// Import IPEDS data from locally downloaded CSV or ZIP files into Supabase.
     ///
     /// Only two files are needed — the completions file is used in a single pass to
@@ -908,6 +933,198 @@ pub enum DbSubcommand {
     },
 }
 
+/// Filters for `db query demographics`.
+///
+/// Its own struct rather than inline variant fields so the dispatch stays a single call —
+/// the command fans out to three different engines depending on `group_by`.
+#[derive(clap::Args, Clone, Debug)]
+pub struct DemographicsArgs {
+    /// IPEDS unitid. Required for `--group-by cip`; narrows the others to one school.
+    #[arg(long, value_name = "UNITID")]
+    pub school: Option<i32>,
+    /// CIP code prefix, e.g. `11.` for all computing, `11.07` for computer science.
+    #[arg(long, value_name = "PREFIX")]
+    pub cip: Option<String>,
+    /// Exact CIP codes, comma-separated. Takes priority over `--cip`.
+    #[arg(long = "cip-codes", value_name = "LIST")]
+    pub cip_codes: Option<String>,
+    /// Academic year, e.g. 2024. Defaults to the most recent year stored.
+    #[arg(long, value_name = "YEAR")]
+    pub year: Option<i32>,
+    /// Award level: 3 associate, 5 bachelors, 7 masters, 9 doctoral. Omit for all.
+    #[arg(long = "award-level", value_name = "N")]
+    pub award_level: Option<i32>,
+    /// Two-letter state code. Refused with `--group-by cip`, which is one school.
+    #[arg(long, value_name = "CODE")]
+    pub state: Option<String>,
+    /// Control code: 1 public, 2 private non-profit, 3 private for-profit.
+    #[arg(long, value_name = "N")]
+    pub control: Option<i32>,
+    /// Carnegie classification code, e.g. 15 for R1.
+    #[arg(long = "carnegie-class", value_name = "N")]
+    pub carnegie_class: Option<i32>,
+    /// Only historically Black colleges and universities. Needs `--group-by school`.
+    #[arg(long)]
+    pub hbcu: bool,
+    /// Only tribal colleges. Needs `--group-by school`.
+    #[arg(long)]
+    pub tribal: bool,
+    /// Shape of the result: grouped by demographic only, by school, or by CIP code.
+    #[arg(long = "group-by", value_enum, default_value = "total")]
+    pub group_by: DemographicsGrouping,
+    /// Counts only — skips the baseline query, so the ratio fields come back null
+    /// (rendered blank by `--format table`).
+    #[arg(long)]
+    pub raw: bool,
+    /// Maximum schools returned by `--group-by school` (default 50, max 200).
+    #[arg(long, value_name = "N")]
+    pub limit: Option<usize>,
+}
+
+/// How `db query demographics` should group its rows.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DemographicsGrouping {
+    /// One row per race/gender group, aggregated across every matched institution.
+    Total,
+    /// One row per institution.
+    School,
+    /// One row per CIP code at a single school. Requires `--school`.
+    Cip,
+}
+
+// Only the `db query demographics` dispatch uses this, and that is `database`-gated.
+#[cfg(feature = "database")]
+impl DemographicsGrouping {
+    /// The `--group-by` value that selects this variant, for use in error messages.
+    ///
+    /// Written out rather than read from `to_possible_value()`, which borrows from a
+    /// temporary and so cannot yield `&'static str` without leaking. The duplication is
+    /// held honest by `test_grouping_as_str_matches_the_accepted_flag_values`: an error
+    /// must never name a value clap would reject.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Total => "total",
+            Self::School => "school",
+            Self::Cip => "cip",
+        }
+    }
+}
+
+/// What to read. Each variant maps onto one query engine in `nu_analytics::core::query`.
+/// Every engine except `metrics` is also an MCP tool, so the two front ends return the
+/// same shapes.
+#[derive(Subcommand, Debug, Clone)]
+pub enum QuerySubcommand {
+    /// List institutions, optionally filtered.
+    ///
+    /// `--name` is always a case-insensitive substring match: `hawaii` finds
+    /// "University of Hawaii at Manoa". There is no exact or anchored form — the
+    /// engine wraps the value in wildcards either way.
+    Schools {
+        /// Institution name — case-insensitive substring, e.g. `hawaii`.
+        #[arg(long, value_name = "TEXT")]
+        name: Option<String>,
+        /// Two-letter state code (e.g. `HI`).
+        #[arg(long, value_name = "CODE")]
+        state: Option<String>,
+        /// Carnegie classification code. `db query lookup --table carnegie_class` lists them.
+        #[arg(long, value_name = "N")]
+        carnegie_class: Option<i32>,
+        /// Control code: 1 public, 2 private non-profit, 3 private for-profit.
+        #[arg(long, value_name = "N")]
+        control: Option<i32>,
+        /// Only historically Black colleges and universities.
+        #[arg(long)]
+        hbcu: bool,
+        /// Only tribal colleges.
+        #[arg(long)]
+        tribal: bool,
+        /// Maximum rows (engine default 25, capped at 100).
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+    /// List stored degree programs, optionally filtered.
+    Degrees {
+        /// IPEDS unitid of the institution.
+        #[arg(long, value_name = "UNITID")]
+        school: Option<i32>,
+        /// CIP code prefix, e.g. `11.` for computing or `11.07` for computer science.
+        #[arg(long, value_name = "PREFIX")]
+        cip: Option<String>,
+        /// Catalog year, e.g. `2024-2025`.
+        #[arg(long, value_name = "YEAR")]
+        catalog_year: Option<String>,
+        /// Normalized degree type, e.g. `BS`, `BA`, `MINOR`.
+        #[arg(long, value_name = "CODE")]
+        degree_type: Option<String>,
+        /// Program kind, e.g. `major`, `minor`, `concentration`, `certificate`.
+        #[arg(long, value_name = "KIND")]
+        kind: Option<String>,
+        /// Maximum rows (engine default 20, capped at 50).
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+    /// IPEDS completion demographics: who earns degrees, by race and gender.
+    ///
+    /// Reports raw counts and a representation ratio, where 1.0 is parity. `--raw` drops
+    /// the ratio and leaves the counts.
+    ///
+    /// The ratio's baseline always comes from one table, `institution_completion_totals`:
+    /// the group's share of all-major completions. This database holds no enrolment data
+    /// at all, so a ratio below 1.0 means "under-represented among these graduates
+    /// relative to all graduates there", never anything about who enrolled. Note the
+    /// output columns are called `enrolled`, `total_enrolled` and `enrollment_pct` for
+    /// historical reasons; they hold completions. `total` pools that denominator across
+    /// every matched institution, while `school` and `cip` use each school's own.
+    ///
+    /// `--group-by` picks what a row is: `total` gives one row per race/gender group
+    /// aggregated over everything matched, `school` one row per institution, and `cip`
+    /// one row per CIP code at a single school. The three read different engines and
+    /// accept different filters, so a filter the chosen grouping cannot apply is refused
+    /// by name rather than silently ignored.
+    Demographics(DemographicsArgs),
+    /// Show stored analysis metrics for one degree program.
+    ///
+    /// Runs append — re-importing a program adds a row rather than replacing one, so a
+    /// program accumulates runs across analyzer versions. Only the newest run per variant
+    /// is shown unless `--all` is given.
+    Metrics {
+        /// Program key (exact) or degree id. `db query degrees` lists both.
+        #[arg(long, value_name = "KEY")]
+        degree: String,
+        /// Restrict to one variant, e.g. `full` or `trimmed`. Omit for every variant.
+        #[arg(long, value_name = "NAME")]
+        variant: Option<String>,
+        /// Show every stored run, not just the newest per variant.
+        #[arg(long)]
+        all: bool,
+        /// Maximum runs to read back (engine default 50, capped at 200).
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+    /// Search the CIP code catalogue.
+    Cip {
+        /// Match against the CIP title, wildcard.
+        #[arg(long, value_name = "TEXT")]
+        search: Option<String>,
+        /// CIP code prefix, e.g. `11.`.
+        #[arg(long, value_name = "PREFIX")]
+        prefix: Option<String>,
+        /// Maximum rows (engine default 25, capped at 100).
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+    /// Dump one of the IPEDS lookup tables (what the numeric codes mean).
+    Lookup {
+        /// One of: `award_levels`, `carnegie_class`, `institution_control`,
+        /// `institution_level`, `institution_sector`, `institution_locale`,
+        /// `institution_size`.
+        #[arg(long, value_name = "TABLE")]
+        table: String,
+    },
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "nuanalytics",
@@ -1021,6 +1238,67 @@ impl Cli {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "database")]
+    use super::DemographicsGrouping;
+
+    #[test]
+    #[cfg(feature = "database")]
+    fn test_grouping_as_str_matches_the_accepted_flag_values() {
+        // `as_str` is duplicated from the ValueEnum by necessity. If a variant is
+        // renamed and only one side is updated, an error message would tell the user to
+        // pass a value clap rejects.
+        use clap::ValueEnum as _;
+        for g in DemographicsGrouping::value_variants() {
+            let accepted = g
+                .to_possible_value()
+                .expect("variant is a clap value")
+                .get_name()
+                .to_string();
+            assert_eq!(g.as_str(), accepted, "{g:?} names a value clap rejects");
+        }
+    }
+
+    #[test]
+    fn test_cli_command_tree_is_well_formed() {
+        // Clap validates the tree when the command is built and *panics* rather than
+        // returning an error, so a duplicate long name or a misplaced `global` ships as
+        // a panic on every invocation instead of a test failure.
+        use clap::CommandFactory as _;
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    #[cfg(feature = "database")]
+    fn test_every_query_subcommand_is_reachable_from_the_cli() {
+        // Guards against adding a QuerySubcommand variant and forgetting to expose it.
+        use clap::CommandFactory as _;
+        let cmd = Cli::command();
+        let query = cmd
+            .get_subcommands()
+            .find(|c| c.get_name() == "db")
+            .expect("db")
+            .get_subcommands()
+            .find(|c| c.get_name() == "query")
+            .expect("query");
+        let names: Vec<&str> = query
+            .get_subcommands()
+            .map(clap::Command::get_name)
+            .collect();
+        for expected in [
+            "schools",
+            "degrees",
+            "metrics",
+            "demographics",
+            "cip",
+            "lookup",
+        ] {
+            assert!(
+                names.contains(&expected),
+                "{expected} missing from {names:?}"
+            );
+        }
+    }
+
     use super::*;
 
     #[test]

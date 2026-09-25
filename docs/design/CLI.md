@@ -8,16 +8,72 @@ The command line program has the following top-level commands:
 * `init`     — scaffold a new research project (degrees/, plans/, MCP wiring, skills)
 * `planner`  — handle a single CSV plan, output the traditional curricular-analytics report
 * `degree`   — operate on degree YAML files via nested subcommands (see below)
-* `db`       — manage Supabase access: `login`, `logout`, `whoami`, `status`, `ipeds-import`, `exec-sql`
+* `db`       — manage and read the Supabase backend (see below)
 * `mcp`      — run the Model Context Protocol server over stdio
 
 ### `db` subcommands
-* `db login`        — OAuth sign-in, saves a session JWT under `auth_file`
-* `db logout`       — clear the saved session
+
+Access:
+
+* `db login`        — sign in and save a session JWT under `auth_file`; `--email` uses a
+  password grant, so it works on a stack with no OAuth app registered
+* `db logout`       — clear the saved session (revokes nothing server-side)
 * `db whoami`       — show the signed-in user (no DB round-trip)
-* `db status`       — diagnostic: endpoint / anon key / auth file / probe
-* `db ipeds-import` — bulk import IPEDS HD + completions CSVs into Supabase
-* `db exec-sql`     — run arbitrary SQL via the Supabase Management API (admin)
+
+Deployment:
+
+* `db bootstrap`    — apply the schema and seed files in dependency order; `--print`
+  emits them for `psql` and makes no network calls
+* `db status`       — endpoint / anon key / auth file / probe. Exits 1 on a failed read
+* `db doctor`       — full deployment diagnosis, each check gating the next
+* `db exec-sql`     — run arbitrary SQL via the Supabase **Management API**. Cloud only —
+  it needs a project ref, which a self-hosted endpoint does not have
+
+Data in:
+
+* `db ipeds-import` — bulk import IPEDS HD + completions CSVs
+* `db import`       — import degree analysis reports into the program tables
+* `db validate`     — check stored data against the IPEDS file it came from
+* `db prune`        — drop old analysis runs, keeping a bounded history per program
+
+Data out:
+
+* `db query`        — read the database (see below)
+
+#### `db query`
+
+Every subcommand prints JSON on stdout by default; `--format table` gives aligned columns
+for a terminal. Logs go to stderr, so `db query ... | jq` works unmodified. A failure is
+reported as a JSON payload with an `error` key **and** exit status 1, so a script can
+trust either.
+
+* `db query schools`      — institutions. `--name` is always a case-insensitive
+  substring (`hawaii`), never exact; plus `--state`, `--control`, `--carnegie-class`,
+  `--hbcu`, `--tribal`, `--limit`
+* `db query degrees`      — stored programs: `--school <unitid>`, `--cip`,
+  `--catalog-year`, `--degree-type`, `--kind`, `--limit`
+* `db query metrics`      — analysis runs for one program: `--degree` (program key or
+  degree id), `--variant`, `--all`
+* `db query demographics` — IPEDS completions by race and gender: `--school`, `--cip`,
+  `--cip-codes`, `--year`, `--award-level`, `--group-by`, `--raw`
+* `db query cip`          — the CIP catalogue: `--search`, `--prefix`, `--limit`
+* `db query lookup`       — an IPEDS lookup table, i.e. what the numeric codes mean
+
+Two behaviours are worth knowing before reading the output.
+
+**`db query metrics` defaults to the newest run per variant.** Runs *append* — importing a
+program again adds a row rather than replacing one — so a program accumulates runs across
+analyzer versions. `--all` shows the history.
+
+**`db query demographics` ratios are never about enrolment.** The baseline is always the
+group's share of *all-major completions* (`institution_completion_totals`); this database
+holds no enrolment data. The output columns are nonetheless named `enrolled`,
+`total_enrolled` and `enrollment_pct` — a historical misnomer, not a second measure. `--group-by`
+picks what a row is — one aggregate (`total`), one institution (`school`), or one CIP code
+at one school (`cip`) — and the three engines accept different filters. A filter the
+chosen grouping cannot honour is **refused by name** rather than silently dropped, because
+silently dropping `--hbcu` would answer for every school under a heading that said
+otherwise.
 
 ### `degree` subcommands
 * `degree validate    <FILES>...`         — structural validation (schema, prereq cycles, cross-listings)
@@ -33,6 +89,9 @@ The command line program has the following top-level commands:
 
 
 ### Future Additions
+* `db query --sql <file>` - run a read-only SQL file. Needs a `STABLE` Postgres function
+  (`query_readonly`) plus a `DbClient::rpc` path, because PostgREST exposes no SQL
+  endpoint and `db exec-sql` is cloud-only. `exec-sql` stays as the cloud write/DDL path
 * school - handles schools and programs within schools - degrees are attached to those programs
 * stats  - handles some built in queries and stats requests across the various schools and programs stored in db
 

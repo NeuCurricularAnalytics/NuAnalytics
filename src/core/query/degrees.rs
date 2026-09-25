@@ -315,7 +315,7 @@ pub async fn execute_get_json(client: &Arc<DbClient>, req: GetDegreeRequest) -> 
     } else {
         return serde_json::json!({
             "error": "Provide at least one of: program_key, degree_id, unitid, cip_code, or catalog_year",
-            "tip": "Use search_degrees to browse available programs first"
+            "tip": "Search for degrees first to browse the available programs"
         })
         .to_string();
     };
@@ -334,7 +334,7 @@ pub async fn execute_get_json(client: &Arc<DbClient>, req: GetDegreeRequest) -> 
     match programs.len() {
         0 => serde_json::json!({
             "error": "No program found matching the given filters",
-            "tip": "Use search_degrees to see what is available"
+            "tip": "Search for degrees to see what is available"
         })
         .to_string(),
         1 => to_json_pretty(&programs[0]),

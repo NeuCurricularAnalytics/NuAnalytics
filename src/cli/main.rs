@@ -5,6 +5,10 @@
 
 mod args;
 mod commands;
+// Gated with its only consumer: the query commands need a backend, so with `database`
+// off there is nothing to render. Module docs live in output.rs.
+#[cfg(feature = "database")]
+mod output;
 
 use args::{Cli, Command, DegreeSubcommand, ReportFormatArg};
 use clap::Parser;

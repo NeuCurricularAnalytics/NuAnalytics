@@ -35,6 +35,9 @@ pub(super) enum FilterKind {
 #[derive(Debug, Default)]
 pub struct QueryFilters {
     pub(super) entries: Vec<(FilterKind, &'static str, String)>,
+    /// `PostgREST` `order=` clause, e.g. `created_at.desc`. Lives here rather than as a
+    /// `select` parameter so adding it did not touch every existing call site.
+    pub(super) order: Option<String>,
 }
 
 impl QueryFilters {
@@ -43,6 +46,7 @@ impl QueryFilters {
     pub const fn new() -> Self {
         Self {
             entries: Vec::new(),
+            order: None,
         }
     }
 
@@ -119,7 +123,28 @@ impl QueryFilters {
         self
     }
 
+    /// Sort newest-first by `col`, nulls last. Last call wins — this does not build a
+    /// multi-column ordering, though `PostgREST` would accept one.
+    ///
+    /// `analysis_runs` appends rather than replaces, so "the current metrics for this
+    /// degree" means the most recent row, not the only one. Without an order the backend
+    /// really does return a stale row: asked for one `full` run of a program with two,
+    /// `limit=1` alone returns the *older* one.
+    ///
+    /// `nullslast` is not decoration. `created_at` is `TIMESTAMPTZ DEFAULT NOW()` and so
+    /// nullable, and Postgres `DESC` means NULLS FIRST — one null row would sort ahead of
+    /// every real timestamp and be reported as the current run.
+    #[must_use]
+    pub fn order_desc(mut self, col: &'static str) -> Self {
+        self.order = Some(format!("{col}.desc.nullslast"));
+        self
+    }
+
     /// Returns `true` if no filters have been added.
+    ///
+    /// Deliberately ignores `order`: this guards `DbClient::delete_where`, which refuses
+    /// an unfiltered delete. An ordering narrows nothing, so folding it in here would let
+    /// a stray `order_desc` authorise emptying a table.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.entries.is_empty()
@@ -230,5 +255,19 @@ mod tests {
         let codes = vec!["11.0101".to_string(), "11.0201".to_string()];
         let f = QueryFilters::new().in_list("cip_code", &codes);
         assert_eq!(f.entries[0].2, "11.0101,11.0201");
+    }
+    #[test]
+    fn test_order_desc_sets_the_clause_and_is_not_itself_a_filter() {
+        let f = QueryFilters::new().order_desc("created_at");
+        assert_eq!(f.order.as_deref(), Some("created_at.desc.nullslast"));
+        assert!(QueryFilters::new().order.is_none(), "no order unless asked");
+        // PostgREST takes a single `order=`, so a second call replaces rather than appends.
+        assert_eq!(
+            f.order_desc("run_key").order.as_deref(),
+            Some("run_key.desc.nullslast")
+        );
+        // An order is not a filter. `delete_where` refuses an empty filter set, and that
+        // guard must not be satisfied by an ordering alone.
+        assert!(QueryFilters::new().order_desc("created_at").is_empty());
     }
 }

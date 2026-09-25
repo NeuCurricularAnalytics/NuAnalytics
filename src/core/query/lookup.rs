@@ -50,7 +50,7 @@ pub async fn execute_json(client: &Arc<DbClient>, req: GetLookupCodesRequest) ->
         return serde_json::json!({
             "error": format!("Unknown lookup table: \"{}\"", table),
             "valid_tables": KNOWN_TABLES,
-            "tip": "Common usage: get_lookup_codes(\"carnegie_class\") to find R1/R2 codes before filtering institutions"
+            "tip": "Look up `carnegie_class` first to find R1/R2 codes before filtering institutions"
         })
         .to_string();
     }

@@ -747,6 +747,10 @@ fn build_select_url(
         url.push('=');
         url.push_str(&encoded);
     }
+    if let Some(order) = &filters.order {
+        url.push_str("&order=");
+        url.push_str(&url_encode(order));
+    }
     if let Some(n) = limit {
         use std::fmt::Write as _;
         // Writing into a `String` never errors — the unwrap is on the
@@ -857,6 +861,47 @@ mod tests {
                 || url.contains("unitid=in.(167358,166629)"),
             "in-list must percent-encode parens and commas: {url}"
         );
+    }
+
+    #[test]
+    fn build_select_url_appends_order_when_set() {
+        // `analysis_runs` appends, so "latest" is an ordering question. Dropping the
+        // order is not a hypothetical: against the live backend, `limit=1` with no order
+        // returns the *older* of a program's two `full` runs.
+        let filters = QueryFilters::new()
+            .eq("program_key", Some("prog:1"))
+            .order_desc("created_at");
+        let url = build_select_url(
+            "https://example.supabase.co",
+            "analysis_runs",
+            "*",
+            &filters,
+            Some(1),
+        );
+        // `nullslast` is part of the contract, not decoration — see `order_desc`.
+        assert!(
+            url.contains("order=created_at.desc.nullslast"),
+            "order clause missing or lost nullslast: {url}"
+        );
+        // Position is *not* load-bearing: PostgREST treats query parameters as a set and
+        // applies ORDER BY before LIMIT however they are written (verified against a live
+        // backend — `limit=1&order=...` and `order=...&limit=1` return the same row).
+        // This pins URL construction as deterministic, nothing about backend semantics.
+        let order_at = url.find("&order=").expect("order");
+        let limit_at = url.find("&limit=").expect("limit");
+        assert!(order_at < limit_at, "url layout changed: {url}");
+    }
+
+    #[test]
+    fn build_select_url_omits_order_when_unset() {
+        let url = build_select_url(
+            "https://example.supabase.co",
+            "institutions",
+            "*",
+            &QueryFilters::new(),
+            None,
+        );
+        assert!(!url.contains("order="), "unexpected order clause: {url}");
     }
 
     #[test]

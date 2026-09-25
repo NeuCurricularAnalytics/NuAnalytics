@@ -15,6 +15,7 @@ pub mod completions;
 pub mod degrees;
 pub mod institutions;
 pub mod lookup;
+pub mod metrics;
 
 // Request types only. The `execute_*` functions are deliberately not re-exported:
 // `execute_json` collides across modules, and `institutions::execute_search_json` reads
@@ -30,3 +31,4 @@ pub use degrees::{
 };
 pub use institutions::{GetInstitutionRequest, SearchInstitutionsRequest};
 pub use lookup::GetLookupCodesRequest;
+pub use metrics::GetDegreeMetricsRequest;

@@ -7,6 +7,7 @@
 //! - `import` — degree report → normalized program tables
 
 use std::fmt::Write as _;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use nu_analytics::config::{Config, ConfigSources};
@@ -17,7 +18,8 @@ use nu_analytics::database::{
     SignInError,
 };
 
-use crate::args::DbSubcommand;
+use crate::args::{DbSubcommand, DemographicsArgs, DemographicsGrouping, QuerySubcommand};
+use crate::output::OutputFormat;
 
 const OAUTH_TIMEOUT_SECS: u64 = 120;
 const SUPABASE_MGMT_API_BASE: &str = "https://api.supabase.com/v1/projects";
@@ -40,6 +42,7 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
             dry_run,
         } => run_prune(config, keep, analyzer_version.as_deref(), dry_run),
         DbSubcommand::Doctor => run_doctor(config, sources),
+        DbSubcommand::Query { subcommand, format } => run_query(config, subcommand, format),
         DbSubcommand::IpedsImport {
             dir,
             institutions,
@@ -88,6 +91,23 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
 // ============================================================================
 // Shared helpers
 // ============================================================================
+
+/// Connect to the configured backend, or report why not and exit 1.
+///
+/// Shared by every subcommand that needs a client. `report_db_error` owns the remediation
+/// wording for each variant — formatting it at the call site would let the same failure
+/// read three different ways. Always exits rather than returning: a connection failure
+/// that exits 0 tells a script the command succeeded.
+fn connect_or_exit(rt: &tokio::runtime::Runtime, config: &Config) -> DbClient {
+    match rt.block_on(DbClient::from_config(&config.database)) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("✗ Database not available: {e}");
+            report_db_error(&e, &config.database.endpoint);
+            std::process::exit(1);
+        }
+    }
+}
 
 /// Build a single-threaded Tokio runtime, printing an error and returning `None` on failure.
 pub(super) fn make_runtime() -> Option<tokio::runtime::Runtime> {
@@ -1402,14 +1422,7 @@ fn run_ipeds_import(
 ) {
     let Some(rt) = make_runtime() else { return };
 
-    let client = match rt.block_on(DbClient::from_config(&config.database)) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("✗ Database not available: {e}");
-            report_db_error(&e, &config.database.endpoint);
-            return;
-        }
-    };
+    let client = connect_or_exit(&rt, config);
 
     let (inst_path, comp_path) =
         resolve_ipeds_paths(dir, institutions_path, completions_path, year);
@@ -1515,14 +1528,7 @@ fn run_import(config: &Config, files: &[std::path::PathBuf], opts: &ImportOption
 
     let Some(rt) = make_runtime() else { return };
 
-    let client = match rt.block_on(DbClient::from_config(&config.database)) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("✗ Database not available: {e}");
-            report_db_error(&e, &config.database.endpoint);
-            std::process::exit(1);
-        }
-    };
+    let client = connect_or_exit(&rt, config);
 
     let dry = if opts.dry_run { " (dry-run)" } else { "" };
 
@@ -1914,12 +1920,541 @@ fn find_name(names: &[String], matches: impl Fn(&str) -> bool) -> Option<&String
 }
 
 // ============================================================================
+// Query — read-only access to the stored data
+// ============================================================================
+
+/// Institution filters the caller actually set, as their flag names.
+fn institution_filters_set(args: &DemographicsArgs) -> Vec<&'static str> {
+    let mut set: Vec<&'static str> = Vec::new();
+    if args.state.is_some() {
+        set.push("--state");
+    }
+    if args.control.is_some() {
+        set.push("--control");
+    }
+    if args.carnegie_class.is_some() {
+        set.push("--carnegie-class");
+    }
+    if args.hbcu {
+        set.push("--hbcu");
+    }
+    if args.tribal {
+        set.push("--tribal");
+    }
+    if args.limit.is_some() {
+        set.push("--limit");
+    }
+    set
+}
+
+/// Refuse flags the chosen `--group-by` engine cannot honour.
+///
+/// The three completions engines take different filter sets — only the per-school one
+/// knows about `hbcu`/`tribal`, and the per-CIP one is scoped to a single institution and
+/// ignores every group filter. Accepting those silently would answer a narrower question
+/// than the caller asked, with nothing in the output to show it: `--hbcu` would return
+/// every school. Naming the flag is the difference between a wrong answer and an error.
+fn reject_unsupported_demographics_filters(args: &DemographicsArgs) -> Option<String> {
+    let set = institution_filters_set(args);
+    let ignored: Vec<&str> = match args.group_by {
+        // The schools engine is the one that takes them all.
+        DemographicsGrouping::School => return None,
+        DemographicsGrouping::Total => set
+            .into_iter()
+            .filter(|f| matches!(*f, "--hbcu" | "--tribal" | "--limit"))
+            .collect(),
+        DemographicsGrouping::Cip => set,
+    };
+    if ignored.is_empty() {
+        return None;
+    }
+
+    let grouping = args.group_by.as_str();
+    // Pointing a `--limit`-only refusal at `--group-by school` would answer a different
+    // question rather than fix the flag.
+    let tip = if ignored == ["--limit"] {
+        format!("--group-by {grouping} returns one aggregated result set, so there is nothing to limit — drop --limit")
+    } else {
+        "Use --group-by school, which applies every institution filter".to_string()
+    };
+    Some(
+        serde_json::json!({
+            "error": format!("--group-by {grouping} cannot apply {}", ignored.join(", ")),
+            "group_by": grouping,
+            "unsupported": ignored,
+            "tip": tip,
+        })
+        .to_string(),
+    )
+}
+
+/// Fan `db query demographics` out to whichever completions engine matches `--group-by`.
+///
+/// The three engines answer different questions and return different shapes, so the
+/// grouping picks the engine rather than post-processing one result into another.
+async fn run_demographics(client: &Arc<DbClient>, args: DemographicsArgs) -> String {
+    if let Some(payload) = reject_unsupported_demographics_filters(&args) {
+        return payload;
+    }
+    // `--raw` is the opt-out: both figures is the useful default, and the ratios are
+    // what make counts comparable across schools of different sizes.
+    let with_ratios = Some(!args.raw);
+
+    match args.group_by {
+        DemographicsGrouping::Cip => demographics_by_cip(client, args, with_ratios).await,
+        DemographicsGrouping::School => demographics_by_school(client, args, with_ratios).await,
+        DemographicsGrouping::Total => demographics_total(client, args, with_ratios).await,
+    }
+}
+
+/// Per-CIP rows at a single institution.
+async fn demographics_by_cip(
+    client: &Arc<DbClient>,
+    args: DemographicsArgs,
+    with_ratios: Option<bool>,
+) -> String {
+    use nu_analytics::core::query::completions;
+    let Some(unitid) = args.school else {
+        // Returned as a payload rather than printed, so it renders and exits through the
+        // same path as an engine-reported failure.
+        return serde_json::json!({
+            "error": "--group-by cip needs --school: per-CIP rows are scoped to one institution",
+            "tip": "Add --school <UNITID>, or use --group-by school to compare institutions",
+        })
+        .to_string();
+    };
+    completions::execute_institution_json(
+        client,
+        completions::GetInstitutionCompletionsRequest {
+            unitid,
+            year: args.year,
+            award_level: args.award_level,
+            cip_prefix: args.cip,
+            cip_codes: args.cip_codes,
+            major_num: None,
+            include_representation: with_ratios,
+        },
+    )
+    .await
+}
+
+/// One row per institution.
+async fn demographics_by_school(
+    client: &Arc<DbClient>,
+    args: DemographicsArgs,
+    with_ratios: Option<bool>,
+) -> String {
+    use nu_analytics::core::query::completions;
+    completions::execute_schools_json(
+        client,
+        completions::GetSchoolsCompletionDemographicsRequest {
+            unitid: args.school,
+            carnegie_class: args.carnegie_class,
+            control: args.control,
+            state: args.state,
+            hbcu: only(args.hbcu),
+            tribal: only(args.tribal),
+            inst_size_min: None,
+            cip_prefix: args.cip,
+            cip_codes: args.cip_codes,
+            award_level: args.award_level,
+            year: args.year,
+            include_representation: with_ratios,
+            min_completions: None,
+            limit: args.limit,
+        },
+    )
+    .await
+}
+
+/// One row per demographic group, aggregated over every matched institution.
+async fn demographics_total(
+    client: &Arc<DbClient>,
+    args: DemographicsArgs,
+    with_ratios: Option<bool>,
+) -> String {
+    use nu_analytics::core::query::completions;
+    completions::execute_json(
+        client,
+        completions::CompletionDemographicsRequest {
+            unitid: args.school,
+            carnegie_class: args.carnegie_class,
+            control: args.control,
+            state: args.state,
+            cip_prefix: args.cip,
+            cip_codes: args.cip_codes,
+            award_level: args.award_level,
+            year: args.year,
+            include_representation: with_ratios,
+        },
+    )
+    .await
+}
+
+/// Run `subcommand` against its query engine and return the engine's JSON payload.
+///
+/// Split from `run_query` so the plumbing there — runtime, client, rendering, exit code —
+/// stays readable as the command list grows.
+/// A bare boolean flag as an engine filter.
+///
+/// `--hbcu` means "only HBCUs"; absent means "do not filter", which is `None`. Mapping
+/// absent to `Some(false)` would silently exclude every HBCU from an unfiltered listing.
+const fn only(flag: bool) -> Option<bool> {
+    if flag {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+/// Run `subcommand` against its query engine and return the engine's JSON payload.
+///
+/// Split from `run_query` so the plumbing there — runtime, client, rendering, exit code —
+/// stays readable as the command list grows. Each arm is one engine call; the arms with
+/// enough fields to obscure that live in their own function below.
+async fn dispatch_query(client: &Arc<DbClient>, subcommand: QuerySubcommand) -> String {
+    use nu_analytics::core::query::{cip_codes, lookup};
+
+    match subcommand {
+        QuerySubcommand::Schools {
+            name,
+            state,
+            carnegie_class,
+            control,
+            hbcu,
+            tribal,
+            limit,
+        } => {
+            query_schools(
+                client,
+                SchoolsQuery {
+                    name,
+                    state,
+                    carnegie_class,
+                    control,
+                    hbcu,
+                    tribal,
+                    limit,
+                },
+            )
+            .await
+        }
+        QuerySubcommand::Degrees {
+            school,
+            cip,
+            catalog_year,
+            degree_type,
+            kind,
+            limit,
+        } => {
+            query_degrees(
+                client,
+                DegreesQuery {
+                    school,
+                    cip,
+                    catalog_year,
+                    degree_type,
+                    kind,
+                    limit,
+                },
+            )
+            .await
+        }
+        QuerySubcommand::Demographics(args) => run_demographics(client, args).await,
+        QuerySubcommand::Metrics {
+            degree,
+            variant,
+            all,
+            limit,
+        } => query_metrics(client, degree, variant, all, limit).await,
+        QuerySubcommand::Cip {
+            search,
+            prefix,
+            limit,
+        } => {
+            cip_codes::execute_json(
+                client,
+                cip_codes::SearchCipCodesRequest {
+                    query: search,
+                    prefix,
+                    limit,
+                },
+            )
+            .await
+        }
+        QuerySubcommand::Lookup { table } => {
+            lookup::execute_json(client, lookup::GetLookupCodesRequest { table }).await
+        }
+    }
+}
+
+/// Filters for `db query schools`, mirroring the clap variant's fields.
+struct SchoolsQuery {
+    name: Option<String>,
+    state: Option<String>,
+    carnegie_class: Option<i32>,
+    control: Option<i32>,
+    hbcu: bool,
+    tribal: bool,
+    limit: Option<usize>,
+}
+
+/// Search institutions.
+async fn query_schools(client: &Arc<DbClient>, q: SchoolsQuery) -> String {
+    use nu_analytics::core::query::institutions;
+    institutions::execute_search_json(
+        client,
+        institutions::SearchInstitutionsRequest {
+            name: q.name,
+            state: q.state,
+            carnegie_class: q.carnegie_class,
+            control: q.control,
+            hbcu: only(q.hbcu),
+            tribal: only(q.tribal),
+            inst_size_min: None,
+            limit: q.limit,
+        },
+    )
+    .await
+}
+
+/// Filters for `db query degrees`, mirroring the clap variant's fields.
+struct DegreesQuery {
+    school: Option<i32>,
+    cip: Option<String>,
+    catalog_year: Option<String>,
+    degree_type: Option<String>,
+    kind: Option<String>,
+    limit: Option<usize>,
+}
+
+/// Search stored degree programs.
+async fn query_degrees(client: &Arc<DbClient>, q: DegreesQuery) -> String {
+    use nu_analytics::core::query::degrees;
+    degrees::execute_search_json(
+        client,
+        degrees::SearchDegreesRequest {
+            unitid: q.school,
+            cip_prefix: q.cip,
+            catalog_year: q.catalog_year,
+            degree_type: q.degree_type,
+            program_kind: q.kind,
+            discipline: None,
+            limit: q.limit,
+        },
+    )
+    .await
+}
+
+/// Report stored analysis runs for one program.
+async fn query_metrics(
+    client: &Arc<DbClient>,
+    degree: String,
+    variant: Option<String>,
+    all: bool,
+    limit: Option<usize>,
+) -> String {
+    use nu_analytics::core::query::metrics;
+    metrics::execute_json(
+        client,
+        metrics::GetDegreeMetricsRequest {
+            degree,
+            variant,
+            // `--all` is the opt-out: newest-per-variant is what "the metrics for this
+            // degree" means, and history is the rarer ask.
+            latest: Some(!all),
+            limit,
+        },
+    )
+    .await
+}
+
+/// Run one `db query` subcommand: connect, dispatch, render, and set the exit status.
+///
+/// The engines report failure in their JSON payload rather than by returning an error, so
+/// this is also where a payload carrying `error` becomes exit status 1 — a script reading
+/// stdout needs the two to agree.
+fn run_query(config: &Config, subcommand: QuerySubcommand, format: OutputFormat) {
+    // Not `return`: this function's contract is that the exit status agrees with what
+    // was printed, and returning here would exit 0 having printed nothing to stdout.
+    let Some(rt) = make_runtime() else {
+        std::process::exit(1)
+    };
+    let client = Arc::new(connect_or_exit(&rt, config));
+
+    let json = rt.block_on(dispatch_query(&client, subcommand));
+
+    println!("{}", crate::output::render(&json, format));
+
+    // The engines report failure in their payload rather than by returning an error, so
+    // a caller scripting this needs the exit code to agree with what it just read.
+    if serde_json::from_str::<serde_json::Value>(&json).is_ok_and(|v| v.get("error").is_some()) {
+        std::process::exit(1);
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- reject_unsupported_demographics_filters ---------------------------
+
+    fn demo_args(group_by: DemographicsGrouping) -> DemographicsArgs {
+        DemographicsArgs {
+            school: None,
+            cip: None,
+            cip_codes: None,
+            year: None,
+            award_level: None,
+            state: None,
+            control: None,
+            carnegie_class: None,
+            hbcu: false,
+            tribal: false,
+            group_by,
+            raw: false,
+            limit: None,
+        }
+    }
+
+    #[test]
+    fn test_reject_demographics_filters_allows_a_bare_request() {
+        for g in [
+            DemographicsGrouping::Total,
+            DemographicsGrouping::School,
+            DemographicsGrouping::Cip,
+        ] {
+            assert!(
+                reject_unsupported_demographics_filters(&demo_args(g)).is_none(),
+                "{g:?} rejected a request with no filters"
+            );
+        }
+    }
+
+    #[test]
+    fn test_reject_demographics_filters_names_each_unsupported_flag_for_its_grouping() {
+        // One case per (grouping, flag) pair the engines cannot honour. Expected labels
+        // are literals rather than recomputed from `group_by`, which would just restate
+        // the production match.
+        type Set = fn(&mut DemographicsArgs);
+        let cases: [(DemographicsGrouping, &str, &str, Set); 8] = [
+            (DemographicsGrouping::Total, "total", "--hbcu", |a| {
+                a.hbcu = true;
+            }),
+            (DemographicsGrouping::Total, "total", "--tribal", |a| {
+                a.tribal = true;
+            }),
+            (DemographicsGrouping::Total, "total", "--limit", |a| {
+                a.limit = Some(5);
+            }),
+            (DemographicsGrouping::Cip, "cip", "--state", |a| {
+                a.state = Some("HI".to_string());
+            }),
+            (DemographicsGrouping::Cip, "cip", "--control", |a| {
+                a.control = Some(1);
+            }),
+            (DemographicsGrouping::Cip, "cip", "--carnegie-class", |a| {
+                a.carnegie_class = Some(15);
+            }),
+            (DemographicsGrouping::Cip, "cip", "--hbcu", |a| {
+                a.hbcu = true;
+            }),
+            (DemographicsGrouping::Cip, "cip", "--limit", |a| {
+                a.limit = Some(5);
+            }),
+        ];
+        for (grouping, label, flag, set) in cases {
+            let mut args = demo_args(grouping);
+            set(&mut args);
+            let payload = reject_unsupported_demographics_filters(&args)
+                .unwrap_or_else(|| panic!("{grouping:?} silently ignored {flag}"));
+            let v: serde_json::Value = serde_json::from_str(&payload).expect("valid json");
+            assert_eq!(v["unsupported"], serde_json::json!([flag]), "{payload}");
+            assert_eq!(v["group_by"], serde_json::json!(label), "{payload}");
+            assert!(
+                v["error"].as_str().is_some_and(|e| e.contains(flag)),
+                "the message must name the flag, not just the array: {payload}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_reject_demographics_filters_keeps_the_filters_each_grouping_does_support() {
+        // Over-rejection breaks a working command just as silently as under-rejection
+        // answers the wrong question, so pin the accept side too.
+        let mut total = demo_args(DemographicsGrouping::Total);
+        total.school = Some(141_574);
+        total.state = Some("HI".to_string());
+        total.control = Some(1);
+        total.carnegie_class = Some(15);
+        total.year = Some(2024);
+        total.award_level = Some(5);
+        total.cip = Some("11.".to_string());
+        assert_eq!(reject_unsupported_demographics_filters(&total), None);
+
+        let mut cip = demo_args(DemographicsGrouping::Cip);
+        cip.school = Some(141_574);
+        cip.year = Some(2024);
+        cip.award_level = Some(5);
+        cip.cip_codes = Some("11.0701".to_string());
+        assert_eq!(reject_unsupported_demographics_filters(&cip), None);
+    }
+
+    #[test]
+    fn test_reject_demographics_filters_accepts_every_institution_filter_by_school() {
+        let mut args = demo_args(DemographicsGrouping::School);
+        args.hbcu = true;
+        args.tribal = true;
+        args.state = Some("HI".to_string());
+        args.control = Some(1);
+        args.carnegie_class = Some(15);
+        args.limit = Some(10);
+        assert!(reject_unsupported_demographics_filters(&args).is_none());
+    }
+
+    #[test]
+    fn test_reject_demographics_filters_names_every_unsupported_flag_at_once() {
+        // One round trip should list them all rather than make the caller rediscover
+        // the next one after each fix.
+        let mut args = demo_args(DemographicsGrouping::Cip);
+        args.state = Some("HI".to_string());
+        args.control = Some(1);
+        args.tribal = true;
+        let payload = reject_unsupported_demographics_filters(&args).expect("refusal");
+        for flag in ["--state", "--control", "--tribal"] {
+            assert!(payload.contains(flag), "{flag} missing from {payload}");
+        }
+    }
+
+    #[test]
+    fn test_reject_demographics_filters_tip_for_limit_alone_does_not_change_the_question() {
+        // Switching to --group-by school would answer something else, not fix --limit.
+        let mut args = demo_args(DemographicsGrouping::Total);
+        args.limit = Some(5);
+        let payload = reject_unsupported_demographics_filters(&args).expect("refusal");
+        let v: serde_json::Value = serde_json::from_str(&payload).expect("valid json");
+        let tip = v["tip"].as_str().expect("tip");
+        assert!(tip.contains("drop --limit"), "unhelpful tip: {tip}");
+        assert!(
+            !tip.contains("--group-by school"),
+            "tip points at a different question: {tip}"
+        );
+    }
+
+    #[test]
+    fn test_reject_demographics_filters_emits_an_error_key_so_the_exit_code_agrees() {
+        // run_query decides the exit status by looking for `error`; without it the
+        // refusal would print and then report success.
+        let mut args = demo_args(DemographicsGrouping::Total);
+        args.limit = Some(5);
+        let payload = reject_unsupported_demographics_filters(&args).expect("refusal");
+        let v: serde_json::Value = serde_json::from_str(&payload).expect("valid json");
+        assert!(v.get("error").is_some(), "no error key: {payload}");
+    }
 
     // --- extract_query_param -----------------------------------------------
 
