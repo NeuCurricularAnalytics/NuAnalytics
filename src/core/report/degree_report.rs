@@ -5,8 +5,9 @@
 
 use crate::core::degree::plan_selector::{PlanCategory, ScoredPlan, SelectedPlans};
 use crate::core::models::{Degree, School, DAG};
+use crate::core::report::report_stats::ReportStats;
 use crate::core::report::visualization::renderer::escape_html;
-use crate::core::statistics::aggregator::{AggregatedDegreeStats, MetricsAggregator};
+use crate::core::statistics::aggregator::AggregatedDegreeStats;
 use crate::core::statistics::box_plot::{BoxPlotData, BoxPlotGenerator};
 use std::error::Error;
 use std::fmt::Write as FmtWrite;
@@ -23,8 +24,9 @@ pub struct DegreeReportContext<'a> {
     pub school: &'a School,
     /// Degree being analyzed
     pub degree: &'a Degree,
-    /// Aggregated statistics from all plans
-    pub aggregator: &'a MetricsAggregator,
+    /// Aggregated statistics from all plans. Reduced form rather than the aggregator
+    /// itself, so a report can also be built from stored rows — see [`ReportStats`].
+    pub stats: &'a ReportStats,
     /// Selected special plans
     pub selected_plans: &'a SelectedPlans,
     /// DAG for prerequisite/corequisite edges
@@ -39,7 +41,7 @@ impl<'a> DegreeReportContext<'a> {
     pub const fn new(
         school: &'a School,
         degree: &'a Degree,
-        aggregator: &'a MetricsAggregator,
+        stats: &'a ReportStats,
         selected_plans: &'a SelectedPlans,
         dag: &'a DAG,
         equivalences: &'a std::collections::HashMap<String, std::collections::HashSet<String>>,
@@ -47,7 +49,7 @@ impl<'a> DegreeReportContext<'a> {
         Self {
             school,
             degree,
-            aggregator,
+            stats,
             selected_plans,
             dag,
             equivalences,
@@ -129,14 +131,14 @@ impl DegreeReportGenerator {
         );
 
         // Degree statistics
-        let degree_stats = ctx.aggregator.degree_stats();
+        let degree_stats = ctx.stats.degree_stats();
         html = html.replace(
             "{{stats_section}}",
-            &Self::render_degree_stats(&degree_stats),
+            &Self::render_degree_stats(degree_stats),
         );
 
         // Box plots
-        html = html.replace("{{box_plots}}", &Self::render_box_plots(&degree_stats));
+        html = html.replace("{{box_plots}}", &Self::render_box_plots(degree_stats));
 
         // Course statistics table
         html = html.replace(
@@ -289,7 +291,7 @@ impl DegreeReportGenerator {
         );
 
         // Get course IDs and sort: major courses first by complexity (descending)
-        let mut course_ids = ctx.aggregator.course_ids();
+        let mut course_ids = ctx.stats.course_ids();
         course_ids.sort_by(|a, b| {
             let a_major = ctx.is_major_course(a);
             let b_major = ctx.is_major_course(b);
@@ -305,21 +307,25 @@ impl DegreeReportGenerator {
 
             // Within same category, sort by complexity (descending)
             let a_complexity = ctx
-                .aggregator
+                .stats
                 .course_stats(a)
                 .map_or(0.0, |s| s.complexity.median);
             let b_complexity = ctx
-                .aggregator
+                .stats
                 .course_stats(b)
                 .map_or(0.0, |s| s.complexity.median);
 
+            // Course id breaks the remaining ties. Without a total order the stable
+            // sort falls back to input order, and two runs of the same binary on the
+            // same degree produced different HTML.
             b_complexity
                 .partial_cmp(&a_complexity)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.cmp(b))
         });
 
         for course_id in course_ids {
-            if let Some(stats) = ctx.aggregator.course_stats(&course_id) {
+            if let Some(stats) = ctx.stats.course_stats(&course_id) {
                 let course_name = ctx
                     .school
                     .get_course(&course_id)
@@ -588,13 +594,8 @@ impl DegreeReportGenerator {
         use crate::core::report::visualization::{
             spec_from_scored_plan, CurriculumGraphRenderer, VanillaJsRenderer,
         };
-        let spec = spec_from_scored_plan(
-            ctx.school,
-            ctx.equivalences,
-            plan,
-            Some(ctx.aggregator),
-            plan_id,
-        );
+        let spec =
+            spec_from_scored_plan(ctx.school, ctx.equivalences, plan, Some(ctx.stats), plan_id);
         if include_library {
             VanillaJsRenderer.render(&spec)
         } else {
@@ -685,8 +686,10 @@ mod tests {
         DAG::new()
     }
 
-    fn create_test_aggregator() -> MetricsAggregator {
-        let mut agg = MetricsAggregator::new(AggregatorConfig::default());
+    fn create_test_aggregator() -> ReportStats {
+        let mut agg = crate::core::statistics::aggregator::MetricsAggregator::new(
+            AggregatorConfig::default(),
+        );
         let mut metrics = HashMap::new();
         metrics.insert(
             "CS1000".to_string(),
@@ -699,7 +702,7 @@ mod tests {
             },
         );
         agg.add_plan(&metrics, 120.0);
-        agg
+        ReportStats::from_aggregator(&agg)
     }
 
     fn create_test_selected_plans() -> SelectedPlans {

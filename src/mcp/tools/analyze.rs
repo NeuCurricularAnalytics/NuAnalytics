@@ -17,6 +17,7 @@ use crate::core::metrics::compute_all_metrics;
 use crate::core::models::{Course, CourseGraph, School, DAG};
 use crate::core::report::term_scheduler::TermScheduler;
 use crate::core::report::visualization::{spec_from_scored_plan, CurriculumGraphSpec};
+use crate::core::report::ReportStats;
 use crate::core::report::SchedulerConfig;
 use crate::core::statistics::{AggregatorConfig, MetricStats, MetricsAggregator};
 use crate::core::DegreeProgram;
@@ -487,6 +488,9 @@ pub(crate) struct AnalysisArtifacts {
     pub equivalences: HashMap<String, HashSet<String>>,
     /// Aggregated metrics across every plan that was processed.
     pub aggregator: MetricsAggregator,
+    /// The reduced view of `aggregator` that reports and graphs consume. Built once
+    /// here because the per-plan graph loop would otherwise rebuild it for every plan.
+    pub report_stats: ReportStats,
     /// Curated selected plans (shortest, longest, calc-ready, random samples).
     pub selected: SelectedPlans,
     /// Number of plans actually processed (after dedup, capped at `max_plans`).
@@ -651,6 +655,7 @@ pub(crate) fn build_artifacts(
         school,
         dag,
         equivalences,
+        report_stats: ReportStats::from_aggregator(&aggregator),
         aggregator,
         selected,
         plans_processed,
@@ -906,7 +911,7 @@ fn build_response(
                     &artifacts.school,
                     &artifacts.equivalences,
                     plan,
-                    Some(&artifacts.aggregator),
+                    Some(&artifacts.report_stats),
                     &graph_id,
                 ))
             } else {

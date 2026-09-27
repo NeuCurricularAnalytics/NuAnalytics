@@ -279,7 +279,7 @@ fn render_html(artifacts: &AnalysisArtifacts) -> Result<String, Box<dyn std::err
     let ctx = DegreeReportContext::new(
         &artifacts.school,
         &artifacts.program.degree,
-        &artifacts.aggregator,
+        &artifacts.report_stats,
         &artifacts.selected,
         &artifacts.dag,
         &artifacts.equivalences,

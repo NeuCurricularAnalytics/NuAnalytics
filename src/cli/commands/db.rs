@@ -42,6 +42,18 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
             dry_run,
         } => run_prune(config, keep, analyzer_version.as_deref(), dry_run),
         DbSubcommand::Doctor => run_doctor(config, sources),
+        DbSubcommand::Report {
+            school,
+            degree,
+            variant,
+            output,
+        } => run_report(
+            config,
+            school.as_deref(),
+            degree.as_deref(),
+            variant.as_deref(),
+            output.as_deref(),
+        ),
         DbSubcommand::Query {
             subcommand,
             sql,
@@ -2339,6 +2351,99 @@ fn run_query(
 mod tests {
     use super::*;
 
+    // --- db report helpers --------------------------------------------------
+
+    fn candidate(name: Option<&str>, unitid: Option<i32>, inst: Option<&str>) -> ReportCandidate {
+        ReportCandidate {
+            program_key: "prog:1".to_string(),
+            name: name.map(ToString::to_string),
+            unitid,
+            catalog_year: Some("2024-2025".to_string()),
+            degree_type: Some("BS".to_string()),
+            institution_raw: inst.map(ToString::to_string),
+        }
+    }
+
+    #[test]
+    fn test_report_candidate_label_carries_what_tells_two_programs_apart() {
+        let label = candidate(Some("BS in CS"), Some(141_574), Some("UH Manoa")).label();
+        for part in ["BS in CS", "BS", "2024-2025", "UH Manoa", "141574"] {
+            assert!(label.contains(part), "{part} missing from {label}");
+        }
+    }
+
+    #[test]
+    fn test_report_candidate_label_survives_missing_fields() {
+        // A name search can span institutions, so the unitid must still show even when
+        // the program carries no institution string.
+        let label = candidate(None, Some(141_574), None).label();
+        assert!(label.contains("(unnamed)"), "{label}");
+        assert!(label.contains("141574"), "unitid lost: {label}");
+
+        let bare = ReportCandidate {
+            program_key: "prog:1".to_string(),
+            name: None,
+            unitid: None,
+            catalog_year: None,
+            degree_type: None,
+            institution_raw: None,
+        };
+        assert_eq!(bare.label(), "(unnamed)");
+    }
+
+    #[test]
+    fn test_resolve_report_path_treats_an_html_path_as_the_file() {
+        let path = resolve_report_path(Some(std::path::Path::new("/tmp/x/out.html")), "deg")
+            .expect("resolved");
+        assert_eq!(path, std::path::Path::new("/tmp/x/out.html"));
+    }
+
+    #[test]
+    fn test_resolve_report_path_treats_anything_else_as_a_directory() {
+        let dir = std::env::temp_dir().join("nuanalytics-report-dir-test");
+        let path = resolve_report_path(Some(&dir), "my-degree").expect("resolved");
+        assert_eq!(path, dir.join("my-degree-analysis.html"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_resolve_report_path_defaults_to_the_current_directory() {
+        let path = resolve_report_path(None, "my-degree").expect("resolved");
+        assert_eq!(path, std::path::Path::new("my-degree-analysis.html"));
+    }
+
+    #[test]
+    fn test_resolve_report_path_is_case_insensitive_about_the_extension() {
+        let path =
+            resolve_report_path(Some(std::path::Path::new("/tmp/x/OUT.HTML")), "deg").expect("ok");
+        assert_eq!(path, std::path::Path::new("/tmp/x/OUT.HTML"));
+    }
+
+    #[test]
+    fn test_choose_takes_the_only_option_without_asking() {
+        // Tests run without a terminal, so reaching the prompt would fail here — which
+        // is exactly the property being pinned: one candidate must not prompt.
+        let picked = choose("pick", vec!["only"], |s| (*s).to_string()).expect("auto-selected");
+        assert_eq!(picked, "only");
+    }
+
+    #[test]
+    fn test_choose_without_a_terminal_lists_the_candidates_instead_of_blocking() {
+        // A script piping this command must fail with the options visible rather than
+        // block forever on a read nothing will answer.
+        let err = choose("Which degree?", vec!["alpha", "beta"], |s| (*s).to_string())
+            .expect_err("must refuse");
+        assert!(err.contains("Which degree?"), "{err}");
+        assert!(err.contains("no terminal"), "{err}");
+        assert!(err.contains("alpha") && err.contains("beta"), "{err}");
+    }
+
+    #[test]
+    fn test_choose_with_nothing_to_offer_says_so() {
+        let err = choose("pick", Vec::<&str>::new(), |s| (*s).to_string()).expect_err("empty");
+        assert!(err.contains("nothing to choose"), "{err}");
+    }
+
     // --- reject_unsupported_demographics_filters ---------------------------
 
     fn demo_args(group_by: DemographicsGrouping) -> DemographicsArgs {
@@ -3025,4 +3130,320 @@ mod tests {
         touch(dir.path(), "readme.txt");
         assert!(auto_detect_file(dir.path(), &["HD2022.csv", "HD*.csv"]).is_none());
     }
+}
+
+// ============================================================================
+// Report — render a stored analysis run as HTML
+// ============================================================================
+
+/// A stored program, as listed when asking which one to report on.
+#[derive(Debug, serde::Deserialize)]
+struct ReportCandidate {
+    program_key: String,
+    name: Option<String>,
+    unitid: Option<i32>,
+    catalog_year: Option<String>,
+    degree_type: Option<String>,
+    institution_raw: Option<String>,
+}
+
+impl ReportCandidate {
+    /// One line describing this program, for a numbered menu.
+    fn label(&self) -> String {
+        let name = self.name.as_deref().unwrap_or("(unnamed)");
+        let mut parts = vec![name.to_string()];
+        if let Some(dt) = &self.degree_type {
+            parts.push(dt.clone());
+        }
+        if let Some(cy) = &self.catalog_year {
+            parts.push(cy.clone());
+        }
+        match (&self.institution_raw, self.unitid) {
+            (Some(inst), Some(id)) => parts.push(format!("{inst} [{id}]")),
+            (Some(inst), None) => parts.push(inst.clone()),
+            // A name search can span institutions, so the unitid is what tells two
+            // identically-named programs apart.
+            (None, Some(id)) => parts.push(format!("unitid {id}")),
+            (None, None) => {}
+        }
+        parts.join("  ·  ")
+    }
+}
+
+/// Columns needed to list and then load a candidate program.
+const REPORT_CANDIDATE_COLS: &str =
+    "program_key,name,unitid,catalog_year,degree_type,institution_raw";
+
+/// Ask the user to choose from `items`, or explain why it cannot.
+///
+/// Returns `Err` with a ready-to-print message when there is no terminal to prompt on —
+/// a script piping this command must fail with the candidates listed rather than block
+/// on a read that will never be answered.
+fn choose<T>(prompt: &str, items: Vec<T>, label: impl Fn(&T) -> String) -> Result<T, String> {
+    use std::io::{IsTerminal as _, Write as _};
+
+    let mut items = items;
+    match items.len() {
+        0 => return Err("nothing to choose from".to_string()),
+        1 => return Ok(items.remove(0)),
+        _ => {}
+    }
+
+    if !std::io::stdin().is_terminal() {
+        let listed = items
+            .iter()
+            .map(|i| format!("  • {}", label(i)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(format!(
+            "{prompt} — {} candidates, and there is no terminal to ask on:\n{listed}",
+            items.len()
+        ));
+    }
+
+    eprintln!("\n{prompt}");
+    for (i, item) in items.iter().enumerate() {
+        eprintln!("  {:>2}) {}", i + 1, label(item));
+    }
+    loop {
+        eprint!("Choose 1-{} (q to quit): ", items.len());
+        let _ = std::io::stderr().flush();
+        let mut line = String::new();
+        if std::io::stdin().read_line(&mut line).is_err() {
+            return Err("could not read a choice".to_string());
+        }
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case("q") {
+            return Err("cancelled".to_string());
+        }
+        match trimmed.parse::<usize>() {
+            Ok(n) if n >= 1 && n <= items.len() => return Ok(items.remove(n - 1)),
+            // Re-ask rather than exit: a typo should not cost the whole lookup.
+            _ => eprintln!("  not a choice on the list"),
+        }
+    }
+}
+
+/// Find candidate programs for a `--school` value that is a unitid or a name fragment.
+async fn report_candidates(
+    client: &Arc<DbClient>,
+    school: &str,
+    degree: Option<&str>,
+) -> Result<Vec<ReportCandidate>, String> {
+    use nu_analytics::database::{tables, QueryFilters};
+
+    // A bare integer is a unitid; anything else is matched against the institution name,
+    // which means resolving names to unitids first — `programs` stores the raw
+    // institution string, not a searchable name.
+    let unitids: Vec<i32> = if let Ok(unitid) = school.trim().parse::<i32>() {
+        vec![unitid]
+    } else {
+        #[derive(serde::Deserialize)]
+        struct Inst {
+            unitid: i32,
+        }
+        let filters = QueryFilters::new().ilike("name", Some(school));
+        let rows: Vec<Inst> = nu_analytics::core::json::parse_json_array(
+            &client
+                .select(tables::INSTITUTIONS, "unitid", &filters, Some(500))
+                .await
+                .map_err(|e| e.to_string())?,
+        );
+        rows.into_iter().map(|i| i.unitid).collect()
+    };
+
+    if unitids.is_empty() {
+        return Err(format!("no institution matches '{school}'"));
+    }
+
+    let mut filters = QueryFilters::new().in_list("unitid", &unitids);
+    if let Some(pattern) = degree {
+        filters = filters.ilike("name", Some(pattern));
+    }
+    Ok(nu_analytics::core::json::parse_json_array(
+        &client
+            .select(tables::PROGRAMS, REPORT_CANDIDATE_COLS, &filters, Some(200))
+            .await
+            .map_err(|e| e.to_string())?,
+    ))
+}
+
+/// Variants that actually have a stored run for `program_key`, newest first.
+async fn stored_variants(client: &Arc<DbClient>, program_key: &str) -> Result<Vec<String>, String> {
+    use nu_analytics::database::{tables, QueryFilters};
+
+    #[derive(serde::Deserialize)]
+    struct VariantRow {
+        variant: String,
+    }
+    let filters = QueryFilters::new()
+        .eq("program_key", Some(program_key))
+        .order_desc("created_at");
+    let rows: Vec<VariantRow> = nu_analytics::core::json::parse_json_array(
+        &client
+            .select(
+                tables::ANALYSIS_RUNS,
+                "variant,created_at",
+                &filters,
+                Some(200),
+            )
+            .await
+            .map_err(|e| e.to_string())?,
+    );
+    // Runs append, so the same variant appears once per generation. Keep first sighting.
+    let mut seen = std::collections::HashSet::new();
+    Ok(rows
+        .into_iter()
+        .map(|r| r.variant)
+        .filter(|v| seen.insert(v.clone()))
+        .collect())
+}
+
+/// Resolve `-o` to the file to write.
+///
+/// A path ending in `.html` is taken literally; anything else is a directory that will
+/// hold `<degree-id>-analysis.html`, matching what `degree analyze --report-dir` writes.
+fn resolve_report_path(
+    output: Option<&std::path::Path>,
+    degree_id: &str,
+) -> Result<std::path::PathBuf, String> {
+    let default_name = format!("{degree_id}-analysis.html");
+    let path = match output {
+        Some(p)
+            if p.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("html")) =>
+        {
+            p.to_path_buf()
+        }
+        Some(dir) => dir.join(default_name),
+        None => std::path::PathBuf::from(default_name),
+    };
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
+        }
+    }
+    Ok(path)
+}
+
+/// Run `db report`.
+fn run_report(
+    config: &Config,
+    school: Option<&str>,
+    degree: Option<&str>,
+    variant: Option<&str>,
+    output: Option<&std::path::Path>,
+) {
+    let Some(rt) = make_runtime() else {
+        std::process::exit(1)
+    };
+    let client = Arc::new(connect_or_exit(&rt, config));
+
+    let school = school.map_or_else(
+        || match prompt_line("Which school? (IPEDS unitid, or part of the name): ") {
+            Ok(s) => s,
+            Err(e) => fail(&e),
+        },
+        ToString::to_string,
+    );
+
+    let candidates = match rt.block_on(report_candidates(&client, &school, degree)) {
+        Ok(c) if c.is_empty() => fail(&format!(
+            "no stored program at '{school}'{}",
+            degree.map_or(String::new(), |d| format!(" matching '{d}'"))
+        )),
+        Ok(c) => c,
+        Err(e) => fail(&e),
+    };
+
+    let chosen = match choose("Which degree?", candidates, ReportCandidate::label) {
+        Ok(c) => c,
+        Err(e) => fail(&e),
+    };
+
+    let variant = variant.map_or_else(
+        || {
+            let variants = match rt.block_on(stored_variants(&client, &chosen.program_key)) {
+                Ok(v) if v.is_empty() => fail(&format!(
+                    "no analysis run stored for {} — import it first",
+                    chosen.program_key
+                )),
+                Ok(v) => v,
+                Err(e) => fail(&e),
+            };
+            match choose("Which variant?", variants, Clone::clone) {
+                Ok(v) => v,
+                Err(e) => fail(&e),
+            }
+        },
+        ToString::to_string,
+    );
+
+    let stored = match rt.block_on(nu_analytics::core::query::report_source::load(
+        &client,
+        &chosen.program_key,
+        Some(&variant),
+    )) {
+        Ok(s) => s,
+        Err(e) => fail(&e),
+    };
+
+    let (school_model, dag, equivalences) = super::degree::build_report_inputs(&stored.program);
+    let path = match resolve_report_path(output, &stored.program.degree.degree_id()) {
+        Ok(p) => p,
+        Err(e) => fail(&e),
+    };
+
+    let ctx = nu_analytics::core::report::DegreeReportContext::new(
+        &school_model,
+        &stored.program.degree,
+        &stored.stats,
+        &stored.selected,
+        &dag,
+        &equivalences,
+    );
+    if let Err(e) = nu_analytics::core::report::DegreeReportGenerator::new().generate(&ctx, &path) {
+        fail(&format!("could not write {}: {e}", path.display()));
+    }
+
+    eprintln!(
+        "✓ {}  ·  {} run {}{}",
+        chosen.label(),
+        stored.run.variant,
+        stored.run.created_at.as_deref().unwrap_or("(undated)"),
+        stored
+            .run
+            .analyzer_version
+            .as_deref()
+            .map_or(String::new(), |v| format!("  ·  analyzer {v}")),
+    );
+    println!("{}", path.display());
+}
+
+/// Print an error and exit 1. Never returns.
+fn fail(message: &str) -> ! {
+    eprintln!("✗ {message}");
+    std::process::exit(1)
+}
+
+/// Read one trimmed line, refusing when there is no terminal to read from.
+fn prompt_line(prompt: &str) -> Result<String, String> {
+    use std::io::{IsTerminal as _, Write as _};
+    if !std::io::stdin().is_terminal() {
+        return Err(format!(
+            "{prompt}— no terminal to ask on; pass the flag instead"
+        ));
+    }
+    eprint!("{prompt}");
+    let _ = std::io::stderr().flush();
+    let mut line = String::new();
+    std::io::stdin()
+        .read_line(&mut line)
+        .map_err(|e| format!("could not read input: {e}"))?;
+    let trimmed = line.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("nothing entered".to_string());
+    }
+    Ok(trimmed)
 }

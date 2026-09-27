@@ -209,7 +209,7 @@ pub fn execute(
         &artifacts.school,
         &artifacts.equivalences,
         plan,
-        Some(&artifacts.aggregator),
+        Some(&artifacts.report_stats),
         &graph_id,
     );
     let node_count = spec.nodes.len();

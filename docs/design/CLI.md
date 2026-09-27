@@ -40,6 +40,7 @@ Data in:
 Data out:
 
 * `db query`        — read the database (see below)
+* `db report`       — regenerate a stored program's analysis report as HTML
 
 #### `db query`
 
@@ -70,6 +71,46 @@ those. It is a client-side join — `programs.unitid` carries no foreign key, so
 embedding is unavailable — driven from `programs` and batched, because the alternative
 (scanning all 6,515 institutions to intersect) would cross `PGRST_DB_MAX_ROWS` and
 truncate silently.
+
+#### `db report` — the HTML report for a stored program
+
+```sh
+nuanalytics db report --school 141574 --variant trimmed -o ./reports
+nuanalytics db report --school hawaii                       # asks which degree / variant
+nuanalytics db report --school 144050 --degree "Machine Learning" -o out.html
+```
+
+`--school` takes an IPEDS unitid or part of the institution name; `--degree` narrows when
+a school has several programs. Anything omitted or ambiguous is **asked for**, with the
+candidates numbered — and each line carries degree type, catalog year, institution and
+unitid, because a name search can span institutions and two programs are often otherwise
+identical. With no terminal attached it prints the same list and exits 1 rather than
+blocking, so a script never hangs on a prompt nothing will answer.
+
+`-o` infers what you meant: a path ending in `.html` is the file to write, anything else
+is a directory (created if needed) holding `<degree-id>-analysis.html`. The written path
+is echoed on stdout and the provenance line on stderr, so `REPORT=$(… db report …)` works.
+
+**It loads the stored run rather than re-running the analysis.** That is not just faster
+(no plan enumeration — this degree enumerated 3,974 plans); it is the only way to get a
+report whose numbers match `db query metrics`, because a fresh run does not reproduce the
+old one. The aggregate statistics *are* deterministic, but which plans a run samples is
+not, so re-running would give a different set of sample tabs every time.
+
+What makes this possible is that the report reads only reduced statistics, all of which
+are stored: `analysis_runs.degree_metrics` supplies the degree-level five-number
+summaries the box plots draw, `analysis_course_metrics` the per-course ones, and
+`analysis_plans` the curated shortest / longest / sample schedules. The canonical degree
+comes from `programs.document`, which the structural parts (course catalogue, DAG,
+equivalences) are derived from. The one thing that cannot be rebuilt is the
+`MetricsAggregator` itself — its Welford accumulators and quantile reservoirs hold every
+per-plan observation and only the reduction is persisted — which is why
+`DegreeReportContext` takes a `ReportStats` (the reduced view) rather than the aggregator.
+
+Three fields the schema does not carry are filled with defaults that were each checked
+against the renderer first: `PlanScore::avg_chain_length`,
+`PlanVariant::requirement_choices` and `ScoredPlan::course_metrics` are never read when
+producing HTML.
 
 #### `db query --sql` — the read-only SQL path
 

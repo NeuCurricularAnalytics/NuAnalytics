@@ -7,6 +7,7 @@
 pub mod degree_report;
 pub mod formats;
 pub mod plan_export;
+pub mod report_stats;
 pub mod term_scheduler;
 pub mod unified_report;
 pub mod visualization;
@@ -23,6 +24,7 @@ pub use plan_export::{
     append_degree_summary_jsonl, export_degree_summary_jsonl, export_index_csv, export_plan_csv,
     export_selected_plans, export_summary_csv, DegreeSummary, PlanExportConfig, PlanSummary,
 };
+pub use report_stats::ReportStats;
 pub use term_scheduler::{SchedulerConfig, TermPlan, TermScheduler};
 pub use visualization::{
     spec_from_components, spec_from_report_context, spec_from_scored_plan, CurriculumGraphRenderer,

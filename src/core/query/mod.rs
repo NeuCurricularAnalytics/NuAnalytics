@@ -16,6 +16,7 @@ pub mod degrees;
 pub mod institutions;
 pub mod lookup;
 pub mod metrics;
+pub mod report_source;
 pub mod sql;
 
 // Request types only. The `execute_*` functions are deliberately not re-exported:

@@ -17,9 +17,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::core::metrics::{CourseMetrics, CurriculumMetrics};
 use crate::core::models::{School, DAG};
+use crate::core::report::report_stats::ReportStats;
 use crate::core::report::term_scheduler::{course_credits_with_fallback, TermPlan};
 use crate::core::report::ReportContext;
-use crate::core::statistics::aggregator::MetricsAggregator;
 
 // ============================================================================
 // Public types
@@ -147,7 +147,7 @@ pub fn spec_from_components(
     term_plan: &TermPlan,
     metrics: &CurriculumMetrics,
     critical_path: &[String],
-    aggregator: Option<&MetricsAggregator>,
+    aggregator: Option<&ReportStats>,
     graph_id: &str,
 ) -> CurriculumGraphSpec {
     let critical_path_ids = expand_critical_path(critical_path);
@@ -222,7 +222,7 @@ pub fn spec_from_scored_plan(
     school: &School,
     equivalences: &HashMap<String, HashSet<String>>,
     plan: &crate::core::degree::ScoredPlan,
-    aggregator: Option<&MetricsAggregator>,
+    aggregator: Option<&ReportStats>,
     graph_id: &str,
 ) -> CurriculumGraphSpec {
     let critical_path_ids = plan.score.longest_delay_chain.clone();
@@ -260,7 +260,7 @@ fn build_nodes_and_terms(
     term_plan: &TermPlan,
     metrics: &HashMap<String, CourseMetrics>,
     critical_set: &HashSet<&str>,
-    aggregator: Option<&MetricsAggregator>,
+    aggregator: Option<&ReportStats>,
 ) -> (Vec<CourseNode>, Vec<TermGroup>) {
     let mut nodes = Vec::new();
     let mut terms = Vec::new();
@@ -297,7 +297,7 @@ fn build_course_node(
     term_number: usize,
     course_metric: Option<&CourseMetrics>,
     on_critical_path: bool,
-    aggregator: Option<&MetricsAggregator>,
+    aggregator: Option<&ReportStats>,
 ) -> CourseNode {
     let name = school
         .get_course(course_key)
@@ -329,7 +329,7 @@ fn build_course_node(
 /// Returns `(None, None, None)` when no aggregator is provided or when the
 /// course has no aggregated stats (it never appeared in any analysed plan).
 fn aggregator_medians(
-    aggregator: Option<&MetricsAggregator>,
+    aggregator: Option<&ReportStats>,
     course_id: &str,
 ) -> (Option<f32>, Option<f32>, Option<f32>) {
     let Some(agg) = aggregator else {
@@ -774,8 +774,16 @@ mod tests {
         agg.add_plan(&metrics, 60.0);
         agg.add_plan(&metrics, 60.0);
 
-        let spec =
-            spec_from_components(&school, &dag, &term_plan, &metrics, &[], Some(&agg), "agg");
+        let stats = ReportStats::from_aggregator(&agg);
+        let spec = spec_from_components(
+            &school,
+            &dag,
+            &term_plan,
+            &metrics,
+            &[],
+            Some(&stats),
+            "agg",
+        );
 
         let cs101 = spec.nodes.iter().find(|n| n.id == "CS101").unwrap();
         assert_eq!(cs101.median_complexity, Some(8.0));
@@ -938,7 +946,7 @@ mod tests {
         let agg = MetricsAggregator::new(AggregatorConfig::default());
         // Aggregator present but course never observed → all None.
         assert_eq!(
-            aggregator_medians(Some(&agg), "GHOST101"),
+            aggregator_medians(Some(&ReportStats::from_aggregator(&agg)), "GHOST101"),
             (None, None, None)
         );
         // No aggregator at all → also all None.
@@ -1002,7 +1010,8 @@ mod tests {
         // With an aggregator that has seen this course, medians populate.
         let mut agg = MetricsAggregator::new(AggregatorConfig::default());
         agg.add_plan(&course_metrics, 60.0);
-        let spec_agg = spec_from_scored_plan(&school, &HashMap::new(), &plan, Some(&agg), "agg");
+        let stats = ReportStats::from_aggregator(&agg);
+        let spec_agg = spec_from_scored_plan(&school, &HashMap::new(), &plan, Some(&stats), "agg");
         assert_eq!(spec_agg.nodes[0].median_complexity, Some(6.0));
         assert_eq!(spec_agg.nodes[0].median_delay, Some(2.0));
         assert_eq!(spec_agg.nodes[0].median_blocking, Some(4.0));

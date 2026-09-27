@@ -836,6 +836,42 @@ pub enum DbSubcommand {
         #[arg(long, value_enum, default_value = "json", global = true)]
         format: crate::output::OutputFormat,
     },
+    /// Generate the degree analysis report (HTML) for a stored program.
+    ///
+    /// Reads the stored analysis run rather than re-running the analysis, so the report
+    /// is produced in one round trip and its numbers match `db query metrics` exactly.
+    /// Re-running would not: which plans a run samples varies between invocations.
+    ///
+    /// Anything not given, or ambiguous, is asked for — pass `--school`, `--degree` and
+    /// `--variant` to run unattended. With no terminal attached it lists the candidates
+    /// and exits 1 instead of prompting, so a script never blocks.
+    ///
+    /// Examples:
+    /// ```sh
+    /// nuanalytics db report --school 141574
+    /// nuanalytics db report --school hawaii --variant trimmed -o ./reports
+    /// nuanalytics db report --school 141574 --degree "computer science" -o out.html
+    /// ```
+    Report {
+        /// IPEDS unitid, or part of the institution name (case-insensitive).
+        #[arg(long, value_name = "ID|NAME")]
+        school: Option<String>,
+
+        /// Narrow to one degree when a school has several: program key, degree id, or
+        /// part of the degree name.
+        #[arg(long, value_name = "PATTERN")]
+        degree: Option<String>,
+
+        /// Which analysed variant to report, e.g. `full` or `trimmed`.
+        #[arg(long, value_name = "NAME")]
+        variant: Option<String>,
+
+        /// Where to write the report. A path ending in `.html` is the file to write;
+        /// anything else is a directory, created if needed, holding
+        /// `<degree-id>-analysis.html`. Defaults to the current directory.
+        #[arg(short = 'o', long, value_name = "PATH")]
+        output: Option<std::path::PathBuf>,
+    },
     /// Import IPEDS data from locally downloaded CSV or ZIP files into Supabase.
     ///
     /// Only two files are needed — the completions file is used in a single pass to

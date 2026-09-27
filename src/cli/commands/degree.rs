@@ -2754,10 +2754,11 @@ fn generate_html_report(
         eprintln!("Generating HTML report: {}", report_path.display());
     }
 
+    let stats = nu_analytics::core::report::ReportStats::from_aggregator(aggregator);
     let report_ctx = DegreeReportContext::new(
         &ctx.school,
         &ctx.program.degree,
-        aggregator,
+        &stats,
         selected,
         &ctx.dag,
         &ctx.equivalences,
@@ -2869,6 +2870,28 @@ fn validate_selected_plans(
 }
 
 /// Build a School model from the degree program
+/// Build the structural inputs a report needs from a degree program alone.
+///
+/// The same graph construction `analyze_program` does — including breaking prerequisite
+/// cycles, without which the DAG would not be acyclic — factored out so `db report` can
+/// derive `School`, `DAG` and the equivalence map from a stored `document` without
+/// re-running any analysis.
+// Only `db report` calls this, and that command needs a backend.
+#[cfg(feature = "database")]
+pub(super) fn build_report_inputs(
+    program: &nu_analytics::core::DegreeProgram,
+) -> (School, DAG, HashMap<String, HashSet<String>>) {
+    let mut graph_result = CourseGraph::from_degree_program(program);
+    if !graph_result.cycles.is_empty() {
+        graph_result.graph.break_cycles(&graph_result.cycles);
+    }
+    (
+        build_school_from_program(program),
+        build_dag_from_graph(&graph_result.graph),
+        build_equivalence_map(&program.requirements),
+    )
+}
+
 fn build_school_from_program(program: &nu_analytics::core::DegreeProgram) -> School {
     let mut school = School::new(
         program
