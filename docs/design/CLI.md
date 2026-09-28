@@ -107,6 +107,21 @@ equivalences) are derived from. The one thing that cannot be rebuilt is the
 per-plan observation and only the reduction is persisted — which is why
 `DegreeReportContext` takes a `ReportStats` (the reduced view) rather than the aggregator.
 
+**Which prerequisite edge gets drawn, when there is a choice.** A course whose
+prerequisite is an OR group (`CS430` needs `CS314 | CS370`) can have several options in
+the same plan. The graph draws one edge, and it picks the option the schedule actually
+clears — every course in the chosen path placed strictly *before* the dependent's term.
+Previously the first option in the source text won regardless, so the picture could show
+`CS314 → CS430` while the scheduler had satisfied the group with `CS370` a term earlier
+and placed `CS430` alongside `CS314` — an edge that looked like a violation but was not.
+Across the stored corpus an option scheduled early enough was available but unchosen for
+2,033 course-instances in 179 of 1,088 programs; a further 378 have no option preceding
+the dependent at all, and those keep the old edge rather than lose it.
+
+This changes the *picture* only. Course placement comes from the stored schedule and is
+computed before any edge is resolved, and nothing outside the visualization calls this
+path — metrics use `plan_dag.rs` — so no metric moves and the stored corpus stays valid.
+
 Three fields the schema does not carry are filled with defaults that were each checked
 against the renderer first: `PlanScore::avg_chain_length`,
 `PlanVariant::requirement_choices` and `ScoredPlan::course_metrics` are never read when

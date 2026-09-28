@@ -238,8 +238,13 @@ pub fn spec_from_scored_plan(
         aggregator,
     );
 
-    // Build edges via prerequisite resolution with equivalence awareness.
-    let edges = build_edges_from_courses(school, equivalences, &plan_courses);
+    // Term placement decides *which* option of an OR-group gets the edge when several
+    // are in the plan. Without it the first-listed option wins even when it is scheduled
+    // alongside the dependent and another option sits an earlier term back, drawing an
+    // edge the schedule appears to violate. Placement itself is untouched: `nodes` and
+    // `terms` above come from the schedule and never consult `edges`.
+    let term_of = term_index(&plan.schedule);
+    let edges = build_edges_from_courses(school, equivalences, &plan_courses, &term_of);
 
     CurriculumGraphSpec {
         graph_id: graph_id.to_string(),
@@ -248,6 +253,19 @@ pub fn spec_from_scored_plan(
         terms,
         critical_path_ids,
     }
+}
+
+/// Map each scheduled course to its term number.
+fn term_index(schedule: &crate::core::report::term_scheduler::TermPlan) -> HashMap<String, usize> {
+    let mut index = HashMap::new();
+    for term in &schedule.terms {
+        for course in &term.courses {
+            // First placement wins; a course should appear once, and if it somehow
+            // appears twice the earlier term is the one a dependent must clear.
+            index.entry(course.clone()).or_insert(term.number);
+        }
+    }
+    index
 }
 
 /// Build the per-term [`CourseNode`] and [`TermGroup`] sequences for a spec.
@@ -406,6 +424,7 @@ fn build_edges_from_courses(
     school: &School,
     equivalences: &HashMap<String, HashSet<String>>,
     plan_courses: &HashSet<&str>,
+    term_of: &HashMap<String, usize>,
 ) -> Vec<GraphEdge> {
     use crate::core::prerequisite_parser::parse_to_dnf;
 
@@ -432,7 +451,13 @@ fn build_edges_from_courses(
 
         if !prereq_raw.is_empty() {
             let dnf_paths = parse_to_dnf(&prereq_raw);
-            let selected = select_best_prereq_path(&dnf_paths, plan_courses, equivalences);
+            let selected = select_best_prereq_path(
+                &dnf_paths,
+                plan_courses,
+                equivalences,
+                term_of,
+                term_of.get(course_key).copied(),
+            );
             for prereq in selected {
                 edges.push(GraphEdge {
                     from: prereq,
@@ -459,13 +484,27 @@ fn build_edges_from_courses(
 
 /// Choose the best prerequisite path from a DNF expression.
 ///
-/// Prefers a complete path (all prereqs in the plan), then falls back to the
-/// longest partial match.  Resolves each prerequisite through equivalences when
-/// the direct course is not in the plan.
+/// Prefers a complete path (all prereqs in the plan) **that the schedule actually
+/// satisfies** — every course in it placed strictly before `dependent_term` — then any
+/// complete path, then the longest partial match. Resolves each prerequisite through
+/// equivalences when the direct course is not in the plan.
+///
+/// The term check is what stops the picture contradicting the schedule. `CS430` requires
+/// `CS314 | CS370`; with both in the plan the first-listed option won on source order
+/// alone, so the graph drew `CS314 → CS430` while the scheduler had satisfied the group
+/// with `CS370` a term earlier and placed `CS430` alongside `CS314`. Measured over the
+/// stored corpus, an option scheduled early enough was available but unchosen for 2,033
+/// course-instances across 179 programs.
+///
+/// It is only ever a tie-break: with one complete path, no term information, or no
+/// complete path that precedes the dependent, the result is exactly what it was before.
+/// Nothing here influences *placement* — the caller derives terms from the schedule.
 fn select_best_prereq_path<'a>(
     dnf_paths: &'a [Vec<String>],
     plan_courses: &HashSet<&str>,
     equivalences: &HashMap<String, HashSet<String>>,
+    term_of: &HashMap<String, usize>,
+    dependent_term: Option<usize>,
 ) -> Vec<String> {
     let resolve = |p: &'a String| -> Option<String> {
         if plan_courses.contains(p.as_str()) {
@@ -484,12 +523,29 @@ fn select_best_prereq_path<'a>(
             .map(str::to_string)
     };
 
-    // First pass: find a fully-satisfied path.
-    for path in dnf_paths {
-        let resolved: Vec<String> = path.iter().filter_map(resolve).collect();
-        if resolved.len() == path.len() {
-            return resolved;
+    // First pass: complete paths, in source order. An empty DNF path counts as complete
+    // (it resolves to nothing and satisfies trivially), matching the previous
+    // `resolved.len() == path.len()` test rather than being filtered out.
+    let complete: Vec<Vec<String>> = dnf_paths
+        .iter()
+        .filter_map(|path| {
+            let resolved: Vec<String> = path.iter().filter_map(resolve).collect();
+            (resolved.len() == path.len()).then_some(resolved)
+        })
+        .collect();
+
+    if let Some(term) = dependent_term {
+        // Prefer a complete path the schedule genuinely clears. Still source order
+        // among those, so the choice stays stable.
+        if let Some(satisfied) = complete.iter().find(|path| {
+            path.iter()
+                .all(|c| term_of.get(c).is_some_and(|t| *t < term))
+        }) {
+            return satisfied.clone();
         }
+    }
+    if let Some(first) = complete.first() {
+        return first.clone();
     }
 
     // Second pass: longest partial match.
@@ -579,7 +635,7 @@ mod tests {
                 .into_iter()
                 .collect();
             let got: Vec<(String, String)> =
-                build_edges_from_courses(&school, &HashMap::new(), &plan)
+                build_edges_from_courses(&school, &HashMap::new(), &plan, &HashMap::new())
                     .into_iter()
                     .map(|e| (e.from, e.to))
                     .collect();
@@ -609,7 +665,7 @@ mod tests {
                     .collect::<HashSet<_>>(),
             );
             assert_eq!(
-                select_best_prereq_path(&dnf, &plan, &equivalences),
+                select_best_prereq_path(&dnf, &plan, &equivalences, &HashMap::new(), None),
                 vec!["MATH152".to_string()],
                 "the lexicographic minimum, not whichever the hash order yielded"
             );
@@ -877,7 +933,7 @@ mod tests {
             vec!["CS101".to_string()],
         ];
         let plan: HashSet<&str> = ["CS101", "CS102"].iter().copied().collect();
-        let result = select_best_prereq_path(&dnf, &plan, &HashMap::new());
+        let result = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &HashMap::new(), None);
         // First path is fully satisfied
         assert_eq!(result.len(), 2);
     }
@@ -891,7 +947,7 @@ mod tests {
         // Only CS101 in plan — partial match for first path (1 of 2)
         // CS103 not in plan — 0 of 1 for second path
         let plan: HashSet<&str> = std::iter::once("CS101").collect();
-        let result = select_best_prereq_path(&dnf, &plan, &HashMap::new());
+        let result = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &HashMap::new(), None);
         assert_eq!(result, vec!["CS101"]);
     }
 
@@ -903,7 +959,7 @@ mod tests {
         let mut s = HashSet::new();
         s.insert("CS101ALT".to_string());
         equivs.insert("CS101".to_string(), s);
-        let result = select_best_prereq_path(&dnf, &plan, &equivs);
+        let result = select_best_prereq_path(&dnf, &plan, &equivs, &HashMap::new(), None);
         assert_eq!(result, vec!["CS101ALT"]);
     }
 
@@ -929,7 +985,7 @@ mod tests {
         school.add_course(c2);
 
         let plan: HashSet<&str> = ["CS101", "CS101L"].iter().copied().collect();
-        let edges = build_edges_from_courses(&school, &HashMap::new(), &plan);
+        let edges = build_edges_from_courses(&school, &HashMap::new(), &plan, &HashMap::new());
 
         let coreq_edges: Vec<_> = edges
             .iter()
@@ -1015,5 +1071,102 @@ mod tests {
         assert_eq!(spec_agg.nodes[0].median_complexity, Some(6.0));
         assert_eq!(spec_agg.nodes[0].median_delay, Some(2.0));
         assert_eq!(spec_agg.nodes[0].median_blocking, Some(4.0));
+    }
+    // --- term-aware OR-option selection -------------------------------------
+
+    fn terms(pairs: &[(&str, usize)]) -> HashMap<String, usize> {
+        pairs.iter().map(|(c, t)| ((*c).to_string(), *t)).collect()
+    }
+
+    #[test]
+    fn an_or_group_picks_the_option_the_schedule_actually_clears() {
+        // The CS430 case: prerequisites `CS314 | CS370`, both in the plan, CS370 a term
+        // earlier and CS314 alongside the dependent. Source order alone chose CS314 and
+        // drew an edge the schedule appeared to violate.
+        let dnf = vec![vec!["CS314".to_string()], vec!["CS370".to_string()]];
+        let plan: HashSet<&str> = ["CS314", "CS370", "CS430"].into_iter().collect();
+        let term_of = terms(&[("CS370", 4), ("CS314", 5), ("CS430", 5)]);
+        let picked = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &term_of, Some(5));
+        assert_eq!(picked, ["CS370"], "chose an option not scheduled before");
+    }
+
+    #[test]
+    fn the_first_listed_option_still_wins_when_it_precedes_the_dependent() {
+        // The tie-break must not reorder anything it does not have to.
+        let dnf = vec![vec!["CS314".to_string()], vec!["CS370".to_string()]];
+        let plan: HashSet<&str> = ["CS314", "CS370", "CS430"].into_iter().collect();
+        let term_of = terms(&[("CS314", 3), ("CS370", 4), ("CS430", 5)]);
+        let picked = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &term_of, Some(5));
+        assert_eq!(picked, ["CS314"], "source order lost for no reason");
+    }
+
+    #[test]
+    fn with_no_term_information_the_old_choice_is_kept() {
+        // Callers without a schedule (`spec_from_components`) must be unaffected.
+        let dnf = vec![vec!["CS314".to_string()], vec!["CS370".to_string()]];
+        let plan: HashSet<&str> = ["CS314", "CS370"].into_iter().collect();
+        let picked = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &HashMap::new(), None);
+        assert_eq!(picked, ["CS314"]);
+    }
+
+    #[test]
+    fn when_no_option_precedes_the_dependent_the_first_complete_path_is_kept() {
+        // 378 stored instances look like this. Dropping the edge entirely would hide a
+        // real prerequisite, so the previous answer stands.
+        let dnf = vec![vec!["CS314".to_string()], vec!["CS370".to_string()]];
+        let plan: HashSet<&str> = ["CS314", "CS370", "CS430"].into_iter().collect();
+        let term_of = terms(&[("CS314", 5), ("CS370", 6), ("CS430", 5)]);
+        let picked = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &term_of, Some(5));
+        assert_eq!(picked, ["CS314"]);
+    }
+
+    #[test]
+    fn a_multi_course_path_must_have_every_member_scheduled_early_enough() {
+        // AND-of-ORs: `(A & B) | C`. A is late, so the pair cannot be the satisfying
+        // route even though both are in the plan.
+        let dnf = vec![
+            vec!["A".to_string(), "B".to_string()],
+            vec!["C".to_string()],
+        ];
+        let plan: HashSet<&str> = ["A", "B", "C", "D"].into_iter().collect();
+        let term_of = terms(&[("A", 5), ("B", 1), ("C", 2), ("D", 5)]);
+        let picked = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &term_of, Some(5));
+        assert_eq!(picked, ["C"], "a late member did not disqualify its path");
+    }
+
+    #[test]
+    fn a_partial_match_is_still_the_fallback_when_nothing_is_complete() {
+        let dnf = vec![vec!["X".to_string(), "Y".to_string()]];
+        let plan: HashSet<&str> = ["Y", "Z"].into_iter().collect();
+        let term_of = terms(&[("Y", 1), ("Z", 4)]);
+        let picked = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &term_of, Some(4));
+        assert_eq!(picked, ["Y"]);
+    }
+
+    #[test]
+    fn term_index_maps_each_scheduled_course_to_its_term() {
+        use crate::core::report::term_scheduler::{Term, TermPlan};
+        let plan = TermPlan {
+            terms: vec![
+                Term {
+                    number: 1,
+                    courses: vec!["A".to_string(), "B".to_string()],
+                    total_credits: 6.0,
+                },
+                Term {
+                    number: 2,
+                    courses: vec!["C".to_string()],
+                    total_credits: 3.0,
+                },
+            ],
+            is_quarter_system: false,
+            target_credits: 15.0,
+            unscheduled: Vec::new(),
+        };
+        let index = term_index(&plan);
+        assert_eq!(index.get("A"), Some(&1));
+        assert_eq!(index.get("B"), Some(&1));
+        assert_eq!(index.get("C"), Some(&2));
+        assert_eq!(index.get("NOPE"), None);
     }
 }
