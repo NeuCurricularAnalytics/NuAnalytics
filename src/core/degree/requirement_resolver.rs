@@ -374,23 +374,13 @@ impl<'a> RequirementResolver<'a> {
             return Vec::new();
         };
 
-        // Generate placeholder course keys based on requirement ID
-        // Use 3-credit courses as default, with smaller courses for remainder
-        let full_courses = credits / 3;
-        let remainder = credits % 3;
-
-        let mut placeholders = Vec::new();
-        let prefix = sanitize_placeholder_prefix(req_id);
-
-        for i in 0..full_courses {
-            placeholders.push(format!("{prefix}{:02}", i + 1));
-        }
-
-        if remainder > 0 {
-            placeholders.push(format!("{prefix}{:02}S", full_courses + 1));
-        }
-
-        placeholders
+        // Exact: a remainder of 1 is a 1-credit placeholder. It used to be written as the
+        // 2-credit short form, so a block stating 10 credits counted as 11.
+        crate::core::degree::placeholder::placeholder_names(
+            &sanitize_placeholder_prefix(req_id),
+            credits,
+            2,
+        )
     }
 
     /// Resolve a `one_of` requirement (mutually exclusive paths)
@@ -980,6 +970,7 @@ mod tests {
         let mut req_resolver = RequirementResolver::new(&courses);
 
         let req = Requirement {
+            fills_to_total: None,
             name: Some("Core".to_string()),
             req_type: RequirementType::All,
             tags: None,
@@ -1010,6 +1001,7 @@ mod tests {
         let mut req_resolver = RequirementResolver::new(&courses);
 
         let req = Requirement {
+            fills_to_total: None,
             name: Some("Electives".to_string()),
             req_type: RequirementType::Select,
             tags: None,

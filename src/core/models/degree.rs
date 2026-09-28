@@ -171,6 +171,36 @@ pub struct Requirement {
     /// fixed category names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
+
+    /// True when these credits exist only to bring the degree up to `total_credits` —
+    /// free or unrestricted electives, "additional coursework to reach 120".
+    ///
+    /// A flagged requirement is sized **per plan** as
+    /// `min(credits, max(0, total_credits − everything else in the plan))` rather than
+    /// always contributing its stated `credits`. The stated figure is an author's estimate
+    /// for a typical path; a plan whose other choices run heavier (a longest path pulling
+    /// in extra prerequisites) would otherwise overshoot the graduation total by up to the
+    /// whole block. It never grows past `credits` and never takes a plan below the total.
+    ///
+    /// This is data, not inference: it is set once when a degree is converted
+    /// (`degree convert`), where it can be read and corrected per degree, and plan
+    /// generation reads only this flag. Deciding it from the requirement's wording at
+    /// analysis time is what previously let the behaviour drift between fixes — gen-ed
+    /// distribution blocks share the same wildcard shape and must stay fixed.
+    ///
+    /// Three states, and the difference between the last two matters:
+    ///
+    /// - `None` — undecided; `degree convert` applies its rule.
+    /// - `Some(true)` — a fill block.
+    /// - `Some(false)` — a person decided it is **not** fill. Conversion never overrides
+    ///   either explicit value, so a hand correction survives re-conversion. A plain `bool`
+    ///   could not express this: an explicit `false` would be indistinguishable from unset
+    ///   and get re-flagged on the next conversion.
+    ///
+    /// Omitted from serialized JSON when `None`, so undecided documents are unchanged byte
+    /// for byte.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fills_to_total: Option<bool>,
 }
 
 /// Types of requirements

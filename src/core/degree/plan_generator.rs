@@ -114,10 +114,12 @@ pub fn is_placeholder_course(course_key: &str) -> bool {
         .count();
     if (2..=4).contains(&prefix_len) {
         let suffix = &course_key[prefix_len..];
-        // Placeholder if suffix is just digits (possibly with 'S' for small)
+        // Placeholder if suffix is just digits, optionally followed by the partial-credit
+        // marker: `S` or `S<n>` (see `core::degree::placeholder`).
         if suffix.chars().all(|c| c.is_ascii_digit() || c == 'S') && !suffix.is_empty() {
-            // Check if it looks like a placeholder (short number)
-            let digits: String = suffix.chars().filter(char::is_ascii_digit).collect();
+            // The number is the part before any `S`. Reading every digit instead made
+            // `FE99S1` look like course number 991 and escape recognition.
+            let digits: String = suffix.chars().take_while(char::is_ascii_digit).collect();
             if let Ok(num) = digits.parse::<u32>() {
                 // Real course numbers are typically 3-4 digits (100-9999)
                 // Placeholders are typically 1-2 digits (01-99)
@@ -227,6 +229,36 @@ pub fn default_seed_for_document(canonical: &str) -> u64 {
     hasher.finish()
 }
 
+/// The default seed for a degree program, blind to analysis-only metadata.
+///
+/// [`Requirement::fills_to_total`](crate::core::models::degree::Requirement::fills_to_total)
+/// sizes a block's credits *after* enumeration and does not change the plan space, so it is
+/// cleared before hashing. Letting it into the seed re-sampled every flagged degree: adding
+/// the flag to Colorado State's CS degree left 3 of 10,000 enumerated plans in common with
+/// the unflagged run, so its selected plans and metrics moved for reasons unrelated to the
+/// flag. Excluded, a flagged degree enumerates exactly the plans it did before and only
+/// the free-elective sizing differs.
+///
+/// For an unflagged program this is identical to hashing its canonical JSON directly,
+/// because the flag is omitted when unset — so no stored run's seed changes.
+#[must_use]
+pub fn default_seed_for_program(program: &crate::core::models::DegreeProgram) -> u64 {
+    let canonical = if program
+        .requirements
+        .values()
+        .any(|r| r.fills_to_total.is_some())
+    {
+        let mut unflagged = program.clone();
+        for req in unflagged.requirements.values_mut() {
+            req.fills_to_total = None;
+        }
+        crate::core::degree::serialize_degree_json(&unflagged, false)
+    } else {
+        crate::core::degree::serialize_degree_json(program, false)
+    };
+    default_seed_for_document(&canonical.unwrap_or_default())
+}
+
 /// Configuration for plan generation
 #[derive(Debug, Clone)]
 pub struct PlanGeneratorConfig {
@@ -242,9 +274,6 @@ pub struct PlanGeneratorConfig {
 
     /// Target total credits for the degree (adds placeholder electives if needed)
     pub target_credits: Option<u32>,
-
-    /// Default credit hours for placeholder electives
-    pub default_elective_credits: f32,
 
     /// Sampling strategy for plan enumeration
     /// Defaults to Shuffled for unbiased statistics
@@ -269,7 +298,6 @@ impl Default for PlanGeneratorConfig {
             ignore_duplicates: true,
             sample_count: 5,
             target_credits: None,
-            default_elective_credits: 3.0,
             sampling_strategy: SamplingStrategy::Shuffled,
             random_seed: None,
             include_courses: Vec::new(),
@@ -1154,7 +1182,7 @@ impl<'a> PlanIterator<'a> {
             .generator
             .calculate_elective_placeholders(plan.total_credits);
         if elective_credits > 0.0 {
-            plan = self.add_elective_placeholders(plan, elective_credits);
+            plan = Self::add_elective_placeholders(plan, elective_credits);
         }
 
         plan
@@ -1165,23 +1193,9 @@ impl<'a> PlanIterator<'a> {
     /// Creates generic 3-credit elective placeholders plus a smaller one
     /// if there's a remainder.
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    fn add_elective_placeholders(&self, mut plan: PlanVariant, credits_needed: f32) -> PlanVariant {
-        let default_credits = self.generator.config.default_elective_credits;
-        // Safe: credits_needed is always non-negative and reasonable
-        let full_electives = (credits_needed / default_credits).floor() as usize;
-        let remainder = credits_needed % default_credits;
-
-        let mut elective_courses = Vec::new();
-
-        // Add full-credit electives
-        for i in 0..full_electives {
-            elective_courses.push(format!("ELEC{:03}", i + 1));
-        }
-
-        // Add partial elective if there's a remainder
-        if remainder > 0.5 {
-            elective_courses.push(format!("ELEC{:03}S", full_electives + 1));
-        }
+    fn add_elective_placeholders(mut plan: PlanVariant, credits_needed: f32) -> PlanVariant {
+        let elective_courses =
+            crate::core::degree::placeholder::elective_placeholders(credits_needed);
 
         // Add electives to plan
         if !elective_courses.is_empty() {
@@ -1189,11 +1203,17 @@ impl<'a> PlanIterator<'a> {
             new_courses.extend(elective_courses.clone());
             new_courses.sort();
 
+            // What the placeholders actually carry, not `credits_needed`: the two differed
+            // whenever a remainder was rounded, which made this total look exact while the
+            // plan recounted from its course names came out a credit higher.
+            let total_credits = plan.total_credits
+                + elective_courses
+                    .iter()
+                    .map(|c| crate::core::degree::placeholder::placeholder_credits(c))
+                    .sum::<f32>();
+
             let mut new_choices = plan.requirement_choices.clone();
             new_choices.insert("_elective_placeholders".to_string(), elective_courses);
-
-            // Recalculate total credits
-            let total_credits = plan.total_credits + credits_needed;
 
             plan = PlanVariant::from_parts(new_courses, new_choices, total_credits);
         }
@@ -1340,12 +1360,7 @@ impl Iterator for PlanIterator<'_> {
 /// - `AC01`, `AW01` (gen ed placeholders)
 /// - `ELEC001`, `ELEC002S` (target credit placeholders)
 fn placeholder_credits(course_key: &str) -> f32 {
-    // Check for "S" suffix indicating a small/remainder course
-    if course_key.ends_with('S') {
-        2.0
-    } else {
-        3.0
-    }
+    crate::core::degree::placeholder::placeholder_credits(course_key)
 }
 
 #[cfg(test)]
@@ -1380,6 +1395,7 @@ mod tests {
         reqs.insert(
             "core".to_string(),
             Requirement {
+                fills_to_total: None,
                 name: Some("Core".to_string()),
                 req_type: RequirementType::All,
                 tags: None,
@@ -1401,6 +1417,7 @@ mod tests {
         reqs.insert(
             "elective".to_string(),
             Requirement {
+                fills_to_total: None,
                 name: Some("Elective".to_string()),
                 req_type: RequirementType::Select,
                 tags: None,
@@ -1465,6 +1482,7 @@ mod tests {
         reqs.insert(
             "free_choice".to_string(),
             Requirement {
+                fills_to_total: None,
                 name: Some("Free Choice".to_string()),
                 req_type: RequirementType::Select,
                 tags: None,
@@ -1593,6 +1611,7 @@ mod tests {
         reqs.insert(
             "gen_ed".to_string(),
             Requirement {
+                fills_to_total: None,
                 name: Some("Gen Ed Math".to_string()),
                 req_type: RequirementType::Select,
                 tags: None,

@@ -24,10 +24,12 @@
 
 pub mod audit;
 pub mod course_reference;
+pub mod fill_electives;
 pub mod gen_ed_tracker;
 pub mod json_parser;
 pub mod landscape_convert;
 pub mod normalize;
+pub mod placeholder;
 pub mod plan_dag;
 pub mod plan_generator;
 pub mod plan_selector;
@@ -82,8 +84,8 @@ pub use plan_dag::build_plan_dag;
 
 // Re-export plan generation types
 pub use plan_generator::{
-    default_seed_for_document, is_placeholder_course, PlanGenerationStats, PlanGenerator,
-    PlanGeneratorConfig, SamplingStrategy,
+    default_seed_for_document, default_seed_for_program, is_placeholder_course,
+    PlanGenerationStats, PlanGenerator, PlanGeneratorConfig, SamplingStrategy,
 };
 pub use plan_variant::PlanVariant;
 pub use requirement_resolver::{RequirementResolver, ResolvedRequirement};

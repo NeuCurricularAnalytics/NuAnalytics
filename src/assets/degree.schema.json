@@ -115,6 +115,10 @@
         "courses": { "type": ["array", "null"], "items": { "type": "string" } },
         "count": { "type": ["integer", "null"] },
         "credits": { "type": ["integer", "null"] },
+        "fills_to_total": {
+          "type": "boolean",
+          "description": "True when these credits exist only to reach the degree's total_credits (free / unrestricted electives, \"additional coursework to reach 120\"). Sized per plan as min(credits, max(0, total_credits - everything else)) instead of always contributing its stated credits, so a heavier plan does not overshoot the total. Set by `degree convert`; omit or false for a block that must always be taken in full, such as a gen-ed distribution area."
+        },
         "from": { "anyOf": [{ "$ref": "#/$defs/fromClause" }, { "type": "null" }] },
         "options": { "type": ["array", "null"] },
         "tags": {

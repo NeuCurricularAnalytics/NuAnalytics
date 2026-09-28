@@ -338,12 +338,11 @@ struct CourseInfo {
 fn classify_course_key(course_key: &str, course: Option<&Course>) -> CourseInfo {
     // Check for ELEC### pattern (free electives)
     if let Some(suffix) = course_key.strip_prefix("ELEC") {
-        let is_small = suffix.ends_with('S');
         return CourseInfo {
             name: "Free Elective".to_string(),
             prefix: "ELEC".to_string(),
             number: suffix.to_string(),
-            credits: if is_small { 2.0 } else { 3.0 },
+            credits: crate::core::degree::placeholder::placeholder_credits(course_key),
         };
     }
 
@@ -369,13 +368,12 @@ fn classify_course_key(course_key: &str, course: Option<&Course>) -> CourseInfo 
         .collect();
 
     if !prefix.is_empty() && !number.is_empty() {
-        let is_small = number.ends_with('S');
         let name = humanize_placeholder_prefix(&prefix);
         return CourseInfo {
+            credits: crate::core::degree::placeholder::placeholder_credits(course_key),
             name,
             prefix,
             number,
-            credits: if is_small { 2.0 } else { 3.0 },
         };
     }
 

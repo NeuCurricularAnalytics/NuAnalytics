@@ -181,12 +181,6 @@ pub struct TermScheduler<'a> {
     config: SchedulerConfig,
 }
 
-/// Default credit hours for placeholder courses not in the school catalog
-const DEFAULT_PLACEHOLDER_CREDITS: f32 = 3.0;
-
-/// Default credit hours for "small" placeholder courses (ending in 'S')
-const DEFAULT_SMALL_PLACEHOLDER_CREDITS: f32 = 2.0;
-
 /// Look up credit hours for a course, falling back to placeholder defaults
 /// when the course is not in the school catalog.
 ///
@@ -195,18 +189,12 @@ const DEFAULT_SMALL_PLACEHOLDER_CREDITS: f32 = 2.0;
 /// added to [`School`]. Without this fallback their per-course credit
 /// would render as 0 even though their term totals add up correctly.
 ///
-/// - Course keys ending in `'S'` resolve to 2 credits (small courses).
-/// - All other unknown keys resolve to 3 credits (standard elective).
+/// Unknown keys are placeholders, credited from their names by
+/// [`placeholder_credits`](crate::core::degree::placeholder::placeholder_credits).
 #[must_use]
 pub fn course_credits_with_fallback(school: &School, course_key: &str) -> f32 {
     school.get_course(course_key).map_or_else(
-        || {
-            if course_key.ends_with('S') {
-                DEFAULT_SMALL_PLACEHOLDER_CREDITS
-            } else {
-                DEFAULT_PLACEHOLDER_CREDITS
-            }
-        },
+        || crate::core::degree::placeholder::placeholder_credits(course_key),
         |course| course.credit_hours,
     )
 }
@@ -897,8 +885,10 @@ mod tests {
         let school = School::new("T".to_string());
         assert_eq!(
             course_credits_with_fallback(&school, "FE03S"),
-            DEFAULT_SMALL_PLACEHOLDER_CREDITS
+            crate::core::degree::placeholder::SHORT_PLACEHOLDER_CREDITS
         );
+        // The explicit partial form, which a remainder of one credit now produces.
+        assert_eq!(course_credits_with_fallback(&school, "FE05S1"), 1.0);
     }
 
     /// See the rationale on the previous test: comparing constant returns.
@@ -908,12 +898,12 @@ mod tests {
         let school = School::new("T".to_string());
         assert_eq!(
             course_credits_with_fallback(&school, "ELEC001"),
-            DEFAULT_PLACEHOLDER_CREDITS
+            crate::core::degree::placeholder::FULL_PLACEHOLDER_CREDITS
         );
         // Empty key falls back to the standard default (does not end in 'S').
         assert_eq!(
             course_credits_with_fallback(&school, ""),
-            DEFAULT_PLACEHOLDER_CREDITS
+            crate::core::degree::placeholder::FULL_PLACEHOLDER_CREDITS
         );
     }
 

@@ -243,6 +243,11 @@ requirements:
       max_from_pattern_credits: integer # Credit limit for that pattern
       grade_minimum: string           # Override degree-level grade requirement
 
+    # Free / unrestricted electives that exist only to reach total_credits
+    fills_to_total: boolean           # If true, sized per plan: min(credits, total - rest).
+                                      # Set by `degree convert`. Leave unset for any block
+                                      # that must always be taken in full (gen-ed areas).
+
     # External requirements (for minor/second major options)
     external_requirement: boolean     # If true, credits come from outside defined courses
     external_credits: integer | null  # How many external credits required

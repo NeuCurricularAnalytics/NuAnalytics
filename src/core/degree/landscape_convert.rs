@@ -365,6 +365,7 @@ fn assemble_requirements(
         requirements.insert(
             category.clone(),
             Requirement {
+                fills_to_total: None,
                 name: Some(meta.display.to_string()),
                 req_type: RequirementType::All,
                 category: Some(meta.degree_category.to_string()),
@@ -391,6 +392,7 @@ fn assemble_requirements(
         requirements.insert(
             format!("picklist_{}", slug(&name)),
             Requirement {
+                fills_to_total: None,
                 name: Some(name),
                 req_type: RequirementType::Select,
                 category: Some(DEGREE_CAT_ELECTIVE.to_string()),

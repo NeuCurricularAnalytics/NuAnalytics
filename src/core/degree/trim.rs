@@ -971,6 +971,7 @@ mod tests {
     /// us from writing them out longhand in every test.
     fn all_req(courses: Vec<&str>) -> Requirement {
         Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::All,
             tags: None,
@@ -1107,6 +1108,7 @@ mod tests {
     #[test]
     fn select_count_trims_to_n_choices() {
         let select_req = Requirement {
+            fills_to_total: None,
             name: Some("pick 2".to_string()),
             req_type: RequirementType::Select,
             tags: None,
@@ -1143,6 +1145,7 @@ mod tests {
     #[test]
     fn equivalents_group_with_no_protection_trims_to_smallest_depth() {
         let req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::All,
             tags: None,
@@ -1172,6 +1175,7 @@ mod tests {
     #[test]
     fn equivalents_all_protected_kept_verbatim() {
         let req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::All,
             tags: None,
@@ -1203,6 +1207,7 @@ mod tests {
     fn orphan_courses_pruned() {
         // BIO200 is no longer referenced after trim → must be removed.
         let req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::All,
             tags: None,
@@ -1236,6 +1241,7 @@ mod tests {
         // A separate course that names MATH241 as its only prereq must be
         // rewritten to MATH215, and MATH241 must vanish entirely.
         let req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::All,
             tags: None,
@@ -1288,6 +1294,7 @@ mod tests {
         // `MATH215 & MATH241` becomes `MATH215 & MATH215`. Without
         // dedup_ast the trimmed YAML would emit the redundant pair.
         let req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::All,
             tags: None,
@@ -1330,6 +1337,7 @@ mod tests {
         // dropped from `courses:` even though a requirement still
         // referenced them (breadth_requirements pattern in UHM degree).
         let req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::Select,
             tags: None,
@@ -1438,6 +1446,7 @@ mod tests {
         // Without --include, MATH215 (depth 0) would win on the lex tiebreak.
         // --include MATH241 must override and rewrite downstream references.
         let req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::All,
             tags: None,
@@ -1483,6 +1492,7 @@ mod tests {
         // Defensive: a Select.from that populates both `courses` and
         // `groups` must traverse both during orphan walking.
         let req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::Select,
             tags: None,
@@ -1542,6 +1552,7 @@ mod tests {
         // preserve every ICS 400+ course from orphan-pruning even when no
         // other requirement names them.
         let req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::Select,
             tags: None,
@@ -1595,6 +1606,7 @@ mod tests {
         // `from.include` carries additional patterns alongside `from.pattern`
         // — both must be honoured by orphan-pruning.
         let req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::Select,
             tags: None,
@@ -1639,6 +1651,7 @@ mod tests {
         // Recursive coverage: `from.groups` inside a `one_of` option must
         // also be walked when the orphan pruner builds its reference set.
         let nested = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::Select,
             tags: None,
@@ -1667,6 +1680,7 @@ mod tests {
             external_note: None,
         };
         let outer = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::OneOf,
             tags: None,
@@ -1697,6 +1711,7 @@ mod tests {
     fn protected_subjects_derived_when_major_subjects_missing() {
         // No `major_subjects` declared, but most courses are CS — should derive CS.
         let req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::All,
             tags: None,
@@ -1784,6 +1799,7 @@ mod tests {
         // meets `credits`. Here depths are MATH100<MATH200<MATH300, credits
         // are 4 each, target is 7 → must pick MATH100 (4) + MATH200 (8 ≥ 7).
         let select_req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::Select,
             tags: None,

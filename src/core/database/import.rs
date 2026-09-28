@@ -1510,6 +1510,7 @@ mod tests {
     fn test_allow_double_count_derivation() {
         use crate::core::models::degree::{Requirement, RequirementConstraints, RequirementType};
         let mk = |exclude_used: Option<bool>| Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::All,
             category: None,
@@ -1546,6 +1547,7 @@ mod tests {
     fn test_is_impossible_count_exceeds_pool() {
         use crate::core::models::degree::{FromClause, Requirement, RequirementType};
         let req = Requirement {
+            fills_to_total: None,
             name: None,
             req_type: RequirementType::Select,
             category: None,

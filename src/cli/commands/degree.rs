@@ -1825,9 +1825,10 @@ fn analyze_program(
             // the same plans. Left unset, shuffled sampling took thread-local entropy
             // and three runs of one degree disagreed in the third decimal — which made
             // the corpus unreproducible and a metric backfill impossible.
-            random_seed: Some(nu_analytics::core::degree::default_seed_for_document(
-                &nu_analytics::core::degree::serialize_degree_json(program, false)
-                    .unwrap_or_default(),
+            // Blind to `fills_to_total`, which sizes credits after enumeration and must
+            // not re-sample the plans — see `default_seed_for_program`.
+            random_seed: Some(nu_analytics::core::degree::default_seed_for_program(
+                program,
             )),
             max_plans: options
                 .max_plans
@@ -1841,7 +1842,6 @@ fn analyze_program(
             sampling_strategy,
             include_courses,
             exclude_courses: exclude_from_prereqs.iter().cloned().collect(),
-            ..Default::default()
         },
         verbose,
         equivalences,
@@ -2130,7 +2130,7 @@ fn convert_single(
         ));
     }
 
-    let (program, warnings) = if is_json_path(input) {
+    let (mut program, warnings) = if is_json_path(input) {
         parse_degree_json_with_warnings(contents)
             .map_err(|e| format!("Failed to parse {}: {e}", input.display()))?
     } else {
@@ -2138,6 +2138,7 @@ fn convert_single(
             .map_err(|e| format!("Failed to load {}: {e}", input.display()))?;
         (program, Vec::new())
     };
+    let flagged = nu_analytics::core::degree::fill_electives::mark_fill_to_total(&mut program);
 
     let mut value = to_unified_value(&program)
         .map_err(|e| format!("Failed to build unified JSON for {}: {e}", input.display()))?;
@@ -2146,8 +2147,19 @@ fn convert_single(
     )?;
 
     println!("✓ Converted {} -> {}", input.display(), out_path.display());
+    report_fill_flags(&flagged);
     report_warnings(&warnings, verbose);
     Ok(())
+}
+
+/// Say which requirements conversion marked as fill-to-total.
+///
+/// The flag changes how a block is sized in every plan, so it is announced rather than
+/// set silently — the converted file is where a wrong call gets corrected.
+fn report_fill_flags(flagged: &[String]) {
+    if !flagged.is_empty() {
+        println!("  • fills_to_total set on: {}", flagged.join(", "));
+    }
 }
 
 /// Expand a cluster pipeline file into one unified JSON per program, written as
@@ -2214,7 +2226,9 @@ fn write_cluster_program(
 ) -> Result<usize, String> {
     use nu_analytics::core::degree::{convert_landscape, json_parser::to_unified_value};
 
-    let result = convert_landscape(prog);
+    let mut result = convert_landscape(prog);
+    let flagged =
+        nu_analytics::core::degree::fill_electives::mark_fill_to_total(&mut result.program);
     let mut value = to_unified_value(&result.program).map_err(|e| {
         format!(
             "Failed to build unified JSON for {} / {name}: {e}",
@@ -2238,6 +2252,7 @@ fn write_cluster_program(
     )?;
     if verbose {
         println!("  ✓ {}", out_path.display());
+        report_fill_flags(&flagged);
     }
     Ok(result.warnings.len())
 }
@@ -2515,6 +2530,10 @@ fn process_plan_variants(
     let progress_interval = (ctx.gen_config.max_plans / 20).max(100);
     // Same set for every plan, so build it once.
     let include_set: HashSet<String> = ctx.gen_config.include_courses.iter().cloned().collect();
+    // Requirements marked at conversion as existing only to reach the total. Read from the
+    // document's flag, never inferred here — see `core::degree::fill_electives`.
+    let fill_ids =
+        nu_analytics::core::degree::fill_electives::fill_requirement_ids(&ctx.program.requirements);
 
     for variant in generator.generate() {
         if plans_processed >= ctx.gen_config.max_plans {
@@ -2531,13 +2550,37 @@ fn process_plan_variants(
         }
 
         // Expand courses to include all prerequisites
-        let expanded_courses = expand_courses_with_prerequisites(
+        let mut expanded_courses = expand_courses_with_prerequisites(
             &variant.courses,
             ctx.graph,
             &ctx.equivalences,
             &ctx.exclude_from_prereqs,
             &include_set,
         );
+
+        // Size fill-to-total blocks to this plan. Done *before* the DAG and metrics so all
+        // three — metrics, credits and schedule — describe the same course list; doing it
+        // later would leave complexity counting placeholders the plan no longer contains.
+        let mut fill: Option<nu_analytics::core::degree::fill_electives::FillResize> = None;
+        if let Some(target) = ctx.gen_config.target_credits {
+            #[allow(clippy::cast_precision_loss)] // target credits < 1000
+            if let Some(resize) = nu_analytics::core::degree::fill_electives::shrink_fill_blocks(
+                &expanded_courses,
+                &variant.requirement_choices,
+                &fill_ids,
+                target as f32,
+                |c| {
+                    ctx.school
+                        .get_course(c)
+                        .map_or_else(|| placeholder_credits(c), |co| co.credit_hours)
+                },
+                |c| ctx.school.get_course(c).is_some(),
+                |c| c.starts_with("ELEC"),
+            ) {
+                expanded_courses.clone_from(&resize.courses);
+                fill = Some(resize);
+            }
+        }
 
         // Build plan-specific DAG and compute metrics
         let plan_dag = nu_analytics::core::degree::build_plan_dag(
@@ -2562,6 +2605,7 @@ fn process_plan_variants(
             &expanded_courses,
             &ctx.school,
             ctx.gen_config.target_credits,
+            fill.as_ref(),
         );
 
         // Use the variant's total_credits which includes elective placeholders
@@ -3249,8 +3293,23 @@ fn create_expanded_variant(
     expanded_courses: &[String],
     school: &School,
     target_credits: Option<u32>,
+    fill: Option<&nu_analytics::core::degree::fill_electives::FillResize>,
 ) -> PlanVariant {
     let mut new_choices = original.requirement_choices.clone();
+    // Placeholders a fill-to-total block gave up for this plan. Dropping them from the
+    // choices too keeps the requirement breakdown in step with the courses actually
+    // scheduled, rather than listing placeholders the plan no longer contains.
+    if let Some(fill) = fill {
+        for chosen in new_choices.values_mut() {
+            chosen.retain(|c| !fill.removed.contains(c));
+        }
+        for (id, fresh) in &fill.added {
+            new_choices
+                .entry(id.clone())
+                .or_default()
+                .extend(fresh.iter().cloned());
+        }
+    }
 
     // Find courses that were added (prerequisites not in original plan)
     let original_set: HashSet<&str> = original.courses.iter().map(String::as_str).collect();
@@ -3292,7 +3351,9 @@ fn create_expanded_variant(
         } else {
             // Need some electives - calculate exactly how many
             let elective_credits_needed = target_f32 - non_elective_credits;
-            let new_electives = generate_elective_placeholders(elective_credits_needed);
+            let new_electives = nu_analytics::core::degree::placeholder::elective_placeholders(
+                elective_credits_needed,
+            );
 
             // Replace elective placeholders with exact amount needed
             if new_electives.is_empty() {
@@ -3328,40 +3389,9 @@ fn create_expanded_variant(
     PlanVariant::from_parts(final_courses, new_choices, total_credits)
 }
 
-/// Generate placeholder elective courses for a given credit amount
-///
-/// Creates 3-credit electives with a possible 2-credit "small" elective
-/// for the remainder.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn generate_elective_placeholders(credits_needed: f32) -> Vec<String> {
-    if credits_needed <= 0.0 {
-        return Vec::new();
-    }
-
-    let full_electives = (credits_needed / 3.0).floor() as usize;
-    let remainder = credits_needed % 3.0;
-
-    let mut electives = Vec::new();
-
-    for i in 0..full_electives {
-        electives.push(format!("ELEC{:03}", i + 1));
-    }
-
-    // Add partial elective if remainder is significant (> 0.5 credits)
-    if remainder > 0.5 {
-        electives.push(format!("ELEC{:03}S", full_electives + 1));
-    }
-
-    electives
-}
-
-/// Get credits for a placeholder course based on naming convention
+/// Credits of a placeholder course, from its name. See `core::degree::placeholder`.
 fn placeholder_credits(course_key: &str) -> f32 {
-    if course_key.ends_with('S') {
-        2.0
-    } else {
-        3.0
-    }
+    nu_analytics::core::degree::placeholder::placeholder_credits(course_key)
 }
 
 /// Print a separator between sections

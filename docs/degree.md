@@ -326,6 +326,11 @@ prerequisites into the internal expression tree, and defaults missing course
 credits to 3. Data-quality issues (such as assumed credits) are reported and
 embedded as a `conversion_warnings` array in the output.
 
+Conversion also marks free-elective blocks that exist only to reach the degree total with
+`fills_to_total: true`, and prints which ones — see
+[Free Electives That Fill to the Total](#free-electives-that-fill-to-the-total-fills_to_total).
+It never changes a value already set in the input.
+
 ai-landscape *cluster* pipeline files (`course_verifier` /
 `course_scraper.<program>.results`) are expanded into **one unified file per
 program**, using collision-safe `<school>__<program>.unified.json` names.
@@ -610,6 +615,78 @@ requirements:
 - `[CS101, CS102, CS103]` - Bundle (all required together)
 - `{CS101, CS102}` - Equivalents (choose one)
 - `CS4*` - Pattern matching (all 400-level CS courses)
+
+### Free Electives That Fill to the Total (`fills_to_total`)
+
+Many degrees end with a block like "free electives to reach 120 credits". Written as a
+fixed amount, it over-counts on any plan whose other choices run heavier:
+
+```yaml
+  free_electives:
+    name: "Unrestricted Electives"
+    type: select
+    category: elective
+    from:
+      include: ["*:*"]
+    credits: 20
+    fills_to_total: true   # size per plan, up to 20, to reach total_credits
+```
+
+With `fills_to_total: true` the block is sized **per plan** as
+`min(credits, max(0, total_credits − everything else))`. A plan whose other courses already
+reach the total takes none of it; a light plan still takes all 20, and the generic `ELEC`
+filler tops up any remaining gap as before. It never grows past `credits`, never takes a
+plan below `total_credits`, and lands on the total exactly whenever the credits involved are
+whole numbers — the block is rebuilt at its share rather than trimmed a placeholder at a
+time (see [Placeholder courses](#placeholder-courses)).
+
+Colorado State's CS concentration is the case that prompted it. Its longest path pulls in
+extra prerequisite courses and used to land at 132 credits against 120; flagged, it lands on
+120 exactly, with the block rebuilt as `FE01 FE02 FE03S`.
+
+**You rarely set it by hand.** `degree convert` sets it on requirements it recognises and
+prints what it flagged (`• fills_to_total set on: free_electives`). The rule is deliberately
+conservative, because a wrong `true` silently under-counts a real requirement while a missed
+one only leaves the old overshoot. A block qualifies only when it is:
+
+- a credit-sized `select` from the fully unrestricted pool `*:*`
+- not `gen_ed`, `major` or `supporting`
+- not a combined bucket such as "Foreign Language and Free Electives"
+- named for electives or credits, not a program ("Jewish Studies", "Second Discipline")
+- described as reaching the **degree** total — graduation, the degree, or `total_credits`
+  itself, not "to reach 21 credits" or "the 80-credit option total" — or named as free /
+  unrestricted electives
+
+**Correcting it.** The field has three states. Leave it unset and conversion decides. Set
+`true` or `false` and conversion never overrides you, so a correction survives the next
+`degree convert`. Use `false` for a block the rule gets wrong: Tulsa's `free_electives` is
+really "Electives (14 hours; CS or CYB, advisor-approved)" and is marked `false` in the
+corpus for that reason.
+
+Setting the flag does **not** re-sample the plans. The plan-enumeration seed ignores it, so
+flagging a degree changes only how that block is sized; every other metric is as before.
+
+### Placeholder courses
+
+Where a plan needs credits that no specific course supplies, it uses a **placeholder**: a
+synthetic course with no catalog entry. A wildcard requirement such as `credits: 20` from
+`*:*` becomes `FE01`, `FE02`, …; the generic filler that tops a plan up to `total_credits`
+uses `ELEC001`, `ELEC002`, …. A placeholder's credits are carried in its name:
+
+| name | credits |
+|---|---|
+| `FE03`, `ELEC001` | 3 — a full placeholder |
+| `FE07S`, `ELEC002S` | 2 |
+| `FE05S1`, `ELEC004S1` | 1 |
+
+Amounts are written as full 3-credit placeholders plus one for the remainder, so every whole
+amount is exact: 20 is `FE01`–`FE06` + `FE07S`, 10 is `FE01`–`FE03` + `FE04S1`.
+
+Before 2026-09-28 there was no 1-credit form, so a remainder of one was written as the
+2-credit `S`. A block stating 10 credits counted as 11, and 3,116 of the corpus's 13,872
+curated plans landed one credit over their total. The encoding now lives in one place,
+`core::degree::placeholder`; it had previously been re-implemented seven times, and the MCP
+copy had drifted to different names (`ELEC_01`) and a different remainder rule.
 
 ### Gen-Ed Attributes
 
