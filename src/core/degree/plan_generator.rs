@@ -88,7 +88,7 @@ fn expand_course_list(courses: &[String]) -> Vec<String> {
 ///
 /// Placeholder courses are generated for requirements that use wildcard patterns
 /// or when specific courses aren't enumerated. They follow naming conventions like:
-/// - `ELEC001`, `ELEC002S` — free electives, from [`Self::add_elective_placeholders`]
+/// - `ELEC001`, `ELEC002S` — free electives, from `PlanGenerator::add_elective_placeholders`
 /// - `GE01`, `AC01`, `FE01`, `WRTC01` — gen-ed placeholders, from
 ///   `requirement_resolver`'s `sanitize_placeholder_prefix`
 ///

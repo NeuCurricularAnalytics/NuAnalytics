@@ -40,8 +40,8 @@ pub enum EdgeType {
 /// The per-plan metrics (`complexity`, `delay`, `blocking`) describe this
 /// course's position in *this* plan only.  The optional `median_*` fields
 /// carry the cross-plan median for the same metric, populated when the spec
-/// is built with a [`MetricsAggregator`]; they are `None` for single-plan
-/// reports where no aggregator exists.
+/// is built with [`ReportStats`] — from a live aggregator or a stored run; they
+/// are `None` for single-plan reports where neither exists.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CourseNode {
     /// Unique course identifier, e.g. `"CS2500"`.

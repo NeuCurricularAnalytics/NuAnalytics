@@ -680,7 +680,13 @@ uses `ELEC001`, `ELEC002`, …. A placeholder's credits are carried in its name:
 | `FE05S1`, `ELEC004S1` | 1 |
 
 Amounts are written as full 3-credit placeholders plus one for the remainder, so every whole
-amount is exact: 20 is `FE01`–`FE06` + `FE07S`, 10 is `FE01`–`FE03` + `FE04S1`.
+amount is exact: 20 is `FE01`–`FE06` + `FE07S`, 10 is `FE01`–`FE03` + `FE04S1`. A fractional
+shortfall — half-unit courses at course-unit schools — is rounded **up** to whole credits,
+so a plan is never left below its total.
+
+The credit marker is read *after* the number, never by searching for the last `S`: many
+prefixes end in one (`NS` for natural sciences, `PSS`, `GES`), and `NS04` is a 3-credit
+placeholder numbered 4, not "`S`, then 4 credits".
 
 Before 2026-09-28 there was no 1-credit form, so a remainder of one was written as the
 2-credit `S`. A block stating 10 credits counted as 11, and 3,116 of the corpus's 13,872

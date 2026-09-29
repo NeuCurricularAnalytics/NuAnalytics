@@ -851,8 +851,18 @@ fn run_plan_analysis(
                 fill = Some(resize);
             }
         }
-        let plan_dag = crate::core::degree::build_plan_dag(
+        // Final plan first, then its DAG and metrics — same order as the CLI pipeline, so
+        // complexity counts the placeholders the scheduled plan actually contains.
+        let expanded_variant = build_expanded_variant(
+            &variant,
             &expanded,
+            ctx.school,
+            ctx.target_credits,
+            fill.as_ref(),
+        );
+
+        let plan_dag = crate::core::degree::build_plan_dag(
+            &expanded_variant.courses,
             ctx.graph,
             ctx.equivalences,
             &include_set,
@@ -861,14 +871,6 @@ fn run_plan_analysis(
         let Ok(course_metrics) = compute_all_metrics(&plan_dag) else {
             continue;
         };
-
-        let expanded_variant = build_expanded_variant(
-            &variant,
-            &expanded,
-            ctx.school,
-            ctx.target_credits,
-            fill.as_ref(),
-        );
 
         // Accumulate the actual scheduled term for the target course.
         // Must use expanded_variant.courses (includes prerequisite courses)
@@ -1300,7 +1302,9 @@ fn build_school(program: &crate::core::DegreeProgram) -> School {
             sc.prerequisites = parse_prereqs(raw);
         }
         sc.corequisites.clone_from(&course.corequisites);
-        school.add_course(sc);
+        // By document key, as in the CLI's `build_school_from_program`: lookups are by
+        // plan course id, and `prefix + number` collides for lecture/lab pairs.
+        school.add_course_with_key(key.clone(), sc);
     }
 
     school
@@ -1514,6 +1518,32 @@ courses:
     credits: 4
     prerequisites_raw: "CS101"
 "#;
+
+    /// See the CLI's `test_build_school_from_program_keys_by_document_key`: a lecture/lab
+    /// pair sharing `prefix + number`, and a key that is not `prefix + number`.
+    #[test]
+    fn test_build_school_keys_by_document_key() {
+        let json = r#"{
+            "degree": {"name": "T", "institution": "T", "total_credits": 8},
+            "requirements": {"core": {"type": "all", "category": "major",
+                "courses": ["CHEM1410", "CHEM1410L", "COMSW3137"]}},
+            "courses": {
+                "CHEM1410":  {"name": "Chem",     "prefix": "CHEM", "number": "1410", "credit_hours": 3.0},
+                "CHEM1410L": {"name": "Chem Lab", "prefix": "CHEM", "number": "1410", "credit_hours": 1.0},
+                "COMSW3137": {"name": "Data Str", "prefix": "COMS", "number": "3137", "credit_hours": 4.0}
+            }
+        }"#;
+        let program = crate::core::degree::parse_degree_json(json)
+            .expect("inline degree fixture should parse");
+        let school = build_school(&program);
+        for (key, credits) in [("CHEM1410", 3.0), ("CHEM1410L", 1.0), ("COMSW3137", 4.0)] {
+            assert_eq!(
+                school.get_course(key).map(|c| c.credit_hours),
+                Some(credits),
+                "{key} credits"
+            );
+        }
+    }
 
     #[test]
     fn test_analyze_valid_degree() {
@@ -1837,6 +1867,59 @@ courses:
             );
             assert!(plan.terms > 0);
             assert!(plan.credits > 0.0);
+        }
+    }
+
+    /// The plan whose complexity is reported must be the plan that is scheduled.
+    /// CS201 alone is 4 of 8 credits, so the generator's draft carries 4 credits of `ELEC`
+    /// filler. Prerequisite expansion then adds CS101 (4), which meets the total, so the
+    /// final plan has no `ELEC`. Metrics computed before the refit counted placeholders
+    /// the scheduled plan does not contain.
+    #[test]
+    fn test_selected_plan_metrics_describe_the_scheduled_courses() {
+        const YAML: &str = r#"
+degree:
+  id: elec-refit
+  institution: T
+  program: T
+  total_credits: 8
+  gpa_minimum: 2.0
+requirements:
+  core:
+    name: Core
+    type: all
+    category: major
+    courses: [CS201]
+courses:
+  CS101: {title: A, prefix: CS, number: "101", credits: 4}
+  CS201: {title: B, prefix: CS, number: "201", credits: 4, prerequisites_raw: "CS101"}
+"#;
+        let artifacts =
+            build_artifacts(YAML, Some(10), None, None, None, None).expect("build_artifacts");
+        assert!(artifacts.selected.total_count() > 0, "no plans selected");
+        for (cat, plan) in artifacts.selected.iter() {
+            let name = cat.display_name();
+            let mut planned = plan.variant.courses.clone();
+            planned.sort();
+            assert_eq!(
+                planned,
+                ["CS101", "CS201"],
+                "{name}: expansion should make the draft ELEC filler unnecessary"
+            );
+            let mut scheduled: Vec<String> = plan
+                .schedule
+                .terms
+                .iter()
+                .flat_map(|t| t.courses.iter().cloned())
+                .collect();
+            scheduled.sort();
+            let mut measured: Vec<String> = plan.course_metrics.keys().cloned().collect();
+            measured.sort();
+            assert_eq!(scheduled, planned, "{name}: schedule differs from the plan");
+            assert_eq!(
+                measured, planned,
+                "{name}: complexity counted courses the plan does not contain"
+            );
         }
     }
 

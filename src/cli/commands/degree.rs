@@ -1975,7 +1975,7 @@ fn resolve_normalize_output(input: &Path, out: Option<&Path>, dir_mode: bool) ->
     resolve_output_path(input, out, dir_mode, &format!("{stem}.normalized.json"))
 }
 
-/// Serialize a [`NormalizedProgram`] and write it to `path`.
+/// Serialize a [`NormalizedProgram`](nu_analytics::core::degree::NormalizedProgram) and write it to `path`.
 fn write_normalized(
     normalized: &nu_analytics::core::degree::NormalizedProgram,
     path: &Path,
@@ -2582,9 +2582,22 @@ fn process_plan_variants(
             }
         }
 
-        // Build plan-specific DAG and compute metrics
-        let plan_dag = nu_analytics::core::degree::build_plan_dag(
+        // The final plan first — the `ELEC` filler re-fitted to the expanded course list —
+        // and only then its DAG and metrics. The other way round, metrics counted the
+        // generator's draft filler: a draft a credit short got an `ELEC` that prerequisite
+        // expansion then made unnecessary, so the scheduled plan lacked a placeholder that
+        // its complexity still included (Binghamton: 126 credits on target, complexity 331
+        // for a plan whose own courses sum to 330).
+        let expanded_variant = create_expanded_variant(
+            &variant,
             &expanded_courses,
+            &ctx.school,
+            ctx.gen_config.target_credits,
+            fill.as_ref(),
+        );
+
+        let plan_dag = nu_analytics::core::degree::build_plan_dag(
+            &expanded_variant.courses,
             ctx.graph,
             &ctx.equivalences,
             &include_set,
@@ -2598,15 +2611,6 @@ fn process_plan_variants(
                 continue;
             }
         };
-
-        // Create the expanded variant (adds elective placeholders to reach target credits)
-        let expanded_variant = create_expanded_variant(
-            &variant,
-            &expanded_courses,
-            &ctx.school,
-            ctx.gen_config.target_credits,
-            fill.as_ref(),
-        );
 
         // Use the variant's total_credits which includes elective placeholders
         aggregator.add_plan(&course_metrics, f64::from(expanded_variant.total_credits));
@@ -2975,7 +2979,12 @@ fn build_school_from_program(program: &nu_analytics::core::DegreeProgram) -> Sch
             .gen_ed_attributes
             .clone_from(&course.gen_ed_attributes);
 
-        school.add_course(school_course);
+        // Keyed by the document key, not `prefix + number`: every lookup downstream is
+        // by the plan's course id, which is the document key. A lab entry sharing its
+        // lecture's prefix and number (`CHEM1410` / `CHEM1410L`, both `CHEM` `1410`)
+        // would otherwise overwrite it in hash order, and a key that is not
+        // `prefix + number` (`COMSW3137`) would miss and be credited as a placeholder.
+        school.add_course_with_key(key.clone(), school_course);
     }
 
     school
@@ -3280,14 +3289,17 @@ fn find_redundant_prerequisites(
 /// Create an expanded plan variant with additional prerequisite courses
 ///
 /// Takes the original variant and creates a new one with the expanded course list,
-/// preserving requirement choice metadata. Adjusts elective placeholders to ensure
-/// the plan exactly reaches the target credits (not more).
+/// preserving requirement choice metadata. Re-fits the `ELEC` filler so the plan reaches
+/// the target credits: exactly for an integral shortfall, overshooting by under one credit
+/// for a fractional one, and with no filler at all when real courses already reach it.
 ///
 /// # Arguments
 /// * `original` - The original plan variant before prerequisite expansion
 /// * `expanded_courses` - All courses including added prerequisites
 /// * `school` - School data for credit lookup
 /// * `target_credits` - Target total credits for the degree
+/// * `fill` - How fill-to-total blocks were resized for this plan, if any; its removed
+///   and added placeholders are applied to the requirement choices
 fn create_expanded_variant(
     original: &PlanVariant,
     expanded_courses: &[String],
@@ -3928,6 +3940,37 @@ courses:
             lines[1],
             "fp:abcdef  ·  Data Science  ·  (unknown)  ·  (no catalog year)"
         );
+    }
+
+    /// Two entries sharing `prefix + number` and a key that is not `prefix + number`
+    /// must each be found under their own key with their own credits. Keying by
+    /// `Course::key()` lost the lecture or the lab at random and credited
+    /// `COMSW3137` as a 3-credit placeholder.
+    #[test]
+    fn test_build_school_from_program_keys_by_document_key() {
+        let json = r#"{
+            "degree": {"name": "T", "institution": "T", "total_credits": 8},
+            "requirements": {"core": {"type": "all", "category": "major",
+                "courses": ["CHEM1410", "CHEM1410L", "COMSW3137"]}},
+            "courses": {
+                "CHEM1410":  {"name": "Chem",     "prefix": "CHEM", "number": "1410", "credit_hours": 3.0},
+                "CHEM1410L": {"name": "Chem Lab", "prefix": "CHEM", "number": "1410", "credit_hours": 1.0},
+                "COMSW3137": {"name": "Data Str", "prefix": "COMS", "number": "3137", "credit_hours": 4.0}
+            }
+        }"#;
+        let program = nu_analytics::core::degree::parse_degree_json(json)
+            .expect("inline degree fixture should parse");
+        let school = build_school_from_program(&program);
+        for (key, credits) in [("CHEM1410", 3.0), ("CHEM1410L", 1.0), ("COMSW3137", 4.0)] {
+            let course = school
+                .get_course(key)
+                .unwrap_or_else(|| panic!("{key} missing from School"));
+            assert!(
+                (course.credit_hours - credits).abs() < f32::EPSILON,
+                "{key}: {} credits, expected {credits}",
+                course.credit_hours
+            );
+        }
     }
 
     #[cfg(feature = "database")]

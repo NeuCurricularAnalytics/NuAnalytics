@@ -3,7 +3,8 @@
 //! A placeholder is a synthetic course standing in for credits no specific course was
 //! chosen for: `ELEC001` from the generic filler, `FE01` from a wildcard requirement such
 //! as free electives. It has no catalog entry, so **its name is the only record of its
-//! credits**, and this module is the single place that reads or writes that encoding.
+//! credits**, and this module is the single place that turns credits into names and names
+//! into credits.
 //!
 //! | name | credits | |
 //! |---|---|---|
@@ -23,28 +24,31 @@ pub const FULL_PLACEHOLDER_CREDITS: f32 = 3.0;
 /// Credits of the historical short form, `…S`.
 pub const SHORT_PLACEHOLDER_CREDITS: f32 = 2.0;
 
-/// A remainder at or below this is not worth a placeholder. Preserved from the fillers
-/// this replaces, which never added one for a fractional sliver.
-const IGNORED_REMAINDER: f32 = 0.5;
+/// Shortfalls this small are float noise, not a real gap.
+const CREDIT_EPSILON: f32 = 1e-3;
 
 /// Credits a placeholder name stands for.
 ///
-/// `…S<n>` is `n` credits, bare `…S` is 2, anything else 3. Only meaningful for names that
-/// are placeholders; a real course's credits come from the catalog.
+/// Parsed by structure — letters (the prefix), an optional `_`, digits (the number), then
+/// the credit marker: nothing for 3, `S` for 2, `S<n>` for `n`. Only meaningful for names
+/// that are placeholders; a real course's credits come from the catalog.
+///
+/// The marker is found *after the number*, never by searching for the last `S`: many
+/// prefixes end in one (`NS` for natural sciences, `PSS`, `GES`). The last-`S` reading
+/// credited `NS04` with 4, and a course key that missed the catalog, such as `METCS201`,
+/// with 201 — which is how whole plans reached the thousands.
 #[must_use]
 pub fn placeholder_credits(name: &str) -> f32 {
-    if let Some(pos) = name.rfind('S') {
-        let tail = &name[pos + 1..];
-        if tail.is_empty() {
-            return SHORT_PLACEHOLDER_CREDITS;
+    let after_prefix = name.trim_start_matches(|c: char| c.is_ascii_alphabetic());
+    let after_prefix = after_prefix.strip_prefix('_').unwrap_or(after_prefix);
+    let marker = after_prefix.trim_start_matches(|c: char| c.is_ascii_digit());
+    match marker.strip_prefix('S') {
+        Some("") => SHORT_PLACEHOLDER_CREDITS,
+        Some(n) if n.chars().all(|c| c.is_ascii_digit()) => {
+            n.parse::<u16>().map_or(FULL_PLACEHOLDER_CREDITS, f32::from)
         }
-        if tail.chars().all(|c| c.is_ascii_digit()) {
-            if let Ok(n) = tail.parse::<u16>() {
-                return f32::from(n);
-            }
-        }
+        _ => FULL_PLACEHOLDER_CREDITS,
     }
-    FULL_PLACEHOLDER_CREDITS
 }
 
 /// Placeholder names covering exactly `credits`, as full 3-credit placeholders plus one
@@ -67,22 +71,17 @@ pub fn placeholder_names(prefix: &str, credits: u32, width: usize) -> Vec<String
 
 /// Placeholder names for a fractional credit need, rounded up to whole credits.
 ///
-/// A remainder of [`IGNORED_REMAINDER`] or less adds nothing, as before; anything larger is
-/// covered in whole credits, so an integral need is met exactly and a fractional one is
-/// overshot by less than a credit.
+/// Any real shortfall is covered, so a plan is never left below its total. The fillers this
+/// replaced dropped a remainder of half a credit or less, which left half-unit plans at
+/// course-unit schools (Penn, Colorado College, TCNJ) short of their total. An integral
+/// need is met exactly; a fractional one is overshot by less than a credit.
 #[must_use]
 pub fn placeholder_names_for(prefix: &str, credits_needed: f32, width: usize) -> Vec<String> {
-    if credits_needed <= IGNORED_REMAINDER {
+    if credits_needed <= CREDIT_EPSILON {
         return Vec::new();
     }
-    let whole = credits_needed.floor();
-    let fraction = credits_needed - whole;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let credits = if fraction > IGNORED_REMAINDER {
-        whole as u32 + 1
-    } else {
-        whole as u32
-    };
+    let credits = (credits_needed - CREDIT_EPSILON).ceil() as u32;
     placeholder_names(prefix, credits, width)
 }
 
@@ -108,6 +107,17 @@ mod tests {
             ("FE05S2", 2.0),
             // Numbered 99 must not merge into 991 — the recogniser had that bug.
             ("FE99S1", 1.0),
+            // Prefixes ending in S: the marker comes after the number, not at the last S.
+            ("NS04", 3.0),
+            ("PSS01", 3.0),
+            ("PSS02S1", 1.0),
+            ("GES03S", 2.0),
+            ("HSSI04", 3.0),
+            ("WS12", 3.0),
+            ("S01", 3.0),
+            // The drifted MCP form, still readable.
+            ("ELEC_03S", 2.0),
+            ("ELEC_01", 3.0),
         ] {
             assert!(
                 (placeholder_credits(name) - want).abs() < f32::EPSILON,
@@ -127,16 +137,30 @@ mod tests {
     }
 
     #[test]
-    fn every_whole_amount_round_trips_exactly() {
-        for credits in 0..=40 {
-            let total: f32 = placeholder_names("FE", credits, 2)
-                .iter()
-                .map(|n| placeholder_credits(n))
-                .sum();
-            assert!(
-                (total - f32::from(u16::try_from(credits).unwrap())).abs() < f32::EPSILON,
-                "{credits} -> {total}"
-            );
+    fn every_whole_amount_round_trips_exactly_for_every_prefix_shape() {
+        // Prefix shapes the requirement resolver and the `ELEC` filler produce — including
+        // the ones ending in S that a last-S parser misread — plus a bare `S` as an edge
+        // case. A single `FE` here is what let that bug through.
+        for (prefix, width) in [
+            ("FE", 2),
+            ("NS", 2),
+            ("PSS", 2),
+            ("GES", 2),
+            ("HSSI", 2),
+            ("S", 2),
+            ("SS", 2),
+            ("ELEC", 3),
+        ] {
+            for credits in 0..=60 {
+                let total: f32 = placeholder_names(prefix, credits, width)
+                    .iter()
+                    .map(|n| placeholder_credits(n))
+                    .sum();
+                assert!(
+                    (total - f32::from(u16::try_from(credits).unwrap())).abs() < f32::EPSILON,
+                    "{prefix} {credits} -> {total}"
+                );
+            }
         }
     }
 
@@ -154,15 +178,27 @@ mod tests {
     }
 
     #[test]
-    fn fractional_needs_round_up_but_ignore_a_sliver() {
-        assert!(elective_placeholders(0.4).is_empty());
+    fn any_real_shortfall_is_covered_so_a_plan_is_never_left_short() {
         assert!(elective_placeholders(0.0).is_empty());
         assert!(elective_placeholders(-3.0).is_empty());
+        assert!(
+            elective_placeholders(0.0005).is_empty(),
+            "float noise is not a gap"
+        );
+        // A half-unit gap at a course-unit school used to be ignored.
+        assert_eq!(elective_placeholders(0.5), ["ELEC001S1"]);
         assert_eq!(elective_placeholders(1.0), ["ELEC001S1"]);
         assert_eq!(elective_placeholders(4.0), ["ELEC001", "ELEC002S1"]);
-        // 4.3: the sliver is ignored, matching the fillers this replaced.
-        assert_eq!(elective_placeholders(4.3), ["ELEC001", "ELEC002S1"]);
-        // 4.6: covered in whole credits, so 5.
-        assert_eq!(elective_placeholders(4.6), ["ELEC001", "ELEC002S"]);
+        assert_eq!(elective_placeholders(4.3), ["ELEC001", "ELEC002S"]);
+        for need in [0.5_f32, 1.0, 2.5, 4.3, 12.5, 13.0] {
+            let got: f32 = elective_placeholders(need)
+                .iter()
+                .map(|n| placeholder_credits(n))
+                .sum();
+            assert!(
+                got >= need - f32::EPSILON && got < need + 1.0,
+                "{need} -> {got}"
+            );
+        }
     }
 }
