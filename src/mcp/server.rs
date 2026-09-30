@@ -1737,6 +1737,9 @@ mod capability_tests {
             "trimmed_cache_id",
             "include_graph_spec",
             "plan_indices",
+            "enrolled",
+            "enrollment_pct",
+            "school_pct",
         ];
         let mut texts: Vec<(String, String)> = init_assets::markdown_files()
             .map(|(p, t)| (p.to_string(), t.to_string()))

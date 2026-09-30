@@ -24,8 +24,8 @@
 //!
 //! A ratio of 1.0 means the group is proportionally represented relative to the
 //! institution's overall completion profile. Values <1 indicate underrepresentation, >1
-//! overrepresentation. The database holds no enrolment data, so this is never a statement
-//! about who enrolled.
+//! overrepresentation. The response names the baseline `baseline_completions`,
+//! `baseline_total` and `baseline_pct`.
 
 use std::ops::AddAssign;
 use std::sync::Arc;
@@ -386,7 +386,7 @@ struct RowDemographic {
     group: String,
     count: i64,
     cip_pct: f64,
-    school_pct: Option<f64>,
+    baseline_pct: Option<f64>,
     representation_ratio: Option<f64>,
 }
 
@@ -803,7 +803,7 @@ fn cip_response(
         award_level: req.award_level,
         cip_prefix: cip_label,
         total_rows: rows.len(),
-        note: "school_pct and representation_ratio compare this CIP row to the school's completions across all CIPs",
+        note: "baseline_pct and representation_ratio compare this CIP row to the school's completions across all CIPs",
         rows,
         cross_tab: build_cross_tab(&selected, baseline.as_ref()),
     })
@@ -830,13 +830,13 @@ fn build_row_demographics(
     let row_total = row.total;
     let entry = |label: &str, count: i64, school_count: Option<i64>| {
         let cip_pct = pct(count, row_total);
-        let school_pct = school.zip(school_count).map(|(s, n)| pct(n, s.total));
+        let baseline_pct = school.zip(school_count).map(|(s, n)| pct(n, s.total));
         RowDemographic {
             group: label.to_string(),
             count,
             cip_pct,
-            school_pct,
-            representation_ratio: school_pct.and_then(|sp| representation_ratio(cip_pct, sp)),
+            baseline_pct,
+            representation_ratio: baseline_pct.and_then(|bp| representation_ratio(cip_pct, bp)),
         }
     };
     macro_rules! race {
@@ -957,106 +957,118 @@ fn pct(part: i64, total: i64) -> f64 {
     result.round() / 100.0
 }
 
-fn representation_ratio(comp_pct: f64, enroll_pct: f64) -> Option<f64> {
-    if enroll_pct < 0.001 {
+fn representation_ratio(comp_pct: f64, baseline_pct: f64) -> Option<f64> {
+    if baseline_pct < 0.001 {
         None
     } else {
-        Some((comp_pct / enroll_pct * 100.0).round() / 100.0)
+        Some((comp_pct / baseline_pct * 100.0).round() / 100.0)
     }
 }
 
 fn build_demographics(
     c: &DemographicCounts,
-    e: Option<&DemographicCounts>,
+    baseline: Option<&DemographicCounts>,
 ) -> Vec<DemographicRepresentation> {
     let total_comp = c.total;
-    let total_enroll = e.map(|e| e.total);
+    let baseline_total = baseline.map(|b| b.total);
 
     macro_rules! group {
-        ($label:expr, $comp_men:expr, $comp_women:expr, $enroll_men:expr, $enroll_women:expr) => {{
+        ($label:expr, $comp_men:expr, $comp_women:expr, $base_men:expr, $base_women:expr) => {{
             let comp = $comp_men + $comp_women;
             let comp_pct = pct(comp, total_comp);
-            let enrolled = e.map(|_| $enroll_men + $enroll_women);
-            let enrollment_pct = enrolled.map(|n| pct(n, total_enroll.unwrap_or(0)));
-            let ratio = enrollment_pct.and_then(|ep| representation_ratio(comp_pct, ep));
+            let baseline_completions = baseline.map(|_| $base_men + $base_women);
+            let baseline_pct = baseline_completions.map(|n| pct(n, baseline_total.unwrap_or(0)));
+            let ratio = baseline_pct.and_then(|bp| representation_ratio(comp_pct, bp));
             DemographicRepresentation {
                 group: $label.to_string(),
                 completions: comp,
                 total_completions: total_comp,
                 completion_pct: comp_pct,
-                enrolled,
-                total_enrolled: total_enroll,
-                enrollment_pct,
+                baseline_completions,
+                baseline_total,
+                baseline_pct,
                 representation_ratio: ratio,
             }
         }};
     }
 
     vec![
-        group!("Women", 0, c.total_women, 0, e.map_or(0, |e| e.total_women)),
-        group!("Men", c.total_men, 0, e.map_or(0, |e| e.total_men), 0),
+        group!(
+            "Women",
+            0,
+            c.total_women,
+            0,
+            baseline.map_or(0, |b| b.total_women)
+        ),
+        group!(
+            "Men",
+            c.total_men,
+            0,
+            baseline.map_or(0, |b| b.total_men),
+            0
+        ),
         group!(
             "Hispanic/Latino",
             c.hispanic_men,
             c.hispanic_women,
-            e.map_or(0, |e| e.hispanic_men),
-            e.map_or(0, |e| e.hispanic_women)
+            baseline.map_or(0, |b| b.hispanic_men),
+            baseline.map_or(0, |b| b.hispanic_women)
         ),
         group!(
             "Black or African American",
             c.black_men,
             c.black_women,
-            e.map_or(0, |e| e.black_men),
-            e.map_or(0, |e| e.black_women)
+            baseline.map_or(0, |b| b.black_men),
+            baseline.map_or(0, |b| b.black_women)
         ),
         group!(
             "Asian",
             c.asian_men,
             c.asian_women,
-            e.map_or(0, |e| e.asian_men),
-            e.map_or(0, |e| e.asian_women)
+            baseline.map_or(0, |b| b.asian_men),
+            baseline.map_or(0, |b| b.asian_women)
         ),
         group!(
             "White",
             c.white_men,
             c.white_women,
-            e.map_or(0, |e| e.white_men),
-            e.map_or(0, |e| e.white_women)
+            baseline.map_or(0, |b| b.white_men),
+            baseline.map_or(0, |b| b.white_women)
         ),
         group!(
             "American Indian/Alaska Native",
             c.american_indian_men,
             c.american_indian_women,
-            e.map_or(0, |e| e.american_indian_men),
-            e.map_or(0, |e| e.american_indian_women)
+            baseline.map_or(0, |b| b.american_indian_men),
+            baseline.map_or(0, |b| b.american_indian_women)
         ),
         group!(
             "Native Hawaiian/Pacific Islander",
             c.native_hawaiian_men,
             c.native_hawaiian_women,
-            e.map_or(0, |e| e.native_hawaiian_men),
-            e.map_or(0, |e| e.native_hawaiian_women)
+            baseline.map_or(0, |b| b.native_hawaiian_men),
+            baseline.map_or(0, |b| b.native_hawaiian_women)
         ),
         group!(
             "Two or More Races",
             c.two_or_more_men,
             c.two_or_more_women,
-            e.map_or(0, |e| e.two_or_more_men),
-            e.map_or(0, |e| e.two_or_more_women)
+            baseline.map_or(0, |b| b.two_or_more_men),
+            baseline.map_or(0, |b| b.two_or_more_women)
         ),
         group!(
             "Nonresident Alien",
             c.nonresident_alien_men,
             c.nonresident_alien_women,
-            e.map_or(0, |e| e.nonresident_alien_men),
-            e.map_or(0, |e| e.nonresident_alien_women)
+            baseline.map_or(0, |b| b.nonresident_alien_men),
+            baseline.map_or(0, |b| b.nonresident_alien_women)
         ),
         group!(
             "Unknown Race/Ethnicity",
             c.unknown_race_men,
             c.unknown_race_women,
-            e.map_or(0, |e| e.unknown_race_men),
-            e.map_or(0, |e| e.unknown_race_women)
+            baseline.map_or(0, |b| b.unknown_race_men),
+            baseline.map_or(0, |b| b.unknown_race_women)
         ),
     ]
 }
@@ -1552,7 +1564,7 @@ mod tests {
         assert_float_eq(women.cip_pct, 40.0);
         assert_eq!(men.count, 60);
         assert_float_eq(men.cip_pct, 60.0);
-        assert!(women.school_pct.is_none()); // no school totals provided
+        assert!(women.baseline_pct.is_none()); // no school totals provided
     }
 
     #[test]
@@ -1586,8 +1598,8 @@ mod tests {
         };
         let groups = build_row_demographics(&counts(100, 40, 60), Some(&school));
         let women = groups.iter().find(|d| d.group == "Women").unwrap();
-        // women cip_pct=60%, school_pct=60% → ratio=1.0
-        assert_float_opt_eq(women.school_pct, Some(60.0));
+        // women cip_pct=60%, baseline_pct=60% → ratio=1.0
+        assert_float_opt_eq(women.baseline_pct, Some(60.0));
         assert_float_opt_eq(women.representation_ratio, Some(1.0));
     }
 
@@ -1614,7 +1626,7 @@ mod tests {
             .iter()
             .find(|d| d.group == "Women")
             .unwrap();
-        // cip_pct = 40%, school_pct = 40% → ratio = 1.0
+        // cip_pct = 40%, baseline_pct = 40% → ratio = 1.0
         assert_float_eq(women.cip_pct, 40.0);
         assert_float_opt_eq(women.representation_ratio, Some(1.0));
         // Public schema guarantee: every row serialises a `year`.
@@ -1733,7 +1745,7 @@ mod tests {
     }
 
     #[test]
-    fn test_representation_ratio_zero_enroll_returns_none() {
+    fn test_representation_ratio_zero_baseline_returns_none() {
         assert_eq!(representation_ratio(50.0, 0.0), None);
     }
 
@@ -1901,7 +1913,58 @@ mod tests {
     }
 
     #[test]
-    fn test_build_demographics_no_enrollment_no_ratio() {
+    fn test_serialized_baseline_fields_are_named_for_what_they_count() {
+        let c = DemographicCounts {
+            total: 10,
+            total_women: 4,
+            total_men: 6,
+            ..Default::default()
+        };
+        let group = serde_json::to_value(&build_demographics(&c, Some(&c))[0]).unwrap();
+        let keys: std::collections::BTreeSet<&str> = group
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "baseline_completions",
+                "baseline_pct",
+                "baseline_total",
+                "completion_pct",
+                "completions",
+                "group",
+                "representation_ratio",
+                "total_completions",
+            ]
+            .into_iter()
+            .collect()
+        );
+        let row = serde_json::to_value(&build_row_demographics(&c, Some(&c))[0]).unwrap();
+        let row_keys: std::collections::BTreeSet<&str> = row
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            row_keys,
+            [
+                "baseline_pct",
+                "cip_pct",
+                "count",
+                "group",
+                "representation_ratio"
+            ]
+            .into_iter()
+            .collect()
+        );
+    }
+
+    #[test]
+    fn test_build_demographics_no_baseline_no_ratio() {
         let c = DemographicCounts {
             total: 100,
             total_women: 60,
@@ -1917,7 +1980,7 @@ mod tests {
 
     #[test]
     fn test_build_demographics_proportional_ratio_is_one() {
-        // Both completions and enrollment are 60% women → ratio = 1.0 (proportional)
+        // Both completions and the baseline are 60% women → ratio = 1.0 (proportional)
         let c = DemographicCounts {
             total: 100,
             total_women: 60,

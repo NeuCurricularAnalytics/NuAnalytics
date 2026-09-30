@@ -1067,7 +1067,13 @@ impl<'a> PlanIterator<'a> {
                 selected.insert(t);
             }
         }
-        selected.into_iter().collect()
+        // Sorted: the set is fixed by the seed, but a `HashSet`'s iteration order is not,
+        // and the shuffle that follows permutes this list — so an unsorted collect made the
+        // same seed visit the same plans in a different order in every process, and every
+        // order-dependent choice downstream (tie-breaks, the random samples) with it.
+        let mut indices: Vec<usize> = selected.into_iter().collect();
+        indices.sort_unstable();
+        indices
     }
 
     /// Convert a flat plan index to requirement indices
@@ -1367,6 +1373,22 @@ fn placeholder_credits(course_key: &str) -> f32 {
 mod tests {
     use super::*;
     use crate::core::models::degree::{FromClause, RequirementType};
+
+    #[test]
+    fn test_sample_indices_are_sorted_and_repeat_for_a_seed() {
+        let a = PlanIterator::sample_indices(10_000, 300, Some(7));
+        assert_eq!(a.len(), 300);
+        assert!(a.windows(2).all(|w| w[0] < w[1]), "sorted and distinct");
+        // Fresh `HashSet`s hash differently, so an unsorted collect would differ here.
+        for _ in 0..20 {
+            assert_eq!(PlanIterator::sample_indices(10_000, 300, Some(7)), a);
+        }
+        assert_ne!(
+            PlanIterator::sample_indices(10_000, 300, Some(8)),
+            a,
+            "the seed matters"
+        );
+    }
 
     fn sample_courses() -> HashMap<String, Course> {
         let mut courses = HashMap::new();

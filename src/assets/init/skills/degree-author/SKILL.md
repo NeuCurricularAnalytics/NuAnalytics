@@ -41,8 +41,9 @@ catalog course for course.
 
 ## What you would otherwise get wrong
 
-- **Alternative sequences are `one_of`.** Write "(MATH 151 and 152) or MATH 155" as
-  one option per sequence. The nested form `"{[A, B], [C]}"` does not parse.
+- **Alternative sequences** ("(MATH 151 and 152) or MATH 155") go in an `all` list as
+  `"{[MATH151, MATH152], MATH155}"`, or as a `one_of` with one option per sequence. The
+  braced form works only in an `all` list; in a `select` pool, write the `one_of`.
 - **Key each course by its prefix and full number**, as in `CS3500`. Two traps:
   - A key of 2–4 letters followed by a number below 100 (`CSE12`), or any key
     starting with `ELEC`, is read as an elective placeholder. It is left out of

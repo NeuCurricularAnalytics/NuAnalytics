@@ -30,6 +30,15 @@ fn validate_course_reference(
     courses: &HashMap<String, Course>,
     result: &mut ValidationResult,
 ) {
+    // Left as written by the parser: in a position it does not expand, malformed, or too
+    // large. Named for what it is, not reported as a course called `[MATH141`.
+    if let Some(reason) = super::group_choice::describe_unexpanded(course_key) {
+        result.add_error(ValidationError::InvalidRequirement {
+            requirement_id: req_id.to_string(),
+            reason,
+        });
+        return;
+    }
     match CourseReference::parse(course_key) {
         Ok(course_ref) => {
             for course in course_ref.courses() {

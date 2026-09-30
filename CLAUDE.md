@@ -190,6 +190,12 @@ Things that are easy to get wrong:
   must exist, `allowed-tools` may list only read-only tools, a denylist of retired names
   must not appear, and `example.yaml` must validate. `CAPABILITIES` must equal the router.
 
+**`"{[A, B], C}"` is expanded at parse time** (`src/core/degree/group_choice.rs`, called
+beside `resolve_prerequisites` in both parsers) into the `one_of` it means, so nothing
+downstream knows the syntax. A degree using it therefore re-serializes — `convert`, `trim`,
+import — as that `one_of`. The expansion scans first and touches nothing when the syntax is
+absent; that was proven byte-for-byte over all 1,088 stored documents before it shipped.
+
 `docs/clean-up-analysis-todo.md` plans the merge of the degree analysis pipeline, which
 still exists twice (CLI and MCP). It opens with evidence that the two are the same level
 of analysis, and that `planner` is not, so `planner` stays out of it. **Step 1 is done**:

@@ -14,6 +14,7 @@ pub mod degree_fidelity;
 pub mod degree_fixtures;
 pub mod degree_yaml;
 pub mod end_to_end;
+pub mod group_choice;
 pub mod logger;
 pub mod metrics_comparison;
 pub mod plan_generation;

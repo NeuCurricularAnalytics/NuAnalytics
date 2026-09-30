@@ -29,12 +29,15 @@ prerequisites), and the sample four-year plan.
 | "One course from each of three areas" | `from.groups`, `per_group: 1` |
 | "Courses from two of these three areas" | `from.groups`, `groups_required: 2`, `per_group: 1` |
 | "Choose a concentration / track" | `type: one_of`, one option per track |
-| "(A and B) or C" as a requirement | `type: one_of`, one option per sequence |
+| "(A and B) or C" in a required list | `"{[A, B], C}"` in the `all` list |
+| "(A and B) or C" as a whole requirement | `type: one_of`, one option per sequence |
 | "Free electives to reach 120" | `type: select` with `fills_to_total: true` |
 
-**Alternative sequences are `one_of`.** The schema also shows a nested form,
-`"{[A, B], [C]}"`, but the tools do not parse it: validation reports `[A` as a
-missing course. Write one option per sequence instead.
+**Alternative sequences: `{[A, B], C}` in an `all` list, or a `one_of`.** The braced
+form is shorthand the parser expands into the `one_of`, one option per group; a
+converted or trimmed copy shows the `one_of`. It works only in the course list of an
+`all` requirement, at the top level or inside a `one_of` option. In a `select` pool or a
+group, write the `one_of` yourself; validation says so.
 
 **`exclude` never removes an explicitly listed course.** Only pattern matches are
 excluded. To drop a course, leave it out of `from.courses`.

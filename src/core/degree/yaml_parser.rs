@@ -110,6 +110,7 @@ pub fn parse_degree_yaml(yaml_content: &str) -> Result<DegreeProgram, DegreePars
     })?;
 
     resolve_prerequisites(&mut program);
+    super::group_choice::expand_group_choices(&mut program);
 
     Ok(program)
 }

@@ -32,8 +32,8 @@ Open `ipeds.md` before interpreting any demographics figure. In short:
 
 - **A ratio of 1.0 is parity.** It compares a group's share of the selected graduates
   with its share of the baseline, which is all graduates of the same schools in every
-  field. The baseline fields are named `enrolled` and `enrollment_pct`, but they count
-  completions, not enrollment.
+  field, reported as `baseline_completions` and `baseline_pct`. There is no enrollment
+  data.
 - **Completions count awards, not people.** A double major counts under both CIPs.
   Pass `major_num=1` for one count per graduate.
 - **Name the year.** The year defaults to the latest with data; report which one you

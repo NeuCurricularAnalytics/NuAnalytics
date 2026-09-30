@@ -889,7 +889,8 @@ pub enum DbSubcommand {
     /// Only two files are needed — the completions file is used in a single pass to
     /// populate both the `completions` table (every row of the file: all CIP codes and
     /// both major numbers, roughly 313,000 rows per year) and the
-    /// `institution_completions` table (all-major totals used for representation ratios).
+    /// `institution_completion_totals` table (per-school totals, CIP 99 excluded). The
+    /// representation ratios sum `completions` rather than reading that table.
     ///
     /// That per-year magnitude is worth knowing before writing a query against it: it is
     /// what makes a `PGRST_DB_MAX_ROWS` cap bite, and `db doctor`'s row-limit check is
@@ -1149,13 +1150,11 @@ pub enum QuerySubcommand {
     /// the ratio and leaves the counts.
     ///
     /// The ratio's baseline is the group's share of every completion at the matched
-    /// schools in the same year and award level, across all CIPs and both majors. This
-    /// database holds no enrolment data at all, so a ratio below 1.0 means
-    /// "under-represented among these graduates relative to all graduates there", never
-    /// anything about who enrolled. Note the output columns are called `enrolled`,
-    /// `total_enrolled` and `enrollment_pct` for historical reasons; they hold completions.
-    /// `total` pools that denominator across every matched institution, while `school` and
-    /// `cip` use each school's own.
+    /// schools in the same year and award level, across all CIPs and both majors — the
+    /// `baseline_completions`, `baseline_total` and `baseline_pct` columns. A ratio below
+    /// 1.0 means "under-represented among these graduates relative to all graduates
+    /// there"; this database holds no enrolment data. `total` pools that denominator
+    /// across every matched institution, while `school` and `cip` use each school's own.
     ///
     /// `--group-by` picks what a row is: `total` gives one row per race/gender group
     /// aggregated over everything matched, `school` one row per institution, and `cip`

@@ -365,9 +365,12 @@ requirements:
 #    "{CS250, CS270}"
 #    Any one of these courses satisfies the requirement
 #
-# 5. Alternative sequences ("CHEM 111-112, or CHEM 107-108") are not a course_ref:
-#    a choice of bundles such as "{[CHEM111, CHEM112], [CHEM107, CHEM108]}" does not
-#    parse. Write a type: one_of requirement with one option per sequence.
+# 5. Choice of groups (take one group of courses, "CHEM 111-112, or CHEM 107"):
+#    "{[CHEM111, CHEM112], [CHEM107]}"   or   "{[CHEM111, CHEM112], CHEM107}"
+#    Supported in the courses list of a type: all requirement, top-level or inside a
+#    one_of option. The parser expands it into the equivalent type: one_of, one option
+#    per group, so a converted or trimmed copy shows that one_of. Anywhere else (a
+#    select pool, a group) write the one_of yourself; validation says so.
 #
 # 6. Exclusion in patterns (used in 'from.exclude'):
 #    "CS:480-499"   - Exclude CS courses 480-499

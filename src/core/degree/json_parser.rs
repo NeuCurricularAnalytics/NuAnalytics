@@ -54,6 +54,7 @@ pub fn parse_degree_json_with_warnings(
     };
 
     resolve_prerequisites(&mut program);
+    super::group_choice::expand_group_choices(&mut program);
     Ok((program, warnings))
 }
 

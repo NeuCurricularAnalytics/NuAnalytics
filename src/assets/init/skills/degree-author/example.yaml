@@ -34,8 +34,8 @@ requirements:
       - "{CS210, CS211}"
       - CS220
 
-  # "Calculus I and II, or Accelerated Calculus" -> alternative sequences are one_of.
-  # Not "{[MATH151, MATH152], [MATH155]}": that form does not parse.
+  # "Calculus I and II, or Accelerated Calculus" -> alternative sequences, as one_of.
+  # Inside an `all` list the same choice can be written "{[MATH151, MATH152], MATH155}".
   calculus:
     name: Calculus
     type: one_of

@@ -121,8 +121,8 @@ Verify each exists in the catalog or explicitly note as absent:
 3. **"Or" between sequences:**
    ```
    Catalog says: "(MATH 141 and 142) or (MATH 151 and 152)"
-   WRONG: type: all, courses: ["{[MATH141, MATH142], [MATH151, MATH152]}"]  (does not parse)
-   RIGHT: type: one_of, one option per sequence, each an `all` of its courses
+   RIGHT: type: all, courses: ["{[MATH141, MATH142], [MATH151, MATH152]}"]
+   (or, equivalently, type: one_of with one option per sequence)
    ```
 
 4. **Electives with exclusions:**

@@ -26,6 +26,7 @@ pub mod audit;
 pub mod course_reference;
 pub mod fill_electives;
 pub mod gen_ed_tracker;
+pub mod group_choice;
 pub mod json_parser;
 pub mod landscape_convert;
 pub mod normalize;

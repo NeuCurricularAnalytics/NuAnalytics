@@ -65,8 +65,9 @@ Control is 1 public, 2 private not-for-profit, 3 private for-profit.
   57% of the rate its presence among the schools' graduates would predict.
 - **The baseline is all completions at the same schools, in every field.** For
   `group_by="total"` it is pooled across the matched schools; otherwise it is each
-  school's own. The response names it `enrolled` / `total_enrolled` / `enrollment_pct`,
-  but it counts completions, not enrollment.
+  school's own. The response carries it as `baseline_completions`, `baseline_total` and
+  `baseline_pct` (`baseline_pct` alone in `group_by="cip"` rows). The database holds no
+  enrollment data.
 - **`major_num`:** 1 is a graduate's first major and 2 the second. The default counts
   both, so a CS–math double major appears under both CIPs. Totals across CIPs then
   exceed the number of people. Use `major_num=1` for one count per graduate.

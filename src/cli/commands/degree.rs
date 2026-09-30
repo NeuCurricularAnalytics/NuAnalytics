@@ -2417,10 +2417,13 @@ fn enumerate_and_analyze_plans(
         exact_mode: stats.total_possible <= 10000,
     };
 
-    // Configure plan selection
+    // Configure plan selection. Seeded like enumeration, so the Random Sample plans are the
+    // same in every run of the same degree (and the same ones the MCP picks); unseeded,
+    // they drew from entropy. Stored runs keep their plans, so only fresh runs see this.
     let selector_config = PlanSelectorConfig {
         sample_count: ctx.gen_config.sample_count,
         scheduler_config: SchedulerConfig::default(),
+        random_seed: ctx.gen_config.random_seed,
         ..Default::default()
     };
 

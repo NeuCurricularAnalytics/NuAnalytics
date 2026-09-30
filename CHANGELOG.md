@@ -33,12 +33,32 @@ or removed, as below. The CLI is unchanged apart from additions.
 | `analyze_degree(include_graph_spec, plan_indices)` | removed; `render_plan_graph` draws a plan |
 | `compare_degrees(degree_ids, include_metrics)` | `sources: [{label?, degree \| content \| path}]`, with `metrics: stored \| fresh \| none` |
 
+### Breaking — demographics fields (MCP and `db query demographics`)
+
+The baseline a representation ratio compares against is completions in every field at the
+same schools. It was named as if it were enrollment; there is no enrollment data.
+
+| Was | Now |
+|---|---|
+| `enrolled` | `baseline_completions` |
+| `total_enrolled` | `baseline_total` |
+| `enrollment_pct` | `baseline_pct` |
+| `school_pct` (in `group_by=cip` rows) | `baseline_pct` |
+
 A failed call now returns `isError: true` and one envelope,
 `{"error": {"code", "message", "next_steps"?, "details"?}}`. An argument a tool does not
 take is refused by name instead of ignored.
 
 ### Added
 
+- **`"{[A, B], C}"` — a choice of course groups — in an `all` list.** Documented since
+  schema v5.1 but never parsed: validation reported `[A` as a missing course. The parser
+  now expands it into the equivalent `one_of`, one option per group. Supported in the
+  course list of an `all` requirement, top-level or inside a `one_of` option; elsewhere
+  validation names it instead of reporting a missing course. No stored degree used it:
+  all 1,088 stored documents, every fixture and sample parse and serialize byte-identically
+  before and after.
+- `degree validate --allow-unmatched-patterns`, as the MCP `validate_degree` already had.
 - **`get_stored_analysis`**: a stored program's newest run per variant, with its plans and
   course metrics on request. **`render_stored_report`**: the same HTML as `db report`,
   from the stored run.
@@ -63,6 +83,13 @@ take is refused by name instead of ignored.
 
 ### Fixed
 
+- **Fresh analysis is reproducible.** The same degree gave different named plans between
+  runs in 21 of 60 sampled corpus degrees, and different random samples in 55; CSU's CLI
+  aggregates moved about one run in 20. The causes were hash-order tie-breaks: the order of
+  sampled plans, the order OR-groups resolve in, which edge a tied prerequisite cycle
+  loses, and which critical path a tie reports. The CLI also never seeded its plan
+  selector. After the fix, 0 of 60 vary in anything. Stored runs are read, not re-run, so
+  they are unaffected.
 - The server advertised `import_degree` in `tools/list` without `--allow-writes`, because
   `#[tool_handler]` defaulted to a fresh full router.
 - `get_reference(topic="database")` invented columns from words in comments (`not`, `so`,

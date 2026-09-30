@@ -182,8 +182,8 @@ analyzer versions. `--all` shows the history.
 **`db query demographics` ratios are never about enrolment.** The baseline is always the
 group's share of *all completions* in the same year and award level — every CIP, both
 majors — summed from `completions` with the CIP 99 grand-total rows left out; this
-database holds no enrolment data. The output columns are nonetheless named `enrolled`,
-`total_enrolled` and `enrollment_pct` — a historical misnomer, not a second measure.
+database holds no enrolment data. The output names it `baseline_completions`,
+`baseline_total` and `baseline_pct` (`baseline_pct` alone in the `cip` rows).
 `--group-by` picks what a row is — one aggregate (`total`), one institution (`school`), or
 one CIP code at one school (`cip`) — and each is one SQL query
 (`src/core/query/catalog/completions_*.sql`). A filter the chosen grouping cannot honour —

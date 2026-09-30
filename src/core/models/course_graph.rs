@@ -10,7 +10,7 @@
 //! - Tracks both required (AND) and optional (OR) prerequisites
 //! - Computes full prerequisite chains for any course
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use super::Course;
 use crate::core::models::DegreeProgram;
@@ -83,7 +83,10 @@ pub struct PrerequisiteEdge {
 }
 
 /// Type alias for OR-groups mapping: group ID → list of (course key, chain)
-type OrGroupsMap = HashMap<usize, Vec<(String, PrerequisiteChain)>>;
+/// OR-groups by id, **ordered**: each group's choice feeds the next (a course picked for one
+/// group counts as already required for the rest), so a hash-ordered walk resolved the same
+/// prerequisites differently from one process to the next.
+type OrGroupsMap = BTreeMap<usize, Vec<(String, PrerequisiteChain)>>;
 
 /// Result type for structured chain edge processing: (required branches, OR-groups)
 type StructuredChainEdgeResult = (Vec<Vec<String>>, OrGroupsMap);
@@ -760,7 +763,10 @@ impl CourseGraph {
         visiting: &mut HashSet<String>,
     ) -> Option<Vec<String>> {
         let mut result_chain = Vec::new();
-        let mut or_groups: HashMap<usize, Vec<(String, Vec<String>)>> = HashMap::new();
+        // Ordered, so groups resolve in the same order in every process: each chosen chain
+        // joins `result_chain`, which the caller then expands in order and whose courses
+        // later choices prefer.
+        let mut or_groups: BTreeMap<usize, Vec<(String, Vec<String>)>> = BTreeMap::new();
 
         // Process each edge by type
         for edge in prereq_edges {
@@ -925,7 +931,7 @@ impl CourseGraph {
         direct_required: &HashSet<String>,
     ) -> Option<StructuredChainEdgeResult> {
         let mut required_branches: Vec<Vec<String>> = Vec::new();
-        let mut or_groups: OrGroupsMap = HashMap::new();
+        let mut or_groups: OrGroupsMap = BTreeMap::new();
 
         for edge in prereq_edges {
             let sub_chain = self.build_structured_chain(
@@ -1063,7 +1069,13 @@ impl CourseGraph {
         let mut rec_stack = Vec::new();
         let mut on_stack = HashSet::new();
 
-        for key in self.nodes.keys() {
+        // Roots in key order, not hash order: which node the search enters a cycle from
+        // decides the cycle's rotation, and `find_best_edge_to_break` resolves a tie by
+        // that rotation — so an unordered walk removed a different edge of the same cycle
+        // from one process to the next (CSU's CS152 ↔ CS163, about 1 run in 20).
+        let mut keys: Vec<&String> = self.nodes.keys().collect();
+        keys.sort_unstable();
+        for key in keys {
             if !visited.contains(key) {
                 self.dfs_cycles(
                     key,
@@ -2054,6 +2066,77 @@ mod tests {
         let chain = graph.min_prerequisite_chain("CS200").unwrap();
         // Should select MATH100 because CS100 path has cycle issues
         assert!(chain.contains(&"MATH100".to_string()) || chain.contains(&"CS100".to_string()));
+    }
+
+    /// A degree parsed afresh for each graph: every `HashMap` gets its own hash keys, so
+    /// building the graph many times in one process varies its iteration order the way
+    /// separate processes do.
+    fn fresh_program(yaml: &str) -> crate::core::DegreeProgram {
+        crate::core::degree::parse_degree_auto(yaml)
+            .expect("parses")
+            .0
+    }
+
+    const TIED_CYCLE: &str = r#"
+degree: {id: t, institution: T, program: T, total_credits: 12, gpa_minimum: 2.0}
+requirements:
+  core: {name: Core, type: all, courses: [CS152, CS163, CS200, CS300]}
+courses:
+  MATH127: {title: M, prefix: MATH, number: "127", credits: 3}
+  CS152: {title: A, prefix: CS, number: "152", credits: 3, prerequisites_raw: "CS163 | MATH127"}
+  CS163: {title: B, prefix: CS, number: "163", credits: 3, prerequisites_raw: "CS152 | MATH127"}
+  CS200: {title: C, prefix: CS, number: "200", credits: 3, prerequisites_raw: "CS152"}
+  CS300: {title: D, prefix: CS, number: "300", credits: 3, prerequisites_raw: "CS163"}
+"#;
+
+    #[test]
+    fn test_a_tied_cycle_loses_the_same_edge_however_the_nodes_hash() {
+        // CSU's shape: two courses offering each other as one option of an OR, so both
+        // edges of the cycle score the same and the tie is decided by traversal order.
+        let removed: std::collections::BTreeSet<Vec<(String, String)>> = (0..40)
+            .map(|_| {
+                let mut result = CourseGraph::from_degree_program(&fresh_program(TIED_CYCLE));
+                assert_eq!(result.cycles.len(), 1);
+                result.graph.break_cycles(&result.cycles)
+            })
+            .collect();
+        assert_eq!(
+            removed.len(),
+            1,
+            "a different edge was removed between builds: {removed:?}"
+        );
+    }
+
+    #[test]
+    fn test_or_groups_resolve_in_the_same_order_however_the_nodes_hash() {
+        let yaml = r#"
+degree: {id: t, institution: T, program: T, total_credits: 12, gpa_minimum: 2.0}
+requirements:
+  core: {name: Core, type: all, courses: [CS400]}
+courses:
+  A1: {title: A, prefix: A, number: "101", credits: 3}
+  B1: {title: B, prefix: B, number: "101", credits: 3}
+  C1: {title: C, prefix: C, number: "101", credits: 3}
+  D1: {title: D, prefix: D, number: "101", credits: 3}
+  E1: {title: E, prefix: E, number: "101", credits: 3}
+  F1: {title: F, prefix: F, number: "101", credits: 3}
+  CS400: {title: X, prefix: CS, number: "400", credits: 3, prerequisites_raw: "(A1 | B1) & (C1 | D1) & (E1 | F1)"}
+"#;
+        let chains: std::collections::BTreeSet<Option<Vec<String>>> = (0..40)
+            .map(|_| {
+                let result = CourseGraph::from_degree_program(&fresh_program(yaml));
+                result.graph.min_prerequisite_chain_with_exclusions(
+                    "CS400",
+                    &HashSet::new(),
+                    &HashSet::new(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            chains.len(),
+            1,
+            "the chain's order varied between builds: {chains:?}"
+        );
     }
 
     #[test]

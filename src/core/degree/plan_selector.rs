@@ -364,11 +364,13 @@ impl<'a> PlanSelector<'a> {
         longest_delay: usize,
         plan_dag: &DAG,
     ) -> Vec<String> {
-        // Find course(s) with the longest delay
+        // The course with the longest delay that blocks the most (the start of the chain).
+        // Ties go to the lowest course key: `course_metrics` is a `HashMap`, and leaving
+        // them to its iteration order reported a different critical path per process.
         let start_course = course_metrics
             .iter()
             .filter(|(_, m)| m.delay == longest_delay)
-            .max_by_key(|(_, m)| m.blocking) // Prefer courses that block more (start of chain)
+            .max_by(|(ka, ma), (kb, mb)| ma.blocking.cmp(&mb.blocking).then_with(|| kb.cmp(ka)))
             .map(|(k, _)| k.clone());
 
         let Some(start) = start_course else {

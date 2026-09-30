@@ -199,13 +199,14 @@ pub struct DemographicRepresentation {
     pub total_completions: i64,
     /// Percentage of completions for this group
     pub completion_pct: f64,
-    /// Number enrolled for this group (if available)
-    pub enrolled: Option<i64>,
-    /// Total enrolled (if available)
-    pub total_enrolled: Option<i64>,
-    /// Percentage of enrollment for this group (if available)
-    pub enrollment_pct: Option<f64>,
-    /// Representation ratio: `completion_pct` / `enrollment_pct` (1.0 = proportional)
+    /// This group's completions in the baseline: every field at the same schools, year and
+    /// award level. `None` when no baseline was computed.
+    pub baseline_completions: Option<i64>,
+    /// All completions in the baseline.
+    pub baseline_total: Option<i64>,
+    /// This group's share of the baseline, as a percentage.
+    pub baseline_pct: Option<f64>,
+    /// Representation ratio: `completion_pct` / `baseline_pct` (1.0 = proportional)
     pub representation_ratio: Option<f64>,
 }
 

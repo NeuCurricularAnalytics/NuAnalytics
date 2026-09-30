@@ -1,6 +1,6 @@
 # Analysis-pipeline clean-up — plan
 
-Status: **step 1 done (2026-09-23); steps 2–7 not started.**
+Status: **step 1 done (2026-09-23); step 7's ordering fix done (2026-09-30); steps 2–6 not started.**
 
 Completed detail has been trimmed — `git log` has it. What is here is what is left,
 plus the evidence the remaining steps depend on.
@@ -180,14 +180,25 @@ instead of re-parsing `prerequisites_raw`. Also fix `yaml_parser.rs:121`, which 
 fourth variant.
 
 ### Step 7 — Tighten the reproducibility tests
-Enumeration became reproducible once `build_artifacts` began passing its seed to
-`PlanGeneratorConfig.random_seed`. A residual remains: `term_distribution` still varies at
-roughly 1 run in 30, because prerequisite-chain option selection
-(`course_graph::select_best_prerequisite_option_with_exclusions:1432`) breaks ties with a
-stable sort over an `options` list whose order is hash-derived upstream. Pin that ordering,
-then tighten `analyze::tests::test_build_artifacts_is_reproducible_for_identical_inputs`
-to assert `term_distribution` too, and widen the
-`target_course_population` baselines beyond `earliest_term`.
+**The ordering fix is done (2026-09-30).** Fresh analysis was not reproducible across
+processes: on a 60-degree corpus sample, 21 degrees reported different named plans run to
+run and 55 different random samples; CSU's CLI aggregates moved about one run in 20.
+Five hash-order sources, found with a cross-process probe:
+
+- `PlanIterator::sample_indices` collected the seeded sample from a `HashSet` (right set,
+  varying order) — now sorted;
+- OR-groups resolved in `HashMap` order in `collect_min_chain_from_edges_with_exclusions`
+  and in the structured chains (`OrGroupsMap`) — now `BTreeMap`;
+- `detect_cycles` started its search in hash order, so a tied cycle lost a different edge
+  (CSU's CS152 ↔ CS163) — roots now sorted;
+- `compute_longest_delay_chain` broke a critical-path tie by hash order — now by course key;
+- the CLI never seeded the plan selector — now seeded like enumeration.
+
+After: 0 of 60 vary in anything, and all 17 fixtures/samples are identical across 5
+processes on both paths. Aggregates never moved; stored runs are untouched.
+**Still to do:** tighten `test_build_artifacts_is_reproducible_for_identical_inputs` to
+assert `term_distribution`, and widen the `target_course_population` baselines beyond
+`earliest_term` — now safe to do.
 
 ## 6. Out of scope
 
