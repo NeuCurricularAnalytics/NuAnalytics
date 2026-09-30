@@ -204,6 +204,14 @@ Validates:
 - Requirement structure validation
 - Cross-listing bidirectionality
 
+A pattern that matches no listed course is an error. For a pool the degree does not
+enumerate — a gen-ed `select` over `"HUM:100+"` or `"*:100+"` — pass
+`--allow-unmatched-patterns` to report it as a warning instead:
+
+```bash
+nuanalytics degree validate --allow-unmatched-patterns path/to/degree.yaml
+```
+
 ### Audit (`audit`)
 
 ```bash

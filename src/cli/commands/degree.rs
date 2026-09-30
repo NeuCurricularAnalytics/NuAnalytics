@@ -7,6 +7,7 @@ use nu_analytics::config::Config;
 use nu_analytics::core::degree::audit::{
     detect_lowest_course_level, find_deep_chains, find_upper_level_without_prereqs,
 };
+use nu_analytics::core::degree::ValidationOptions;
 use nu_analytics::core::degree::{
     load_degree_from_json, load_degree_from_yaml, DegreeParseError, PlanGenerator,
     PlanGeneratorConfig, PlanSelector, PlanSelectorConfig, PlanValidator, PlanValidatorConfig,
@@ -24,7 +25,7 @@ use nu_analytics::core::report::plan_export::{
 };
 use nu_analytics::core::report::term_scheduler::SchedulerConfig;
 use nu_analytics::core::statistics::aggregator::{AggregatorConfig, MetricsAggregator};
-use nu_analytics::core::validate_degree_program;
+use nu_analytics::core::{validate_degree_program, validate_degree_program_with_options};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process;
@@ -48,11 +49,16 @@ const TARGET_COURSE_DONE_SENTINEL: &str = "__target_course_done__";
 ///
 /// # Arguments
 /// * `degree_path` - Path to the degree program YAML file
+/// * `opts` - Validation options, such as allowing unmatched patterns
 /// * `verbose` - Whether to print verbose output
 ///
 /// # Returns
 /// Returns `Ok(())` if validation succeeds, `Err(String)` with error message if it fails
-pub fn validate_degree(degree_path: &Path, verbose: bool) -> Result<(), String> {
+pub fn validate_degree(
+    degree_path: &Path,
+    opts: ValidationOptions,
+    verbose: bool,
+) -> Result<(), String> {
     if verbose {
         eprintln!("Loading degree program from: {}", degree_path.display());
     }
@@ -82,8 +88,7 @@ pub fn validate_degree(degree_path: &Path, verbose: bool) -> Result<(), String> 
         eprintln!("Running validation checks...");
     }
 
-    // Run validation
-    let result = validate_degree_program(&program);
+    let result = validate_degree_program_with_options(&program, opts);
 
     // Print the validation report
     println!("{}", result.format_report());
@@ -501,8 +506,14 @@ pub struct AnalyzeOptions {
 }
 
 /// Run `degree validate` over one or more files.
-pub fn run_validate(files: &[PathBuf], verbose: bool) {
-    run_batch(files, |path| validate_degree(path, verbose));
+///
+/// `allow_unmatched_patterns` reports a pattern that matches no listed course as a
+/// warning rather than an error.
+pub fn run_validate(files: &[PathBuf], allow_unmatched_patterns: bool, verbose: bool) {
+    let opts = ValidationOptions {
+        allow_unmatched_patterns,
+    };
+    run_batch(files, |path| validate_degree(path, opts, verbose));
 }
 
 /// Run `degree print-graph` over one or more files.
@@ -3195,6 +3206,32 @@ fn print_separator() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_validate_degree_allows_an_unmatched_pattern_only_when_asked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("pool.yaml");
+        std::fs::write(
+            &path,
+            r#"
+degree: {id: pool, institution: T, program: T, total_credits: 7, gpa_minimum: 2.0}
+requirements:
+  core: {name: Core, type: all, category: major, courses: [CS101]}
+  humanities: {name: Hum, type: select, category: gen_ed, credits: 3, from: {pattern: "HUM:100+"}}
+courses:
+  CS101: {title: Intro, prefix: CS, number: "101", credits: 4}
+"#,
+        )
+        .expect("write");
+        assert!(
+            validate_degree(&path, ValidationOptions::default(), false).is_err(),
+            "an unmatched pattern is an error by default"
+        );
+        let allowed = ValidationOptions {
+            allow_unmatched_patterns: true,
+        };
+        assert_eq!(validate_degree(&path, allowed, false), Ok(()));
+    }
 
     /// Regression: a required course that is ALSO an OR-prerequisite alternative
     /// for another course must survive Phase-2 redundancy pruning in

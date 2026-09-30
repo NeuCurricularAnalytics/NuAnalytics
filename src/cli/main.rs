@@ -100,11 +100,47 @@ fn main() {
     }
 }
 
+/// Run `degree analyze` on the files, or on a stored program with `--from-db`.
+///
+/// Exactly one of the two must be given. The database path is single-program (no worker
+/// pool); the file path is unchanged.
+fn dispatch_analyze(
+    files: &[std::path::PathBuf],
+    #[cfg(feature = "database")] from_db: Option<String>,
+    options: &commands::degree::AnalyzeOptions,
+    config: &Config,
+) {
+    #[cfg(feature = "database")]
+    match (files.is_empty(), from_db) {
+        (true, Some(name)) => commands::degree::run_analyze_from_db(&name, options, config),
+        (false, None) => commands::degree::run_analyze(files, options, config),
+        (true, None) => {
+            eprintln!("Error: provide degree file(s) or --from-db <NAME> (got neither).");
+            std::process::exit(2);
+        }
+        (false, Some(_)) => {
+            eprintln!("Error: pass either degree file(s) or --from-db <NAME>, not both.");
+            std::process::exit(2);
+        }
+    }
+    #[cfg(not(feature = "database"))]
+    {
+        if files.is_empty() {
+            eprintln!("Error: No degree file specified.");
+            std::process::exit(2);
+        }
+        commands::degree::run_analyze(files, options, config);
+    }
+}
+
 /// Dispatch the `degree` subcommand tree.
 fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
     match subcommand {
-        DegreeSubcommand::Validate { files } => {
-            commands::degree::run_validate(&files, verbose);
+        DegreeSubcommand::Validate {
+            files,
+            allow_unmatched_patterns,
+        } => {
+            commands::degree::run_validate(&files, allow_unmatched_patterns, verbose);
         }
         DegreeSubcommand::PrintGraph { files } => {
             commands::degree::run_print_graph(&files, verbose);
@@ -148,31 +184,13 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
                 target_course,
                 metrics_out,
             };
-            // Exactly one of {files, --from-db} must be provided. The DB path
-            // is single-program (no worker pool); the file path is unchanged.
-            #[cfg(feature = "database")]
-            match (files.is_empty(), from_db) {
-                (true, Some(name)) => {
-                    commands::degree::run_analyze_from_db(&name, &options, config);
-                }
-                (false, None) => commands::degree::run_analyze(&files, &options, config),
-                (true, None) => {
-                    eprintln!("Error: provide degree file(s) or --from-db <NAME> (got neither).");
-                    std::process::exit(2);
-                }
-                (false, Some(_)) => {
-                    eprintln!("Error: pass either degree file(s) or --from-db <NAME>, not both.");
-                    std::process::exit(2);
-                }
-            }
-            #[cfg(not(feature = "database"))]
-            {
-                if files.is_empty() {
-                    eprintln!("Error: No degree file specified.");
-                    std::process::exit(2);
-                }
-                commands::degree::run_analyze(&files, &options, config);
-            }
+            dispatch_analyze(
+                &files,
+                #[cfg(feature = "database")]
+                from_db,
+                &options,
+                config,
+            );
         }
         DegreeSubcommand::Trim {
             files,

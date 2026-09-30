@@ -197,6 +197,12 @@ pub enum DegreeSubcommand {
         /// inline but do not abort the batch.
         #[arg(value_name = "FILES", num_args = 1..)]
         files: Vec<PathBuf>,
+        /// Report a pattern that matches no listed course as a warning, not an
+        /// error. For pools the degree does not enumerate, such as a gen-ed
+        /// `select` over `"HUM:100+"`; the MCP `validate_degree` takes the same
+        /// option.
+        #[arg(long)]
+        allow_unmatched_patterns: bool,
     },
 
     /// Print the course prerequisite graph for a degree program.
