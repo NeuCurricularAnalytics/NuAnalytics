@@ -142,15 +142,18 @@ shapes. Do not add a cause of our own to a rejection. The password is prompted v
 
 **`nuanalytics db doctor` is the first thing to run against an unfamiliar deployment.** It
 walks configuration → reachability → anon-key read → session → authenticated read → schema
-(all 20 tables) → seed data → row limit, each check gating the next so the report names one
+(all 20 tables) → seed data → row limit → query functions, each check gating the next so the report names one
 cause rather than repeating it. Logic is in `src/core/database/doctor.rs`; the CLI only
 formats. A check added to `diagnose` must also be added to the three `*_DEPENDENTS` arrays,
-or it silently disappears from the report when an earlier check fails — the unreachable
-test asserts the report length to catch exactly that.
+or it silently disappears from the report when an earlier check fails —
+`every_early_exit_lists_the_same_checks_as_a_full_run` compares each early exit's check
+names with a full run's to catch exactly that.
 
 **The row-limit check is the one that catches wrong answers rather than errors.** A
-`PGRST_DB_MAX_ROWS` below 5,000 truncates the MCP completions queries with an HTTP 200 and
-no indication. It is detected by disagreement between `count_rows` (`count=exact`, which
+`PGRST_DB_MAX_ROWS` below 5,000 truncates a large `PostgREST` select — today the stored
+report's course metrics — with an HTTP 200 and no indication. The SQL-backed queries
+(`core::query::catalog`, the demographics among them) return one `jsonb` value and are not
+subject to it. It is detected by disagreement between `count_rows` (`count=exact`, which
 the cap does not apply to) and `DbClient::rows_returned` (a real select), so the reported
 cap is observed, not guessed. Probing `completions` covers the full 5,000; the `cip_codes`
 fallback only proves a cap is above 2,173 and **says so** rather than implying coverage it
@@ -161,6 +164,31 @@ does not have.
 `db status` and the MCP server's `db_not_configured_response` render it. Add wording there
 rather than at a call site, and keep to the rule the TODO sets: name the backend, name
 what failed, name the next step, and assert no cause the code has not established.
+
+## The MCP server
+
+**Layering:** a handler in `src/mcp/server.rs` parses arguments and calls one engine. The
+database engines are in `src/core/query/`, shared with the CLI; SQL is `include_str!`'d
+from `src/core/query/catalog/*.sql` and bound through `$1` (`query_readonly_params`),
+never spliced. MCP code never builds SQL or calls `DbClient`.
+
+Things that are easy to get wrong:
+
+- **`#[tool_handler(router = self.tool_router)]` is load-bearing.** The macro's default is
+  `Self::tool_router()`, a fresh full router, so `tools/list` would advertise
+  `import_degree` on a server that removed it. `--allow-writes` is the only way to serve it.
+- **Unknown arguments are refused** in the `call_tool` override, against each tool's input
+  schema. Serde ignores unknown fields, and `deny_unknown_fields` does not work with the
+  flattened `DegreeSourceArgs`.
+- **Failures are `{"error": …, "code": …}` payloads** that `src/mcp/envelope.rs` turns into
+  `isError` envelopes. Codes come from `core::json::error_code`; the envelope never guesses
+  one from a payload's shape. A validation finding is not a failure.
+- **Every file-writing tool goes through `shared::write_output`**: it refuses to replace a
+  file without `overwrite=true`.
+- **The skills `nuanalytics init` ships are tested against the server** (`capability_tests`
+  in `server.rs`, tests in `src/core/init_assets.rs`): every tool and argument they name
+  must exist, `allowed-tools` may list only read-only tools, a denylist of retired names
+  must not appear, and `example.yaml` must validate. `CAPABILITIES` must equal the router.
 
 `docs/clean-up-analysis-todo.md` plans the merge of the degree analysis pipeline, which
 still exists twice (CLI and MCP). It opens with evidence that the two are the same level

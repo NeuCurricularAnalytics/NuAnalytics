@@ -15,7 +15,7 @@
 //!   `MAJORNUM` values. There is no CIP filter on ingest; callers filter at query time.
 //!   Measured against `C2025_A.csv`: 313,566 rows in, 313,566 rows stored.
 //! - `institution_completion_totals` table — totals across all CIP codes per institution,
-//!   used as the denominator for demographic representation calculations
+//!   except the CIP 99 grand-total row (see `counts_toward_institution_totals`)
 //!
 //! ## IPEDS sentinel values
 //! `"."` and empty mean "no value" in every column. Beyond that the two kinds of column
@@ -646,7 +646,9 @@ pub async fn ingest_completions(
             .and_then(|i| record.get(i))
             .and_then(|v| v.trim().parse().ok());
 
-        accumulate_demo_totals(&mut totals, unitid, award_level, &demo, &record);
+        if counts_toward_institution_totals(&raw_cip) {
+            accumulate_demo_totals(&mut totals, unitid, award_level, &demo, &record);
+        }
 
         batch.push(build_completion(
             unitid,
@@ -681,6 +683,19 @@ pub async fn ingest_completions(
 
     flush_institution_totals(client, totals, year).await?;
     Ok(stats)
+}
+
+/// CIP code IPEDS files its per-institution grand totals under.
+///
+/// That row is the sum of every other CIP at its institution, award level and year, so it
+/// must never be summed beside them — here, and in every query over `completions`.
+pub(crate) const GRAND_TOTAL_CIP: &str = "99";
+
+/// Whether a completions row belongs in the institution totals: every row but the grand
+/// total, which added to the detail rows it sums would double each total. The row is
+/// still stored in `completions`; it is only kept out of this sum.
+fn counts_toward_institution_totals(raw_cip: &str) -> bool {
+    normalize_cip(raw_cip.trim()) != GRAND_TOTAL_CIP
 }
 
 /// Accumulate demographic values from one CSV record into the institution totals map.
@@ -900,6 +915,16 @@ mod tests {
         assert!(!is_relevant_cip("140101")); // Engineering
         assert!(!is_relevant_cip("270101")); // Mathematics
         assert!(!is_relevant_cip("520201")); // Business
+    }
+
+    #[test]
+    fn the_grand_total_row_is_kept_out_of_institution_totals() {
+        // Counted beside the detail rows it sums, the CIP 99 row doubles every total.
+        assert!(!counts_toward_institution_totals("99"));
+        assert!(!counts_toward_institution_totals(" 99 "));
+        for detail in ["110101", "11.0101", "990101", "99.0101", "01.0000"] {
+            assert!(counts_toward_institution_totals(detail), "{detail}");
+        }
     }
 
     #[test]

@@ -1,24 +1,13 @@
-//! Unified-degree JSON Schema tool.
+//! The unified degree JSON Schema: `get_reference(topic="degree-json-schema")`.
 //!
-//! Provides the `get_degree_json_schema` MCP tool, which returns the
-//! machine-validatable JSON Schema for the unified degree format — the same
-//! checked-in `degree.schema.json` asset the CLI's `degree schema` command
-//! emits. Use it to validate a converted/authored unified degree, or to
-//! understand the format (including wildcard `from` pools) programmatically.
-//!
-//! This is distinct from `get_degree_schema`, which serves the human-readable
-//! YAML reference rather than a machine schema.
-
-use rmcp::schemars;
-use serde::Deserialize;
+//! The checked-in `degree.schema.json` the CLI's `degree schema` command also emits, for
+//! validating a converted or authored unified degree, or reading the format — wildcard
+//! `from` pools included — programmatically. The `degree-yaml` topic is the human-readable
+//! reference instead.
 
 /// The unified-degree JSON Schema, embedded at compile time so it ships with
 /// the binary (single source of truth shared with the CLI).
 const UNIFIED_SCHEMA: &str = include_str!("../../assets/degree.schema.json");
-
-/// Request parameters for the `get_degree_json_schema` tool (none).
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GetDegreeJsonSchemaRequest {}
 
 /// Return the unified-degree JSON Schema (JSON Schema 2020-12) as a string,
 /// ready to hand to a validator.

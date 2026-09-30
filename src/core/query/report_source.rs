@@ -22,11 +22,14 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
+use super::degrees::resolve_program_key;
 use crate::core::database::{tables, DbClient, QueryFilters};
 use crate::core::degree::{parse_degree_auto, PlanScore, PlanVariant, ScoredPlan, SelectedPlans};
 use crate::core::json::parse_json_array;
+use crate::core::report::inputs::build_report_inputs;
 use crate::core::report::report_stats::ReportStats;
 use crate::core::report::term_scheduler::{Term, TermPlan};
+use crate::core::report::{DegreeReportContext, DegreeReportGenerator};
 use crate::core::statistics::aggregator::{
     AggregatedCourseStats, AggregatedDegreeStats, MetricStats,
 };
@@ -39,10 +42,10 @@ const CAT_CALC_READY: &str = "Calculus-Ready Shortest";
 
 /// Cap on plan rows read for one run. A run stores a handful of curated plans, so this
 /// only bounds a pathological row set.
-const MAX_PLAN_ROWS: usize = 500;
+pub(crate) const MAX_PLAN_ROWS: usize = 500;
 
 /// Cap on per-course metric rows for one run.
-const MAX_COURSE_ROWS: usize = 5_000;
+pub(crate) const MAX_COURSE_ROWS: usize = 5_000;
 
 /// Identity of the stored run a report was built from.
 #[derive(Debug, Clone)]
@@ -70,6 +73,43 @@ pub struct StoredReport {
     pub selected: SelectedPlans,
     /// Which run this came from.
     pub run: StoredRun,
+}
+
+impl StoredReport {
+    /// Render the HTML report for this run.
+    ///
+    /// The one rendering both `db report` and the MCP `render_stored_report` use, so the
+    /// two cannot produce different pages for the same stored run.
+    ///
+    /// # Errors
+    /// Returns the renderer's message when the report template cannot be filled.
+    pub fn render_html(&self) -> Result<String, String> {
+        let (school, dag, equivalences) = build_report_inputs(&self.program);
+        let ctx = DegreeReportContext::new(
+            &school,
+            &self.program.degree,
+            &self.stats,
+            &self.selected,
+            &dag,
+            &equivalences,
+        );
+        DegreeReportGenerator::new()
+            .render(&ctx)
+            .map_err(|e| format!("could not render the report: {e}"))
+    }
+}
+
+/// A stored run's report, rendered, with the run it came from.
+#[derive(Debug)]
+pub struct RenderedReport {
+    /// The program the reference resolved to.
+    pub program_key: String,
+    /// The degree's display name.
+    pub degree_name: String,
+    /// Which run the report was built from.
+    pub run: StoredRun,
+    /// The HTML page.
+    pub html: String,
 }
 
 // ============================================================================
@@ -103,11 +143,6 @@ struct PlanRow {
     is_calc_ready: Option<bool>,
     critical_path: Option<serde_json::Value>,
     schedule: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ProgramDocRow {
-    document: serde_json::Value,
 }
 
 /// The five metric summaries stored per course.
@@ -321,23 +356,42 @@ pub async fn load(
     })
 }
 
+/// Resolve `degree` — a `program_key`, or a `degree_id` naming one program — and render
+/// the report for its newest stored run, optionally pinned to one `variant`.
+///
+/// # Errors
+/// A finished JSON payload, which callers return verbatim: the resolution's own when the
+/// reference names no program or several, otherwise `{"error": ...}` carrying [`load`]'s
+/// or the renderer's message.
+pub async fn render_reference(
+    client: &Arc<DbClient>,
+    degree: &str,
+    variant: Option<&str>,
+) -> Result<RenderedReport, String> {
+    let program_key = resolve_program_key(client, degree.trim()).await?;
+    let failed = |message: String| {
+        serde_json::json!({ "error": message, "program_key": program_key }).to_string()
+    };
+    let stored = load(client, &program_key, variant).await.map_err(failed)?;
+    let html = stored.render_html().map_err(failed)?;
+    Ok(RenderedReport {
+        degree_name: stored.program.degree.name.clone(),
+        program_key,
+        run: stored.run,
+        html,
+    })
+}
+
 /// Fetch and parse the canonical degree document.
 async fn load_program(client: &Arc<DbClient>, program_key: &str) -> Result<DegreeProgram, String> {
-    let filters = QueryFilters::new().eq("program_key", Some(program_key));
-    let rows: Vec<ProgramDocRow> = parse_json_array(
-        &client
-            .select(tables::PROGRAMS, "document", &filters, Some(1))
-            .await
-            .map_err(|e| e.to_string())?,
-    );
-    let doc = rows
-        .into_iter()
-        .next()
-        .ok_or_else(|| format!("no stored program `{program_key}`"))?;
+    let document = super::degrees::document_for_key(client, program_key)
+        .await
+        .map_err(|e| format!("reading the document of {program_key}: {e}"))?
+        .ok_or_else(|| format!("no stored program `{program_key}` with a degree document"))?;
     // `document` is the lossless unified JSON from `to_unified_value`, so it round-trips
     // through the same loader the importer uses. `serde_json::from_value` would not:
     // the model carries `prerequisites_raw`, not `prerequisites`.
-    let text = serde_json::to_string(&doc.document)
+    let text = serde_json::to_string(&document)
         .map_err(|e| format!("could not serialize stored document: {e}"))?;
     parse_degree_auto(&text)
         .map(|(program, _warnings)| program)

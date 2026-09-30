@@ -6,6 +6,9 @@
 //! inside an installed binary — the `samples/` directory is not packaged
 //! when consumers `cargo install` this crate.
 
+use crate::mcp::tools::shared::{
+    TOOL_ANALYZE_DEGREE, TOOL_AUDIT_DEGREE, TOOL_RENDER_DEGREE_REPORT, TOOL_VALIDATE_DEGREE,
+};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -24,9 +27,9 @@ const SAMPLE_UHM: &str = include_str!("../../../samples/degrees/uhm-ics-bscs-gen
 
 /// Compile-time metadata for each bundled sample.
 ///
-/// `key` is the model-facing handle (callers pass it to subsequent tools to
-/// fetch the body). `institution` / `program` / `summary` are short strings
-/// the model can pick from without having to parse YAML.
+/// `key` names the sample: `sample:<key>` is the reference every degree tool takes as
+/// `degree`. `institution` / `program` / `summary` are short strings the model can pick
+/// from without having to parse YAML.
 struct SampleMeta {
     key: &'static str,
     institution: &'static str,
@@ -71,11 +74,15 @@ const SAMPLES: &[SampleMeta] = &[
     },
 ];
 
-/// Look up a bundled sample's YAML body by its short key.
+/// Prefix of a sample reference: `degree="sample:csu"` names the bundled `csu` sample.
 ///
-/// Returns `None` when no sample matches. Used by the server's layered
-/// `degree_id` resolver so `degree_id="csu"` (etc.) returns the embedded
-/// YAML without going through the database.
+/// A prefix rather than a bare key so a sample cannot be mistaken for a stored program
+/// with the same id, which the server would otherwise have to guess between.
+pub const SAMPLE_PREFIX: &str = "sample:";
+
+/// Look up a bundled sample's YAML body by its short key (without [`SAMPLE_PREFIX`]).
+///
+/// Returns `None` when no sample matches.
 #[must_use]
 pub fn yaml_for_key(key: &str) -> Option<&'static str> {
     SAMPLES.iter().find(|s| s.key == key).map(|s| s.yaml)
@@ -101,8 +108,10 @@ pub struct ListSampleDegreesRequest {
 /// One bundled sample's metadata, optionally with its full YAML body.
 #[derive(Debug, Serialize)]
 pub struct SampleEntry {
-    /// Short identifier the model can pass to subsequent calls.
+    /// Short identifier.
     pub key: &'static str,
+    /// The reference to pass as `degree`: `sample:<key>`.
+    pub degree: String,
     /// Institution name.
     pub institution: &'static str,
     /// Program name + track / campus where applicable.
@@ -115,7 +124,7 @@ pub struct SampleEntry {
     pub summary: &'static str,
     /// Full YAML body. Populated only when `include_yaml=true`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub yaml_content: Option<&'static str>,
+    pub content: Option<&'static str>,
 }
 
 /// Response for `list_sample_degrees`.
@@ -130,7 +139,7 @@ pub struct ListSampleDegreesResponse {
     /// One entry per bundled sample.
     pub samples: Vec<SampleEntry>,
     /// Follow-up hint for the model.
-    pub note: &'static str,
+    pub note: String,
 }
 
 // ============================================================================
@@ -144,19 +153,24 @@ pub fn execute(include_yaml: bool) -> ListSampleDegreesResponse {
         .iter()
         .map(|s| SampleEntry {
             key: s.key,
+            degree: format!("{SAMPLE_PREFIX}{}", s.key),
             institution: s.institution,
             program: s.program,
             catalog_year: s.catalog_year,
             total_credits: s.total_credits,
             summary: s.summary,
-            yaml_content: include_yaml.then_some(s.yaml),
+            content: include_yaml.then_some(s.yaml),
         })
         .collect();
     ListSampleDegreesResponse {
         success: true,
         count: samples.len(),
         samples,
-        note: "Call this tool again with include_yaml=true to receive the full YAML body, then feed yaml_content into validate_degree, audit_degree, analyze_degree, or generate_degree_report.",
+        note: format!(
+            "Pass a sample's `degree` reference (e.g. \"sample:csu\") as degree to \
+             {TOOL_VALIDATE_DEGREE}, {TOOL_AUDIT_DEGREE}, {TOOL_ANALYZE_DEGREE} or \
+             {TOOL_RENDER_DEGREE_REPORT}. include_yaml=true returns the bodies themselves."
+        ),
     }
 }
 
@@ -164,8 +178,7 @@ pub fn execute(include_yaml: bool) -> ListSampleDegreesResponse {
 #[must_use]
 pub fn execute_json(include_yaml: bool) -> String {
     let response = execute(include_yaml);
-    serde_json::to_string_pretty(&response)
-        .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
+    crate::core::json::to_json_pretty(&response)
 }
 
 // ============================================================================
@@ -182,13 +195,24 @@ mod tests {
         assert_eq!(response.count, 3);
         assert_eq!(response.samples.len(), 3);
         for entry in &response.samples {
-            assert!(entry.yaml_content.is_none());
+            assert!(entry.content.is_none());
             assert!(!entry.institution.is_empty());
             assert!(!entry.program.is_empty());
             assert!(entry.total_credits > 0);
         }
         let keys: Vec<&str> = response.samples.iter().map(|s| s.key).collect();
         assert_eq!(keys, vec!["csu", "neu-khoury", "uhm"]);
+        for entry in &response.samples {
+            let key = entry
+                .degree
+                .strip_prefix(SAMPLE_PREFIX)
+                .expect("sample: reference");
+            assert!(
+                yaml_for_key(key).is_some(),
+                "{} does not resolve",
+                entry.degree
+            );
+        }
     }
 
     #[test]
@@ -196,8 +220,8 @@ mod tests {
         let response = execute(true);
         for entry in &response.samples {
             let body = entry
-                .yaml_content
-                .expect("include_yaml=true must populate yaml_content");
+                .content
+                .expect("include_yaml=true must populate content");
             // Sanity: the embedded YAML must contain the institution name + a
             // `degree:` block. Catches misconfigured include_str! paths at
             // test time rather than at runtime.

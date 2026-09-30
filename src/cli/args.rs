@@ -570,22 +570,28 @@ pub enum Command {
     #[command(long_about = "Run the MCP (Model Context Protocol) server.\n\n\
             Starts a server that exposes NuAnalytics tools for AI model integration\n\
             via stdio transport. Compatible with Claude Desktop, Claude Code, and\n\
-            any MCP-compatible client.\n\n\
-            Available tools:\n\
-            \x20 get_degree_schema  Get degree YAML schema documentation\n\
-            \x20 validate_degree    Validate a degree YAML and return errors/warnings\n\
-            \x20 audit_degree       Comprehensive audit (validation + prereq analysis)\n\
-            \x20 analyze_degree     Full plan analysis with aggregate metrics and schedules\n\n\
+            any MCP-compatible client. `--list-tools` prints the tools it serves.\n\n\
+            Every tool only reads, except `import_degree`, which writes to the\n\
+            database and is served only with `--allow-writes`.\n\n\
             Examples:\n\
             \x20 nuanalytics mcp\n\
-            \x20 nuanalytics --log-level debug mcp\n\
+            \x20 nuanalytics mcp --list-tools\n\
+            \x20 nuanalytics mcp --allow-writes\n\
             \x20 npx @modelcontextprotocol/inspector nuanalytics mcp")]
-    Mcp,
+    Mcp {
+        /// Also serve the tools that write to the database (`import_degree`).
+        #[arg(long)]
+        allow_writes: bool,
+        /// Print the tools the server would serve, and exit.
+        #[arg(long)]
+        list_tools: bool,
+    },
     /// Initialize a new `NuAnalytics` research project directory.
     ///
-    /// Scaffolds a directory with a `.claude/` folder pre-wired to the
-    /// `NuAnalytics` MCP server and SKILL.md skills for degree authoring,
-    /// review, and curriculum-plan analysis.
+    /// Writes `.mcp.json`, which registers the `NuAnalytics` MCP server, and
+    /// `.claude/` with five skills: degree authoring, review, analysis, the
+    /// stored programs, and IPEDS research. Running `claude` in the directory
+    /// picks both up; accept the trust prompt once so its settings apply.
     ///
     /// # Examples
     /// ```sh
@@ -991,8 +997,8 @@ pub enum DbSubcommand {
 
 /// Filters for `db query demographics`.
 ///
-/// Its own struct rather than inline variant fields so the dispatch stays a single call —
-/// the command fans out to three different engines depending on `group_by`.
+/// Its own struct rather than inline variant fields so the dispatch stays a single call,
+/// whichever grouping `group_by` names.
 #[derive(clap::Args, Clone, Debug)]
 pub struct DemographicsArgs {
     /// IPEDS unitid. Required for `--group-by cip`; narrows the others to one school.
@@ -1004,7 +1010,7 @@ pub struct DemographicsArgs {
     /// Exact CIP codes, comma-separated. Takes priority over `--cip`.
     #[arg(long = "cip-codes", value_name = "LIST")]
     pub cip_codes: Option<String>,
-    /// Academic year, e.g. 2024. Defaults to the most recent year stored.
+    /// Academic year, e.g. 2024. Defaults to the latest year with matching data.
     #[arg(long, value_name = "YEAR")]
     pub year: Option<i32>,
     /// Award level: 3 associate, 5 bachelors, 7 masters, 9 doctoral. Omit for all.
@@ -1019,10 +1025,10 @@ pub struct DemographicsArgs {
     /// Carnegie classification code, e.g. 15 for R1.
     #[arg(long = "carnegie-class", value_name = "N")]
     pub carnegie_class: Option<i32>,
-    /// Only historically Black colleges and universities. Needs `--group-by school`.
+    /// Only historically Black colleges and universities. Refused with `--group-by cip`.
     #[arg(long)]
     pub hbcu: bool,
-    /// Only tribal colleges. Needs `--group-by school`.
+    /// Only tribal colleges. Refused with `--group-by cip`.
     #[arg(long)]
     pub tribal: bool,
     /// Shape of the result: grouped by demographic only, by school, or by CIP code.
@@ -1124,6 +1130,9 @@ pub enum QuerySubcommand {
         /// Program kind, e.g. `major`, `minor`, `concentration`, `certificate`.
         #[arg(long, value_name = "KIND")]
         kind: Option<String>,
+        /// Words in the program name, e.g. "computer science" (case-insensitive).
+        #[arg(long, value_name = "WORDS")]
+        name: Option<String>,
         /// Maximum rows (engine default 20, capped at 50).
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
@@ -1133,19 +1142,20 @@ pub enum QuerySubcommand {
     /// Reports raw counts and a representation ratio, where 1.0 is parity. `--raw` drops
     /// the ratio and leaves the counts.
     ///
-    /// The ratio's baseline always comes from one table, `institution_completion_totals`:
-    /// the group's share of all-major completions. This database holds no enrolment data
-    /// at all, so a ratio below 1.0 means "under-represented among these graduates
-    /// relative to all graduates there", never anything about who enrolled. Note the
-    /// output columns are called `enrolled`, `total_enrolled` and `enrollment_pct` for
-    /// historical reasons; they hold completions. `total` pools that denominator across
-    /// every matched institution, while `school` and `cip` use each school's own.
+    /// The ratio's baseline is the group's share of every completion at the matched
+    /// schools in the same year and award level, across all CIPs and both majors. This
+    /// database holds no enrolment data at all, so a ratio below 1.0 means
+    /// "under-represented among these graduates relative to all graduates there", never
+    /// anything about who enrolled. Note the output columns are called `enrolled`,
+    /// `total_enrolled` and `enrollment_pct` for historical reasons; they hold completions.
+    /// `total` pools that denominator across every matched institution, while `school` and
+    /// `cip` use each school's own.
     ///
     /// `--group-by` picks what a row is: `total` gives one row per race/gender group
     /// aggregated over everything matched, `school` one row per institution, and `cip`
-    /// one row per CIP code at a single school. The three read different engines and
-    /// accept different filters, so a filter the chosen grouping cannot apply is refused
-    /// by name rather than silently ignored.
+    /// one row per CIP code at a single school. A filter the chosen grouping cannot apply
+    /// — an institution filter with `cip`, which is one school, or `--limit` with `total`
+    /// — is refused by name rather than silently ignored.
     Demographics(DemographicsArgs),
     /// Show stored analysis metrics for one degree program.
     ///

@@ -76,8 +76,17 @@ fn main() {
             commands::db::run(subcommand, &config, &config_sources);
         }
         #[cfg(feature = "mcp")]
-        Command::Mcp => {
-            if let Err(e) = commands::mcp::run(&config.database) {
+        Command::Mcp {
+            allow_writes,
+            list_tools,
+        } => {
+            if list_tools {
+                for (name, description) in nu_analytics::mcp::tool_list(allow_writes) {
+                    println!("{name}\n    {description}\n");
+                }
+                return;
+            }
+            if let Err(e) = commands::mcp::run(&config.database, allow_writes) {
                 eprintln!("✗ MCP server error: {e}");
                 std::process::exit(1);
             }

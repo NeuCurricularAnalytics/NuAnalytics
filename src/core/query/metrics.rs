@@ -1,9 +1,4 @@
-//! Analysis metrics for a stored program.
-//!
-//! A new engine rather than a move from `src/mcp/tools/`. `analysis_runs` was previously
-//! only written (`db import`) and scanned for deletion (`db prune`, `fetch_run_refs`);
-//! this is the first code that reads it to report it. The MCP server does not expose it —
-//! MCP wiring is deliberately deferred, so this engine is CLI-only for now.
+//! Analysis metrics for a stored program: `db query metrics` and `get_stored_analysis`.
 //!
 //! **Runs append, they do not replace.** Re-importing a program adds a row rather than
 //! overwriting one, so a program accumulates runs across analyzer versions and corpus
@@ -13,8 +8,9 @@
 
 use std::sync::Arc;
 
+use super::degrees::resolve_program_key;
 use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::core::json::{error_json, parse_first, parse_json_array, to_json_pretty};
+use crate::core::json::{parse_json_array, to_json_pretty};
 use serde::{Deserialize, Serialize};
 
 /// Columns worth returning for a run. `degree_metrics` is the full JSONB block; the
@@ -23,7 +19,7 @@ const RUN_COLS: &str = "run_key,program_key,variant,trimmed,variations_run,sampl
 calc_strategy,sampling_strategy,max_plans,full_run,degree_metrics,complexity_mean,\
 delay_mean,credits_mean,analyzer_version,random_seed,config_fingerprint,created_at";
 
-/// Request parameters for `db query metrics`.
+/// Request parameters for `db query metrics` and `get_stored_analysis`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetDegreeMetricsRequest {
     /// Program to report on. Matched against `program_key` first, then `degree_id` —
@@ -41,6 +37,18 @@ pub struct GetDegreeMetricsRequest {
     #[schemars(description = "Maximum runs to read back (default 50, max 200)")]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub limit: Option<usize>,
+    /// Attach each run's selected plans (shortest, longest, samples) with their schedules.
+    #[schemars(
+        description = "Attach each run's selected plans with their term schedules (default false)"
+    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
+    pub include_plans: Option<bool>,
+    /// Attach each run's per-course metrics.
+    #[schemars(
+        description = "Attach each run's per-course metrics, most complex first (default false)"
+    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
+    pub include_course_metrics: Option<bool>,
 }
 
 /// One stored analysis run.
@@ -79,6 +87,12 @@ struct RunRow {
     config_fingerprint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     created_at: Option<String>,
+    /// The run's selected plans, when asked for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    plans: Option<serde_json::Value>,
+    /// The run's per-course metrics, when asked for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    course_metrics: Option<serde_json::Value>,
 }
 
 /// Response for `db query metrics`.
@@ -96,82 +110,150 @@ struct MetricsResponse {
     runs: Vec<RunRow>,
 }
 
-/// One `program_key` column, for the identity probes below.
-#[derive(Debug, Deserialize)]
-struct KeyRow {
-    program_key: String,
+/// Plan columns worth returning: the curated plan and its term-by-term schedule.
+const PLAN_COLS: &str = "plan_index,category,terms_required,total_complexity,longest_delay,\
+credits,course_count,is_calc_ready,critical_path,schedule";
+
+/// Per-course columns worth returning; `metrics` (the full five-number summaries) is left
+/// out to keep a run's answer readable.
+const COURSE_COLS: &str = "course_code,plan_count,complexity_mean,centrality_mean,delay_mean,\
+blocking_mean,chain_length_mean";
+
+/// The rows a run owns in one of its child tables, capped as the report reads them.
+struct Children {
+    table: &'static str,
+    cols: &'static str,
+    order_desc: &'static str,
+    max_rows: usize,
 }
 
-/// How many `degree_id` matches to read before reporting the list as truncated.
-///
-/// One more than we would ever want to print, so `keys.len() > AMBIGUITY_PROBE` is a
-/// reliable "there are more than this" rather than a guess.
-const AMBIGUITY_PROBE: usize = 50;
+/// A run's selected plans.
+const PLANS: Children = Children {
+    table: tables::ANALYSIS_PLANS,
+    cols: PLAN_COLS,
+    order_desc: "plan_index",
+    max_rows: super::report_source::MAX_PLAN_ROWS,
+};
 
-/// Resolve `degree` to a `program_key`.
-///
-/// Tries `program_key` first because it is unique. A `degree_id` can match several
-/// programs (one per catalog year), and silently reporting one of them as "the" answer
-/// would be worse than saying so — hence the ambiguity error.
-///
-/// `Err` carries a finished JSON payload, not a message: callers return it verbatim.
-async fn resolve_program_key(client: &Arc<DbClient>, degree: &str) -> Result<String, String> {
-    let by_key = QueryFilters::new().eq("program_key", Some(degree));
-    match client
-        .select(tables::PROGRAMS, "program_key", &by_key, Some(1))
-        .await
-    {
-        Ok(v) if parse_first::<KeyRow>(&v).is_some() => return Ok(degree.to_string()),
-        Ok(_) => {}
-        Err(e) => return Err(error_json(e)),
-    }
+/// A run's per-course metrics, most complex first.
+const COURSE_METRICS: Children = Children {
+    table: tables::ANALYSIS_COURSE_METRICS,
+    cols: COURSE_COLS,
+    order_desc: "complexity_mean",
+    max_rows: super::report_source::MAX_COURSE_ROWS,
+};
 
-    let by_id = QueryFilters::new().eq("degree_id", Some(degree));
-    let rows = match client
+/// Rows a run owns in `children.table`.
+async fn run_children(
+    client: &DbClient,
+    children: &Children,
+    run_key: &str,
+) -> Result<serde_json::Value, crate::core::database::DatabaseError> {
+    let filters = QueryFilters::new()
+        .eq("run_key", Some(run_key))
+        .order_desc(children.order_desc);
+    client
         .select(
-            tables::PROGRAMS,
-            "program_key",
-            &by_id,
-            Some(AMBIGUITY_PROBE + 1),
+            children.table,
+            children.cols,
+            &filters,
+            Some(children.max_rows),
         )
         .await
-    {
-        Ok(v) => v,
-        Err(e) => return Err(error_json(e)),
-    };
-    let mut keys: Vec<String> = parse_json_array::<KeyRow>(&rows)
-        .into_iter()
-        .map(|r| r.program_key)
-        .collect();
+}
 
-    match keys.len() {
-        0 => Err(serde_json::json!({
-            "error": format!(
-                "no row in `programs` has program_key or degree_id = \"{degree}\""
-            ),
-            "degree": degree,
-            "tip": "List candidates with `nuanalytics db query degrees --school <UNITID>`",
-        })
-        .to_string()),
-        1 => Ok(keys.remove(0)),
-        n => {
-            // Say so rather than present a capped list as if it were complete.
-            let truncated = n > AMBIGUITY_PROBE;
-            keys.truncate(AMBIGUITY_PROBE);
-            Err(serde_json::json!({
-                "error": format!(
-                    "degree_id \"{degree}\" matches {}{} rows in `programs` — pass one program_key",
-                    if truncated { "more than " } else { "" },
-                    keys.len()
-                ),
-                "degree": degree,
-                "matches": keys,
-                "truncated": truncated,
-            })
-            .to_string())
-        }
+/// Attach the plans and course metrics `req` asks for to `run`.
+///
+/// # Errors
+/// A failure payload naming the run and the table that could not be read.
+async fn attach_children(
+    client: &DbClient,
+    run: &mut RunRow,
+    req: &GetDegreeMetricsRequest,
+) -> Result<(), String> {
+    if req.include_plans.unwrap_or(false) {
+        let mut plans = run_children(client, &PLANS, &run.run_key)
+            .await
+            .map_err(|e| e.to_json(&format!("reading the plans of run {}", run.run_key)))?;
+        sort_by_key_field(&mut plans, "plan_index");
+        run.plans = Some(plans);
+    }
+    if req.include_course_metrics.unwrap_or(false) {
+        let metrics = run_children(client, &COURSE_METRICS, &run.run_key)
+            .await
+            .map_err(|e| {
+                e.to_json(&format!(
+                    "reading the course metrics of run {}",
+                    run.run_key
+                ))
+            })?;
+        run.course_metrics = Some(metrics);
+    }
+    Ok(())
+}
+
+/// Sort an array of JSON objects by an integer field, ascending.
+fn sort_by_key_field(rows: &mut serde_json::Value, field: &str) {
+    if let Some(rows) = rows.as_array_mut() {
+        rows.sort_by_key(|r| r.get(field).and_then(serde_json::Value::as_i64));
     }
 }
+
+/// The newest run of each variant for `program_key`, in brief.
+///
+/// What `get_degree` shows beside a program: which variants have been analysed, when, by
+/// which analyzer, and the headline means.
+///
+/// # Errors
+/// When the backend fails.
+pub async fn run_summaries(
+    client: &DbClient,
+    program_key: &str,
+) -> Result<Vec<serde_json::Value>, crate::core::database::DatabaseError> {
+    let filters = QueryFilters::new()
+        .eq("program_key", Some(program_key))
+        .order_desc("created_at");
+    let value = client
+        .select(tables::ANALYSIS_RUNS, SUMMARY_COLS, &filters, Some(200))
+        .await?;
+    let mut seen = std::collections::HashSet::new();
+    Ok(value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|r| {
+            let variant = r
+                .get("variant")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+            seen.insert(variant.to_string())
+        })
+        .cloned()
+        .collect())
+}
+
+/// The newest `variant` run for `program_key`, in brief, or `None` when it has none.
+///
+/// # Errors
+/// When the backend fails.
+pub async fn latest_run_summary(
+    client: &DbClient,
+    program_key: &str,
+    variant: &str,
+) -> Result<Option<serde_json::Value>, crate::core::database::DatabaseError> {
+    let filters = QueryFilters::new()
+        .eq("program_key", Some(program_key))
+        .eq("variant", Some(variant))
+        .order_desc("created_at");
+    let value = client
+        .select(tables::ANALYSIS_RUNS, SUMMARY_COLS, &filters, Some(1))
+        .await?;
+    Ok(value.as_array().and_then(|rows| rows.first()).cloned())
+}
+
+/// A run in brief: identity, provenance, headline means.
+const SUMMARY_COLS: &str = "run_key,variant,created_at,analyzer_version,variations_run,\
+complexity_mean,delay_mean,credits_mean";
 
 /// Drop all but the newest run of each variant.
 ///
@@ -203,7 +285,7 @@ pub async fn execute_json(client: &Arc<DbClient>, req: GetDegreeMetricsRequest) 
         .await
     {
         Ok(v) => v,
-        Err(e) => return error_json(e),
+        Err(e) => return e.to_json(&format!("reading the analysis runs of {program_key}")),
     };
 
     let mut runs: Vec<RunRow> = parse_json_array(&value);
@@ -211,6 +293,12 @@ pub async fn execute_json(client: &Arc<DbClient>, req: GetDegreeMetricsRequest) 
     let latest_only = req.latest.unwrap_or(true);
     if latest_only {
         keep_newest_per_variant(&mut runs);
+    }
+
+    for run in &mut runs {
+        if let Err(payload) = attach_children(client, run, &req).await {
+            return payload;
+        }
     }
 
     to_json_pretty(&MetricsResponse {
@@ -224,6 +312,29 @@ pub async fn execute_json(client: &Arc<DbClient>, req: GetDegreeMetricsRequest) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_sort_by_key_field_orders_by_the_field_and_leaves_non_arrays_alone() {
+        let mut rows = serde_json::json!([
+            {"plan_index": 2}, {"plan_index": 0}, {"other": 1}, {"plan_index": 1}
+        ]);
+        sort_by_key_field(&mut rows, "plan_index");
+        let order: Vec<Option<i64>> = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["plan_index"].as_i64())
+            .collect();
+        assert_eq!(
+            order,
+            [None, Some(0), Some(1), Some(2)],
+            "a missing field sorts first"
+        );
+
+        let mut object = serde_json::json!({"plan_index": 3});
+        sort_by_key_field(&mut object, "plan_index");
+        assert_eq!(object, serde_json::json!({"plan_index": 3}));
+    }
 
     fn run(variant: &str, created: &str, complexity: f64) -> RunRow {
         RunRow {
@@ -245,6 +356,8 @@ mod tests {
             random_seed: None,
             config_fingerprint: None,
             created_at: Some(created.to_string()),
+            plans: None,
+            course_metrics: None,
         }
     }
 

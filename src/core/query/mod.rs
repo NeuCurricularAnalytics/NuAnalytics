@@ -10,6 +10,7 @@
 //! feature — `src/core/` must stay free of both, or `--features database` alone stops
 //! building. The CI matrix covers exactly that.
 
+pub mod catalog;
 pub mod cip_codes;
 pub mod completions;
 pub mod degrees;
@@ -17,20 +18,15 @@ pub mod institutions;
 pub mod lookup;
 pub mod metrics;
 pub mod report_source;
+pub mod schema_doc;
 pub mod sql;
 
 // Request types only. The `execute_*` functions are deliberately not re-exported:
 // `execute_json` collides across modules, and `institutions::execute_search_json` reads
 // better at the call site than a flattened name.
 pub use cip_codes::SearchCipCodesRequest;
-pub use completions::{
-    CompletionDemographicsRequest, GetInstitutionCompletionsRequest,
-    GetSchoolsCompletionDemographicsRequest,
-};
-pub use degrees::{
-    CompareDegreesRequest, CompareMetricsFn, GetDegreeRequest, SearchDegreesRequest,
-    StoreDegreeRequest,
-};
+pub use completions::{CompletionDemographicsRequest, DemographicsGroupBy};
+pub use degrees::{GetDegreeRequest, SearchDegreesRequest};
 pub use institutions::{GetInstitutionRequest, SearchInstitutionsRequest};
 pub use lookup::GetLookupCodesRequest;
 pub use metrics::GetDegreeMetricsRequest;

@@ -1940,53 +1940,74 @@ fn find_name(names: &[String], matches: impl Fn(&str) -> bool) -> Option<&String
 // Query — read-only access to the stored data
 // ============================================================================
 
-/// Institution filters the caller actually set, as their flag names.
-fn institution_filters_set(args: &DemographicsArgs) -> Vec<&'static str> {
-    let mut set: Vec<&'static str> = Vec::new();
-    if args.state.is_some() {
-        set.push("--state");
+/// The core request `db query demographics` asks.
+fn demographics_request(
+    args: &DemographicsArgs,
+) -> nu_analytics::core::query::completions::CompletionDemographicsRequest {
+    use nu_analytics::core::query::completions::{
+        CompletionDemographicsRequest, DemographicsGroupBy,
+    };
+    CompletionDemographicsRequest {
+        group_by: Some(match args.group_by {
+            DemographicsGrouping::Total => DemographicsGroupBy::Total,
+            DemographicsGrouping::School => DemographicsGroupBy::School,
+            DemographicsGrouping::Cip => DemographicsGroupBy::Cip,
+        }),
+        unitid: args.school,
+        carnegie_class: args.carnegie_class,
+        control: args.control,
+        state: args.state.clone(),
+        hbcu: only(args.hbcu),
+        tribal: only(args.tribal),
+        cip_prefix: args.cip.clone(),
+        cip_codes: args.cip_codes.clone(),
+        award_level: args.award_level,
+        year: args.year,
+        // `--raw` is the opt-out: both figures is the useful default, and the ratios are
+        // what make counts comparable across schools of different sizes.
+        include_representation: Some(!args.raw),
+        limit: args.limit,
+        ..CompletionDemographicsRequest::default()
     }
-    if args.control.is_some() {
-        set.push("--control");
-    }
-    if args.carnegie_class.is_some() {
-        set.push("--carnegie-class");
-    }
-    if args.hbcu {
-        set.push("--hbcu");
-    }
-    if args.tribal {
-        set.push("--tribal");
-    }
-    if args.limit.is_some() {
-        set.push("--limit");
-    }
-    set
 }
 
-/// Refuse flags the chosen `--group-by` engine cannot honour.
+/// The CLI flag for a request filter, for refusal messages.
+const fn demographics_flag(
+    filter: nu_analytics::core::query::completions::DemoFilter,
+) -> &'static str {
+    use nu_analytics::core::query::completions::DemoFilter;
+    match filter {
+        DemoFilter::CarnegieClass => "--carnegie-class",
+        DemoFilter::Control => "--control",
+        DemoFilter::State => "--state",
+        DemoFilter::Hbcu => "--hbcu",
+        DemoFilter::Tribal => "--tribal",
+        DemoFilter::Limit => "--limit",
+        // No flag sets these; named by field if one ever does.
+        DemoFilter::InstSizeMin => "inst_size_min",
+        DemoFilter::MinCompletions => "min_completions",
+    }
+}
+
+/// Refuse flags the chosen `--group-by` cannot honour, by flag name.
 ///
-/// The three completions engines take different filter sets — only the per-school one
-/// knows about `hbcu`/`tribal`, and the per-CIP one is scoped to a single institution and
-/// ignores every group filter. Accepting those silently would answer a narrower question
-/// than the caller asked, with nothing in the output to show it: `--hbcu` would return
-/// every school. Naming the flag is the difference between a wrong answer and an error.
-fn reject_unsupported_demographics_filters(args: &DemographicsArgs) -> Option<String> {
-    let set = institution_filters_set(args);
-    let ignored: Vec<&str> = match args.group_by {
-        // The schools engine is the one that takes them all.
-        DemographicsGrouping::School => return None,
-        DemographicsGrouping::Total => set
-            .into_iter()
-            .filter(|f| matches!(*f, "--hbcu" | "--tribal" | "--limit"))
-            .collect(),
-        DemographicsGrouping::Cip => set,
-    };
+/// Which grouping applies which filter is core's rule
+/// (`completions::inapplicable_filters`); this only names the flags. Accepting one
+/// silently would answer a narrower question than the caller asked, with nothing in the
+/// output to show it: `--state` with `--group-by cip` would return the one school regardless.
+fn refuse_inapplicable(
+    grouping: DemographicsGrouping,
+    request: &nu_analytics::core::query::completions::CompletionDemographicsRequest,
+) -> Option<String> {
+    let ignored: Vec<&str> = nu_analytics::core::query::completions::inapplicable_filters(request)
+        .into_iter()
+        .map(demographics_flag)
+        .collect();
     if ignored.is_empty() {
         return None;
     }
 
-    let grouping = args.group_by.as_str();
+    let grouping = grouping.as_str();
     // Pointing a `--limit`-only refusal at `--group-by school` would answer a different
     // question rather than fix the flag.
     let tip = if ignored == ["--limit"] {
@@ -2005,33 +2026,13 @@ fn reject_unsupported_demographics_filters(args: &DemographicsArgs) -> Option<St
     )
 }
 
-/// Fan `db query demographics` out to whichever completions engine matches `--group-by`.
-///
-/// The three engines answer different questions and return different shapes, so the
-/// grouping picks the engine rather than post-processing one result into another.
+/// `db query demographics`: one core request at the chosen grouping.
 async fn run_demographics(client: &Arc<DbClient>, args: DemographicsArgs) -> String {
-    if let Some(payload) = reject_unsupported_demographics_filters(&args) {
+    let request = demographics_request(&args);
+    if let Some(payload) = refuse_inapplicable(args.group_by, &request) {
         return payload;
     }
-    // `--raw` is the opt-out: both figures is the useful default, and the ratios are
-    // what make counts comparable across schools of different sizes.
-    let with_ratios = Some(!args.raw);
-
-    match args.group_by {
-        DemographicsGrouping::Cip => demographics_by_cip(client, args, with_ratios).await,
-        DemographicsGrouping::School => demographics_by_school(client, args, with_ratios).await,
-        DemographicsGrouping::Total => demographics_total(client, args, with_ratios).await,
-    }
-}
-
-/// Per-CIP rows at a single institution.
-async fn demographics_by_cip(
-    client: &Arc<DbClient>,
-    args: DemographicsArgs,
-    with_ratios: Option<bool>,
-) -> String {
-    use nu_analytics::core::query::completions;
-    let Some(unitid) = args.school else {
+    if matches!(args.group_by, DemographicsGrouping::Cip) && args.school.is_none() {
         // Returned as a payload rather than printed, so it renders and exits through the
         // same path as an engine-reported failure.
         return serde_json::json!({
@@ -2039,73 +2040,8 @@ async fn demographics_by_cip(
             "tip": "Add --school <UNITID>, or use --group-by school to compare institutions",
         })
         .to_string();
-    };
-    completions::execute_institution_json(
-        client,
-        completions::GetInstitutionCompletionsRequest {
-            unitid,
-            year: args.year,
-            award_level: args.award_level,
-            cip_prefix: args.cip,
-            cip_codes: args.cip_codes,
-            major_num: None,
-            include_representation: with_ratios,
-        },
-    )
-    .await
-}
-
-/// One row per institution.
-async fn demographics_by_school(
-    client: &Arc<DbClient>,
-    args: DemographicsArgs,
-    with_ratios: Option<bool>,
-) -> String {
-    use nu_analytics::core::query::completions;
-    completions::execute_schools_json(
-        client,
-        completions::GetSchoolsCompletionDemographicsRequest {
-            unitid: args.school,
-            carnegie_class: args.carnegie_class,
-            control: args.control,
-            state: args.state,
-            hbcu: only(args.hbcu),
-            tribal: only(args.tribal),
-            inst_size_min: None,
-            cip_prefix: args.cip,
-            cip_codes: args.cip_codes,
-            award_level: args.award_level,
-            year: args.year,
-            include_representation: with_ratios,
-            min_completions: None,
-            limit: args.limit,
-        },
-    )
-    .await
-}
-
-/// One row per demographic group, aggregated over every matched institution.
-async fn demographics_total(
-    client: &Arc<DbClient>,
-    args: DemographicsArgs,
-    with_ratios: Option<bool>,
-) -> String {
-    use nu_analytics::core::query::completions;
-    completions::execute_json(
-        client,
-        completions::CompletionDemographicsRequest {
-            unitid: args.school,
-            carnegie_class: args.carnegie_class,
-            control: args.control,
-            state: args.state,
-            cip_prefix: args.cip,
-            cip_codes: args.cip_codes,
-            award_level: args.award_level,
-            year: args.year,
-            include_representation: with_ratios,
-        },
-    )
-    .await
+    }
+    nu_analytics::core::query::completions::execute_json(client, request).await
 }
 
 /// Run `subcommand` against its query engine and return the engine's JSON payload.
@@ -2164,6 +2100,7 @@ async fn dispatch_query(client: &Arc<DbClient>, subcommand: QuerySubcommand) -> 
             catalog_year,
             degree_type,
             kind,
+            name,
             limit,
         } => {
             query_degrees(
@@ -2174,6 +2111,7 @@ async fn dispatch_query(client: &Arc<DbClient>, subcommand: QuerySubcommand) -> 
                     catalog_year,
                     degree_type,
                     kind,
+                    name,
                     limit,
                 },
             )
@@ -2230,12 +2168,10 @@ async fn query_schools(client: &Arc<DbClient>, q: SchoolsQuery, with_programs: b
         tribal: only(q.tribal),
         inst_size_min: None,
         limit: q.limit,
+        unitid: None,
+        with_programs: Some(with_programs),
     };
-    if with_programs {
-        institutions::execute_search_with_programs_json(client, req).await
-    } else {
-        institutions::execute_search_json(client, req).await
-    }
+    institutions::execute_json(client, req).await
 }
 
 /// Filters for `db query degrees`, mirroring the clap variant's fields.
@@ -2245,6 +2181,7 @@ struct DegreesQuery {
     catalog_year: Option<String>,
     degree_type: Option<String>,
     kind: Option<String>,
+    name: Option<String>,
     limit: Option<usize>,
 }
 
@@ -2254,6 +2191,7 @@ async fn query_degrees(client: &Arc<DbClient>, q: DegreesQuery) -> String {
     degrees::execute_search_json(
         client,
         degrees::SearchDegreesRequest {
+            name: q.name,
             unitid: q.school,
             cip_prefix: q.cip,
             catalog_year: q.catalog_year,
@@ -2284,6 +2222,8 @@ async fn query_metrics(
             // degree" means, and history is the rarer ask.
             latest: Some(!all),
             limit,
+            include_plans: None,
+            include_course_metrics: None,
         },
     )
     .await
@@ -2446,6 +2386,11 @@ mod tests {
 
     // --- reject_unsupported_demographics_filters ---------------------------
 
+    /// The refusal `run_demographics` applies, from the flags alone.
+    fn reject_unsupported_demographics_filters(args: &DemographicsArgs) -> Option<String> {
+        refuse_inapplicable(args.group_by, &demographics_request(args))
+    }
+
     fn demo_args(group_by: DemographicsGrouping) -> DemographicsArgs {
         DemographicsArgs {
             school: None,
@@ -2484,13 +2429,7 @@ mod tests {
         // are literals rather than recomputed from `group_by`, which would just restate
         // the production match.
         type Set = fn(&mut DemographicsArgs);
-        let cases: [(DemographicsGrouping, &str, &str, Set); 8] = [
-            (DemographicsGrouping::Total, "total", "--hbcu", |a| {
-                a.hbcu = true;
-            }),
-            (DemographicsGrouping::Total, "total", "--tribal", |a| {
-                a.tribal = true;
-            }),
+        let cases: [(DemographicsGrouping, &str, &str, Set); 6] = [
             (DemographicsGrouping::Total, "total", "--limit", |a| {
                 a.limit = Some(5);
             }),
@@ -2537,6 +2476,9 @@ mod tests {
         total.year = Some(2024);
         total.award_level = Some(5);
         total.cip = Some("11.".to_string());
+        // `total` applies these to the aggregate as well.
+        total.hbcu = true;
+        total.tribal = true;
         assert_eq!(reject_unsupported_demographics_filters(&total), None);
 
         let mut cip = demo_args(DemographicsGrouping::Cip);
@@ -2597,6 +2539,60 @@ mod tests {
         let payload = reject_unsupported_demographics_filters(&args).expect("refusal");
         let v: serde_json::Value = serde_json::from_str(&payload).expect("valid json");
         assert!(v.get("error").is_some(), "no error key: {payload}");
+    }
+
+    #[test]
+    fn test_demographics_request_maps_every_flag() {
+        let mut a = demo_args(DemographicsGrouping::School);
+        (a.hbcu, a.tribal, a.raw) = (true, true, true);
+        (a.school, a.limit, a.control, a.carnegie_class) = (Some(1), Some(3), Some(1), Some(15));
+        (a.year, a.award_level) = (Some(2024), Some(5));
+        a.state = Some("MA".into());
+        a.cip = Some("11.".into());
+        a.cip_codes = Some("11.0701".into());
+        let r = demographics_request(&a);
+        assert_eq!(
+            (r.hbcu, r.tribal, r.include_representation),
+            (Some(true), Some(true), Some(false)),
+            "a bare flag is Some(true); --raw turns the ratios off"
+        );
+        assert_eq!(
+            (
+                r.unitid,
+                r.limit,
+                r.control,
+                r.carnegie_class,
+                r.year,
+                r.award_level
+            ),
+            (Some(1), Some(3), Some(1), Some(15), Some(2024), Some(5))
+        );
+        assert_eq!(
+            (
+                r.state.as_deref(),
+                r.cip_prefix.as_deref(),
+                r.cip_codes.as_deref()
+            ),
+            (Some("MA"), Some("11."), Some("11.0701"))
+        );
+        let bare = demographics_request(&demo_args(DemographicsGrouping::Total));
+        assert_eq!(
+            (bare.hbcu, bare.tribal, bare.include_representation),
+            (None, None, Some(true)),
+            "an unset flag filters nothing, rather than selecting non-HBCUs"
+        );
+        for g in [
+            DemographicsGrouping::Total,
+            DemographicsGrouping::School,
+            DemographicsGrouping::Cip,
+        ] {
+            assert_eq!(
+                demographics_request(&demo_args(g))
+                    .group_by
+                    .map(nu_analytics::core::query::completions::DemographicsGroupBy::as_str),
+                Some(g.as_str())
+            );
+        }
     }
 
     // --- extract_query_param -----------------------------------------------
@@ -3270,32 +3266,12 @@ async fn report_candidates(
 
 /// Variants that actually have a stored run for `program_key`, newest first.
 async fn stored_variants(client: &Arc<DbClient>, program_key: &str) -> Result<Vec<String>, String> {
-    use nu_analytics::database::{tables, QueryFilters};
-
-    #[derive(serde::Deserialize)]
-    struct VariantRow {
-        variant: String,
-    }
-    let filters = QueryFilters::new()
-        .eq("program_key", Some(program_key))
-        .order_desc("created_at");
-    let rows: Vec<VariantRow> = nu_analytics::core::json::parse_json_array(
-        &client
-            .select(
-                tables::ANALYSIS_RUNS,
-                "variant,created_at",
-                &filters,
-                Some(200),
-            )
-            .await
-            .map_err(|e| e.to_string())?,
-    );
-    // Runs append, so the same variant appears once per generation. Keep first sighting.
-    let mut seen = std::collections::HashSet::new();
-    Ok(rows
-        .into_iter()
-        .map(|r| r.variant)
-        .filter(|v| seen.insert(v.clone()))
+    let runs = nu_analytics::core::query::metrics::run_summaries(client, program_key)
+        .await
+        .map_err(|e| format!("reading the analysis runs of {program_key}: {e}"))?;
+    Ok(runs
+        .iter()
+        .filter_map(|run| run.get("variant")?.as_str().map(str::to_string))
         .collect())
 }
 
@@ -3363,20 +3339,7 @@ fn run_report(
     };
 
     let variant = variant.map_or_else(
-        || {
-            let variants = match rt.block_on(stored_variants(&client, &chosen.program_key)) {
-                Ok(v) if v.is_empty() => fail(&format!(
-                    "no analysis run stored for {} — import it first",
-                    chosen.program_key
-                )),
-                Ok(v) => v,
-                Err(e) => fail(&e),
-            };
-            match choose("Which variant?", variants, Clone::clone) {
-                Ok(v) => v,
-                Err(e) => fail(&e),
-            }
-        },
+        || choose_variant(&rt, &client, &chosen.program_key),
         ToString::to_string,
     );
 
@@ -3389,21 +3352,15 @@ fn run_report(
         Err(e) => fail(&e),
     };
 
-    let (school_model, dag, equivalences) = super::degree::build_report_inputs(&stored.program);
     let path = match resolve_report_path(output, &stored.program.degree.degree_id()) {
         Ok(p) => p,
         Err(e) => fail(&e),
     };
-
-    let ctx = nu_analytics::core::report::DegreeReportContext::new(
-        &school_model,
-        &stored.program.degree,
-        &stored.stats,
-        &stored.selected,
-        &dag,
-        &equivalences,
-    );
-    if let Err(e) = nu_analytics::core::report::DegreeReportGenerator::new().generate(&ctx, &path) {
+    let html = match stored.render_html() {
+        Ok(h) => h,
+        Err(e) => fail(&e),
+    };
+    if let Err(e) = std::fs::write(&path, html) {
         fail(&format!("could not write {}: {e}", path.display()));
     }
 
@@ -3419,6 +3376,25 @@ fn run_report(
             .map_or(String::new(), |v| format!("  ·  analyzer {v}")),
     );
     println!("{}", path.display());
+}
+
+/// Ask which stored variant to report on, exiting when there is none to choose.
+fn choose_variant(
+    rt: &tokio::runtime::Runtime,
+    client: &Arc<DbClient>,
+    program_key: &str,
+) -> String {
+    let variants = match rt.block_on(stored_variants(client, program_key)) {
+        Ok(v) if v.is_empty() => fail(&format!(
+            "no analysis run stored for {program_key} — import it first"
+        )),
+        Ok(v) => v,
+        Err(e) => fail(&e),
+    };
+    match choose("Which variant?", variants, Clone::clone) {
+        Ok(v) => v,
+        Err(e) => fail(&e),
+    }
 }
 
 /// Print an error and exit 1. Never returns.

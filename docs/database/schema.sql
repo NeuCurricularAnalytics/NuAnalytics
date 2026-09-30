@@ -128,11 +128,14 @@ CREATE TABLE completions (
 -- Institution completion totals cache (populated automatically by ipeds-import)
 --
 -- Pre-aggregated total completions per (institution, award_level, year) across
--- ALL CIP codes. Written in the same single pass as the completions table.
--- Used as the denominator for demographic representation queries — avoids
--- scanning 100K+ completion rows on every MCP tool call.
+-- every CIP code except 99, IPEDS's grand-total row, which is itself the sum of the
+-- others. Written in the same single pass as the completions table.
 --
--- award_level = NULL means the row covers all award levels combined.
+-- No nuanalytics query reads it: the demographics queries sum the detail rows of
+-- `completions` directly. See docs/database-audit-todo.md for its status.
+--
+-- award_level is IPEDS AWLEVEL. A NULL bucket would hold rows whose AWLEVEL did not
+-- parse; none are expected, since IPEDS uses no sentinel in that column.
 -- =============================================================================
 CREATE TABLE institution_completion_totals (
     id                       BIGSERIAL PRIMARY KEY,

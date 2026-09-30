@@ -39,16 +39,19 @@ nuanalytics config
 
 ## Using Claude in this directory
 
-Running `claude` from this directory picks up `.mcp.json` (or `.claude/settings.json`)
-and the skills under `.claude/skills/`. The NuAnalytics MCP server is wired in, so
-Claude can call the degree tools — `validate_degree`, `audit_degree`,
-`analyze_degree`, `trim_degree`, `get_degree_schema`, and friends —
-directly.
+Run `claude` from this directory. It reads `.mcp.json`, which registers the NuAnalytics
+MCP server, and the skills under `.claude/skills/`. `.claude/settings.json` approves the
+server, but Claude Code honours project settings only in a trusted folder. Accept the
+trust prompt the first time you open the project.
 
-Five skills auto-trigger based on what you ask:
+The server's tools validate, audit, analyze and render degrees; read the stored programs
+and their analysis; and query IPEDS completion data. The database tools need a
+`[database]` section in the config (`nuanalytics config`); the rest work without one.
 
-- **degree-author** — generate a new degree YAML or unified JSON from a catalog source.
-- **degree-review** — validate and critique an existing degree YAML or unified JSON.
-- **degree-update** — revise an existing degree file (`*.yaml` or `*.unified.json`).
-- **degree-fetch** — pull a degree from the database with dual-build verification.
-- **plan-analyze** — run analyses on a degree file or curriculum CSV.
+Five skills load on their own when a request matches:
+
+- **degree-author** — build a degree file from a catalog and get it to validate.
+- **degree-review** — check, fix or update an existing degree file.
+- **degree-analyze** — compute and explain a degree's metrics; render its report or graphs.
+- **stored-programs** — find, export, analyze and compare the programs in the database.
+- **curriculum-research** — answer questions from IPEDS completions and the stored programs.

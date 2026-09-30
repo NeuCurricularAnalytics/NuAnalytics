@@ -34,6 +34,45 @@ pub mod models;
 pub mod prune;
 pub mod validate;
 
+/// Backend function names, defined in `docs/database/programs-schema.sql`.
+pub mod functions {
+    /// `query_readonly(q, max_rows)` — one ad-hoc read-only statement.
+    pub const QUERY_READONLY: &str = "query_readonly";
+    /// `query_readonly_params(q, params, max_rows)` — one read-only statement with `$1`
+    /// bound to a JSON object.
+    pub const QUERY_READONLY_PARAMS: &str = "query_readonly_params";
+
+    /// How to install or update both — named wherever one turns out to be missing.
+    ///
+    /// Two routes because a user may have no checkout: `db bootstrap --print` carries the
+    /// same file compiled in.
+    pub const INSTALL_STEP: &str = "apply docs/database/programs-schema.sql (or pipe \
+        `nuanalytics db bootstrap --print` into psql) and reload the schema cache \
+        (docs/database/setup.md, step 4c)";
+}
+
+/// Error codes the backend reports that this client acts on.
+///
+/// Postgres SQLSTATEs, plus `PostgREST`'s own `PGRST*` codes.
+pub mod codes {
+    /// `PostgREST`: no function with this name and these arguments in its schema cache.
+    pub const FUNCTION_NOT_FOUND: &str = "PGRST202";
+    /// A write inside a read-only transaction.
+    pub const READ_ONLY_TRANSACTION: &str = "25006";
+    /// Cancelled — `statement_timeout` expired.
+    pub const QUERY_CANCELED: &str = "57014";
+    /// `undefined_table`.
+    pub const UNDEFINED_TABLE: &str = "42P01";
+    /// `undefined_column`.
+    pub const UNDEFINED_COLUMN: &str = "42703";
+    /// `undefined_function` — also a missing operator for these argument types.
+    pub const UNDEFINED_FUNCTION: &str = "42883";
+    /// `invalid_text_representation` — a cast of a value that is not of that type.
+    pub const INVALID_TEXT_REPRESENTATION: &str = "22P02";
+    /// `syntax_error`.
+    pub const SYNTAX_ERROR: &str = "42601";
+}
+
 /// Supabase table name constants — use these instead of raw string literals.
 pub mod tables {
     /// IPEDS institution directory
@@ -114,7 +153,7 @@ pub use auth::{
     AuthState, SignInError,
 };
 pub use client::DbClient;
-pub use error::{DatabaseError, DatabaseResult};
+pub use error::{BackendError, DatabaseError, DatabaseResult};
 pub use filters::QueryFilters;
 pub use models::{
     CipCode, Completion, DemographicRepresentation, Institution, InstitutionCompletionTotal,

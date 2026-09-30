@@ -1,322 +1,263 @@
-//! Completion demographics MCP tools
+//! Completion demographics — who earns degrees, by race and gender.
 //!
-//! Three tools:
+//! One request, [`CompletionDemographicsRequest`], whose `group_by` picks the shape of the
+//! answer:
 //!
-//! - `get_completion_demographics` — aggregate demographics across a filtered set of institutions
-//!   (no CIP filter by default — pass `cip_prefix="11."` to restrict to CS)
-//! - `get_institution_completions` — completions for a single institution with per-CIP representation ratios
-//! - `get_schools_completion_demographics` — bulk per-institution demographics (batched DB calls)
+//! - `total` — one row per race/gender group, aggregated over every matched institution;
+//! - `school` — one row per institution, ranked by completions;
+//! - `cip` — one row per CIP code at a single institution.
+//!
+//! Each is one catalog query ([`super::catalog`], `completions_*.sql`), one round
+//! trip. The database filters, picks the year, sums, computes each baseline, attaches CIP
+//! titles and ranks; this module turns those sums into percentages and ratios. An
+//! institution is matched only if it has an `institutions` row.
+//!
+//! **CIP 99 is never summed.** IPEDS files a grand-total row under CIP 99 — the sum of every
+//! other CIP at that institution, award level and year — so an "all CIPs" sum that includes
+//! it counts every graduate twice. Each baseline is likewise summed from the detail rows.
 //!
 //! ## Representation ratio
 //!
-//! All tools compute: `(group_cs_completions / total_cs_completions) / (group_all_completions / total_all_completions)`
+//! `(group_completions / total_completions) / (group_baseline / total_baseline)`, where the
+//! baseline is every completion in the same year and award level, across all CIPs and both
+//! majors — pooled over the matched institutions for `total`, each school's own otherwise.
 //!
-//! A ratio of 1.0 means the group is proportionally represented relative to the institution's
-//! overall completion profile. Values <1 indicate underrepresentation, >1 overrepresentation.
+//! A ratio of 1.0 means the group is proportionally represented relative to the
+//! institution's overall completion profile. Values <1 indicate underrepresentation, >1
+//! overrepresentation. The database holds no enrolment data, so this is never a statement
+//! about who enrolled.
 
-use std::collections::HashMap;
+use std::ops::AddAssign;
 use std::sync::Arc;
 
+use super::catalog;
+use super::sql::SqlError;
 use crate::core::database::models::DemographicRepresentation;
-use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::core::json::{error_json, parse_comma_list, parse_json_array, to_json_pretty};
+use crate::core::database::DbClient;
+use crate::core::json::{parse_comma_list, to_json_pretty};
 use serde::{Deserialize, Serialize};
 
-/// Max institutions per `IN(...)` query batch.
-///
-/// Supabase's Cloudflare Worker proxy crashes when a single `PostgREST` response exceeds
-/// a few MB. With all CIP codes stored, 150 R1 schools × many CIP rows can easily hit
-/// that. Batching keeps each response small and independently retrievable.
-const COMPLETIONS_BATCH_SIZE: usize = 40;
+// ============================================================================
+// Request
+// ============================================================================
 
-/// Demographic columns with `unitid` prefix — used when grouping by institution.
-const DEMO_COLS_WITH_UNITID: &str = "unitid,total,total_men,total_women,\
-    nonresident_alien_men,nonresident_alien_women,\
-    hispanic_men,hispanic_women,american_indian_men,american_indian_women,\
-    asian_men,asian_women,black_men,black_women,native_hawaiian_men,native_hawaiian_women,\
-    white_men,white_women,two_or_more_men,two_or_more_women,\
-    unknown_race_men,unknown_race_women";
-
-/// Demographic columns without any key prefix — used when fetching totals for a single unit.
-const DEMO_COLS_NO_KEY: &str = "total,total_men,total_women,\
-    nonresident_alien_men,nonresident_alien_women,\
-    hispanic_men,hispanic_women,american_indian_men,american_indian_women,\
-    asian_men,asian_women,black_men,black_women,native_hawaiian_men,native_hawaiian_women,\
-    white_men,white_women,two_or_more_men,two_or_more_women,\
-    unknown_race_men,unknown_race_women";
-
-/// Fetch the most recent `year` value for the given table + filter set.
-///
-/// Returns `None` if no rows match. Used to default the `year` filter on
-/// completion queries to the latest reporting cycle when callers omit it,
-/// instead of silently aggregating across cycles (which broke per-year
-/// representation ratios).
-async fn fetch_latest_year(
-    client: &Arc<DbClient>,
-    table: &str,
-    filters: &QueryFilters,
-) -> Option<i32> {
-    let result = client
-        .select(table, "year", filters, Some(2_000))
-        .await
-        .ok()?;
-    result
-        .as_array()?
-        .iter()
-        .filter_map(|item| {
-            item.get("year")
-                .and_then(serde_json::Value::as_i64)
-                .and_then(|y| i32::try_from(y).ok())
-        })
-        .max()
+/// What a row of the answer is.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum DemographicsGroupBy {
+    /// One row per race/gender group, aggregated over every matched institution.
+    #[default]
+    Total,
+    /// One row per institution, ranked by completions.
+    School,
+    /// One row per CIP code at a single institution; needs `unitid`.
+    Cip,
 }
 
-/// Resolve the effective `year` for a multi-institution completions query.
-///
-/// Returns `requested` if the caller specified a year; otherwise probes the
-/// COMPLETIONS table for the latest cycle covering the given unitid set +
-/// CIP filter so cross-school responses land on the same reporting cycle.
-async fn resolve_year(
-    client: &Arc<DbClient>,
-    requested: Option<i32>,
-    unitids: &[i32],
-    award_level: Option<i32>,
-    cip_filter: Option<&CipFilter<'_>>,
-) -> Option<i32> {
-    if let Some(y) = requested {
-        return Some(y);
+impl DemographicsGroupBy {
+    /// The value as the caller writes it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Total => "total",
+            Self::School => "school",
+            Self::Cip => "cip",
+        }
     }
-    let probe_filters = apply_cip_filter(
-        QueryFilters::new()
-            .in_list("unitid", unitids)
-            .eq("award_level", award_level),
-        cip_filter,
-        "cip_code",
-    );
-    fetch_latest_year(client, tables::COMPLETIONS, &probe_filters).await
 }
 
-// ============================================================================
-// Request types
-// ============================================================================
-
-/// Request parameters for `get_completion_demographics`
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+/// Completion demographics, at whichever grouping `group_by` names.
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
 pub struct CompletionDemographicsRequest {
-    /// Filter to a single institution by IPEDS Unit ID (overrides institution group filters)
-    #[schemars(description = "IPEDS Unit ID — filter to one institution")]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
-    pub unitid: Option<i32>,
-    /// Carnegie classification code (15=R1, 16=R2, 17=doctoral/professional). Use `get_lookup_codes` for full list.
+    /// Shape of the answer. Defaults to `total`.
     #[schemars(
-        description = "Carnegie classification, 2021 Basic (15=R1, 16=R2, 17=Doctoral/Professional). Use get_lookup_codes(\"carnegie_class\")."
+        description = "Shape of the answer: \"total\" (aggregated over every matched school, default), \"school\" (one row per school, ranked), or \"cip\" (one row per CIP code at one school; needs unitid)"
     )]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
-    pub carnegie_class: Option<i32>,
-    /// Control type: 1=public, 2=private nonprofit, `None`=all
-    #[schemars(description = "Control type: 1=public, 2=private nonprofit, None=all")]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
-    pub control: Option<i32>,
-    /// Two-letter state abbreviation (e.g. `\"MA\"`)
-    #[schemars(description = "Two-letter state abbreviation")]
-    pub state: Option<String>,
-    /// CIP code prefix using dot notation with trailing dot for families (default `\"11.\"` for all CS).
-    /// Examples: `\"11.\"` all CS, `\"11.01.\"` CS General sub-family, `\"30.70\"` Data Science.
-    /// Use `cip_codes` instead when you need exact codes rather than a prefix range.
+    #[serde(default)]
+    pub group_by: Option<DemographicsGroupBy>,
+    /// One institution. Required by `cip`; narrows `total` and `school` to it.
     #[schemars(
-        description = "CIP prefix (dot notation): \"11.\" all CS, \"30.70\" Data Science. Omit for all CIPs."
-    )]
-    pub cip_prefix: Option<String>,
-    /// Comma-separated exact CIP codes (dot notation). Takes priority over `cip_prefix`.
-    /// Use when you need specific codes rather than a whole family, e.g. `\"11.0101,11.0701\"`.
-    #[schemars(
-        description = "Comma-separated exact CIP codes (dot notation), e.g. \"11.0101,11.0701\". Takes priority over cip_prefix."
-    )]
-    pub cip_codes: Option<String>,
-    /// Award level: 5=bachelors, 7=masters, 9=doctoral, `None`=all. Use `get_lookup_codes("award_levels")` for full list.
-    #[schemars(
-        description = "Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all"
-    )]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
-    pub award_level: Option<i32>,
-    /// Academic year (e.g. 2024 for 2023-2024). Defaults to the most recent year if omitted.
-    #[schemars(
-        description = "Academic year (e.g. 2024). Defaults to the most recent year if omitted."
-    )]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
-    pub year: Option<i32>,
-    /// Include representation ratios comparing CS completions to all-major completion totals (default true)
-    #[schemars(
-        description = "Include representation ratios: CS completion% / institution total completion% (default true)"
-    )]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
-    pub include_representation: Option<bool>,
-}
-
-/// Request parameters for `get_institution_completions`
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GetInstitutionCompletionsRequest {
-    /// IPEDS Unit ID of the institution (from `search_institutions`)
-    #[schemars(description = "IPEDS Unit ID of the institution")]
-    pub unitid: i32,
-    /// Academic year (e.g. 2024). Defaults to the most recent year if omitted.
-    #[schemars(
-        description = "Academic year (e.g. 2024). Defaults to the most recent year if omitted."
-    )]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
-    pub year: Option<i32>,
-    /// Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all
-    #[schemars(
-        description = "Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all"
-    )]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
-    pub award_level: Option<i32>,
-    /// CIP code prefix in dot notation with trailing dot for families (e.g. `\"11.\"` for all CS, `\"11.01.\"` for CS General).
-    /// Omit for all CIP codes at this institution. Use `cip_codes` for exact code lists.
-    #[schemars(
-        description = "CIP prefix (\"11.\" all CS, \"11.01.\" sub-family). Omit for all programs."
-    )]
-    pub cip_prefix: Option<String>,
-    /// Comma-separated exact CIP codes (dot notation). Takes priority over `cip_prefix`.
-    /// E.g. `\"11.0101,11.0701\"` for CS General + Computer Science.
-    #[schemars(
-        description = "Comma-separated exact CIP codes, e.g. \"11.0101,11.0701\". Takes priority over cip_prefix."
-    )]
-    pub cip_codes: Option<String>,
-    /// Major number: 1=primary major only (default), 2=second major, None=both
-    #[schemars(description = "Major number: 1=primary (default), 2=second major, None=both")]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
-    pub major_num: Option<i32>,
-    /// Include representation ratios comparing each CIP row to institution-wide totals (default true)
-    #[schemars(
-        description = "Include representation ratios vs. school-wide completion profile (default true)"
-    )]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
-    pub include_representation: Option<bool>,
-}
-
-/// Request parameters for `get_schools_completion_demographics`
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GetSchoolsCompletionDemographicsRequest {
-    // ── Institution filters ──
-    /// IPEDS Unit ID — filter to a single institution. Takes priority over all other institution filters.
-    #[schemars(
-        description = "IPEDS Unit ID — target a single school. Takes priority over carnegie_class, control, state, etc."
+        description = "IPEDS Unit ID. Required for group_by=cip; narrows the others to one school"
     )]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
     pub unitid: Option<i32>,
-    /// Carnegie classification (15=R1, 16=R2, 17=doctoral/professional). Use `get_lookup_codes("carnegie_class")` for full list.
+    /// Carnegie classification code (15=R1, 16=R2, 17=doctoral/professional).
     #[schemars(
-        description = "Carnegie classification, 2021 Basic (15=R1, 16=R2, 17=Doctoral/Professional). Use get_lookup_codes(\"carnegie_class\")."
+        description = "Carnegie classification, 2021 Basic (15=R1, 16=R2, 17=Doctoral/Professional). See get_lookup_codes(\"carnegie_class\")."
     )]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
     pub carnegie_class: Option<i32>,
-    /// Control type: 1=public, 2=private nonprofit, 3=for-profit
-    #[schemars(description = "Control type: 1=public, 2=private nonprofit, 3=for-profit")]
+    /// Control: 1 public, 2 private non-profit, 3 for-profit.
+    #[schemars(description = "Control: 1=public, 2=private nonprofit, 3=for-profit")]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
     pub control: Option<i32>,
-    /// Two-letter state abbreviation
+    /// Two-letter state code.
     #[schemars(description = "Two-letter state abbreviation")]
     pub state: Option<String>,
-    /// Filter to HBCUs only
-    #[schemars(description = "Filter to Historically Black Colleges and Universities")]
+    /// Historically Black colleges and universities only (or, if false, none of them).
+    #[schemars(description = "Only Historically Black Colleges and Universities")]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub hbcu: Option<bool>,
-    /// Filter to Tribal colleges only
-    #[schemars(description = "Filter to Tribal colleges")]
+    /// Tribal colleges only (or, if false, none of them).
+    #[schemars(description = "Only tribal colleges and universities")]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub tribal: Option<bool>,
-    /// Minimum institution size bucket (1=<1000, 2=1000-4999, 3=5000-9999, 4=10000-19999, 5=20000+)
-    #[schemars(
-        description = "Minimum size bucket: 2=\"above 1000 students\", 3=\"above 5000\", etc."
-    )]
+    /// Minimum institution size bucket (1=<1000, 2=1000-4999, 3=5000-9999, …).
+    #[schemars(description = "Minimum size bucket: 2=1000+ students, 3=5000+, 4=10000+, 5=20000+")]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
     pub inst_size_min: Option<i32>,
-
-    // ── Completion filters ──
-    /// CIP code prefix in dot notation (e.g. `\"11.\"` for all CS). Omit for all CIPs.
-    /// Use `cip_codes` for an exact list of codes instead.
+    /// CIP code prefix in dot notation, e.g. `11.` for all computing.
     #[schemars(
-        description = "CIP prefix (\"11.\" all CS, \"30.70\" Data Science). Omit for all programs."
+        description = "CIP prefix (dot notation): \"11.\" all computing, \"11.07\" computer science, \"30.70\" data science. Omit for all CIPs."
     )]
     pub cip_prefix: Option<String>,
-    /// Comma-separated exact CIP codes (dot notation). Takes priority over `cip_prefix`.
-    /// E.g. `\"11.0101,11.0701\"` to query specific programs across all matched schools.
+    /// Exact CIP codes, comma-separated. Takes priority over `cip_prefix`.
     #[schemars(
         description = "Comma-separated exact CIP codes, e.g. \"11.0101,11.0701\". Takes priority over cip_prefix."
     )]
     pub cip_codes: Option<String>,
-    /// Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all
+    /// Award level: 3 associate, 5 bachelor's, 7 master's, 9 doctoral.
     #[schemars(
-        description = "Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral, None=all"
+        description = "Award level: 3=associate, 5=bachelors, 7=masters, 9=doctoral. Omit for all."
     )]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
     pub award_level: Option<i32>,
-    /// Academic year (e.g. 2024). Defaults to the most recent year if omitted.
+    /// Academic year, e.g. 2024. Defaults to the latest year with matching data.
     #[schemars(
-        description = "Academic year (e.g. 2024). Defaults to the most recent year if omitted."
+        description = "Academic year, e.g. 2024. Defaults to the latest year with matching data."
     )]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
     pub year: Option<i32>,
-
-    // ── Output options ──
-    /// Include representation ratios (default true)
+    /// Major number: 1 first major, 2 second major. Omit to count both.
+    #[schemars(description = "Major number: 1=first major, 2=second major. Omit to count both.")]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
+    pub major_num: Option<i32>,
+    /// Include representation ratios (default true).
     #[schemars(
-        description = "Include representation ratios vs. school-wide completions (default true)"
+        description = "Include representation ratios against the whole graduating population — pooled over the matched schools for total, each school's own otherwise (default true)"
     )]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub include_representation: Option<bool>,
-    /// Skip schools with fewer than this many completions in the filtered results (post-aggregation)
-    #[schemars(
-        description = "Skip schools with fewer total completions than this threshold (post-filter)"
-    )]
+    /// `school` only: skip schools with fewer selected completions than this.
+    #[schemars(description = "group_by=school only: skip schools with fewer selected completions")]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i64")]
     pub min_completions: Option<i64>,
-    /// Maximum schools to return (default 50, max 200)
-    #[schemars(description = "Maximum schools to return (default 50, max 200)")]
+    /// `school` only: schools to return (default 50, max 200).
+    #[schemars(description = "group_by=school only: schools to return (default 50, max 200)")]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub limit: Option<usize>,
 }
 
-// ============================================================================
-// CIP code filter
-// ============================================================================
-
-/// How to filter completion rows by CIP code.
-///
-/// - `Prefix` — LIKE pattern, e.g. `"11."` → all CS family codes.
-/// - `Codes` — exact IN list, e.g. `["11.0101", "11.0701"]`.
-///
-/// The two are mutually exclusive; `Codes` takes priority if both are present.
-enum CipFilter<'a> {
-    /// LIKE prefix match — e.g. `"11."` matches all CS family codes.
-    Prefix(&'a str),
-    /// Exact IN list — e.g. `["11.0101", "11.0701"]` for specific programs.
-    Codes(&'a [String]),
+/// A filter not every grouping applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DemoFilter {
+    /// `carnegie_class`.
+    CarnegieClass,
+    /// `control`.
+    Control,
+    /// `state`.
+    State,
+    /// `hbcu`.
+    Hbcu,
+    /// `tribal`.
+    Tribal,
+    /// `inst_size_min`.
+    InstSizeMin,
+    /// `min_completions`.
+    MinCompletions,
+    /// `limit`.
+    Limit,
 }
 
-/// Apply `cip_filter` to `filters` for the given column. No-op when `cip_col` is empty.
-fn apply_cip_filter(
-    filters: QueryFilters,
-    cip_filter: Option<&CipFilter<'_>>,
-    cip_col: &'static str,
-) -> QueryFilters {
-    if cip_col.is_empty() {
-        return filters;
+impl DemoFilter {
+    /// The request field's name.
+    #[must_use]
+    pub const fn field(self) -> &'static str {
+        match self {
+            Self::CarnegieClass => "carnegie_class",
+            Self::Control => "control",
+            Self::State => "state",
+            Self::Hbcu => "hbcu",
+            Self::Tribal => "tribal",
+            Self::InstSizeMin => "inst_size_min",
+            Self::MinCompletions => "min_completions",
+            Self::Limit => "limit",
+        }
     }
-    match cip_filter {
-        Some(CipFilter::Prefix(p)) => filters.starts_with(cip_col, Some(*p)),
-        Some(CipFilter::Codes(codes)) => filters.in_list(cip_col, codes),
-        None => filters,
+}
+
+/// Filters the request sets that its grouping cannot apply, in field order.
+///
+/// Refused rather than ignored: `cip` is one school, so an institution-group filter would
+/// be silently dropped and the answer would look like it honoured it; `total` is one
+/// aggregate, so there is nothing to limit. The one list every surface refuses from.
+#[must_use]
+pub fn inapplicable_filters(req: &CompletionDemographicsRequest) -> Vec<DemoFilter> {
+    let set = [
+        (req.carnegie_class.is_some(), DemoFilter::CarnegieClass),
+        (req.control.is_some(), DemoFilter::Control),
+        (req.state.is_some(), DemoFilter::State),
+        (req.hbcu.is_some(), DemoFilter::Hbcu),
+        (req.tribal.is_some(), DemoFilter::Tribal),
+        (req.inst_size_min.is_some(), DemoFilter::InstSizeMin),
+        (req.min_completions.is_some(), DemoFilter::MinCompletions),
+        (req.limit.is_some(), DemoFilter::Limit),
+    ];
+    let applies = |f: DemoFilter| match req.group_by.unwrap_or_default() {
+        DemographicsGroupBy::School => true,
+        DemographicsGroupBy::Total => !matches!(f, DemoFilter::MinCompletions | DemoFilter::Limit),
+        DemographicsGroupBy::Cip => false,
+    };
+    set.into_iter()
+        .filter(|&(is_set, f)| is_set && !applies(f))
+        .map(|(_, f)| f)
+        .collect()
+}
+
+/// The CIP selection: exact codes when given, else the prefix, else every CIP.
+struct CipSelection<'a> {
+    prefix: Option<&'a str>,
+    codes: Option<Vec<String>>,
+    /// How the filter is shown back to the caller.
+    label: String,
+}
+
+impl<'a> CipSelection<'a> {
+    fn of(req: &'a CompletionDemographicsRequest) -> Self {
+        let codes = req
+            .cip_codes
+            .as_deref()
+            .map(parse_comma_list)
+            .filter(|c| !c.is_empty());
+        let prefix = if codes.is_some() {
+            None
+        } else {
+            req.cip_prefix.as_deref()
+        };
+        let label = match (&codes, prefix) {
+            (Some(c), _) => c.join(","),
+            (None, Some(p)) => p.to_string(),
+            (None, None) => "(all CIPs)".to_string(),
+        };
+        Self {
+            prefix,
+            codes,
+            label,
+        }
     }
 }
 
 // ============================================================================
-// Shared demographic accumulator
+// Counts
 // ============================================================================
 
-/// Aggregated demographic counts — accumulates across multiple rows.
-#[derive(Debug, Default, Clone)]
+/// The 21 demographic columns IPEDS reports, summed.
+///
+/// Field names are the column names, which is what the catalog queries emit — a test
+/// checks each `completions_*.sql` names all of them.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize, Serialize)]
 struct DemographicCounts {
     total: i64,
     total_men: i64,
@@ -341,41 +282,44 @@ struct DemographicCounts {
     unknown_race_women: i64,
 }
 
-/// Accumulate demographic fields from a JSON row into a `DemographicCounts` aggregator.
-fn accumulate(agg: &mut DemographicCounts, item: &serde_json::Value) {
-    macro_rules! add {
-        ($field:ident) => {
-            agg.$field += item
-                .get(stringify!($field))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
-        };
+impl AddAssign<&Self> for DemographicCounts {
+    fn add_assign(&mut self, src: &Self) {
+        macro_rules! add {
+            ($($field:ident),+) => { $( self.$field += src.$field; )+ };
+        }
+        add!(
+            total,
+            total_men,
+            total_women,
+            nonresident_alien_men,
+            nonresident_alien_women,
+            hispanic_men,
+            hispanic_women,
+            american_indian_men,
+            american_indian_women,
+            asian_men,
+            asian_women,
+            black_men,
+            black_women,
+            native_hawaiian_men,
+            native_hawaiian_women,
+            white_men,
+            white_women,
+            two_or_more_men,
+            two_or_more_women,
+            unknown_race_men,
+            unknown_race_women
+        );
     }
-    add!(total);
-    add!(total_men);
-    add!(total_women);
-    add!(nonresident_alien_men);
-    add!(nonresident_alien_women);
-    add!(hispanic_men);
-    add!(hispanic_women);
-    add!(american_indian_men);
-    add!(american_indian_women);
-    add!(asian_men);
-    add!(asian_women);
-    add!(black_men);
-    add!(black_women);
-    add!(native_hawaiian_men);
-    add!(native_hawaiian_women);
-    add!(white_men);
-    add!(white_women);
-    add!(two_or_more_men);
-    add!(two_or_more_women);
-    add!(unknown_race_men);
-    add!(unknown_race_women);
+}
+
+/// A baseline worth dividing by: one with any completions in it.
+fn usable(baseline: Option<DemographicCounts>) -> Option<DemographicCounts> {
+    baseline.filter(|b| b.total > 0)
 }
 
 // ============================================================================
-// Shared response types
+// Response types
 // ============================================================================
 
 /// Gender breakdown within a single racial/ethnic group.
@@ -395,13 +339,12 @@ pub struct CrossTabRow {
     /// % of this race group that are women — gender parity within race
     /// (e.g. 38.0 means 38 % of Hispanic CS graduates are women)
     pub women_pct_within_group: f64,
-    /// Women of this race as % of **all** CS completions
+    /// Women of this race as % of **all** selected completions
     pub women_pct_of_total: f64,
-    /// Men of this race as % of **all** CS completions
+    /// Men of this race as % of **all** selected completions
     pub men_pct_of_total: f64,
-    /// Representation ratio for women: `(women_of_race / total_cs) / (women_of_race_inst / total_inst)`.
-    /// 1.0 = proportional. <1 = underrepresented relative to institution baseline. `None` if no
-    /// institution totals are available.
+    /// Representation ratio for women: `(women_of_race / total) / (women_of_race_baseline /
+    /// total_baseline)`. 1.0 = proportional. `None` without a baseline.
     pub women_representation_ratio: Option<f64>,
     /// Representation ratio for men (same formula as women).
     pub men_representation_ratio: Option<f64>,
@@ -409,6 +352,7 @@ pub struct CrossTabRow {
 
 #[derive(Debug, Serialize)]
 struct DemographicsResponse {
+    group_by: &'static str,
     filters: FilterSummary,
     institutions_matched: usize,
     total_completions: i64,
@@ -424,154 +368,18 @@ struct FilterSummary {
     carnegie_class: Option<i32>,
     control: Option<i32>,
     state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hbcu: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tribal: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inst_size_min: Option<i32>,
     cip_prefix: String,
     award_level: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    major_num: Option<i32>,
     year: Option<i32>,
 }
-
-// ============================================================================
-// get_completion_demographics
-// ============================================================================
-
-/// Execute `get_completion_demographics` and return JSON.
-pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsRequest) -> String {
-    // Build CIP filter. Exact codes take priority over prefix.
-    // When neither is supplied the filter is None → all CIPs are returned.
-    // Callers who want only CS must pass cip_prefix="11." explicitly.
-    let cip_codes_vec: Vec<String> = req
-        .cip_codes
-        .as_deref()
-        .map(parse_comma_list)
-        .unwrap_or_default();
-    let cip_filter: Option<CipFilter<'_>> = if cip_codes_vec.is_empty() {
-        req.cip_prefix.as_deref().map(CipFilter::Prefix)
-    } else {
-        Some(CipFilter::Codes(&cip_codes_vec))
-    };
-    let cip_label = match &cip_filter {
-        Some(CipFilter::Codes(c)) => c.join(","),
-        Some(CipFilter::Prefix(p)) => (*p).to_string(),
-        None => "(all CIPs)".to_string(),
-    };
-
-    let include_representation = req.include_representation.unwrap_or(true);
-
-    let institution_unitids = match get_matching_unitids(client, &req).await {
-        Ok(ids) => ids,
-        Err(e) => return error_json(e),
-    };
-
-    if institution_unitids.is_empty() {
-        return serde_json::json!({
-            "error": "No institutions found matching the given filters",
-            "suggestion": "Try broadening institution filters (carnegie_class, control, state, unitid)"
-        })
-        .to_string();
-    }
-
-    // Resolve `year`: explicit value wins; otherwise pick the latest available
-    // across the matched institution set (one query, scoped by unitid + cip).
-    let effective_year = resolve_year(
-        client,
-        req.year,
-        &institution_unitids,
-        req.award_level,
-        cip_filter.as_ref(),
-    )
-    .await;
-
-    // Use DB-side in_list batching (same as execute_schools_json) so the unitid
-    // filter is pushed to the DB instead of applied in Rust after a 50K-row fetch.
-    // The Rust-side approach silently dropped data beyond the row limit.
-    let completions_by_uid = fetch_demo_by_unitid_batched(
-        client,
-        &institution_unitids,
-        cip_filter.as_ref(),
-        req.award_level,
-        effective_year,
-    )
-    .await;
-
-    let completions = aggregate_demo_map(&completions_by_uid);
-
-    if completions.total == 0 {
-        return serde_json::json!({
-            "total_rows": 0,
-            "note": "No completion records found for the given filters",
-            "institutions_checked": institution_unitids.len(),
-            "cip_filter": cip_label,
-            "year": effective_year,
-        })
-        .to_string();
-    }
-
-    let enrollment = if include_representation {
-        let totals_by_uid = fetch_totals_by_unitid(
-            client,
-            &institution_unitids,
-            req.award_level,
-            effective_year,
-        )
-        .await;
-        let agg = aggregate_demo_map(&totals_by_uid);
-        (agg.total > 0).then_some(agg)
-    } else {
-        None
-    };
-
-    to_json_pretty(&DemographicsResponse {
-        filters: FilterSummary {
-            unitid: req.unitid,
-            carnegie_class: req.carnegie_class,
-            control: req.control,
-            state: req.state,
-            cip_prefix: cip_label,
-            award_level: req.award_level,
-            year: effective_year,
-        },
-        institutions_matched: institution_unitids.len(),
-        total_completions: completions.total,
-        demographics: build_demographics(&completions, enrollment.as_ref()),
-        cross_tab: build_cross_tab(&completions, enrollment.as_ref()),
-    })
-}
-
-async fn get_matching_unitids(
-    client: &Arc<DbClient>,
-    req: &CompletionDemographicsRequest,
-) -> Result<Vec<i32>, String> {
-    // Single-institution shortcut
-    if let Some(uid) = req.unitid {
-        return Ok(vec![uid]);
-    }
-
-    let filters = QueryFilters::new()
-        .eq("carnegie_class", req.carnegie_class)
-        .eq("control", req.control)
-        .eq("state", req.state.as_deref());
-
-    let result = client
-        .select(tables::INSTITUTIONS, "unitid", &filters, Some(5000))
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(result
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|item| {
-                    item.get("unitid")
-                        .and_then(serde_json::Value::as_i64)
-                        .and_then(|v| i32::try_from(v).ok())
-                })
-                .collect()
-        })
-        .unwrap_or_default())
-}
-
-// ============================================================================
-// get_institution_completions
-// ============================================================================
 
 #[derive(Debug, Serialize)]
 struct RowDemographic {
@@ -596,302 +404,17 @@ struct CompletionRow {
 
 #[derive(Debug, Serialize)]
 struct InstitutionCompletionsResponse {
+    group_by: &'static str,
     unitid: i32,
     name: Option<String>,
     year: Option<i32>,
     award_level: Option<i32>,
-    cip_prefix: Option<String>,
+    cip_prefix: String,
     total_rows: usize,
     note: &'static str,
     rows: Vec<CompletionRow>,
     /// Race × gender cross-tabulation aggregated across all selected CIP codes.
     cross_tab: Vec<CrossTabRow>,
-}
-
-/// Execute `get_institution_completions` and return JSON.
-pub async fn execute_institution_json(
-    client: &Arc<DbClient>,
-    req: GetInstitutionCompletionsRequest,
-) -> String {
-    let include_representation = req.include_representation.unwrap_or(true);
-
-    let inst_name = fetch_institution_name(client, req.unitid).await;
-
-    let cip_codes_vec: Vec<String> = req
-        .cip_codes
-        .as_deref()
-        .map(parse_comma_list)
-        .unwrap_or_default();
-    let cip_filter: Option<CipFilter<'_>> = if cip_codes_vec.is_empty() {
-        req.cip_prefix.as_deref().map(CipFilter::Prefix)
-    } else {
-        Some(CipFilter::Codes(&cip_codes_vec))
-    };
-
-    // Build base filters without `year` so we can resolve the latest cycle if
-    // the caller omitted it.
-    let base_filters = apply_cip_filter(
-        QueryFilters::new()
-            .eq("unitid", Some(req.unitid))
-            .eq("award_level", req.award_level)
-            .eq("major_num", req.major_num),
-        cip_filter.as_ref(),
-        "cip_code",
-    );
-
-    // Resolve `year`: explicit value wins; otherwise pick the latest available.
-    let effective_year = if let Some(y) = req.year {
-        Some(y)
-    } else {
-        fetch_latest_year(client, tables::COMPLETIONS, &base_filters).await
-    };
-
-    let comp_filters = base_filters.eq("year", effective_year);
-
-    let comp_result = match client
-        .select(
-            tables::COMPLETIONS,
-            &format!("year,cip_code,award_level,major_num,{DEMO_COLS_NO_KEY}"),
-            &comp_filters,
-            Some(2000),
-        )
-        .await
-    {
-        Ok(v) => v,
-        Err(e) => return error_json(e),
-    };
-
-    let rows_raw = comp_result.as_array().cloned().unwrap_or_default();
-    if rows_raw.is_empty() {
-        // Probe the institution at the same year/award_level WITHOUT the CIP filter
-        // so the caller sees which CIPs the school actually files completions under.
-        // This collapses the common "wrong CIP code" round-trip from 3+ calls to 1.
-        let nearby = fetch_nearby_cips_for_institution(
-            client,
-            req.unitid,
-            effective_year,
-            req.award_level,
-            req.major_num,
-            cip_filter.as_ref(),
-        )
-        .await;
-        return serde_json::json!({
-            "unitid": req.unitid,
-            "name": inst_name,
-            "year": effective_year,
-            "award_level": req.award_level,
-            "cip_prefix": req.cip_prefix,
-            "total_rows": 0,
-            "note": "No completion records found for the given filters",
-            "nearby_cips_with_data": nearby,
-        })
-        .to_string();
-    }
-
-    let cip_codes: Vec<String> = rows_raw
-        .iter()
-        .filter_map(|item| {
-            item.get("cip_code")
-                .and_then(serde_json::Value::as_str)
-                .map(String::from)
-        })
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    let cip_titles = fetch_cip_titles(client, &cip_codes).await;
-
-    let school_totals = if include_representation {
-        fetch_school_totals_for(client, req.unitid, req.award_level, effective_year).await
-    } else {
-        None
-    };
-
-    let rows: Vec<CompletionRow> = rows_raw
-        .iter()
-        .map(|item| build_completion_row(item, &cip_titles, school_totals.as_ref()))
-        .collect();
-
-    let total_rows = rows.len();
-
-    // Aggregate all selected CIP rows into one DemographicCounts for the cross-tab
-    let mut agg = DemographicCounts::default();
-    for item in &rows_raw {
-        accumulate(&mut agg, item);
-    }
-    let cross_tab = build_cross_tab(&agg, school_totals.as_ref());
-
-    to_json_pretty(&InstitutionCompletionsResponse {
-        unitid: req.unitid,
-        name: inst_name,
-        year: effective_year,
-        award_level: req.award_level,
-        cip_prefix: req.cip_prefix,
-        total_rows,
-        note: "school_pct and representation_ratio compare this CIP row to institution-wide completion totals",
-        rows,
-        cross_tab,
-    })
-}
-
-/// Build a single `CompletionRow` from a raw JSON completion record.
-fn build_completion_row(
-    item: &serde_json::Value,
-    cip_titles: &HashMap<String, String>,
-    school_totals: Option<&DemographicCounts>,
-) -> CompletionRow {
-    let year = item
-        .get("year")
-        .and_then(serde_json::Value::as_i64)
-        .and_then(|v| i32::try_from(v).ok());
-    let cip_code = item
-        .get("cip_code")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    let cip_title = cip_titles.get(&cip_code).cloned();
-    let award_level = item
-        .get("award_level")
-        .and_then(serde_json::Value::as_i64)
-        .and_then(|v| i32::try_from(v).ok());
-    let major_num = item
-        .get("major_num")
-        .and_then(serde_json::Value::as_i64)
-        .and_then(|v| i32::try_from(v).ok());
-    let total = item
-        .get("total")
-        .and_then(serde_json::Value::as_i64)
-        .unwrap_or(0);
-
-    CompletionRow {
-        year,
-        cip_code,
-        cip_title,
-        award_level,
-        major_num,
-        total,
-        demographics: build_row_demographics(item, total, school_totals),
-    }
-}
-
-/// Build per-row demographic breakdown comparing this row to school totals.
-fn build_row_demographics(
-    item: &serde_json::Value,
-    row_total: i64,
-    school: Option<&DemographicCounts>,
-) -> Vec<RowDemographic> {
-    let school_total = school.map(|s| s.total);
-
-    // Single-field gender group (total_women or total_men — not a men+women pair)
-    macro_rules! gender_group {
-        ($label:expr, $field:ident, $sf:ident) => {{
-            let count = item
-                .get(stringify!($field))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
-            let cip_pct = pct(count, row_total);
-            let school_pct = school.map(|s| pct(s.$sf, school_total.unwrap_or(0)));
-            RowDemographic {
-                group: $label.to_string(),
-                count,
-                cip_pct,
-                school_pct,
-                representation_ratio: school_pct.and_then(|sp| representation_ratio(cip_pct, sp)),
-            }
-        }};
-    }
-
-    // Race+ethnicity groups (men + women summed)
-    macro_rules! demo_group {
-        ($label:expr, $men:ident, $women:ident, $sm:ident, $sw:ident) => {{
-            let count = item
-                .get(stringify!($men))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0)
-                + item
-                    .get(stringify!($women))
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0);
-            let cip_pct = pct(count, row_total);
-            let school_pct = school.map(|s| pct(s.$sm + s.$sw, school_total.unwrap_or(0)));
-            RowDemographic {
-                group: $label.to_string(),
-                count,
-                cip_pct,
-                school_pct,
-                representation_ratio: school_pct.and_then(|sp| representation_ratio(cip_pct, sp)),
-            }
-        }};
-    }
-
-    vec![
-        gender_group!("Women", total_women, total_women),
-        gender_group!("Men", total_men, total_men),
-        demo_group!(
-            "Hispanic/Latino",
-            hispanic_men,
-            hispanic_women,
-            hispanic_men,
-            hispanic_women
-        ),
-        demo_group!(
-            "Black or African American",
-            black_men,
-            black_women,
-            black_men,
-            black_women
-        ),
-        demo_group!("Asian", asian_men, asian_women, asian_men, asian_women),
-        demo_group!("White", white_men, white_women, white_men, white_women),
-        demo_group!(
-            "American Indian/Alaska Native",
-            american_indian_men,
-            american_indian_women,
-            american_indian_men,
-            american_indian_women
-        ),
-        demo_group!(
-            "Native Hawaiian/Pacific Islander",
-            native_hawaiian_men,
-            native_hawaiian_women,
-            native_hawaiian_men,
-            native_hawaiian_women
-        ),
-        demo_group!(
-            "Two or More Races",
-            two_or_more_men,
-            two_or_more_women,
-            two_or_more_men,
-            two_or_more_women
-        ),
-        demo_group!(
-            "Nonresident Alien",
-            nonresident_alien_men,
-            nonresident_alien_women,
-            nonresident_alien_men,
-            nonresident_alien_women
-        ),
-        demo_group!(
-            "Unknown Race/Ethnicity",
-            unknown_race_men,
-            unknown_race_women,
-            unknown_race_men,
-            unknown_race_women
-        ),
-    ]
-}
-
-// ============================================================================
-// get_schools_completion_demographics
-// ============================================================================
-
-#[derive(Debug, Serialize, Deserialize)]
-struct InstitutionMeta {
-    unitid: i32,
-    name: String,
-    city: Option<String>,
-    state: Option<String>,
-    carnegie_class: Option<i32>,
-    inst_size: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -904,461 +427,461 @@ struct SchoolDemographicsResult {
     year: Option<i32>,
     total_completions: i64,
     demographics: Vec<DemographicRepresentation>,
-    /// Race × gender cross-tabulation for this school's CS completions.
+    /// Race × gender cross-tabulation for this school's selected completions.
     cross_tab: Vec<CrossTabRow>,
 }
 
-/// Execute `get_schools_completion_demographics` and return JSON.
-///
-/// Uses the universal 3-call join pattern:
-/// 1. Resolve institution filters → list of unitids
-/// 2. Fetch completions `WHERE unitid IN (...)`
-/// 3. Fetch `institution_completion_totals` `WHERE unitid IN (...)`
-/// 4. Aggregate and compute representation ratios in Rust
-pub async fn execute_schools_json(
-    client: &Arc<DbClient>,
-    req: GetSchoolsCompletionDemographicsRequest,
-) -> String {
-    let limit = req.limit.unwrap_or(50).min(200);
-    let include_representation = req.include_representation.unwrap_or(true);
-
-    // Build CIP filter: exact codes take priority over prefix
-    let cip_codes_vec: Vec<String> = req
-        .cip_codes
-        .as_deref()
-        .map(parse_comma_list)
-        .unwrap_or_default();
-    let cip_filter: Option<CipFilter<'_>> = if cip_codes_vec.is_empty() {
-        req.cip_prefix.as_deref().map(CipFilter::Prefix)
-    } else {
-        Some(CipFilter::Codes(&cip_codes_vec))
-    };
-    let cip_label = match &cip_filter {
-        Some(CipFilter::Codes(c)) => c.join(","),
-        Some(CipFilter::Prefix(p)) => (*p).to_string(),
-        None => "(all CIPs)".to_string(),
-    };
-
-    // Step 1: resolve institution filters — unitid shortcut bypasses group filters
-    let inst_filters = QueryFilters::new()
-        .eq("unitid", req.unitid)
-        .eq("carnegie_class", req.carnegie_class)
-        .eq("control", req.control)
-        .eq("state", req.state.as_deref())
-        .eq("hbcu", req.hbcu)
-        .eq("tribal", req.tribal)
-        .gte("inst_size", req.inst_size_min);
-
-    let inst_result = match client
-        .select(
-            tables::INSTITUTIONS,
-            "unitid,name,city,state,carnegie_class,inst_size",
-            &inst_filters,
-            Some(500),
-        )
-        .await
-    {
-        Ok(v) => v,
-        Err(e) => return error_json(e),
-    };
-
-    let institutions: Vec<InstitutionMeta> = parse_json_array(&inst_result);
-
-    if institutions.is_empty() {
-        let suggestion = if req.unitid.is_some() {
-            "Check that the unitid is correct (use search_institutions to find it)"
-        } else {
-            "Try broadening carnegie_class, control, state, or inst_size_min filters"
-        };
-        return serde_json::json!({
-            "error": "No institutions matched the given filters",
-            "suggestion": suggestion
-        })
-        .to_string();
-    }
-
-    let unitids: Vec<i32> = institutions.iter().map(|i| i.unitid).collect();
-
-    // Resolve `year`: explicit value wins; otherwise pick the latest available
-    // across the matched institution set so multi-school comparisons land on
-    // the same reporting cycle instead of silently merging four cycles.
-    let effective_year = resolve_year(
-        client,
-        req.year,
-        &unitids,
-        req.award_level,
-        cip_filter.as_ref(),
-    )
-    .await;
-
-    // Step 2: fetch completions in batches to avoid Cloudflare Worker size limits.
-    // All CIP codes are stored, so unfiltered queries for 150 institutions can
-    // return 50K+ rows — a single large response crashes the Supabase proxy.
-    let completions_by_uid = fetch_demo_by_unitid_batched(
-        client,
-        &unitids,
-        cip_filter.as_ref(),
-        req.award_level,
-        effective_year,
-    )
-    .await;
-
-    // Step 3: fetch totals for representation denominators
-    let totals_by_uid = if include_representation {
-        fetch_totals_by_unitid(client, &unitids, req.award_level, effective_year).await
-    } else {
-        HashMap::new()
-    };
-
-    // Step 4: build per-institution output
-    let mut results = build_school_results(
-        &institutions,
-        &completions_by_uid,
-        &totals_by_uid,
-        effective_year,
-        req.min_completions,
-    );
-
-    results.sort_by_key(|r| std::cmp::Reverse(r.total_completions));
-    results.truncate(limit);
-
-    to_json_pretty(&serde_json::json!({
-        "count": results.len(),
-        "filters": {
-            "carnegie_class": req.carnegie_class,
-            "control": req.control,
-            "state": req.state,
-            "inst_size_min": req.inst_size_min,
-            "cip_filter": cip_label,
-            "award_level": req.award_level,
-            "year": effective_year,
-        },
-        "schools": results
-    }))
-}
-
-/// Fetch institution completion totals for a list of unitids (representation denominators).
-///
-/// Batched to stay within Cloudflare Worker response size limits.
-async fn fetch_totals_by_unitid(
-    client: &Arc<DbClient>,
-    unitids: &[i32],
-    award_level: Option<i32>,
-    year: Option<i32>,
-) -> HashMap<i32, DemographicCounts> {
-    let mut result: HashMap<i32, DemographicCounts> = HashMap::new();
-    for chunk in unitids.chunks(COMPLETIONS_BATCH_SIZE) {
-        let filters = QueryFilters::new()
-            .in_list("unitid", chunk)
-            .eq("award_level", award_level)
-            .eq("year", year);
-        if let Ok(v) = client
-            .select(
-                tables::INSTITUTION_COMPLETION_TOTALS,
-                DEMO_COLS_WITH_UNITID,
-                &filters,
-                Some(5_000),
-            )
-            .await
-        {
-            for (uid, counts) in aggregate_by_unitid(v.as_array()) {
-                merge_counts(result.entry(uid).or_default(), &counts);
-            }
-        }
-    }
-    result
-}
-
-/// Fetch and aggregate completions for a list of unitids, batching queries to avoid
-/// large `PostgREST` responses that crash the Cloudflare Worker proxy.
-async fn fetch_demo_by_unitid_batched(
-    client: &Arc<DbClient>,
-    unitids: &[i32],
-    cip_filter: Option<&CipFilter<'_>>,
-    award_level: Option<i32>,
-    year: Option<i32>,
-) -> HashMap<i32, DemographicCounts> {
-    let mut result: HashMap<i32, DemographicCounts> = HashMap::new();
-    for chunk in unitids.chunks(COMPLETIONS_BATCH_SIZE) {
-        let filters = apply_cip_filter(
-            QueryFilters::new()
-                .in_list("unitid", chunk)
-                .eq("award_level", award_level)
-                .eq("year", year),
-            cip_filter,
-            "cip_code",
-        );
-        if let Ok(v) = client
-            .select(
-                tables::COMPLETIONS,
-                DEMO_COLS_WITH_UNITID,
-                &filters,
-                Some(5_000),
-            )
-            .await
-        {
-            for (uid, counts) in aggregate_by_unitid(v.as_array()) {
-                merge_counts(result.entry(uid).or_default(), &counts);
-            }
-        }
-    }
-    result
-}
-
-/// Merge `src` demographic counts into `dst` (cross-batch accumulation).
-// Not const: takes a mutable reference, which is incompatible with const context.
-#[allow(clippy::missing_const_for_fn)]
-fn merge_counts(dst: &mut DemographicCounts, src: &DemographicCounts) {
-    macro_rules! add {
-        ($field:ident) => {
-            dst.$field += src.$field;
-        };
-    }
-    add!(total);
-    add!(total_men);
-    add!(total_women);
-    add!(nonresident_alien_men);
-    add!(nonresident_alien_women);
-    add!(hispanic_men);
-    add!(hispanic_women);
-    add!(american_indian_men);
-    add!(american_indian_women);
-    add!(asian_men);
-    add!(asian_women);
-    add!(black_men);
-    add!(black_women);
-    add!(native_hawaiian_men);
-    add!(native_hawaiian_women);
-    add!(white_men);
-    add!(white_women);
-    add!(two_or_more_men);
-    add!(two_or_more_women);
-    add!(unknown_race_men);
-    add!(unknown_race_women);
-}
-
-/// Build per-institution result rows, filtering by `min_completions`.
-fn build_school_results(
-    institutions: &[InstitutionMeta],
-    completions_by_uid: &HashMap<i32, DemographicCounts>,
-    totals_by_uid: &HashMap<i32, DemographicCounts>,
-    year: Option<i32>,
-    min_completions: Option<i64>,
-) -> Vec<SchoolDemographicsResult> {
-    institutions
-        .iter()
-        .filter_map(|inst| {
-            let comp = completions_by_uid
-                .get(&inst.unitid)
-                .cloned()
-                .unwrap_or_default();
-            if comp.total == 0 || min_completions.is_some_and(|min| comp.total < min) {
-                return None;
-            }
-            let inst_totals = totals_by_uid.get(&inst.unitid);
-            Some(SchoolDemographicsResult {
-                unitid: inst.unitid,
-                name: inst.name.clone(),
-                city: inst.city.clone(),
-                state: inst.state.clone(),
-                carnegie_class: inst.carnegie_class,
-                year,
-                total_completions: comp.total,
-                demographics: build_demographics(&comp, inst_totals),
-                cross_tab: build_cross_tab(&comp, inst_totals),
-            })
-        })
-        .collect()
-}
-
-/// Aggregate a JSON array into a `HashMap<unitid, DemographicCounts>`.
-fn aggregate_by_unitid(arr: Option<&Vec<serde_json::Value>>) -> HashMap<i32, DemographicCounts> {
-    let mut map: HashMap<i32, DemographicCounts> = HashMap::new();
-    if let Some(rows) = arr {
-        for item in rows {
-            let uid = item
-                .get("unitid")
-                .and_then(serde_json::Value::as_i64)
-                .and_then(|v| i32::try_from(v).ok());
-            if let Some(uid) = uid {
-                accumulate(map.entry(uid).or_default(), item);
-            }
-        }
-    }
-    map
-}
-
-/// Aggregate all per-institution counts in a `HashMap` into a single `DemographicCounts`.
-fn aggregate_demo_map(map: &HashMap<i32, DemographicCounts>) -> DemographicCounts {
-    let mut agg = DemographicCounts::default();
-    for counts in map.values() {
-        merge_counts(&mut agg, counts);
-    }
-    agg
-}
-
-// ============================================================================
-// Shared helpers
-// ============================================================================
-
-/// Fetch the name of an institution by unitid. Returns `None` if not found.
-async fn fetch_institution_name(client: &Arc<DbClient>, unitid: i32) -> Option<String> {
-    let filters = QueryFilters::new().eq("unitid", Some(unitid));
-    let result = client
-        .select(tables::INSTITUTIONS, "name", &filters, Some(1))
-        .await
-        .ok()?;
-    result
-        .as_array()?
-        .first()?
-        .get("name")?
-        .as_str()
-        .map(String::from)
-}
-
-/// Fetch school-wide completion totals for representation ratio denominators.
-///
-/// Returns `None` if no matching totals exist or the query fails.
-async fn fetch_school_totals_for(
-    client: &Arc<DbClient>,
-    unitid: i32,
-    award_level: Option<i32>,
-    year: Option<i32>,
-) -> Option<DemographicCounts> {
-    let filters = QueryFilters::new()
-        .eq("unitid", Some(unitid))
-        .eq("award_level", award_level)
-        .eq("year", year);
-    client
-        .select(
-            tables::INSTITUTION_COMPLETION_TOTALS,
-            DEMO_COLS_NO_KEY,
-            &filters,
-            Some(50),
-        )
-        .await
-        .ok()
-        .and_then(|v| {
-            let mut totals = DemographicCounts::default();
-            if let Some(arr) = v.as_array() {
-                for item in arr {
-                    accumulate(&mut totals, item);
-                }
-            }
-            (totals.total > 0).then_some(totals)
-        })
-}
-
-/// Suggested CIP code at an institution that has completion data, used when
-/// the caller's CIP filter returned zero rows.
-#[derive(Debug, Serialize)]
+/// A CIP with completions at the school, suggested when the caller's filter matched none.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 struct NearbyCip {
     cip_code: String,
     cip_title: Option<String>,
     total_completions: i64,
 }
 
-/// Fetch CIPs that DO have completion data at this institution + year, sorted
-/// by total completions desc. Used to suggest alternatives when the caller's
-/// CIP filter returned zero rows (the most common IPEDS user error: wrong CIP
-/// code for the program — e.g. asking for 11.0701 when the school files BSCS
-/// under 11.0101).
-///
-/// `excluded` is the filter that already returned zero — we drop matches so
-/// suggestions don't echo back the empty input. Returns up to 10 entries.
-async fn fetch_nearby_cips_for_institution(
-    client: &Arc<DbClient>,
-    unitid: i32,
-    year: Option<i32>,
+// ============================================================================
+// Query params and envelopes — what the catalog queries read and return
+// ============================================================================
+
+/// What `completions_total.sql` reads from `$1`. Every key is always sent.
+#[derive(Debug, Default, Serialize)]
+struct TotalParams<'a> {
+    unitid: Option<i32>,
+    carnegie_class: Option<i32>,
+    control: Option<i32>,
+    state: Option<&'a str>,
+    hbcu: Option<bool>,
+    tribal: Option<bool>,
+    inst_size_min: Option<i32>,
+    cip_prefix: Option<&'a str>,
+    cip_codes: Option<&'a [String]>,
     award_level: Option<i32>,
     major_num: Option<i32>,
-    excluded: Option<&CipFilter<'_>>,
-) -> Vec<NearbyCip> {
-    let filters = QueryFilters::new()
-        .eq("unitid", Some(unitid))
-        .eq("year", year)
-        .eq("award_level", award_level)
-        .eq("major_num", major_num);
+    year: Option<i32>,
+    with_baseline: bool,
+}
 
-    let Ok(result) = client
-        .select(tables::COMPLETIONS, "cip_code,total", &filters, Some(2_000))
-        .await
-    else {
-        return Vec::new();
-    };
-
-    let mut totals: HashMap<String, i64> = HashMap::new();
-    if let Some(arr) = result.as_array() {
-        for item in arr {
-            let Some(code) = item.get("cip_code").and_then(serde_json::Value::as_str) else {
-                continue;
-            };
-            if cip_matches_excluded(code, excluded) {
-                continue;
-            }
-            let total = item
-                .get("total")
-                .and_then(serde_json::Value::as_i64)
-                .unwrap_or(0);
-            *totals.entry(code.to_string()).or_insert(0) += total;
+impl<'a> TotalParams<'a> {
+    fn of(req: &'a CompletionDemographicsRequest, cip: &'a CipSelection<'a>) -> Self {
+        Self {
+            unitid: req.unitid,
+            carnegie_class: req.carnegie_class,
+            control: req.control,
+            state: req.state.as_deref(),
+            hbcu: req.hbcu,
+            tribal: req.tribal,
+            inst_size_min: req.inst_size_min,
+            cip_prefix: cip.prefix,
+            cip_codes: cip.codes.as_deref(),
+            award_level: req.award_level,
+            major_num: req.major_num,
+            year: req.year,
+            with_baseline: req.include_representation.unwrap_or(true),
         }
     }
+}
 
-    let mut entries: Vec<(String, i64)> = totals.into_iter().filter(|(_, t)| *t > 0).collect();
-    entries.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    entries.truncate(10);
+/// What `completions_by_school.sql` reads: the total's keys plus ranking and limit.
+#[derive(Debug, Default, Serialize)]
+struct SchoolParams<'a> {
+    #[serde(flatten)]
+    common: TotalParams<'a>,
+    min_completions: Option<i64>,
+    limit: usize,
+}
 
-    let codes: Vec<String> = entries.iter().map(|(c, _)| c.clone()).collect();
-    let titles = fetch_cip_titles(client, &codes).await;
+/// What `completions_by_cip.sql` reads from `$1`.
+#[derive(Debug, Default, Serialize)]
+struct CipParams<'a> {
+    unitid: i32,
+    cip_prefix: Option<&'a str>,
+    cip_codes: Option<&'a [String]>,
+    award_level: Option<i32>,
+    major_num: Option<i32>,
+    year: Option<i32>,
+    with_baseline: bool,
+}
 
-    entries
+/// Schools a `school` answer lists when the request does not say.
+const DEFAULT_SCHOOL_LIMIT: usize = 50;
+
+/// The most schools a `school` answer lists. `completions_by_school.sql` applies the same
+/// bounds, which a test checks.
+const MAX_SCHOOL_LIMIT: usize = 200;
+
+/// `min_completions` as the query can read it: `::int`, so clamped — beyond `i32::MAX` no
+/// school qualifies anyway, and an unclamped value would fail the cast (SQLSTATE 22003).
+fn min_completions_param(requested: i64) -> i64 {
+    requested.clamp(0, i64::from(i32::MAX))
+}
+
+/// Schools a `school` answer lists: the request's own limit, or the default, at most the cap.
+fn school_limit(req: &CompletionDemographicsRequest) -> usize {
+    req.limit
+        .unwrap_or(DEFAULT_SCHOOL_LIMIT)
+        .min(MAX_SCHOOL_LIMIT)
+}
+
+#[derive(Debug, Deserialize)]
+struct TotalEnvelope {
+    year: Option<i32>,
+    institutions_matched: usize,
+    counts: DemographicCounts,
+    baseline: Option<DemographicCounts>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SchoolsEnvelope {
+    year: Option<i32>,
+    institutions_matched: usize,
+    schools: Vec<SchoolRow>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SchoolRow {
+    unitid: i32,
+    name: String,
+    city: Option<String>,
+    state: Option<String>,
+    carnegie_class: Option<i32>,
+    counts: DemographicCounts,
+    baseline: Option<DemographicCounts>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CipEnvelope {
+    unitid: i32,
+    name: Option<String>,
+    year: Option<i32>,
+    rows: Vec<CipRow>,
+    baseline: Option<DemographicCounts>,
+    nearby_year: Option<i32>,
+    nearby_cips_with_data: Option<Vec<NearbyCip>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CipRow {
+    year: Option<i32>,
+    cip_code: String,
+    cip_title: Option<String>,
+    award_level: Option<i32>,
+    major_num: Option<i32>,
+    #[serde(flatten)]
+    counts: DemographicCounts,
+}
+
+// ============================================================================
+// Entry points
+// ============================================================================
+
+/// The answer, whatever its grouping: a response, or a payload saying why there is none.
+///
+/// Opaque, and serialised field by field in the order the response structs declare —
+/// going through a `serde_json::Value` would sort the keys alphabetically.
+#[derive(Debug, Serialize)]
+#[serde(transparent)]
+pub struct Demographics(Answer);
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum Answer {
+    Total(DemographicsResponse),
+    Cip(InstitutionCompletionsResponse),
+    /// The schools answer, and every no-result payload.
+    Json(serde_json::Value),
+}
+
+/// Answer `req` at its grouping, as JSON.
+///
+/// A result with nothing in it — no institution matched, no completions for the filters —
+/// is an `Ok` payload with an `error` or `note` saying so.
+/// Callers are expected to have refused [`inapplicable_filters`] already; [`execute_json`]
+/// does.
+///
+/// # Errors
+/// [`SqlError`] when the query does not run or its answer does not decode.
+pub async fn execute(
+    client: &DbClient,
+    req: &CompletionDemographicsRequest,
+) -> Result<Demographics, SqlError> {
+    let cip = CipSelection::of(req);
+    match req.group_by.unwrap_or_default() {
+        DemographicsGroupBy::Total => {
+            let params = TotalParams::of(req, &cip);
+            let env = catalog::run_one(client, &catalog::COMPLETIONS_TOTAL, &params).await?;
+            Ok(Demographics(total_response(env, req, cip.label)))
+        }
+        DemographicsGroupBy::School => {
+            let params = SchoolParams {
+                common: TotalParams::of(req, &cip),
+                min_completions: req.min_completions.map(min_completions_param),
+                limit: school_limit(req),
+            };
+            let env = catalog::run_one(client, &catalog::COMPLETIONS_BY_SCHOOL, &params).await?;
+            Ok(Demographics(schools_response(env, req, &cip.label)))
+        }
+        DemographicsGroupBy::Cip => {
+            let Some(unitid) = req.unitid else {
+                return Ok(Demographics(Answer::Json(serde_json::json!({
+                    "error": "group_by cip needs unitid: per-CIP rows are scoped to one institution",
+                    "tip": "Pass unitid, or group by school to compare institutions",
+                }))));
+            };
+            let params = CipParams {
+                unitid,
+                cip_prefix: cip.prefix,
+                cip_codes: cip.codes.as_deref(),
+                award_level: req.award_level,
+                major_num: req.major_num,
+                year: req.year,
+                with_baseline: req.include_representation.unwrap_or(true),
+            };
+            let env = catalog::run_one(client, &catalog::COMPLETIONS_BY_CIP, &params).await?;
+            Ok(Demographics(cip_response(env, req, cip.label)))
+        }
+    }
+}
+
+/// [`execute`] as pretty JSON, refusing inapplicable filters by field name first.
+pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsRequest) -> String {
+    let refused = inapplicable_filters(&req);
+    if !refused.is_empty() {
+        let names: Vec<&str> = refused.iter().map(|f| f.field()).collect();
+        let grouping = req.group_by.unwrap_or_default().as_str();
+        return serde_json::json!({
+            "error": format!("group_by {grouping} cannot apply {}", names.join(", ")),
+            "code": "bad_arguments",
+            "group_by": grouping,
+            "unsupported": names,
+        })
+        .to_string();
+    }
+    match execute(client, &req).await {
+        Ok(answer) => to_json_pretty(&answer),
+        Err(e) => e.to_json_value().to_string(),
+    }
+}
+
+// ============================================================================
+// Envelope → response
+// ============================================================================
+
+fn total_response(
+    env: TotalEnvelope,
+    req: &CompletionDemographicsRequest,
+    cip_label: String,
+) -> Answer {
+    if env.institutions_matched == 0 {
+        return Answer::Json(serde_json::json!({
+            "error": "No institutions found matching the given filters",
+            "suggestion": "Try broadening institution filters (carnegie_class, control, state, unitid)"
+        }));
+    }
+    if env.counts.total == 0 {
+        return Answer::Json(serde_json::json!({
+            "total_rows": 0,
+            "note": "No completion records found for the given filters",
+            "institutions_checked": env.institutions_matched,
+            "cip_filter": cip_label,
+            "year": env.year,
+        }));
+    }
+    let baseline = usable(env.baseline);
+    Answer::Total(DemographicsResponse {
+        group_by: DemographicsGroupBy::Total.as_str(),
+        filters: FilterSummary {
+            unitid: req.unitid,
+            carnegie_class: req.carnegie_class,
+            control: req.control,
+            state: req.state.clone(),
+            hbcu: req.hbcu,
+            tribal: req.tribal,
+            inst_size_min: req.inst_size_min,
+            cip_prefix: cip_label,
+            award_level: req.award_level,
+            major_num: req.major_num,
+            year: env.year,
+        },
+        institutions_matched: env.institutions_matched,
+        total_completions: env.counts.total,
+        demographics: build_demographics(&env.counts, baseline.as_ref()),
+        cross_tab: build_cross_tab(&env.counts, baseline.as_ref()),
+    })
+}
+
+fn schools_response(
+    env: SchoolsEnvelope,
+    req: &CompletionDemographicsRequest,
+    cip_label: &str,
+) -> Answer {
+    if env.institutions_matched == 0 {
+        let suggestion = if req.unitid.is_some() {
+            "Check that the unitid is correct (search institutions to find it)"
+        } else {
+            "Try broadening carnegie_class, control, state, or inst_size_min filters"
+        };
+        return Answer::Json(serde_json::json!({
+            "error": "No institutions matched the given filters",
+            "suggestion": suggestion
+        }));
+    }
+    let year = env.year;
+    let schools: Vec<SchoolDemographicsResult> = env
+        .schools
         .into_iter()
-        .map(|(cip_code, total_completions)| {
-            let cip_title = titles.get(&cip_code).cloned();
-            NearbyCip {
-                cip_code,
-                cip_title,
-                total_completions,
+        .map(|s| {
+            let baseline = usable(s.baseline);
+            SchoolDemographicsResult {
+                unitid: s.unitid,
+                name: s.name,
+                city: s.city,
+                state: s.state,
+                carnegie_class: s.carnegie_class,
+                year,
+                total_completions: s.counts.total,
+                demographics: build_demographics(&s.counts, baseline.as_ref()),
+                cross_tab: build_cross_tab(&s.counts, baseline.as_ref()),
             }
         })
-        .collect()
+        .collect();
+    Answer::Json(serde_json::json!({
+        "group_by": DemographicsGroupBy::School.as_str(),
+        "count": schools.len(),
+        "institutions_matched": env.institutions_matched,
+        "filters": {
+            "unitid": req.unitid,
+            "carnegie_class": req.carnegie_class,
+            "control": req.control,
+            "state": req.state,
+            "hbcu": req.hbcu,
+            "tribal": req.tribal,
+            "inst_size_min": req.inst_size_min,
+            "cip_filter": cip_label,
+            "award_level": req.award_level,
+            "major_num": req.major_num,
+            "year": year,
+        },
+        "schools": schools
+    }))
 }
 
-/// True iff `code` matches the filter that already returned zero, so we don't
-/// echo it back in the suggestions list.
-fn cip_matches_excluded(code: &str, excluded: Option<&CipFilter<'_>>) -> bool {
-    match excluded {
-        Some(CipFilter::Prefix(p)) => code.starts_with(*p),
-        Some(CipFilter::Codes(codes)) => codes.iter().any(|c| c == code),
-        None => false,
+fn cip_response(
+    env: CipEnvelope,
+    req: &CompletionDemographicsRequest,
+    cip_label: String,
+) -> Answer {
+    if env.rows.is_empty() {
+        return Answer::Json(serde_json::json!({
+            "group_by": DemographicsGroupBy::Cip.as_str(),
+            "unitid": env.unitid,
+            "name": env.name,
+            "year": env.year,
+            "award_level": req.award_level,
+            "cip_prefix": cip_label,
+            "total_rows": 0,
+            "note": "No completion records found for the given filters",
+            // The year the suggestions describe: the requested one, or the school's latest.
+            "nearby_year": env.nearby_year,
+            "nearby_cips_with_data": env.nearby_cips_with_data.unwrap_or_default(),
+        }));
+    }
+    let baseline = usable(env.baseline);
+    let mut selected = DemographicCounts::default();
+    for row in &env.rows {
+        selected += &row.counts;
+    }
+    let rows: Vec<CompletionRow> = env
+        .rows
+        .into_iter()
+        .map(|row| build_completion_row(row, baseline.as_ref()))
+        .collect();
+    Answer::Cip(InstitutionCompletionsResponse {
+        group_by: DemographicsGroupBy::Cip.as_str(),
+        unitid: env.unitid,
+        name: env.name,
+        year: env.year,
+        award_level: req.award_level,
+        cip_prefix: cip_label,
+        total_rows: rows.len(),
+        note: "school_pct and representation_ratio compare this CIP row to the school's completions across all CIPs",
+        rows,
+        cross_tab: build_cross_tab(&selected, baseline.as_ref()),
+    })
+}
+
+/// One CIP row with its demographic breakdown against the school baseline.
+fn build_completion_row(row: CipRow, school: Option<&DemographicCounts>) -> CompletionRow {
+    CompletionRow {
+        year: row.year,
+        demographics: build_row_demographics(&row.counts, school),
+        cip_code: row.cip_code,
+        cip_title: row.cip_title,
+        award_level: row.award_level,
+        major_num: row.major_num,
+        total: row.counts.total,
     }
 }
 
-/// Fetch CIP code titles for a set of codes. Returns a `HashMap<cip_code, title>`.
-async fn fetch_cip_titles(client: &Arc<DbClient>, cip_codes: &[String]) -> HashMap<String, String> {
-    if cip_codes.is_empty() {
-        return HashMap::new();
-    }
-    let filters = QueryFilters::new().in_list("cip_code", cip_codes);
-    let Ok(result) = client
-        .select(tables::CIP_CODES, "cip_code,title", &filters, Some(500))
-        .await
-    else {
-        return HashMap::new();
+/// Per-group breakdown of one CIP row, compared with the school baseline.
+fn build_row_demographics(
+    row: &DemographicCounts,
+    school: Option<&DemographicCounts>,
+) -> Vec<RowDemographic> {
+    let row_total = row.total;
+    let entry = |label: &str, count: i64, school_count: Option<i64>| {
+        let cip_pct = pct(count, row_total);
+        let school_pct = school.zip(school_count).map(|(s, n)| pct(n, s.total));
+        RowDemographic {
+            group: label.to_string(),
+            count,
+            cip_pct,
+            school_pct,
+            representation_ratio: school_pct.and_then(|sp| representation_ratio(cip_pct, sp)),
+        }
     };
-    result
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|item| {
-                    let code = item.get("cip_code")?.as_str()?.to_string();
-                    let title = item.get("title")?.as_str()?.to_string();
-                    Some((code, title))
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    macro_rules! race {
+        ($label:expr, $men:ident, $women:ident) => {
+            entry(
+                $label,
+                row.$men + row.$women,
+                school.map(|s| s.$men + s.$women),
+            )
+        };
+    }
+    vec![
+        entry("Women", row.total_women, school.map(|s| s.total_women)),
+        entry("Men", row.total_men, school.map(|s| s.total_men)),
+        race!("Hispanic/Latino", hispanic_men, hispanic_women),
+        race!("Black or African American", black_men, black_women),
+        race!("Asian", asian_men, asian_women),
+        race!("White", white_men, white_women),
+        race!(
+            "American Indian/Alaska Native",
+            american_indian_men,
+            american_indian_women
+        ),
+        race!(
+            "Native Hawaiian/Pacific Islander",
+            native_hawaiian_men,
+            native_hawaiian_women
+        ),
+        race!("Two or More Races", two_or_more_men, two_or_more_women),
+        race!(
+            "Nonresident Alien",
+            nonresident_alien_men,
+            nonresident_alien_women
+        ),
+        race!(
+            "Unknown Race/Ethnicity",
+            unknown_race_men,
+            unknown_race_women
+        ),
+    ]
 }
+
+// ============================================================================
+// Shared presentation math
+// ============================================================================
 
 /// Build the race × gender cross-tabulation from aggregated demographic counts.
 ///
@@ -1561,122 +1084,604 @@ mod tests {
         }
     }
 
-    // ── aggregate_demo_map() ─────────────────────────────────────────────────
+    use crate::core::database::ipeds::ingest::GRAND_TOTAL_CIP;
+
+    fn to_json(answer: impl Serialize) -> serde_json::Value {
+        serde_json::to_value(answer).expect("answer serialises")
+    }
+
+    fn counts(total: i64, men: i64, women: i64) -> DemographicCounts {
+        DemographicCounts {
+            total,
+            total_men: men,
+            total_women: women,
+            white_men: men,
+            white_women: women,
+            ..Default::default()
+        }
+    }
+
+    fn cip_row(cip_code: &str, title: Option<&str>, c: DemographicCounts) -> CipRow {
+        CipRow {
+            year: Some(2024),
+            cip_code: cip_code.to_string(),
+            cip_title: title.map(str::to_string),
+            award_level: Some(5),
+            major_num: Some(1),
+            counts: c,
+        }
+    }
+
+    fn request(group_by: DemographicsGroupBy) -> CompletionDemographicsRequest {
+        CompletionDemographicsRequest {
+            group_by: Some(group_by),
+            ..Default::default()
+        }
+    }
+
+    // ── catalog agreement ────────────────────────────────────────────────────
 
     #[test]
-    fn test_aggregate_demo_map_empty() {
-        let map: HashMap<i32, DemographicCounts> = HashMap::new();
-        let result = aggregate_demo_map(&map);
-        assert_eq!(result.total, 0);
+    fn each_params_struct_sends_exactly_the_keys_its_query_reads() {
+        catalog::assert_params_match(&catalog::COMPLETIONS_TOTAL, &TotalParams::default());
+        catalog::assert_params_match(&catalog::COMPLETIONS_BY_SCHOOL, &SchoolParams::default());
+        catalog::assert_params_match(&catalog::COMPLETIONS_BY_CIP, &CipParams::default());
     }
 
     #[test]
-    fn test_aggregate_demo_map_sums_all_entries() {
-        let mut map = HashMap::new();
-        map.insert(
-            1,
-            DemographicCounts {
-                total: 100,
-                total_women: 60,
-                ..Default::default()
-            },
+    fn every_completions_query_emits_all_21_demographic_columns() {
+        // A column a query forgets to emit is a decode failure at run time, since
+        // `DemographicCounts` has no defaults; this catches it before then.
+        let fields = serde_json::to_value(DemographicCounts::default()).expect("encode");
+        for query in [
+            &catalog::COMPLETIONS_TOTAL,
+            &catalog::COMPLETIONS_BY_SCHOOL,
+            &catalog::COMPLETIONS_BY_CIP,
+        ] {
+            for field in fields.as_object().expect("object").keys() {
+                assert!(
+                    query.sql.contains(&format!(" AS {field}")),
+                    "{} does not emit {field}",
+                    query.name
+                );
+            }
+            let excluded = format!("cip_code <> '{GRAND_TOTAL_CIP}'");
+            assert_eq!(
+                query.sql.matches("FROM completions c").count(),
+                query.sql.matches(excluded.as_str()).count(),
+                "{}: every scan of completions must leave out the CIP 99 grand totals",
+                query.name
+            );
+        }
+    }
+
+    // ── request handling ─────────────────────────────────────────────────────
+
+    #[test]
+    fn inapplicable_filters_refuse_what_each_grouping_cannot_apply() {
+        let mut req = CompletionDemographicsRequest {
+            carnegie_class: Some(15),
+            state: Some("MA".into()),
+            hbcu: Some(true),
+            limit: Some(10),
+            min_completions: Some(5),
+            ..Default::default()
+        };
+        req.group_by = Some(DemographicsGroupBy::School);
+        assert!(
+            inapplicable_filters(&req).is_empty(),
+            "school applies every filter"
         );
-        map.insert(
-            2,
-            DemographicCounts {
-                total: 50,
-                total_women: 20,
-                ..Default::default()
-            },
+
+        req.group_by = Some(DemographicsGroupBy::Total);
+        assert_eq!(
+            inapplicable_filters(&req),
+            [DemoFilter::MinCompletions, DemoFilter::Limit],
+            "total applies hbcu and the other institution filters"
         );
-        let result = aggregate_demo_map(&map);
-        assert_eq!(result.total, 150);
-        assert_eq!(result.total_women, 80);
-    }
 
-    // ── cip_matches_excluded() ───────────────────────────────────────────────
-    // The helper drives the "drop CIPs already attempted" filter for the
-    // nearby-CIP suggestion path; covering its branches keeps the suggestion
-    // shape stable when callers pass either Prefix or Codes filters.
-
-    #[test]
-    fn test_cip_matches_excluded_none_filter_returns_false() {
-        assert!(!cip_matches_excluded("11.0101", None));
-    }
-
-    #[test]
-    fn test_cip_matches_excluded_prefix_match_returns_true() {
-        let codes_owned: Vec<String> = vec![];
-        let _ = codes_owned; // silence unused warning
-        let prefix = "11.";
-        let filter = CipFilter::Prefix(prefix);
-        assert!(cip_matches_excluded("11.0101", Some(&filter)));
-    }
-
-    #[test]
-    fn test_cip_matches_excluded_prefix_miss_returns_false() {
-        let prefix = "14.";
-        let filter = CipFilter::Prefix(prefix);
-        assert!(!cip_matches_excluded("11.0101", Some(&filter)));
-    }
-
-    #[test]
-    fn test_cip_matches_excluded_codes_match_returns_true() {
-        let codes = vec!["11.0101".to_string(), "11.0701".to_string()];
-        let filter = CipFilter::Codes(&codes);
-        assert!(cip_matches_excluded("11.0101", Some(&filter)));
-    }
-
-    #[test]
-    fn test_cip_matches_excluded_codes_miss_returns_false() {
-        let codes = vec!["11.0101".to_string()];
-        let filter = CipFilter::Codes(&codes);
-        assert!(!cip_matches_excluded("30.7001", Some(&filter)));
-    }
-
-    // ── apply_cip_filter() ───────────────────────────────────────────────────
-    // These tests verify branch coverage by checking whether filters were added
-    // to QueryFilters using the public is_empty() method.
-
-    #[test]
-    fn test_apply_cip_filter_none_does_not_add_filter() {
-        let result = apply_cip_filter(QueryFilters::new(), None, "cip_code");
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_apply_cip_filter_prefix_adds_filter() {
-        let result = apply_cip_filter(
-            QueryFilters::new(),
-            Some(&CipFilter::Prefix("11.")),
-            "cip_code",
+        req.group_by = Some(DemographicsGroupBy::Cip);
+        let refused: Vec<&str> = inapplicable_filters(&req)
+            .iter()
+            .map(|f| f.field())
+            .collect();
+        assert_eq!(
+            refused,
+            [
+                "carnegie_class",
+                "state",
+                "hbcu",
+                "min_completions",
+                "limit"
+            ]
         );
-        assert!(!result.is_empty());
+
+        assert!(inapplicable_filters(&request(DemographicsGroupBy::Cip)).is_empty());
     }
 
     #[test]
-    fn test_apply_cip_filter_codes_adds_filter() {
-        let codes = vec!["11.0101".to_string()];
-        let result = apply_cip_filter(
-            QueryFilters::new(),
-            Some(&CipFilter::Codes(&codes)),
-            "cip_code",
+    fn exact_cip_codes_take_priority_over_a_prefix() {
+        let req = CompletionDemographicsRequest {
+            cip_prefix: Some("11.".into()),
+            cip_codes: Some("11.0101, 11.0701".into()),
+            ..Default::default()
+        };
+        let cip = CipSelection::of(&req);
+        assert_eq!(cip.prefix, None);
+        assert_eq!(
+            cip.codes.as_deref(),
+            Some(&["11.0101".to_string(), "11.0701".to_string()][..])
         );
-        assert!(!result.is_empty());
+        assert_eq!(cip.label, "11.0101,11.0701");
+
+        let only_prefix = CompletionDemographicsRequest {
+            cip_prefix: Some("11.".into()),
+            cip_codes: Some(" , ".into()),
+            ..Default::default()
+        };
+        let cip = CipSelection::of(&only_prefix);
+        assert_eq!((cip.prefix, cip.codes.is_none()), (Some("11."), true));
+        assert_eq!(
+            CipSelection::of(&CompletionDemographicsRequest::default()).label,
+            "(all CIPs)"
+        );
     }
 
     #[test]
-    fn test_apply_cip_filter_empty_col_is_noop() {
-        // Empty cip_col means the table has no CIP column — filter must be skipped
-        let result = apply_cip_filter(
-            QueryFilters::new(),
-            Some(&CipFilter::Prefix("11.")),
-            "", // empty → no-op
+    fn group_by_reads_and_defaults_the_way_callers_write_it() {
+        let req: CompletionDemographicsRequest =
+            serde_json::from_value(serde_json::json!({ "group_by": "school" })).expect("decode");
+        assert_eq!(req.group_by, Some(DemographicsGroupBy::School));
+        assert_eq!(
+            CompletionDemographicsRequest::default()
+                .group_by
+                .unwrap_or_default(),
+            DemographicsGroupBy::Total
         );
-        assert!(result.is_empty());
     }
 
-    // ── pct() ────────────────────────────────────────────────────────────────
+    #[test]
+    fn school_limit_defaults_and_caps_the_same_in_rust_and_sql() {
+        let mut req = request(DemographicsGroupBy::School);
+        assert_eq!(school_limit(&req), DEFAULT_SCHOOL_LIMIT);
+        req.limit = Some(1_000);
+        assert_eq!(school_limit(&req), MAX_SCHOOL_LIMIT);
+        assert!(
+            catalog::COMPLETIONS_BY_SCHOOL.sql.contains(&format!(
+                "least(coalesce(lim, {DEFAULT_SCHOOL_LIMIT}), {MAX_SCHOOL_LIMIT})"
+            )),
+            "completions_by_school.sql must bound the limit as Rust does"
+        );
+    }
+
+    #[test]
+    fn total_and_school_match_institutions_and_pick_the_year_identically() {
+        // The two files repeat these CTEs (catalog queries are compiled in verbatim, with
+        // no templating). If they drifted, `total` and `school` would silently disagree
+        // about which schools matched or which year was reported.
+        let blocks = |sql: &str| -> String {
+            let code: String = crate::core::query::sql::lex(sql)
+                .into_iter()
+                .filter(|(kind, _)| *kind != crate::core::query::sql::Span::Comment)
+                .map(|(_, t)| t)
+                .collect();
+            let start = code.find("matched AS (").expect("matched CTE");
+            let end = code.find("yr AS (").expect("yr CTE");
+            let end = end + code[end..].find("\n)").expect("yr CTE closes");
+            code[start..end]
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert_eq!(
+            blocks(catalog::COMPLETIONS_TOTAL.sql),
+            blocks(catalog::COMPLETIONS_BY_SCHOOL.sql)
+        );
+    }
+
+    #[test]
+    fn min_completions_is_clamped_to_what_the_query_can_read() {
+        assert_eq!(min_completions_param(i64::MAX), i64::from(i32::MAX));
+        assert_eq!(min_completions_param(-5), 0);
+        assert_eq!(min_completions_param(20), 20);
+    }
+
+    /// A client that fails any query it is asked to run: nothing is listening on port 9.
+    fn offline() -> Arc<DbClient> {
+        Arc::new(DbClient::new("http://127.0.0.1:9", "anon", "jwt".into()).expect("stub client"))
+    }
+
+    #[tokio::test]
+    async fn execute_json_refuses_inapplicable_filters_by_field_before_querying() {
+        let req = CompletionDemographicsRequest {
+            group_by: Some(DemographicsGroupBy::Cip),
+            unitid: Some(1),
+            state: Some("MA".into()),
+            limit: Some(5),
+            ..Default::default()
+        };
+        let v: serde_json::Value =
+            serde_json::from_str(&execute_json(&offline(), req).await).expect("json");
+        assert_eq!(v["unsupported"], serde_json::json!(["state", "limit"]));
+        assert_eq!(v["group_by"], "cip");
+    }
+
+    #[tokio::test]
+    async fn cip_without_unitid_is_an_error_payload_not_a_query() {
+        let out = execute(&offline(), &request(DemographicsGroupBy::Cip))
+            .await
+            .expect("answered without a query");
+        let out = to_json(out);
+        assert!(out["error"].as_str().unwrap().contains("unitid"), "{out}");
+    }
+
+    #[test]
+    fn a_response_keeps_its_declared_field_order() {
+        // Through a `serde_json::Value` the keys would come out sorted, putting
+        // `cross_tab` first; the text a reader sees follows the struct instead.
+        let env = TotalEnvelope {
+            year: Some(2024),
+            institutions_matched: 1,
+            counts: counts(10, 5, 5),
+            baseline: None,
+        };
+        let text = to_json_pretty(&Demographics(total_response(
+            env,
+            &request(DemographicsGroupBy::Total),
+            "11.".into(),
+        )));
+        let at = |key: &str| text.find(&format!("\"{key}\"")).expect(key);
+        assert!(
+            at("group_by") < at("filters") && at("filters") < at("cross_tab"),
+            "{text}"
+        );
+    }
+
+    // ── envelope → response ─────────────────────────────────────────────────
+
+    #[test]
+    fn a_total_envelope_becomes_demographics_with_ratios_against_its_baseline() {
+        let env: TotalEnvelope = serde_json::from_value(serde_json::json!({
+            "year": 2024,
+            "institutions_matched": 3,
+            "counts": serde_json::to_value(counts(100, 60, 40)).unwrap(),
+            "baseline": serde_json::to_value(counts(1000, 600, 400)).unwrap(),
+        }))
+        .expect("envelope decodes");
+        let out = to_json(total_response(
+            env,
+            &request(DemographicsGroupBy::Total),
+            "11.".into(),
+        ));
+        assert_eq!(out["group_by"], "total");
+        assert_eq!(out["institutions_matched"], 3);
+        assert_eq!(out["total_completions"], 100);
+        assert_eq!(out["filters"]["year"], 2024);
+        assert_eq!(out["filters"]["cip_prefix"], "11.");
+        let women = &out["demographics"][0];
+        assert_eq!(women["group"], "Women");
+        assert_eq!(women["representation_ratio"], 1.0);
+    }
+
+    #[test]
+    fn a_total_with_no_institutions_or_no_completions_says_which() {
+        let none_matched = TotalEnvelope {
+            year: None,
+            institutions_matched: 0,
+            counts: DemographicCounts::default(),
+            baseline: None,
+        };
+        let out = to_json(total_response(
+            none_matched,
+            &request(DemographicsGroupBy::Total),
+            String::new(),
+        ));
+        assert!(out["error"].as_str().unwrap().contains("No institutions"));
+
+        let no_rows = TotalEnvelope {
+            year: Some(2024),
+            institutions_matched: 5,
+            counts: DemographicCounts::default(),
+            baseline: None,
+        };
+        let out = to_json(total_response(
+            no_rows,
+            &request(DemographicsGroupBy::Total),
+            "01.".into(),
+        ));
+        assert_eq!(out["total_rows"], 0);
+        assert_eq!(out["institutions_checked"], 5);
+        assert!(
+            out.get("error").is_none(),
+            "an empty result is a note, not an error"
+        );
+    }
+
+    #[test]
+    fn an_empty_baseline_gives_no_ratio_rather_than_a_division_by_zero() {
+        let env = TotalEnvelope {
+            year: Some(2024),
+            institutions_matched: 1,
+            counts: counts(10, 5, 5),
+            baseline: Some(DemographicCounts::default()),
+        };
+        let out = to_json(total_response(
+            env,
+            &request(DemographicsGroupBy::Total),
+            String::new(),
+        ));
+        assert!(out["demographics"][0]["representation_ratio"].is_null());
+    }
+
+    #[test]
+    fn a_schools_envelope_keeps_the_databases_ranking_and_carries_the_year() {
+        let school = |unitid: i32, total: i64| {
+            serde_json::json!({
+                "unitid": unitid, "name": format!("School {unitid}"), "city": null,
+                "state": "MA", "carnegie_class": 15,
+                "counts": serde_json::to_value(counts(total, total / 2, total - total / 2)).unwrap(),
+                "baseline": null,
+            })
+        };
+        let env: SchoolsEnvelope = serde_json::from_value(serde_json::json!({
+            "year": 2024, "institutions_matched": 147,
+            "schools": [school(2, 900), school(1, 400)],
+        }))
+        .expect("envelope decodes");
+        let out = to_json(schools_response(
+            env,
+            &request(DemographicsGroupBy::School),
+            "11.",
+        ));
+        assert_eq!(out["count"], 2);
+        assert_eq!(out["institutions_matched"], 147);
+        assert_eq!(
+            out["schools"][0]["unitid"], 2,
+            "ranked by the query, not re-sorted"
+        );
+        assert_eq!(out["schools"][1]["year"], 2024);
+        assert!(out["schools"][0]["demographics"][0]["representation_ratio"].is_null());
+    }
+
+    #[test]
+    fn a_school_search_matching_nothing_is_an_error_naming_the_fix() {
+        let env = SchoolsEnvelope {
+            year: None,
+            institutions_matched: 0,
+            schools: Vec::new(),
+        };
+        let mut req = request(DemographicsGroupBy::School);
+        req.unitid = Some(1);
+        let out = to_json(schools_response(env, &req, ""));
+        assert!(out["suggestion"].as_str().unwrap().contains("unitid"));
+    }
+
+    #[test]
+    fn a_cip_envelope_gives_rows_and_a_cross_tab_summed_over_them() {
+        let env = CipEnvelope {
+            unitid: 167_358,
+            name: Some("Northeastern University".into()),
+            year: Some(2024),
+            rows: vec![
+                cip_row("11.0101", Some("Computer Science"), counts(100, 60, 40)),
+                cip_row("11.0701", None, counts(50, 30, 20)),
+            ],
+            baseline: Some(counts(1000, 500, 500)),
+            nearby_year: None,
+            nearby_cips_with_data: None,
+        };
+        let mut req = request(DemographicsGroupBy::Cip);
+        req.cip_prefix = Some("11.".into());
+        let out = to_json(cip_response(env, &req, "11.".into()));
+        assert_eq!(out["total_rows"], 2);
+        assert_eq!(out["rows"][0]["cip_title"], "Computer Science");
+        assert!(out["rows"][1]["cip_title"].is_null());
+        let white = out["cross_tab"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["group"] == "White")
+            .unwrap();
+        assert_eq!(white["women_count"], 60, "40 + 20 across both rows");
+    }
+
+    #[test]
+    fn an_empty_cip_answer_suggests_the_schools_other_cips() {
+        let env = CipEnvelope {
+            unitid: 167_358,
+            name: None,
+            year: None,
+            rows: Vec::new(),
+            baseline: None,
+            nearby_year: Some(2025),
+            nearby_cips_with_data: Some(vec![NearbyCip {
+                cip_code: "11.0101".into(),
+                cip_title: Some("CS".into()),
+                total_completions: 2043,
+            }]),
+        };
+        let out = to_json(cip_response(
+            env,
+            &request(DemographicsGroupBy::Cip),
+            "01.".into(),
+        ));
+        assert_eq!(out["total_rows"], 0);
+        assert_eq!(out["nearby_cips_with_data"][0]["cip_code"], "11.0101");
+        assert_eq!(
+            out["nearby_year"], 2025,
+            "says which year the suggestions describe"
+        );
+        assert_eq!(
+            out["cip_prefix"], "01.",
+            "echoes the filter that came back empty"
+        );
+    }
+
+    #[test]
+    fn a_cip_row_decodes_its_counts_beside_its_identity() {
+        let mut row = serde_json::to_value(counts(7, 3, 4)).unwrap();
+        for (k, v) in [
+            ("year", serde_json::json!(2024)),
+            ("cip_code", serde_json::json!("11.0701")),
+            ("cip_title", serde_json::Value::Null),
+            ("award_level", serde_json::json!(5)),
+            ("major_num", serde_json::json!(2)),
+        ] {
+            row[k] = v;
+        }
+        let row: CipRow = serde_json::from_value(row).expect("row decodes");
+        assert_eq!(
+            (row.cip_code.as_str(), row.major_num, row.counts.total),
+            ("11.0701", Some(2), 7)
+        );
+    }
+
+    // ── build_row_demographics() / build_completion_row() ────────────────────
+
+    #[test]
+    fn test_build_row_demographics_returns_11_groups() {
+        assert_eq!(build_row_demographics(&counts(100, 60, 40), None).len(), 11);
+    }
+
+    #[test]
+    fn test_build_row_demographics_gender_counts() {
+        let groups = build_row_demographics(&counts(100, 60, 40), None);
+        let women = groups.iter().find(|d| d.group == "Women").unwrap();
+        let men = groups.iter().find(|d| d.group == "Men").unwrap();
+        assert_eq!(women.count, 40);
+        assert_float_eq(women.cip_pct, 40.0);
+        assert_eq!(men.count, 60);
+        assert_float_eq(men.cip_pct, 60.0);
+        assert!(women.school_pct.is_none()); // no school totals provided
+    }
+
+    #[test]
+    fn test_build_row_demographics_race_group_sums_men_and_women() {
+        let row = DemographicCounts {
+            total: 200,
+            total_men: 100,
+            total_women: 100,
+            hispanic_men: 20,
+            hispanic_women: 15,
+            white_men: 80,
+            white_women: 85,
+            ..Default::default()
+        };
+        let groups = build_row_demographics(&row, None);
+        let hispanic = groups
+            .iter()
+            .find(|d| d.group == "Hispanic/Latino")
+            .unwrap();
+        assert_eq!(hispanic.count, 35); // 20 + 15
+        assert_float_eq(hispanic.cip_pct, 17.5);
+    }
+
+    #[test]
+    fn test_build_row_demographics_with_school_totals() {
+        let school = DemographicCounts {
+            total: 200,
+            total_men: 80,
+            total_women: 120,
+            ..Default::default()
+        };
+        let groups = build_row_demographics(&counts(100, 40, 60), Some(&school));
+        let women = groups.iter().find(|d| d.group == "Women").unwrap();
+        // women cip_pct=60%, school_pct=60% → ratio=1.0
+        assert_float_opt_eq(women.school_pct, Some(60.0));
+        assert_float_opt_eq(women.representation_ratio, Some(1.0));
+    }
+
+    #[test]
+    fn test_build_completion_row_carries_identity_and_computes_ratios() {
+        let school = DemographicCounts {
+            total: 1000,
+            total_men: 600,
+            total_women: 400,
+            ..Default::default()
+        };
+        let row = build_completion_row(
+            cip_row("11.0101", Some("Computer Science"), counts(100, 60, 40)),
+            Some(&school),
+        );
+        assert_eq!(row.cip_code, "11.0101");
+        assert_eq!(row.cip_title.as_deref(), Some("Computer Science"));
+        assert_eq!(
+            (row.award_level, row.major_num, row.total),
+            (Some(5), Some(1), 100)
+        );
+        let women = row
+            .demographics
+            .iter()
+            .find(|d| d.group == "Women")
+            .unwrap();
+        // cip_pct = 40%, school_pct = 40% → ratio = 1.0
+        assert_float_eq(women.cip_pct, 40.0);
+        assert_float_opt_eq(women.representation_ratio, Some(1.0));
+        // Public schema guarantee: every row serialises a `year`.
+        let json = serde_json::to_value(&row).unwrap();
+        assert_eq!(json.get("year"), Some(&serde_json::json!(2024)));
+    }
+
+    // ── AddAssign (was merge_counts) ─────────────────────────────────────────
+
+    #[test]
+    fn test_add_assign_basic() {
+        let mut dst = DemographicCounts {
+            total: 100,
+            total_men: 40,
+            total_women: 60,
+            ..Default::default()
+        };
+        let src = DemographicCounts {
+            total: 50,
+            total_men: 20,
+            total_women: 30,
+            ..Default::default()
+        };
+        dst += &src;
+        assert_eq!(dst.total, 150);
+        assert_eq!(dst.total_men, 60);
+        assert_eq!(dst.total_women, 90);
+    }
+
+    #[test]
+    fn test_add_assign_all_demographic_fields() {
+        let mut dst = DemographicCounts::default();
+        let src = DemographicCounts {
+            total: 100,
+            hispanic_men: 10,
+            hispanic_women: 12,
+            asian_men: 8,
+            asian_women: 15,
+            black_men: 5,
+            black_women: 6,
+            ..Default::default()
+        };
+        dst += &src;
+        assert_eq!(dst.hispanic_men, 10);
+        assert_eq!(dst.hispanic_women, 12);
+        assert_eq!(dst.asian_men, 8);
+        assert_eq!(dst.black_women, 6);
+    }
+
+    #[test]
+    fn test_add_assign_sequential_batches() {
+        let mut result = DemographicCounts::default();
+        result += &DemographicCounts {
+            total: 50,
+            total_men: 20,
+            ..Default::default()
+        };
+        result += &DemographicCounts {
+            total: 30,
+            total_men: 12,
+            ..Default::default()
+        };
+        assert_eq!(result.total, 80);
+        assert_eq!(result.total_men, 32);
+    }
+
+    // ── pct() / representation_ratio() / build_cross_tab() / build_demographics() ──
 
     #[test]
     fn test_pct_basic() {
@@ -1708,8 +1713,6 @@ mod tests {
     fn test_pct_full_hundred() {
         assert_float_eq(pct(100, 100), 100.0);
     }
-
-    // ── representation_ratio() ───────────────────────────────────────────────
 
     #[test]
     fn test_representation_ratio_proportional() {
@@ -1744,373 +1747,6 @@ mod tests {
         // 0.001 exactly should produce a value
         assert!(representation_ratio(50.0, 0.001).is_some());
     }
-
-    // ── accumulate() ────────────────────────────────────────────────────────
-
-    fn demo_json(total: i64, men: i64, women: i64) -> serde_json::Value {
-        serde_json::json!({
-            "total": total, "total_men": men, "total_women": women,
-            "nonresident_alien_men": 0, "nonresident_alien_women": 0,
-            "hispanic_men": 0, "hispanic_women": 0,
-            "american_indian_men": 0, "american_indian_women": 0,
-            "asian_men": 0, "asian_women": 0,
-            "black_men": 0, "black_women": 0,
-            "native_hawaiian_men": 0, "native_hawaiian_women": 0,
-            "white_men": men, "white_women": women,
-            "two_or_more_men": 0, "two_or_more_women": 0,
-            "unknown_race_men": 0, "unknown_race_women": 0
-        })
-    }
-
-    #[test]
-    fn test_accumulate_basic() {
-        let mut agg = DemographicCounts::default();
-        accumulate(&mut agg, &demo_json(100, 40, 60));
-        assert_eq!(agg.total, 100);
-        assert_eq!(agg.total_men, 40);
-        assert_eq!(agg.total_women, 60);
-    }
-
-    #[test]
-    fn test_accumulate_sums_across_rows() {
-        let mut agg = DemographicCounts::default();
-        accumulate(&mut agg, &demo_json(100, 40, 60));
-        accumulate(&mut agg, &demo_json(50, 20, 30));
-        assert_eq!(agg.total, 150);
-        assert_eq!(agg.total_men, 60);
-        assert_eq!(agg.total_women, 90);
-    }
-
-    #[test]
-    fn test_accumulate_missing_fields_default_zero() {
-        let mut agg = DemographicCounts::default();
-        // Only total provided
-        accumulate(&mut agg, &serde_json::json!({"total": 42}));
-        assert_eq!(agg.total, 42);
-        assert_eq!(agg.total_men, 0);
-        assert_eq!(agg.hispanic_women, 0);
-    }
-
-    // ── aggregate_by_unitid() ────────────────────────────────────────────────
-
-    #[test]
-    fn test_aggregate_by_unitid_none_returns_empty() {
-        assert!(aggregate_by_unitid(None).is_empty());
-    }
-
-    #[test]
-    fn test_aggregate_by_unitid_empty_array() {
-        assert!(aggregate_by_unitid(Some(&vec![])).is_empty());
-    }
-
-    #[test]
-    fn test_aggregate_by_unitid_groups_by_unitid() {
-        let rows = vec![
-            serde_json::json!({"unitid": 1, "total": 50, "total_men": 20, "total_women": 30,
-                "nonresident_alien_men": 0, "nonresident_alien_women": 0,
-                "hispanic_men": 0, "hispanic_women": 0, "american_indian_men": 0, "american_indian_women": 0,
-                "asian_men": 0, "asian_women": 0, "black_men": 0, "black_women": 0,
-                "native_hawaiian_men": 0, "native_hawaiian_women": 0, "white_men": 20, "white_women": 30,
-                "two_or_more_men": 0, "two_or_more_women": 0, "unknown_race_men": 0, "unknown_race_women": 0}),
-            serde_json::json!({"unitid": 1, "total": 30, "total_men": 15, "total_women": 15,
-                "nonresident_alien_men": 0, "nonresident_alien_women": 0,
-                "hispanic_men": 0, "hispanic_women": 0, "american_indian_men": 0, "american_indian_women": 0,
-                "asian_men": 0, "asian_women": 0, "black_men": 0, "black_women": 0,
-                "native_hawaiian_men": 0, "native_hawaiian_women": 0, "white_men": 15, "white_women": 15,
-                "two_or_more_men": 0, "two_or_more_women": 0, "unknown_race_men": 0, "unknown_race_women": 0}),
-            serde_json::json!({"unitid": 2, "total": 75, "total_men": 35, "total_women": 40,
-                "nonresident_alien_men": 0, "nonresident_alien_women": 0,
-                "hispanic_men": 0, "hispanic_women": 0, "american_indian_men": 0, "american_indian_women": 0,
-                "asian_men": 0, "asian_women": 0, "black_men": 0, "black_women": 0,
-                "native_hawaiian_men": 0, "native_hawaiian_women": 0, "white_men": 35, "white_women": 40,
-                "two_or_more_men": 0, "two_or_more_women": 0, "unknown_race_men": 0, "unknown_race_women": 0}),
-        ];
-        let result = aggregate_by_unitid(Some(&rows));
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[&1].total, 80); // 50 + 30
-        assert_eq!(result[&2].total, 75);
-    }
-
-    #[test]
-    fn test_aggregate_by_unitid_skips_missing_unitid() {
-        let rows = vec![
-            serde_json::json!({"unitid": 1, "total": 50, "total_men": 20, "total_women": 30,
-                "nonresident_alien_men": 0, "nonresident_alien_women": 0,
-                "hispanic_men": 0, "hispanic_women": 0, "american_indian_men": 0, "american_indian_women": 0,
-                "asian_men": 0, "asian_women": 0, "black_men": 0, "black_women": 0,
-                "native_hawaiian_men": 0, "native_hawaiian_women": 0, "white_men": 20, "white_women": 30,
-                "two_or_more_men": 0, "two_or_more_women": 0, "unknown_race_men": 0, "unknown_race_women": 0}),
-            // row with no unitid — should be skipped
-            serde_json::json!({"total": 100}),
-        ];
-        let result = aggregate_by_unitid(Some(&rows));
-        assert_eq!(result.len(), 1);
-    }
-
-    // ── build_school_results() ───────────────────────────────────────────────
-
-    fn make_inst(unitid: i32) -> InstitutionMeta {
-        InstitutionMeta {
-            unitid,
-            name: format!("School {unitid}"),
-            city: None,
-            state: None,
-            carnegie_class: None,
-            inst_size: None,
-        }
-    }
-
-    fn make_counts(total: i64) -> DemographicCounts {
-        DemographicCounts {
-            total,
-            total_men: total / 2,
-            total_women: total - total / 2,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn test_build_school_results_empty_institutions() {
-        let result = build_school_results(&[], &HashMap::new(), &HashMap::new(), None, None);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_build_school_results_skips_zero_completions() {
-        let institutions = vec![make_inst(1)];
-        let result =
-            build_school_results(&institutions, &HashMap::new(), &HashMap::new(), None, None);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_build_school_results_applies_min_completions() {
-        let institutions = vec![make_inst(1), make_inst(2)];
-        let mut completions = HashMap::new();
-        completions.insert(1, make_counts(10));
-        completions.insert(2, make_counts(150));
-
-        let result =
-            build_school_results(&institutions, &completions, &HashMap::new(), None, Some(50));
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].unitid, 2);
-    }
-
-    #[test]
-    fn test_build_school_results_propagates_year() {
-        let institutions = vec![make_inst(1)];
-        let mut completions = HashMap::new();
-        completions.insert(1, make_counts(100));
-
-        let result = build_school_results(
-            &institutions,
-            &completions,
-            &HashMap::new(),
-            Some(2024),
-            None,
-        );
-        assert_eq!(result[0].year, Some(2024));
-    }
-
-    // ── merge_counts() ───────────────────────────────────────────────────────
-
-    #[test]
-    fn test_merge_counts_basic() {
-        let mut dst = DemographicCounts {
-            total: 100,
-            total_men: 40,
-            total_women: 60,
-            ..Default::default()
-        };
-        let src = DemographicCounts {
-            total: 50,
-            total_men: 20,
-            total_women: 30,
-            ..Default::default()
-        };
-        merge_counts(&mut dst, &src);
-        assert_eq!(dst.total, 150);
-        assert_eq!(dst.total_men, 60);
-        assert_eq!(dst.total_women, 90);
-    }
-
-    #[test]
-    fn test_merge_counts_all_demographic_fields() {
-        let mut dst = DemographicCounts::default();
-        let src = DemographicCounts {
-            total: 100,
-            hispanic_men: 10,
-            hispanic_women: 12,
-            asian_men: 8,
-            asian_women: 15,
-            black_men: 5,
-            black_women: 6,
-            ..Default::default()
-        };
-        merge_counts(&mut dst, &src);
-        assert_eq!(dst.hispanic_men, 10);
-        assert_eq!(dst.hispanic_women, 12);
-        assert_eq!(dst.asian_men, 8);
-        assert_eq!(dst.black_women, 6);
-    }
-
-    #[test]
-    fn test_merge_counts_sequential_batches() {
-        let mut result = DemographicCounts::default();
-        merge_counts(
-            &mut result,
-            &DemographicCounts {
-                total: 50,
-                total_men: 20,
-                ..Default::default()
-            },
-        );
-        merge_counts(
-            &mut result,
-            &DemographicCounts {
-                total: 30,
-                total_men: 12,
-                ..Default::default()
-            },
-        );
-        assert_eq!(result.total, 80);
-        assert_eq!(result.total_men, 32);
-    }
-
-    // ── build_completion_row() ────────────────────────────────────────────────
-
-    fn full_demo_item(cip_code: &str, total: i64, men: i64, women: i64) -> serde_json::Value {
-        serde_json::json!({
-            "cip_code": cip_code, "award_level": 5, "major_num": 1,
-            "total": total, "total_men": men, "total_women": women,
-            "nonresident_alien_men": 0, "nonresident_alien_women": 0,
-            "hispanic_men": 0, "hispanic_women": 0,
-            "american_indian_men": 0, "american_indian_women": 0,
-            "asian_men": 0, "asian_women": 0,
-            "black_men": 0, "black_women": 0,
-            "native_hawaiian_men": 0, "native_hawaiian_women": 0,
-            "white_men": men, "white_women": women,
-            "two_or_more_men": 0, "two_or_more_women": 0,
-            "unknown_race_men": 0, "unknown_race_women": 0
-        })
-    }
-
-    #[test]
-    fn test_build_completion_row_with_title() {
-        let item = full_demo_item("11.0101", 100, 60, 40);
-        let mut titles = HashMap::new();
-        titles.insert("11.0101".to_string(), "Computer Science".to_string());
-
-        let row = build_completion_row(&item, &titles, None);
-        assert_eq!(row.cip_code, "11.0101");
-        assert_eq!(row.cip_title, Some("Computer Science".to_string()));
-        assert_eq!(row.award_level, Some(5));
-        assert_eq!(row.major_num, Some(1));
-        assert_eq!(row.total, 100);
-        assert_eq!(row.demographics.len(), 11);
-    }
-
-    #[test]
-    fn test_build_completion_row_missing_title_returns_none() {
-        let item = full_demo_item("99.9999", 50, 25, 25);
-        let row = build_completion_row(&item, &HashMap::new(), None);
-        assert_eq!(row.cip_code, "99.9999");
-        assert_eq!(row.cip_title, None);
-    }
-
-    #[test]
-    fn test_build_completion_row_with_school_totals_computes_ratios() {
-        let item = full_demo_item("11.0101", 100, 60, 40);
-        let school = DemographicCounts {
-            total: 1000,
-            total_men: 600,
-            total_women: 400,
-            ..Default::default()
-        };
-        let row = build_completion_row(&item, &HashMap::new(), Some(&school));
-        let women = row
-            .demographics
-            .iter()
-            .find(|d| d.group == "Women")
-            .unwrap();
-        // cip_pct = 40%, school_pct = 40% → ratio = 1.0
-        assert_float_eq(women.cip_pct, 40.0);
-        assert_float_opt_eq(women.school_pct, Some(40.0));
-        assert_float_opt_eq(women.representation_ratio, Some(1.0));
-    }
-
-    // ── build_row_demographics() ──────────────────────────────────────────────
-
-    #[test]
-    fn test_build_row_demographics_returns_11_groups() {
-        let item = full_demo_item("11.0101", 100, 60, 40);
-        let groups = build_row_demographics(&item, 100, None);
-        assert_eq!(groups.len(), 11);
-    }
-
-    #[test]
-    fn test_build_row_demographics_gender_counts() {
-        let item = full_demo_item("11.0101", 100, 60, 40);
-        let groups = build_row_demographics(&item, 100, None);
-        let women = groups.iter().find(|d| d.group == "Women").unwrap();
-        let men = groups.iter().find(|d| d.group == "Men").unwrap();
-        assert_eq!(women.count, 40);
-        assert_float_eq(women.cip_pct, 40.0);
-        assert_eq!(men.count, 60);
-        assert_float_eq(men.cip_pct, 60.0);
-        assert!(women.school_pct.is_none()); // no school totals provided
-    }
-
-    #[test]
-    fn test_build_row_demographics_race_group_sums_men_and_women() {
-        let item = serde_json::json!({
-            "total_men": 100, "total_women": 100,
-            "hispanic_men": 20, "hispanic_women": 15,
-            "nonresident_alien_men": 0, "nonresident_alien_women": 0,
-            "american_indian_men": 0, "american_indian_women": 0,
-            "asian_men": 0, "asian_women": 0,
-            "black_men": 0, "black_women": 0,
-            "native_hawaiian_men": 0, "native_hawaiian_women": 0,
-            "white_men": 80, "white_women": 85,
-            "two_or_more_men": 0, "two_or_more_women": 0,
-            "unknown_race_men": 0, "unknown_race_women": 0
-        });
-        let groups = build_row_demographics(&item, 200, None);
-        let hispanic = groups
-            .iter()
-            .find(|d| d.group == "Hispanic/Latino")
-            .unwrap();
-        assert_eq!(hispanic.count, 35); // 20 + 15
-        assert_float_eq(hispanic.cip_pct, 17.5);
-    }
-
-    #[test]
-    fn test_build_row_demographics_missing_fields_default_zero() {
-        // Sparse item — unset fields should default to 0
-        let item = serde_json::json!({ "total_women": 30 });
-        let groups = build_row_demographics(&item, 100, None);
-        let men = groups.iter().find(|d| d.group == "Men").unwrap();
-        assert_eq!(men.count, 0);
-        assert_float_eq(men.cip_pct, 0.0);
-    }
-
-    #[test]
-    fn test_build_row_demographics_with_school_totals() {
-        let item = full_demo_item("11.0101", 100, 40, 60);
-        let school = DemographicCounts {
-            total: 200,
-            total_men: 80,
-            total_women: 120,
-            ..Default::default()
-        };
-        let groups = build_row_demographics(&item, 100, Some(&school));
-        let women = groups.iter().find(|d| d.group == "Women").unwrap();
-        // women cip_pct=60%, school_pct=60% → ratio=1.0
-        assert_float_opt_eq(women.school_pct, Some(60.0));
-        assert_float_opt_eq(women.representation_ratio, Some(1.0));
-    }
-
-    // ── build_cross_tab() ────────────────────────────────────────────────────
 
     #[test]
     fn test_build_cross_tab_returns_9_groups() {
@@ -2248,8 +1884,6 @@ mod tests {
         assert_eq!(names.len(), 9);
     }
 
-    // ── build_demographics() — representative subset ─────────────────────────
-
     #[test]
     fn test_build_demographics_returns_11_groups() {
         let result = build_demographics(&DemographicCounts::default(), None);
@@ -2299,73 +1933,5 @@ mod tests {
         let result = build_demographics(&c, Some(&e));
         let women = result.iter().find(|g| g.group == "Women").unwrap();
         assert_float_opt_eq(women.representation_ratio, Some(1.0));
-    }
-
-    // ── build_completion_row() — year threading ──────────────────────────────
-
-    /// Build a JSON completion record with year + minimum demographic fields.
-    fn completion_row_json(year: Option<i32>, total: i64) -> serde_json::Value {
-        let mut obj = serde_json::Map::new();
-        if let Some(y) = year {
-            obj.insert("year".into(), serde_json::json!(y));
-        }
-        obj.insert("cip_code".into(), serde_json::json!("11.0101"));
-        obj.insert("award_level".into(), serde_json::json!(5));
-        obj.insert("major_num".into(), serde_json::json!(1));
-        obj.insert("total".into(), serde_json::json!(total));
-        // Zero out demographic fields so build_row_demographics doesn't panic.
-        for f in [
-            "total_men",
-            "total_women",
-            "nonresident_alien_men",
-            "nonresident_alien_women",
-            "hispanic_men",
-            "hispanic_women",
-            "american_indian_men",
-            "american_indian_women",
-            "asian_men",
-            "asian_women",
-            "black_men",
-            "black_women",
-            "native_hawaiian_men",
-            "native_hawaiian_women",
-            "white_men",
-            "white_women",
-            "two_or_more_men",
-            "two_or_more_women",
-            "unknown_race_men",
-            "unknown_race_women",
-        ] {
-            obj.insert(f.into(), serde_json::json!(0));
-        }
-        serde_json::Value::Object(obj)
-    }
-
-    #[test]
-    fn test_build_completion_row_extracts_year_when_present() {
-        let item = completion_row_json(Some(2023), 42);
-        let titles = HashMap::new();
-        let row = build_completion_row(&item, &titles, None);
-        assert_eq!(row.year, Some(2023));
-        assert_eq!(row.total, 42);
-    }
-
-    #[test]
-    fn test_build_completion_row_year_none_when_missing() {
-        // Old-style records (or rows from a SELECT that omitted year) get None
-        let item = completion_row_json(None, 7);
-        let titles = HashMap::new();
-        let row = build_completion_row(&item, &titles, None);
-        assert_eq!(row.year, None);
-    }
-
-    #[test]
-    fn test_completion_row_serializes_year_field() {
-        // Public schema guarantee: every CompletionRow JSON includes a `year` key.
-        let item = completion_row_json(Some(2024), 1);
-        let titles = HashMap::new();
-        let row = build_completion_row(&item, &titles, None);
-        let json = serde_json::to_value(&row).unwrap();
-        assert_eq!(json.get("year"), Some(&serde_json::json!(2024)));
     }
 }

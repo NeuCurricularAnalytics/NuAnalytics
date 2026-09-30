@@ -148,22 +148,30 @@ pub async fn diagnose(config: &DatabaseConfig) -> Report {
     report.push("schema", schema_outcome(&client).await);
     report.push("seed data", cip_seed_outcome(&client).await);
     report.push("row limit", row_limit_outcome(&client).await);
+    report.push("query functions", query_functions_outcome(&client).await);
     report
 }
 
 /// Checks that cannot run without a reachable backend.
-const REACHABILITY_DEPENDENTS: [&str; 6] = [
+const REACHABILITY_DEPENDENTS: [&str; 7] = [
     "anon-key read",
     "session",
     "authenticated read",
     "schema",
     "seed data",
     "row limit",
+    "query functions",
 ];
 /// Checks that cannot run without a valid session.
-const SESSION_DEPENDENTS: [&str; 4] = ["authenticated read", "schema", "seed data", "row limit"];
+const SESSION_DEPENDENTS: [&str; 5] = [
+    "authenticated read",
+    "schema",
+    "seed data",
+    "row limit",
+    "query functions",
+];
 /// Checks that cannot run without a working authenticated read.
-const READ_DEPENDENTS: [&str; 3] = ["schema", "seed data", "row limit"];
+const READ_DEPENDENTS: [&str; 4] = ["schema", "seed data", "row limit", "query functions"];
 
 /// Record `names` as skipped, so the report lists one cause instead of repeating it.
 fn skip_remaining(report: &mut Report, names: &[&'static str], reason: &str) {
@@ -318,17 +326,18 @@ async fn cip_seed_outcome(client: &DbClient) -> Outcome {
     }
 }
 
-/// Largest page the MCP completions tools ask `PostgREST` for.
+/// Largest page this client asks `PostgREST` for in one select.
 ///
-/// Mirrors the `Some(5_000)` limits in `src/mcp/tools/completions.rs`. A
-/// `PGRST_DB_MAX_ROWS` below this truncates those queries, so it is the threshold the
-/// row-limit check probes against.
+/// The stored-report loader reads up to this many course-metric rows
+/// (`core::query::report_source`). A `PGRST_DB_MAX_ROWS` below it truncates that read with
+/// an HTTP 200, so it is the threshold the row-limit check probes against. The SQL-backed
+/// queries return one `jsonb` value and are not subject to the cap.
 pub const MCP_MAX_REQUEST_ROWS: usize = 5_000;
 
 /// Tables the row-limit check will probe, widest first, as `(table, narrow column)`.
 ///
-/// `completions` is what the MCP tools actually query at [`MCP_MAX_REQUEST_ROWS`], so it
-/// gives full coverage — but it is empty until IPEDS is imported. `cip_codes` is seeded on
+/// `completions` is large enough to give full coverage at [`MCP_MAX_REQUEST_ROWS`] — but it
+/// is empty until IPEDS is imported. `cip_codes` is seeded on
 /// every install, and although its 2,173 rows can only prove a cap is above that, it does
 /// catch the upstream default of 1000, which is the case that matters.
 const ROW_LIMIT_PROBES: [(&str, &str); 2] = [
@@ -387,6 +396,99 @@ async fn row_limit_outcome(client: &DbClient) -> Outcome {
         "no table has enough rows to test the row cap — import IPEDS data, then re-run to \
          check PGRST_DB_MAX_ROWS is not below {MCP_MAX_REQUEST_ROWS}"
     ))
+}
+
+/// What one probe of a query function observed.
+#[derive(Debug, PartialEq, Eq)]
+enum FunctionProbe {
+    /// Answered `[{"t": 1}]`, as the current definition does.
+    Current,
+    /// Answered `[1]`: the old wrapper, whose bare alias a result column named `t`
+    /// captures, so every row comes back as that column's value.
+    Outdated,
+    /// `PostgREST` has no such function (`PGRST202`) — not installed, or the schema cache
+    /// was not reloaded after installing it.
+    Missing,
+    /// Anything else, verbatim.
+    Unexpected(String),
+}
+
+/// Classify one probe. The probe selects a column named `t` precisely so the old wrapper
+/// answers differently from the current one.
+fn classify_function_probe(
+    result: Result<serde_json::Value, super::DatabaseError>,
+) -> FunctionProbe {
+    match result {
+        Ok(v) if v == serde_json::json!([{ "t": 1 }]) => FunctionProbe::Current,
+        Ok(v) if v == serde_json::json!([1]) => FunctionProbe::Outdated,
+        Ok(v) => FunctionProbe::Unexpected(format!("answered {v}")),
+        Err(e)
+            if e.backend_error()
+                .is_some_and(|b| b.code == super::codes::FUNCTION_NOT_FOUND) =>
+        {
+            FunctionProbe::Missing
+        }
+        Err(e) => FunctionProbe::Unexpected(e.to_string()),
+    }
+}
+
+/// Are both read-only query functions installed and current?
+///
+/// `query_readonly` backs ad-hoc SQL and `query_readonly_params` the curated queries
+/// compiled into nuanalytics, so either one missing breaks something that otherwise looks
+/// like a working deployment.
+async fn query_functions_outcome(client: &DbClient) -> Outcome {
+    use super::functions::{QUERY_READONLY, QUERY_READONLY_PARAMS};
+    let plain = client
+        .rpc(
+            QUERY_READONLY,
+            &serde_json::json!({ "q": "SELECT 1 AS t\n", "max_rows": 1 }),
+        )
+        .await;
+    let bound = client
+        .rpc(
+            QUERY_READONLY_PARAMS,
+            &serde_json::json!({
+                "q": "SELECT ($1->>'probe')::int AS t\n",
+                "params": { "probe": 1 },
+                "max_rows": 1,
+            }),
+        )
+        .await;
+    query_functions_verdict(&[
+        (QUERY_READONLY, classify_function_probe(plain)),
+        (QUERY_READONLY_PARAMS, classify_function_probe(bound)),
+    ])
+}
+
+/// Turn the two probes into one outcome that names each function's problem.
+///
+/// The install step is named only when a probe established that a function is missing or
+/// out of date. A timeout or a 5xx is reported as observed: prescribing a reinstall for
+/// it would assert a cause the check has not established.
+fn query_functions_verdict(probes: &[(&str, FunctionProbe)]) -> Outcome {
+    let problems: Vec<String> = probes
+        .iter()
+        .filter_map(|(name, probe)| match probe {
+            FunctionProbe::Current => None,
+            FunctionProbe::Outdated => Some(format!("{name} is an older definition")),
+            FunctionProbe::Missing => Some(format!("{name} is not installed")),
+            FunctionProbe::Unexpected(what) => Some(format!("{name}: {what}")),
+        })
+        .collect();
+    if problems.is_empty() {
+        let names: Vec<&str> = probes.iter().map(|(n, _)| *n).collect();
+        return Outcome::Pass(format!("{} answer", names.join(" and ")));
+    }
+    let installable = probes
+        .iter()
+        .any(|(_, p)| matches!(p, FunctionProbe::Missing | FunctionProbe::Outdated));
+    let problems = problems.join("; ");
+    Outcome::Fail(if installable {
+        format!("{problems} — {}", super::functions::INSTALL_STEP)
+    } else {
+        problems
+    })
 }
 
 // ============================================================================
@@ -450,6 +552,71 @@ mod tests {
         .collect();
         let unique: std::collections::HashSet<char> = markers.iter().copied().collect();
         assert_eq!(unique.len(), markers.len(), "markers must be distinct");
+    }
+
+    #[test]
+    fn a_function_probe_tells_current_outdated_and_missing_apart() {
+        use super::super::DatabaseError;
+        assert_eq!(
+            classify_function_probe(Ok(serde_json::json!([{ "t": 1 }]))),
+            FunctionProbe::Current
+        );
+        // The old wrapper returns the `t` column's value in place of the row.
+        assert_eq!(
+            classify_function_probe(Ok(serde_json::json!([1]))),
+            FunctionProbe::Outdated
+        );
+        assert_eq!(
+            classify_function_probe(Err(DatabaseError::QueryError(
+                r#"PostgREST error (404): {"code":"PGRST202"}"#.to_string()
+            ))),
+            FunctionProbe::Missing
+        );
+        assert!(matches!(
+            classify_function_probe(Err(DatabaseError::ConnectionError("down".into()))),
+            FunctionProbe::Unexpected(_)
+        ));
+        assert_eq!(
+            classify_function_probe(Ok(serde_json::json!([]))),
+            FunctionProbe::Unexpected("answered []".to_string())
+        );
+    }
+
+    #[test]
+    fn the_verdict_names_each_function_and_the_fix_only_when_something_is_wrong() {
+        use super::super::functions::{QUERY_READONLY, QUERY_READONLY_PARAMS};
+        let pass = query_functions_verdict(&[
+            (QUERY_READONLY, FunctionProbe::Current),
+            (QUERY_READONLY_PARAMS, FunctionProbe::Current),
+        ]);
+        assert!(matches!(pass, Outcome::Pass(_)), "{pass:?}");
+
+        let fail = query_functions_verdict(&[
+            (QUERY_READONLY, FunctionProbe::Outdated),
+            (QUERY_READONLY_PARAMS, FunctionProbe::Missing),
+        ]);
+        assert!(matches!(fail, Outcome::Fail(_)), "{fail:?}");
+        let detail = fail.detail();
+        assert!(
+            detail.contains("query_readonly is an older definition"),
+            "{detail}"
+        );
+        assert!(
+            detail.contains("query_readonly_params is not installed"),
+            "{detail}"
+        );
+        assert!(detail.contains("step 4c"), "{detail}");
+
+        // A timeout says nothing about installation, so no reinstall is prescribed.
+        let timeout = query_functions_verdict(&[
+            (QUERY_READONLY, FunctionProbe::Current),
+            (
+                QUERY_READONLY_PARAMS,
+                FunctionProbe::Unexpected("timed out".into()),
+            ),
+        ]);
+        assert!(matches!(timeout, Outcome::Fail(_)), "{timeout:?}");
+        assert!(!timeout.detail().contains("step 4c"), "{timeout:?}");
     }
 
     fn report_of(outcomes: Vec<Outcome>) -> Report {
@@ -566,6 +733,65 @@ mod tests {
             2 + REACHABILITY_DEPENDENTS.len(),
             "an unreachable backend should list as many checks as a healthy one, each \
              either run or explicitly skipped"
+        );
+    }
+
+    /// Every early exit lists exactly the checks a full run does, in the same order.
+    ///
+    /// This is what catches a check added to `diagnose` but left out of a `*_DEPENDENTS`
+    /// array: the early-exit report would silently lack it. Comparing against a full run
+    /// rather than an array's own length is the point — a count built from the same array
+    /// cannot see an entry missing from it.
+    #[tokio::test]
+    async fn every_early_exit_lists_the_same_checks_as_a_full_run() {
+        use crate::core::database::auth::{save_auth_state, AuthState};
+        let url = capped_backend(10, usize::MAX).await;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let session = dir.path().join("auth.json");
+        save_auth_state(
+            &session,
+            &AuthState {
+                access_token: "jwt".into(),
+                refresh_token: String::new(),
+                expires_at: i64::MAX,
+                user_email: None,
+            },
+        )
+        .expect("save session");
+        let config = |endpoint: &str, auth: &std::path::Path| DatabaseConfig {
+            enabled: true,
+            endpoint: endpoint.into(),
+            anon_key: "k".into(),
+            auth_file: auth.display().to_string(),
+            ..DatabaseConfig::default()
+        };
+        let names = |r: &Report| r.checks.iter().map(|c| c.name).collect::<Vec<_>>();
+
+        let full = diagnose(&config(&url, &session)).await;
+        assert!(
+            full.checks
+                .iter()
+                .all(|c| !matches!(c.outcome, Outcome::Skipped(_))),
+            "the stub should let every check run: {:?}",
+            full.checks
+        );
+        let signed_out = diagnose(&config(&url, &dir.path().join("none.json"))).await;
+        assert_eq!(
+            names(&signed_out),
+            names(&full),
+            "SESSION_DEPENDENTS vs diagnose"
+        );
+        let unreachable = diagnose(&config("http://127.0.0.1:1", &session)).await;
+        assert_eq!(
+            names(&unreachable),
+            names(&full),
+            "REACHABILITY_DEPENDENTS vs diagnose"
+        );
+        // The read-failed exit comes right after "authenticated read".
+        assert_eq!(
+            READ_DEPENDENTS[..],
+            SESSION_DEPENDENTS[1..],
+            "READ_DEPENDENTS vs diagnose"
         );
     }
 

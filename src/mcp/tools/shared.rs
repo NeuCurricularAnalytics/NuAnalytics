@@ -1,9 +1,10 @@
 //! Shared utilities for MCP tool implementations.
 
-use serde::Serialize;
+use rmcp::schemars;
+use serde::{Deserialize, Serialize};
 
 use crate::core::degree::DegreeParseError;
-use crate::core::json::error_json;
+use crate::core::json::{coded_error, error_code};
 
 // ─── DegreeParseError formatting ─────────────────────────────────────────────
 
@@ -34,8 +35,8 @@ pub fn format_degree_parse_error(e: &DegreeParseError) -> String {
 // in server.rs surfaces as a compile-time grep instead of silently breaking
 // follow-up suggestions.
 
-/// MCP tool name: schema documentation.
-pub const TOOL_GET_DEGREE_SCHEMA: &str = "get_degree_schema";
+/// MCP tool name: reference material (the degree format, its JSON Schema, the database).
+pub const TOOL_GET_REFERENCE: &str = "get_reference";
 /// MCP tool name: degree validation.
 pub const TOOL_VALIDATE_DEGREE: &str = "validate_degree";
 /// MCP tool name: degree audit (deep prereq chains + missing prereqs).
@@ -46,6 +47,20 @@ pub const TOOL_ANALYZE_DEGREE: &str = "analyze_degree";
 pub const TOOL_GET_COURSE_DETAIL: &str = "get_course_detail";
 /// MCP tool name: one-call plan-graph rendering.
 pub const TOOL_RENDER_PLAN_GRAPH: &str = "render_plan_graph";
+/// MCP tool name: the HTML degree report, computed afresh.
+pub const TOOL_RENDER_DEGREE_REPORT: &str = "render_degree_report";
+
+/// Every tool a follow-up or hint can name, so a test can check each is one the server
+/// serves.
+pub const FOLLOWUP_TOOLS: [&str; 7] = [
+    TOOL_GET_REFERENCE,
+    TOOL_VALIDATE_DEGREE,
+    TOOL_AUDIT_DEGREE,
+    TOOL_ANALYZE_DEGREE,
+    TOOL_GET_COURSE_DETAIL,
+    TOOL_RENDER_PLAN_GRAPH,
+    TOOL_RENDER_DEGREE_REPORT,
+];
 
 /// Hint about the next MCP call a tool's response suggests the caller make.
 ///
@@ -68,62 +83,155 @@ pub struct ToolFollowup {
     pub suggested_args: serde_json::Value,
 }
 
-/// How a degree YAML was supplied to validate/audit/analyze.
+/// Where a tool's degree comes from: exactly one of three fields.
 ///
-/// Exactly one source is required. `Path` is read from the filesystem at the
-/// MCP server's working directory; `DegreeId` is fetched from the configured
-/// database (requires the `database` feature).
-#[derive(Debug)]
-pub enum YamlSource {
-    /// Inline YAML body passed by the caller.
-    Content(String),
-    /// Path to a YAML file on the MCP server's filesystem.
-    Path(String),
-    /// Stored degree id; the server fetches the YAML from the database.
-    DegreeId(String),
+/// Flattened into every request that takes a degree, so the three fields sit at the top
+/// level of each tool's parameters. Three fields rather than one sniffed string: a path
+/// that does not exist and a `program_key` that does not match look the same as a bare
+/// string, and the error would have to guess which was meant.
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
+pub struct DegreeSourceArgs {
+    /// A degree by reference.
+    #[schemars(
+        description = "A degree by reference: \"sample:<key>\" (see list_sample_degrees), \"cache:<hash>\" (the source.handle an earlier call returned), or a stored program's program_key or degree_id"
+    )]
+    pub degree: Option<String>,
+    /// The degree inline.
+    #[schemars(description = "The degree inline, as YAML or unified JSON")]
+    pub content: Option<String>,
+    /// A degree file on the server.
+    #[schemars(description = "Path to a degree file (YAML or JSON) on the server's filesystem")]
+    pub path: Option<String>,
 }
 
-/// Pick a [`YamlSource`] from the three optional input fields.
+/// A refusal of the arguments themselves, coded so the MCP error envelope says so.
+#[must_use]
+pub fn bad_arguments(message: impl std::fmt::Display) -> String {
+    coded_error(error_code::BAD_ARGUMENTS, message).to_string()
+}
+
+/// A degree source, once exactly one was given.
+#[derive(Debug, PartialEq, Eq)]
+pub enum DegreeSource {
+    /// Inline YAML or JSON.
+    Content(String),
+    /// A file on the server's filesystem.
+    Path(String),
+    /// `sample:<key>`, `cache:<hash>`, or a stored program.
+    Reference(String),
+}
+
+impl DegreeSourceArgs {
+    /// The one source given.
+    ///
+    /// # Errors
+    /// A JSON error string when none or more than one was given, or when `content` is an
+    /// `@`-path reference rather than a degree.
+    pub fn into_source(self) -> Result<DegreeSource, String> {
+        match (self.degree, self.content, self.path) {
+            (Some(d), None, None) => Ok(DegreeSource::Reference(d)),
+            (None, Some(c), None) => {
+                // A leading `@` is never valid YAML or JSON (it is a reserved YAML
+                // indicator) and almost always means an at-path reference. Refuse it by
+                // name rather than hand it to the parser.
+                if c.trim_start().starts_with('@') {
+                    return Err(bad_arguments(
+                        "content must be the degree itself, not a path reference (it starts with '@'). Use path for a file on the server, or degree for a sample:, cache: or stored reference.",
+                    ));
+                }
+                Ok(DegreeSource::Content(c))
+            }
+            (None, None, Some(p)) => Ok(DegreeSource::Path(p)),
+            (None, None, None) => Err(bad_arguments(
+                "Must provide exactly one of: degree, content, or path",
+            )),
+            _ => Err(bad_arguments(
+                "Provide exactly one of: degree, content, or path (not several)",
+            )),
+        }
+    }
+}
+
+/// Why [`write_output`] wrote nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WriteRefusal {
+    /// [`error_code::BAD_ARGUMENTS`] when the file exists (the caller's to decide),
+    /// [`error_code::WRITE_FAILED`] when a directory or the file could not be written.
+    pub code: &'static str,
+    /// What happened, naming the path.
+    pub message: String,
+}
+
+impl WriteRefusal {
+    /// The failure payload, coded by cause.
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        coded_error(self.code, &self.message).to_string()
+    }
+}
+
+/// Write a tool's output to `path`, refusing to replace an existing file unless asked.
 ///
-/// Returns a JSON error string when the caller supplied none or more than one,
-/// so the handler can return it directly.
+/// The rule every tool that writes follows: a file that exists is not replaced unless the
+/// caller passed `overwrite=true`, so a mistyped path cannot destroy something. Parent
+/// directories are created.
 ///
 /// # Errors
-/// Returns a JSON error string when zero or more than one source is provided.
-pub fn parse_yaml_source(
-    yaml_content: Option<String>,
-    yaml_path: Option<String>,
-    degree_id: Option<String>,
-) -> Result<YamlSource, String> {
-    let count = u8::from(yaml_content.is_some())
-        + u8::from(yaml_path.is_some())
-        + u8::from(degree_id.is_some());
-    if count == 0 {
-        return Err(error_json(
-            "Must provide exactly one of: yaml_content, yaml_path, or degree_id",
-        ));
+/// A [`WriteRefusal`] naming the path when it exists and `overwrite` is false, or when a
+/// directory or the file cannot be written.
+pub fn write_output(path: &str, content: &str, overwrite: bool) -> Result<(), WriteRefusal> {
+    let target = std::path::Path::new(path);
+    if target.exists() && !overwrite {
+        return Err(WriteRefusal {
+            code: error_code::BAD_ARGUMENTS,
+            message: format!("{path} already exists; pass overwrite=true to replace it"),
+        });
     }
-    if count > 1 {
-        return Err(error_json(
-            "Provide exactly one of: yaml_content, yaml_path, or degree_id (not multiple)",
-        ));
+    let failed = |message: String| WriteRefusal {
+        code: error_code::WRITE_FAILED,
+        message,
+    };
+    if let Some(parent) = target.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| failed(format!("cannot create {}: {e}", parent.display())))?;
     }
-    if let Some(c) = yaml_content {
-        // A leading `@` is never valid degree YAML/JSON (it's a reserved YAML
-        // indicator) and almost always means the caller meant an at-path
-        // reference. Fail fast with a directive error rather than handing it to
-        // the parser, which previously stalled the whole tool call.
-        if c.trim_start().starts_with('@') {
-            return Err(error_json(
-                "yaml_content must be inline YAML/JSON, not a path reference (it starts with '@'). Use yaml_path for a file on the server, or degree_id for a cache:<hash> / stored program.",
-            ));
+    std::fs::write(target, content).map_err(|e| failed(format!("cannot write {path}: {e}")))
+}
+
+/// A tool's output, returned inline or written to `path`: `(inline, written_path)`, with
+/// exactly one of the two set.
+///
+/// # Errors
+/// [`write_output`]'s refusal.
+pub fn deliver_output(
+    content: String,
+    path: Option<&str>,
+    overwrite: bool,
+) -> Result<(Option<String>, Option<String>), WriteRefusal> {
+    match path {
+        Some(path) => {
+            write_output(path, &content, overwrite).map(|()| (None, Some(path.to_string())))
         }
-        return Ok(YamlSource::Content(c));
+        None => Ok((Some(content), None)),
     }
-    if let Some(p) = yaml_path {
-        return Ok(YamlSource::Path(p));
-    }
-    Ok(YamlSource::DegreeId(degree_id.unwrap_or_default()))
+}
+
+/// Read a degree file named by a tool's `path` argument.
+///
+/// # Errors
+/// A failure payload naming the path, coded [`error_code::SOURCE_NOT_FOUND`] when there is
+/// no such file.
+pub fn read_degree_file(path: &str) -> Result<String, String> {
+    std::fs::read_to_string(path).map_err(|e| {
+        let mut payload = serde_json::json!({
+            "error": format!("cannot read degree file {path}: {e}"),
+            "path": path,
+        });
+        if e.kind() == std::io::ErrorKind::NotFound {
+            payload["code"] = error_code::SOURCE_NOT_FOUND.into();
+        }
+        payload.to_string()
+    })
 }
 
 /// Render a ±3-line context window around a 1-indexed `line` in `yaml`.
@@ -172,45 +280,75 @@ pub fn format_yaml_context(yaml: &str, line: usize, column: usize) -> String {
     out
 }
 
-// ============================================================================
-// Lenient option deserializers
-// ============================================================================
-//
-// Some MCP clients (notably Cowork / the Claude Agent SDK) serialize
-// numeric and boolean parameters as JSON strings (e.g. `"2023"` rather
-// than `2023`). Default serde rejects those when the field is typed as
-// `Option<i32>` etc., so requests fail before reaching tool logic.
-//
-// Those helpers now live in `crate::core::json`, so the query engines and the CLI reach
-// them without the `mcp` feature. Apply via
-// `#[serde(default, deserialize_with = "crate::core::json::deserialize_opt_<T>")]`.
-// The `default` attribute is required so an absent field stays `None` instead of routing
-// through the deserializer.
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_parse_yaml_source_rejects_at_prefixed_content() {
-        // A leading `@` means the caller mistook yaml_content for an at-path
-        // reference — fail fast with a directive error instead of stalling the
-        // YAML parser (the field-report hang).
-        let err = parse_yaml_source(Some("@/path/to/degree.yaml".to_string()), None, None)
-            .expect_err("@-prefixed yaml_content must be rejected");
-        assert!(
-            err.contains("yaml_path") && err.contains('@'),
-            "error must redirect to yaml_path and name the '@': {err}"
-        );
-        // Leading whitespace before the `@` is still caught.
-        assert!(parse_yaml_source(Some("   @foo".to_string()), None, None).is_err());
+    fn args(degree: Option<&str>, content: Option<&str>, path: Option<&str>) -> DegreeSourceArgs {
+        DegreeSourceArgs {
+            degree: degree.map(str::to_string),
+            content: content.map(str::to_string),
+            path: path.map(str::to_string),
+        }
     }
 
     #[test]
-    fn test_parse_yaml_source_accepts_normal_content() {
-        let src = parse_yaml_source(Some("degree:\n  id: x\n".to_string()), None, None)
-            .expect("normal yaml_content must be accepted");
-        assert!(matches!(src, YamlSource::Content(_)));
+    fn at_prefixed_content_is_refused_and_pointed_at_path() {
+        // A leading `@` means the caller mistook content for an at-path reference — fail
+        // fast with a directive error instead of stalling the YAML parser.
+        let err = args(None, Some("@/path/to/degree.yaml"), None)
+            .into_source()
+            .expect_err("@-prefixed content must be rejected");
+        assert!(err.contains("path") && err.contains('@'), "{err}");
+        assert!(args(None, Some("   @foo"), None).into_source().is_err());
+    }
+
+    #[test]
+    fn exactly_one_source_is_required() {
+        let none = args(None, None, None).into_source().unwrap_err();
+        assert!(none.contains("exactly one of"), "{none}");
+        let several = args(Some("sample:csu"), None, Some("/tmp/x.yaml"))
+            .into_source()
+            .unwrap_err();
+        assert!(several.contains("not several"), "{several}");
+    }
+
+    #[test]
+    fn each_field_resolves_to_its_own_kind_of_source() {
+        assert_eq!(
+            args(None, Some("degree:\n  id: x\n"), None).into_source(),
+            Ok(DegreeSource::Content("degree:\n  id: x\n".into()))
+        );
+        assert_eq!(
+            args(None, None, Some("/tmp/x.yaml")).into_source(),
+            Ok(DegreeSource::Path("/tmp/x.yaml".into()))
+        );
+        assert_eq!(
+            args(Some("prog:1"), None, None).into_source(),
+            Ok(DegreeSource::Reference("prog:1".into()))
+        );
+    }
+
+    #[test]
+    fn the_source_fields_sit_at_the_top_level_of_a_flattened_request() {
+        #[derive(Deserialize, schemars::JsonSchema)]
+        struct Probe {
+            #[serde(flatten)]
+            source: DegreeSourceArgs,
+            other: Option<i32>,
+        }
+        let schema = serde_json::to_value(schemars::schema_for!(Probe)).expect("schema");
+        for field in ["degree", "content", "path", "other"] {
+            assert!(
+                schema["properties"].get(field).is_some(),
+                "{field} not top-level: {schema}"
+            );
+        }
+        let probe: Probe =
+            serde_json::from_value(serde_json::json!({"degree": "sample:csu", "other": 3}))
+                .expect("decodes");
+        assert_eq!(probe.source.degree.as_deref(), Some("sample:csu"));
+        assert_eq!(probe.other, Some(3));
     }
 
     #[test]
@@ -257,46 +395,71 @@ mod tests {
         assert_eq!(caret_pos, 7, "caret offset mismatch in: {caret_line:?}");
     }
 
-    // ─── parse_comma_list_usize ─────────────────────────────────────────────
-
-    // ─── parse_yaml_source ──────────────────────────────────────────────────
-
     #[test]
-    fn test_parse_yaml_source_zero_sources_errors() {
-        let err = parse_yaml_source(None, None, None).unwrap_err();
-        assert!(err.contains("Must provide exactly one of"));
+    fn test_write_output_refuses_codes_and_replaces_on_request() {
+        let dir = std::env::temp_dir().join(format!("nuanalytics-write-{}", std::process::id()));
+        let path = dir.join("a/b.txt");
+        let path = path.to_str().unwrap();
+
+        assert_eq!(write_output(path, "one", false), Ok(()), "creates parents");
+        let refused = write_output(path, "two", false).unwrap_err();
+        assert_eq!(refused.code, error_code::BAD_ARGUMENTS);
+        assert!(
+            refused.message.contains("overwrite=true"),
+            "{}",
+            refused.message
+        );
+        assert_eq!(
+            std::fs::read_to_string(path).unwrap(),
+            "one",
+            "refusal wrote nothing"
+        );
+
+        assert_eq!(write_output(path, "two", true), Ok(()));
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "two");
+
+        // A parent that is a file cannot be created: an I/O failure, not a bad argument.
+        let under_file = format!("{path}/c.txt");
+        assert_eq!(
+            write_output(&under_file, "x", false).unwrap_err().code,
+            error_code::WRITE_FAILED
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn test_parse_yaml_source_multiple_sources_errors() {
-        let err = parse_yaml_source(
-            Some("inline".to_string()),
-            Some("/tmp/x.yaml".to_string()),
-            None,
-        )
-        .unwrap_err();
-        assert!(err.contains("not multiple"));
+    fn test_deliver_output_is_inline_or_written_never_both() {
+        assert_eq!(
+            deliver_output("body".into(), None, false),
+            Ok((Some("body".into()), None))
+        );
+        let path =
+            std::env::temp_dir().join(format!("nuanalytics-deliver-{}.txt", std::process::id()));
+        let path = path.to_str().unwrap();
+        assert_eq!(
+            deliver_output("body".into(), Some(path), true),
+            Ok((None, Some(path.to_string())))
+        );
+        std::fs::remove_file(path).ok();
     }
 
     #[test]
-    fn test_parse_yaml_source_single_content_resolves_to_content() {
-        let src = parse_yaml_source(Some("body".to_string()), None, None).unwrap();
-        assert!(matches!(src, YamlSource::Content(s) if s == "body"));
+    fn test_read_degree_file_reads_or_says_not_found() {
+        let path =
+            std::env::temp_dir().join(format!("nuanalytics-read-{}.yaml", std::process::id()));
+        std::fs::write(&path, "degree: {}\n").unwrap();
+        assert_eq!(
+            read_degree_file(path.to_str().unwrap()).unwrap(),
+            "degree: {}\n"
+        );
+        std::fs::remove_file(&path).ok();
+
+        let missing: serde_json::Value =
+            serde_json::from_str(&read_degree_file("/nonexistent/nu/x.yaml").unwrap_err()).unwrap();
+        assert_eq!(missing["code"], error_code::SOURCE_NOT_FOUND);
+        assert!(missing["error"]
+            .as_str()
+            .unwrap()
+            .contains("/nonexistent/nu/x.yaml"));
     }
-
-    #[test]
-    fn test_parse_yaml_source_single_path_resolves_to_path() {
-        let src = parse_yaml_source(None, Some("/tmp/x.yaml".to_string()), None).unwrap();
-        assert!(matches!(src, YamlSource::Path(s) if s == "/tmp/x.yaml"));
-    }
-
-    #[test]
-    fn test_parse_yaml_source_single_degree_id_resolves_to_id() {
-        let src = parse_yaml_source(None, None, Some("deg-1".to_string())).unwrap();
-        assert!(matches!(src, YamlSource::DegreeId(s) if s == "deg-1"));
-    }
-
-    // ─── read_yaml_file ─────────────────────────────────────────────────────
-
-    // ─── Lenient option deserializers ──────────────────────────────────────
 }

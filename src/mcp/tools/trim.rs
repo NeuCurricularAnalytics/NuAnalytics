@@ -1,24 +1,22 @@
 //! Degree trim tool
 //!
-//! Exposes [`crate::core::degree::trim_program`] over MCP. The trimmed YAML
-//! is returned inline; an optional `output_path` writes it to disk. Every
-//! successful call also stores the trimmed body in the process-wide
-//! [`crate::mcp::cache::YAML_CACHE`] and surfaces its handle as
-//! `trimmed_cache_id` so the caller can chain `validate_degree` /
-//! `audit_degree` against the result without re-serialising the YAML.
+//! Exposes [`crate::core::degree::trim_program`] over MCP. The trimmed YAML is returned
+//! inline; `output_path` also writes it to disk. Every successful call caches the trimmed
+//! body and returns its handle as `trimmed_degree`, which any degree tool takes as
+//! `degree`, so `validate_degree` and `audit_degree` can follow without resending it.
 
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 use crate::core::degree::{
-    parse_degree_auto, save_degree_to_yaml, serialize_degree_yaml, trim_program, DegreeParseError,
-    TrimOptions, TrimReport,
+    parse_degree_auto, serialize_degree_yaml, trim_program, DegreeParseError, TrimOptions,
+    TrimReport,
 };
-use crate::mcp::cache::YAML_CACHE;
+use crate::mcp::cache::yaml_cache;
 use crate::mcp::tools::shared::{
-    format_degree_parse_error, format_yaml_context, ToolFollowup, TOOL_AUDIT_DEGREE,
-    TOOL_VALIDATE_DEGREE,
+    format_degree_parse_error, format_yaml_context, write_output, DegreeSourceArgs, ToolFollowup,
+    TOOL_AUDIT_DEGREE, TOOL_VALIDATE_DEGREE,
 };
 
 // ============================================================================
@@ -27,28 +25,15 @@ use crate::mcp::tools::shared::{
 
 /// Request parameters for the `trim_degree` tool.
 ///
-/// Provide exactly one YAML source: `yaml_content`, `yaml_path`, or
-/// `degree_id` (the latter accepts `cache:<hash>` handles from prior tool
-/// calls). The trim semantics match the CLI's `degree trim` subcommand —
+/// Takes the degree as `source` — exactly one of `degree` (which accepts `cache:<hash>`
+/// handles from prior tool calls), `content` or `path`. The trim semantics match the CLI's `degree trim` subcommand —
 /// alternatives collapse to a single shortest entry path, except inside
 /// protected subjects.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct TrimDegreeRequest {
-    /// Inline YAML body. Mutually exclusive with `yaml_path` / `degree_id`.
-    #[schemars(description = "Complete degree program YAML content (inline)")]
-    pub yaml_content: Option<String>,
-
-    /// Workspace-relative file path. Mutually exclusive with the others.
-    #[schemars(
-        description = "Path to a YAML file on the MCP server's filesystem. Mutually exclusive with yaml_content/degree_id."
-    )]
-    pub yaml_path: Option<String>,
-
-    /// Stored degree id (DB or `cache:<hash>` handle). Mutually exclusive.
-    #[schemars(
-        description = "Stored degree id (cache:<hash> handle or DB row). Mutually exclusive with yaml_content/yaml_path."
-    )]
-    pub degree_id: Option<String>,
+    /// Where the degree comes from: exactly one of `degree`, `content`, `path`.
+    #[serde(flatten)]
+    pub source: DegreeSourceArgs,
 
     /// Extra subject prefixes to protect from trimming, in addition to the
     /// degree's declared `major_subjects`. Case-insensitive.
@@ -64,13 +49,27 @@ pub struct TrimDegreeRequest {
     )]
     pub include: Option<Vec<String>>,
 
-    /// Optional disk write. Primary output is always inline; this just adds a
-    /// side-effect file when set. The handler refuses to overwrite a
-    /// `yaml_path` input.
+    /// Also write the trimmed YAML to this file. Never the input file.
     #[schemars(
-        description = "Optional path to write the trimmed YAML to. The trimmed content is also returned inline regardless."
+        description = "Also write the trimmed YAML to this file (it is returned inline regardless). Never replaces the input; replaces another existing file only with overwrite=true."
     )]
     pub output_path: Option<String>,
+
+    /// Replace `output_path` when it already exists.
+    #[schemars(description = "Replace output_path if it already exists (default false)")]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
+    pub overwrite: Option<bool>,
+}
+
+/// Where the trimmed degree is written, if anywhere, and what it came from.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct TrimOutput<'a> {
+    /// File to also write the trimmed YAML to.
+    pub path: Option<&'a str>,
+    /// Replace `path` when it exists. The input file is never replaced.
+    pub overwrite: bool,
+    /// The input's file, when it was read from one.
+    pub source_path: Option<&'a str>,
 }
 
 /// Summary of what the trim did. Mirrors [`TrimReport`] in a serializable
@@ -121,17 +120,19 @@ pub struct TrimResponse {
     /// Non-parse error message (e.g. refused overwrite, write I/O failure).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Why, when the cause is known: see [`crate::core::json::error_code`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<&'static str>,
 
     /// Trimmed YAML serialised back from the modified program. Present
     /// whenever `success == true`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trimmed_yaml: Option<String>,
 
-    /// `cache:<hash>` handle for the trimmed YAML. Pass as `degree_id` to
-    /// any follow-up tool to avoid re-pasting the body. Always issued on a
-    /// successful trim.
+    /// The trimmed degree as a `cache:` reference, which any degree tool takes as `degree`.
+    /// Issued on every successful trim.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub trimmed_cache_id: Option<String>,
+    pub trimmed_degree: Option<String>,
 
     /// Side-effect path actually written to disk, when `output_path` was set
     /// and the write succeeded.
@@ -159,8 +160,7 @@ pub fn execute(
     yaml_content: &str,
     keep_all: &[String],
     include: &[String],
-    output_path: Option<&str>,
-    source_path: Option<&str>,
+    output: &TrimOutput<'_>,
 ) -> TrimResponse {
     let program = match parse_degree_auto(yaml_content) {
         Ok((p, _warnings)) => p,
@@ -184,36 +184,21 @@ pub fn execute(
         }
     };
 
-    // Optional side-effect: write the trimmed body to disk. We refuse to
-    // overwrite the input file even when the caller asked us to, to keep
-    // accidental destruction out of the MCP surface (mirrors the CLI guard).
-    let written_path = match output_path {
+    let written_path = match output.path.map(|out| write_trimmed(out, &yaml, output)) {
         None => None,
-        Some(out) => {
-            if let Some(src) = source_path {
-                if std::path::Path::new(out) == std::path::Path::new(src) {
-                    return TrimResponse {
-                        success: false,
-                        error: Some(format!(
-                            "refusing to overwrite input file {out}; choose a different output_path"
-                        )),
-                        ..empty_response()
-                    };
-                }
+        Some(Ok(out)) => Some(out),
+        Some(Err(refusal)) => {
+            return TrimResponse {
+                success: false,
+                error: Some(refusal.message),
+                code: Some(refusal.code),
+                ..empty_response()
             }
-            if let Err(e) = save_degree_to_yaml(&trimmed, out) {
-                return TrimResponse {
-                    success: false,
-                    error: Some(format!("Failed to write {out}: {e}")),
-                    ..empty_response()
-                };
-            }
-            Some(out.to_string())
         }
     };
 
-    let cache_id = YAML_CACHE.lock().map(|mut c| c.insert(yaml.clone())).ok();
-    let followups = build_followups(cache_id.as_deref());
+    let handle = yaml_cache().insert(yaml.clone());
+    let followups = build_followups(&handle);
 
     TrimResponse {
         success: true,
@@ -222,8 +207,9 @@ pub fn execute(
         parse_error_column: None,
         parse_error_context: None,
         error: None,
+        code: None,
         trimmed_yaml: Some(yaml),
-        trimmed_cache_id: cache_id,
+        trimmed_degree: Some(handle),
         output_path: written_path,
         report: Some(report.into()),
         tool_followups: followups,
@@ -236,12 +222,38 @@ pub fn execute_json(
     yaml_content: &str,
     keep_all: &[String],
     include: &[String],
-    output_path: Option<&str>,
-    source_path: Option<&str>,
+    output: &TrimOutput<'_>,
 ) -> String {
-    let response = execute(yaml_content, keep_all, include, output_path, source_path);
-    serde_json::to_string_pretty(&response)
-        .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
+    crate::core::json::to_json_pretty(&execute(yaml_content, keep_all, include, output))
+}
+
+/// Write the trimmed YAML to `out`, never over the input file.
+///
+/// The input is compared by canonical path, so another spelling of it (`sub/../in.yaml`)
+/// is still refused, with or without `overwrite`.
+fn write_trimmed(
+    out: &str,
+    yaml: &str,
+    output: &TrimOutput<'_>,
+) -> Result<String, crate::mcp::tools::shared::WriteRefusal> {
+    if output.source_path.is_some_and(|src| same_file(out, src)) {
+        return Err(crate::mcp::tools::shared::WriteRefusal {
+            code: crate::core::json::error_code::BAD_ARGUMENTS,
+            message: format!(
+                "refusing to overwrite the input file {out}; choose a different output_path"
+            ),
+        });
+    }
+    write_output(out, yaml, output.overwrite).map(|()| out.to_string())
+}
+
+/// Whether two paths name the same existing file. A path that does not exist names no
+/// file, so it is never the (existing) input.
+fn same_file(a: &str, b: &str) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
 }
 
 // ============================================================================
@@ -259,7 +271,8 @@ const fn empty_response() -> TrimResponse {
         parse_error_context: None,
         error: None,
         trimmed_yaml: None,
-        trimmed_cache_id: None,
+        code: None,
+        trimmed_degree: None,
         output_path: None,
         report: None,
         tool_followups: Vec::new(),
@@ -285,23 +298,20 @@ fn parse_error_response(e: &DegreeParseError, yaml: &str) -> TrimResponse {
     }
 }
 
-fn build_followups(trimmed_cache_id: Option<&str>) -> Vec<ToolFollowup> {
-    let Some(cache_id) = trimmed_cache_id else {
-        return Vec::new();
-    };
+fn build_followups(cache_id: &str) -> Vec<ToolFollowup> {
     vec![
         ToolFollowup {
             tool: TOOL_VALIDATE_DEGREE,
             reason:
                 "Confirm the trimmed YAML still validates — comments are dropped on serialisation."
                     .to_string(),
-            suggested_args: serde_json::json!({ "degree_id": cache_id }),
+            suggested_args: serde_json::json!({ "degree": cache_id }),
         },
         ToolFollowup {
             tool: TOOL_AUDIT_DEGREE,
             reason: "Audit the trimmed plan for hidden prereqs / deep chains after collapse."
                 .to_string(),
-            suggested_args: serde_json::json!({ "degree_id": cache_id }),
+            suggested_args: serde_json::json!({ "degree": cache_id }),
         },
     ]
 }
@@ -353,7 +363,7 @@ courses:
 
     #[test]
     fn trim_happy_path_returns_yaml_report_and_cache_id() {
-        let response = execute(SAMPLE_YAML, &[], &[], None, None);
+        let response = execute(SAMPLE_YAML, &[], &[], &TrimOutput::default());
         assert!(
             response.success,
             "error: {:?} | parse_error: {:?}",
@@ -370,7 +380,7 @@ courses:
             "MATH241 must be pruned via the equivalents collapse: {yaml}"
         );
         let cache_id = response
-            .trimmed_cache_id
+            .trimmed_degree
             .as_ref()
             .expect("a successful trim must publish a cache handle");
         assert!(cache_id.starts_with("cache:"));
@@ -383,24 +393,26 @@ courses:
 
     #[test]
     fn trim_followups_target_the_trimmed_cache_handle() {
-        // The whole point of `trimmed_cache_id` is to let the model chain
+        // The whole point of `trimmed_degree` is to let the model chain
         // validate/audit without re-pasting the trimmed YAML; verify the
         // suggested args carry the freshly-issued handle.
-        let response = execute(SAMPLE_YAML, &[], &[], None, None);
-        let cache_id = response.trimmed_cache_id.as_ref().unwrap();
+        let response = execute(SAMPLE_YAML, &[], &[], &TrimOutput::default());
+        let cache_id = response.trimmed_degree.as_ref().unwrap();
         let tools: Vec<&str> = response.tool_followups.iter().map(|f| f.tool).collect();
         assert_eq!(tools, vec![TOOL_VALIDATE_DEGREE, TOOL_AUDIT_DEGREE]);
         for f in &response.tool_followups {
-            assert_eq!(
-                f.suggested_args["degree_id"].as_str(),
-                Some(cache_id.as_str())
-            );
+            assert_eq!(f.suggested_args["degree"].as_str(), Some(cache_id.as_str()));
         }
     }
 
     #[test]
     fn trim_keep_all_preserves_extra_subject() {
-        let response = execute(SAMPLE_YAML, &["MATH".to_string()], &[], None, None);
+        let response = execute(
+            SAMPLE_YAML,
+            &["MATH".to_string()],
+            &[],
+            &TrimOutput::default(),
+        );
         assert!(response.success);
         let yaml = response.trimmed_yaml.unwrap();
         assert!(
@@ -411,7 +423,12 @@ courses:
 
     #[test]
     fn trim_include_overrides_default_canonical() {
-        let response = execute(SAMPLE_YAML, &[], &["MATH241".to_string()], None, None);
+        let response = execute(
+            SAMPLE_YAML,
+            &[],
+            &["MATH241".to_string()],
+            &TrimOutput::default(),
+        );
         assert!(response.success);
         let yaml = response.trimmed_yaml.unwrap();
         assert!(
@@ -425,7 +442,16 @@ courses:
         let tmp = tempfile::NamedTempFile::new().expect("tempfile");
         std::fs::write(tmp.path(), SAMPLE_YAML).expect("write");
         let path = tmp.path().to_string_lossy().to_string();
-        let response = execute(SAMPLE_YAML, &[], &[], Some(&path), Some(&path));
+        let response = execute(
+            SAMPLE_YAML,
+            &[],
+            &[],
+            &TrimOutput {
+                path: Some(&path),
+                overwrite: true,
+                source_path: Some(&path),
+            },
+        );
         assert!(!response.success);
         let err = response.error.unwrap();
         assert!(
@@ -438,29 +464,94 @@ courses:
     fn trim_writes_output_path_when_provided() {
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let out = tmp.path().join("trimmed.yaml");
-        let response = execute(SAMPLE_YAML, &[], &[], Some(out.to_str().unwrap()), None);
+        let response = execute(
+            SAMPLE_YAML,
+            &[],
+            &[],
+            &TrimOutput {
+                path: out.to_str(),
+                ..TrimOutput::default()
+            },
+        );
         assert!(response.success, "error: {:?}", response.error);
         assert!(out.exists(), "output file must exist");
         assert_eq!(response.output_path.as_deref(), out.to_str());
     }
 
     #[test]
+    fn trim_refuses_the_input_under_another_spelling_of_its_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(dir.path().join("sub")).expect("mkdir");
+        let input = dir.path().join("in.yaml");
+        std::fs::write(&input, SAMPLE_YAML).expect("write");
+        let alias = dir.path().join("sub").join("..").join("in.yaml");
+        let response = execute(
+            SAMPLE_YAML,
+            &[],
+            &[],
+            &TrimOutput {
+                path: alias.to_str(),
+                overwrite: true,
+                source_path: input.to_str(),
+            },
+        );
+        assert!(
+            !response.success,
+            "input overwritten via {}",
+            alias.display()
+        );
+        assert_eq!(std::fs::read_to_string(&input).unwrap(), SAMPLE_YAML);
+    }
+
+    #[test]
+    fn trim_replaces_an_existing_output_file_only_with_overwrite() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = dir.path().join("keep.yaml");
+        std::fs::write(&out, "someone else's file").expect("write");
+        let output = |overwrite| TrimOutput {
+            path: out.to_str(),
+            overwrite,
+            source_path: None,
+        };
+        let refused = execute(SAMPLE_YAML, &[], &[], &output(false));
+        assert!(
+            !refused.success,
+            "an existing file was replaced without overwrite"
+        );
+        assert_eq!(
+            refused.code,
+            Some(crate::core::json::error_code::BAD_ARGUMENTS)
+        );
+        assert_eq!(
+            std::fs::read_to_string(&out).unwrap(),
+            "someone else's file"
+        );
+
+        let replaced = execute(SAMPLE_YAML, &[], &[], &output(true));
+        assert!(replaced.success, "error: {:?}", replaced.error);
+        assert_ne!(
+            std::fs::read_to_string(&out).unwrap(),
+            "someone else's file"
+        );
+    }
+
+    #[test]
     fn trim_emits_parse_error_for_malformed_yaml() {
-        let response = execute("not: valid: yaml: [", &[], &[], None, None);
+        let response = execute("not: valid: yaml: [", &[], &[], &TrimOutput::default());
         assert!(!response.success);
         assert!(response.parse_error.is_some());
         assert!(response.trimmed_yaml.is_none());
-        assert!(response.trimmed_cache_id.is_none());
+        assert!(response.trimmed_degree.is_none());
     }
 
     #[test]
     fn trim_execute_json_returns_valid_parseable_json() {
-        let json_str = execute_json(SAMPLE_YAML, &[], &[], None, None);
+        let json_str = execute_json(SAMPLE_YAML, &[], &[], &TrimOutput::default());
         let value: serde_json::Value =
             serde_json::from_str(&json_str).expect("execute_json must emit valid JSON");
         assert_eq!(value["success"], serde_json::json!(true));
         assert!(value["trimmed_yaml"].is_string());
-        assert!(value["trimmed_cache_id"]
+        assert!(value["trimmed_degree"]
             .as_str()
             .unwrap()
             .starts_with("cache:"));
@@ -473,7 +564,7 @@ courses:
         // we just need *some* position to be reported.
         let bad_yaml =
             "degree:\n  total_credits: [not, a, number]\nrequirements: {}\ncourses: {}\n";
-        let response = execute(bad_yaml, &[], &[], None, None);
+        let response = execute(bad_yaml, &[], &[], &TrimOutput::default());
         assert!(!response.success);
         assert!(response.parse_error.is_some());
         assert!(
@@ -487,7 +578,7 @@ courses:
     fn trim_parse_error_context_renders_window_with_caret() {
         let bad_yaml =
             "degree:\n  total_credits: [not, a, number]\nrequirements: {}\ncourses: {}\n";
-        let response = execute(bad_yaml, &[], &[], None, None);
+        let response = execute(bad_yaml, &[], &[], &TrimOutput::default());
         let context = response
             .parse_error_context
             .as_ref()
@@ -500,16 +591,15 @@ courses:
 
     #[test]
     fn trim_cache_handle_is_resolvable_in_yaml_cache() {
-        // The handle returned in `trimmed_cache_id` must round-trip through
-        // YAML_CACHE so callers really can use it as a `degree_id` argument
-        // on the next tool call.
-        let response = execute(SAMPLE_YAML, &[], &[], None, None);
-        let cache_id = response.trimmed_cache_id.unwrap();
+        // The handle returned in `trimmed_degree` must round-trip through the cache so
+        // callers really can use it as a `degree` argument on the next tool call.
+        let response = execute(SAMPLE_YAML, &[], &[], &TrimOutput::default());
+        let cache_id = response.trimmed_degree.unwrap();
         let body = {
-            let cache = YAML_CACHE.lock().unwrap();
+            let cache = yaml_cache();
             cache
                 .get(&cache_id)
-                .expect("trimmed yaml must be retrievable from YAML_CACHE")
+                .expect("trimmed yaml must be retrievable from the cache")
                 .0
         };
         assert!(body.contains("Test BS"));

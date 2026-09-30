@@ -149,7 +149,7 @@ fn resolve_report_text(
             "Must provide exactly one of: json_content or json_path",
         )),
         (Some(c), None) => Ok(c),
-        (None, Some(p)) => crate::core::json::read_yaml_file(&p),
+        (None, Some(p)) => crate::mcp::tools::shared::read_degree_file(&p),
     }
 }
 

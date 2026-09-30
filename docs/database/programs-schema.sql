@@ -496,8 +496,13 @@ BEGIN
     IF max_rows IS NULL OR max_rows < 1 THEN
         RAISE EXCEPTION 'max_rows must be a positive integer, got %', max_rows;
     END IF;
+    -- `qr_row.*`, not a bare `qr_row`: a bare name resolves to a *column* first, so a
+    -- query returning a column with the alias's name would have every row replaced by
+    -- that column's value. `alias.*` can only mean the whole row.
+    -- The `\n` before the closing parenthesis keeps a query that ends in a `--` comment
+    -- from commenting out the wrapper.
     EXECUTE format(
-        'SELECT coalesce(jsonb_agg(t), ''[]''::jsonb) FROM (SELECT * FROM (%s) AS inner_q LIMIT %s) AS t',
+        E'SELECT coalesce(jsonb_agg(qr_row.*), ''[]''::jsonb) FROM (SELECT * FROM (%s\n) AS inner_q LIMIT %s) AS qr_row',
         q, max_rows
     )
     INTO result;
@@ -507,3 +512,52 @@ $$;
 
 REVOKE ALL ON FUNCTION public.query_readonly(text, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.query_readonly(text, integer) TO authenticated;
+
+-- -----------------------------------------------------------------------------
+-- query_readonly_params — the same, with the query's inputs bound, not spliced
+-- -----------------------------------------------------------------------------
+-- The curated queries compiled into nuanalytics (src/core/query/catalog/*.sql) take
+-- inputs — a unitid, a CIP prefix, a year. They are bound here with EXECUTE ... USING:
+-- the query reads them from `$1`, the `params` object (`($1->>'unitid')::int`), and
+-- no value is ever pasted into the SQL text. So the text that runs is byte-for-byte
+-- the compiled-in file, and a value containing a quote is just a value.
+--
+-- Everything the read-only guarantee rests on is the same as query_readonly above,
+-- and must stay the same: STABLE (PostgREST's READ ONLY transaction), the subquery
+-- wrapping, SECURITY INVOKER with a fixed search_path, max_rows, statement_timeout.
+--
+-- A separate name rather than an overload of query_readonly: PostgREST resolves an
+-- RPC by name and argument names, and two candidates for one call is PGRST203.
+CREATE OR REPLACE FUNCTION public.query_readonly_params(
+    q text,
+    params jsonb DEFAULT '{}'::jsonb,
+    max_rows integer DEFAULT 1000
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY INVOKER
+SET search_path = public, pg_temp
+SET statement_timeout = '30s'
+AS $$
+DECLARE
+    result jsonb;
+BEGIN
+    IF max_rows IS NULL OR max_rows < 1 THEN
+        RAISE EXCEPTION 'max_rows must be a positive integer, got %', max_rows;
+    END IF;
+    IF jsonb_typeof(params) IS DISTINCT FROM 'object' THEN
+        RAISE EXCEPTION 'params must be a JSON object, got %', jsonb_typeof(params);
+    END IF;
+    EXECUTE format(
+        E'SELECT coalesce(jsonb_agg(qr_row.*), ''[]''::jsonb) FROM (SELECT * FROM (%s\n) AS inner_q LIMIT %s) AS qr_row',
+        q, max_rows
+    )
+    INTO result
+    USING params;
+    RETURN result;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.query_readonly_params(text, jsonb, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.query_readonly_params(text, jsonb, integer) TO authenticated;

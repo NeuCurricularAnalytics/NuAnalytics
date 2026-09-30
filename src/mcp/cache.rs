@@ -2,23 +2,22 @@
 //!
 //! Two process-wide singletons:
 //!
-//! - [`YAML_CACHE`] — content-hashed inline YAML storage. The caller hands a
-//!   YAML body to `cache_yaml` once; subsequent tools accept the returned
-//!   `cache:{hex}` handle anywhere a `degree_id` is accepted. Removes the
-//!   per-call repaste tax for hosted MCP clients whose filesystem isn't
-//!   reachable by the server (`yaml_path` returns ENOENT).
+//! - [`YAML_CACHE`] — content-hashed degree bodies. Every degree tool caches the `content`
+//!   it is given and returns a `cache:{hex}` handle as `source.handle`; later calls pass
+//!   the handle as `degree` instead of sending the body again. That matters most for hosted
+//!   clients, whose files the server cannot read by `path`.
 //!
 //! - [`ARTIFACT_CACHE`] — small LRU of `AnalysisArtifacts` keyed by the
 //!   (yaml-hash, `max_plans`, `include_courses`, `random_seed`,
 //!   `analysis_timeout_seconds`, `target_course`) tuple. All six are hashed; see
-//!   [`make_artifact_key`]. Three sequential
+//!   `make_artifact_key`. Three sequential
 //!   `render_plan_graph` calls on the same YAML now run the plan-generation
 //!   pipeline once instead of three times.
 //!
 //! Both caches live as `LazyLock<Mutex<…>>` statics because several tool modules reach
 //! them: the artifact cache from `analyze`, `report`, `plan_graph` and `course_detail`;
-//! the YAML cache from `cache`, `trim`, `convert` and `server`. (`audit` uses neither.) Threading the state through
-//! every call site would be invasive for what is effectively a process
+//! the YAML cache from `server`, `trim` and `convert`. (`audit` uses neither.) Threading
+//! the state through every call site would be invasive for what is effectively a process
 //! singleton.
 
 use std::collections::hash_map::DefaultHasher;
@@ -31,11 +30,11 @@ use crate::mcp::tools::analyze::AnalysisArtifacts;
 
 /// Prefix that marks an in-memory YAML-cache handle.
 ///
-/// `degree_id` resolution in `resolve_degree_id` matches against this prefix
-/// before falling through to the sample registry or the DB lookup.
+/// A `degree` reference with this prefix is looked up here, before the sample registry and
+/// the stored programs.
 pub const YAML_CACHE_PREFIX: &str = "cache:";
 
-/// How long a `cache_yaml` handle stays valid.
+/// How long a `cache:` handle stays valid.
 ///
 /// 24 h spans a typical multi-session investigation: validate → audit →
 /// analyze → iterate on recommendations → regenerate plans without
@@ -88,10 +87,9 @@ impl YamlCache {
 
     /// Insert a YAML body, returning its handle.
     ///
-    /// The expiry sweep is O(n), so we only run it once the cache has grown
-    /// past `SWEEP_THRESHOLD` rather than on every write — keeping the write
-    /// lock held briefly in the common case (the field report's intermittent
-    /// `cache_yaml` timeouts) while still bounding growth under heavy use.
+    /// The expiry sweep is O(n), so it runs only once the cache has grown past
+    /// `SWEEP_THRESHOLD` rather than on every write: the lock is held briefly in the
+    /// common case while growth stays bounded under heavy use.
     pub fn insert(&mut self, body: String) -> String {
         if self.entries.len() >= SWEEP_THRESHOLD {
             self.sweep_expired();
@@ -133,8 +131,7 @@ impl YamlCache {
             })
     }
 
-    /// Current entry count. Exposed for the `cache_yaml` response so callers
-    /// can see the cache state alongside the freshly-issued handle.
+    /// Current entry count.
     #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
@@ -153,9 +150,20 @@ impl YamlCache {
     }
 }
 
-/// Process-wide YAML cache.
+/// Process-wide YAML cache. Reach it through [`yaml_cache`].
 pub static YAML_CACHE: LazyLock<Mutex<YamlCache>> =
     LazyLock::new(|| Mutex::new(YamlCache::default()));
+
+/// The YAML cache, recovered when a panic poisoned its lock.
+///
+/// Every change to the cache is a single map insert or retain, so a panic elsewhere while
+/// the lock was held cannot leave an entry half-written: the data is safe to keep using,
+/// and refusing every later call over a poisoned flag would not be.
+pub fn yaml_cache() -> std::sync::MutexGuard<'static, YamlCache> {
+    YAML_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 // ============================================================================
 // Artifact cache

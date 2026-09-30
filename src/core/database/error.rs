@@ -108,9 +108,60 @@ impl DatabaseError {
             Self::IngestError(_) => "ingest_failed",
         }
     }
+
+    /// This error as a failure payload naming the operation that failed.
+    ///
+    /// `{"error": "<op>: <error>", "kind": "<kind>"}`: the CLI prints `error`, and the MCP
+    /// envelope takes `kind` as the code, so a client can tell an unreachable backend from
+    /// a refused query without reading the text.
+    #[must_use]
+    pub fn to_json(&self, op: &str) -> String {
+        serde_json::json!({ "error": format!("{op}: {self}"), "kind": self.kind() }).to_string()
+    }
 }
 
 impl std::error::Error for DatabaseError {}
+
+/// The error object `PostgREST` returns for a request the database refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackendError {
+    /// Postgres SQLSTATE (`42P01`) or `PostgREST` code (`PGRST202`); see [`super::codes`].
+    pub code: String,
+    /// The backend's message, or the whole failure text when it sent none.
+    pub message: String,
+    /// `details`, when given.
+    pub detail: Option<String>,
+    /// `hint`, when given.
+    pub hint: Option<String>,
+}
+
+impl DatabaseError {
+    /// The backend's own error object, when this failure carries one.
+    ///
+    /// `DbClient` reports a refused request as `QueryError("PostgREST error (status):
+    /// {body}")`, and the body is `{code, message, details, hint}`. Only a body with a
+    /// `code` counts: a proxy in front of `PostgREST` can answer with JSON of its own
+    /// (`{"message": "..."}`), and reading that as "the database refused the query" would
+    /// assert something that did not happen.
+    #[must_use]
+    pub fn backend_error(&self) -> Option<BackendError> {
+        let Self::QueryError(text) = self else {
+            return None;
+        };
+        let body: serde_json::Value = serde_json::from_str(&text[text.find('{')?..]).ok()?;
+        let field = |name: &str| {
+            body.get(name)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        };
+        Some(BackendError {
+            code: field("code")?,
+            message: field("message").unwrap_or_else(|| text.clone()),
+            detail: field("details"),
+            hint: field("hint"),
+        })
+    }
+}
 
 /// Convenience alias for database results
 pub type DatabaseResult<T> = Result<T, DatabaseError>;

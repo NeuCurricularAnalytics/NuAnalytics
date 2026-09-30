@@ -5,7 +5,9 @@
 //! once here and shared, so a fixture used by two test modules is embedded in the test
 //! binary once rather than per module.
 
-use nu_analytics::mcp::tools::analyze::{execute, AnalysisResponse, TargetCourseStats};
+use nu_analytics::mcp::tools::analyze::{
+    execute, AnalysisResponse, AnalyzeOptions, TargetCourseStats,
+};
 
 /// Plan cap used by the target-course cases, so their figures stay comparable.
 pub const MAX_PLANS: usize = 200;
@@ -46,9 +48,7 @@ pub const BELLEVUE: &str = include_str!(
 /// Analyze `degree_json` asking where `course` lands.
 ///
 /// `label` identifies the degree in failure messages — without it a panic from one of the
-/// thirteen fixtures does not say which one. Wrapping `execute` also keeps its five
-/// type-identical filler arguments (three `bool`s, two `Option<u64>`s) in one place, where
-/// they can only be mis-ordered once.
+/// thirteen fixtures does not say which one.
 pub fn analyze_target(
     label: &str,
     degree_json: &str,
@@ -57,15 +57,11 @@ pub fn analyze_target(
 ) -> AnalysisResponse {
     let response = execute(
         degree_json,
-        Some(max_plans),
-        None,
-        false,
-        None,
-        false,
-        false,
-        None,
-        None,
-        Some(course),
+        &AnalyzeOptions {
+            max_plans: Some(max_plans),
+            target_course: Some(course),
+            ..AnalyzeOptions::default()
+        },
     );
     assert!(
         response.success,

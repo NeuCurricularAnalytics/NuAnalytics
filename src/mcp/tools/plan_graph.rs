@@ -1,18 +1,17 @@
-//! One-call curriculum-graph rendering tool.
+//! `render_plan_graph`: one selected plan of a degree as a curriculum graph.
 //!
-//! Provides the `render_plan_graph` MCP tool that compresses the four-step
-//! "run analyze with `include_graph_spec`, pluck a plan, serialise its
-//! `graph_spec`, hand off to `get_curriculum_visualization`" sequence into
-//! a single call. Caller picks a plan by `plan_category` (`"shortest"`,
-//! `"longest"`, `"calc-ready-shortest"`, `"sample"` + optional
-//! `sample_index`) or by raw `plan_index` into `selected_plans`.
+//! Analyses the degree, picks a plan by `plan_category` (`"shortest"`, `"longest"`,
+//! `"calc-ready-shortest"`, `"sample"` + optional `sample_index`) or by raw `plan_index`
+//! into `selected_plans`, and renders it — returning the HTML, or writing it to
+//! `output_path`.
 
 use crate::core::degree::plan_selector::PlanCategory;
+use crate::core::degree::{ScoredPlan, SelectedPlans};
 use crate::core::report::visualization::{
     spec_from_scored_plan, CurriculumGraphRenderer, VanillaJsRenderer,
 };
 use crate::mcp::cache::cached_artifacts;
-use crate::mcp::tools::visualize::VisualizationFormat;
+use crate::mcp::tools::shared::DegreeSourceArgs;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -20,24 +19,30 @@ use serde::{Deserialize, Serialize};
 // Request / Response types
 // ============================================================================
 
+/// Output shape for `render_plan_graph`.
+#[derive(Debug, Default, Clone, Copy, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum VisualizationFormat {
+    /// Full `<!DOCTYPE html>…</html>` page that opens directly in a browser.
+    #[default]
+    Standalone,
+    /// Self-contained fragment (`<style>` + `<div>` + `<script>`) suitable for
+    /// embedding inside another HTML document. Includes the shared library
+    /// inline so the fragment is self-sufficient.
+    Fragment,
+    /// Same as `Fragment`, but omits the shared `GRAPH_VANILLA_JS` library.
+    /// Use when embedding multiple graphs on one page: emit one `Fragment`
+    /// (or include the library once via another mechanism), then use this
+    /// variant for subsequent graphs to drop ~20 KB per fragment.
+    FragmentNoLibrary,
+}
+
 /// Request parameters for `render_plan_graph`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RenderPlanGraphRequest {
-    /// Inline YAML content. Mutually exclusive with `yaml_path` / `degree_id`.
-    #[schemars(description = "Complete degree program YAML content (inline)")]
-    pub yaml_content: Option<String>,
-
-    /// Filesystem path the server will read. Mutually exclusive with the others.
-    #[schemars(
-        description = "Path to a YAML file on the MCP server's filesystem. Mutually exclusive with yaml_content/degree_id."
-    )]
-    pub yaml_path: Option<String>,
-
-    /// Stored degree id (DB lookup). Mutually exclusive with the others.
-    #[schemars(
-        description = "Stored degree ID (DB lookup). Requires the database feature; mutually exclusive with yaml_content/yaml_path."
-    )]
-    pub degree_id: Option<String>,
+    /// Where the degree comes from: exactly one of `degree`, `content`, `path`.
+    #[serde(flatten)]
+    pub source: DegreeSourceArgs,
 
     /// Named plan category. Accepts `"shortest"`, `"longest"`,
     /// `"calc-ready-shortest"`, or `"sample"` (paired with `sample_index`).
@@ -68,12 +73,12 @@ pub struct RenderPlanGraphRequest {
     #[serde(default)]
     pub format: VisualizationFormat,
 
-    /// Forwarded to `analyze_degree`: cap on plans generated.
+    /// Forwarded to the analysis: cap on plans generated.
     #[schemars(description = "Maximum plans to generate during analysis (default 500)")]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub max_plans: Option<usize>,
 
-    /// Forwarded to `analyze_degree`: courses every generated plan must include.
+    /// Forwarded to the analysis: courses every generated plan must include.
     #[schemars(
         description = "Comma-separated course codes every generated plan must include (e.g. \"CS150B,MATH156\")"
     )]
@@ -87,6 +92,15 @@ pub struct RenderPlanGraphRequest {
     )]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub dry_run: Option<bool>,
+
+    /// Write the HTML here instead of returning it inline.
+    #[schemars(description = "Write the HTML to this file instead of returning it inline")]
+    pub output_path: Option<String>,
+
+    /// Replace `output_path` if it already exists.
+    #[schemars(description = "Replace output_path if it already exists (default false)")]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
+    pub overwrite: Option<bool>,
 }
 
 /// Response for `render_plan_graph`.
@@ -96,6 +110,9 @@ pub struct RenderPlanGraphResponse {
     pub success: bool,
     /// Error message when `success` is false.
     pub error: Option<String>,
+    /// Why, when the cause is known: see [`crate::core::json::error_code`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<&'static str>,
     /// Echoed: the resolved plan category for the rendered plan.
     pub plan_category: Option<String>,
     /// Resolved 0-indexed offset into `selected_plans`.
@@ -112,6 +129,9 @@ pub struct RenderPlanGraphResponse {
     /// heuristic estimate (`node_count * 200 + edge_count * 80 + fixed`) so
     /// the dry-run probe stays sub-second; expect ±15 % vs the actual render.
     pub html_bytes: usize,
+    /// The file written, when `output_path` was given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     /// Number of course nodes in the generated `CurriculumGraphSpec`.
     /// Useful as a complexity proxy during dry-run probing.
     pub node_count: Option<usize>,
@@ -133,23 +153,37 @@ pub struct RenderPlanGraphResponse {
 // Execution
 // ============================================================================
 
+/// Which selected plan to draw, and how.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PlanGraphOptions<'a> {
+    /// `shortest`, `longest`, `calc-ready-shortest` or `sample`; or give `plan_index`.
+    pub plan_category: Option<&'a str>,
+    /// Which random sample, 1-based, for `plan_category = "sample"`.
+    pub sample_index: Option<usize>,
+    /// A position in `selected_plans`, instead of a category.
+    pub plan_index: Option<usize>,
+    /// The HTML's shape.
+    pub format: VisualizationFormat,
+    /// Forwarded to the analysis: cap on plans generated.
+    pub max_plans: Option<usize>,
+    /// Forwarded to the analysis: courses every generated plan must include.
+    pub include_courses: Option<&'a [String]>,
+    /// Estimate the HTML's size instead of rendering it.
+    pub dry_run: bool,
+}
+
 /// Execute the `render_plan_graph` tool.
-///
-/// Argument count crosses clippy's default ceiling because the tool exposes
-/// every option of the analyze pipeline plus the picker fields; grouping
-/// them into a struct would just move the same data.
 #[must_use]
-#[allow(clippy::too_many_arguments)]
-pub fn execute(
-    yaml_content: &str,
-    plan_category: Option<&str>,
-    sample_index: Option<usize>,
-    plan_index: Option<usize>,
-    format: VisualizationFormat,
-    max_plans: Option<usize>,
-    include_courses: Option<&[String]>,
-    dry_run: bool,
-) -> RenderPlanGraphResponse {
+pub fn execute(yaml_content: &str, opts: &PlanGraphOptions<'_>) -> RenderPlanGraphResponse {
+    let PlanGraphOptions {
+        plan_category,
+        sample_index,
+        plan_index,
+        format,
+        max_plans,
+        include_courses,
+        dry_run,
+    } = *opts;
     if plan_category.is_none() && plan_index.is_none() {
         return error_response(
             "Provide either plan_category (\"shortest\" / \"longest\" / \"calc-ready-shortest\" / \"sample\") or plan_index.",
@@ -165,44 +199,11 @@ pub fn execute(
             Err(e) => return error_response(e),
         };
 
-    // PlanCategory is Copy; capture each tuple as (index, category, &ScoredPlan)
-    // so the picker functions can return owned `PlanCategory` values cheaply.
-    let entries: Vec<(usize, PlanCategory, _)> = artifacts
-        .selected
-        .iter()
-        .enumerate()
-        .map(|(idx, (cat, plan))| (idx, cat, plan))
-        .collect();
-
-    let picked = plan_index.map_or_else(
-        || {
-            let category = plan_category.unwrap_or("");
-            pick_by_category(&entries, category, sample_index)
-        },
-        |idx| entries.iter().find(|(i, _, _)| *i == idx).copied(),
-    );
-
-    let Some((idx, category, plan)) = picked else {
-        // Detect the specific "asked for sample N but only M exist" case so
-        // callers can retry without a fresh analyze pass.
-        let wants_sample = plan_category
-            .and_then(PlanCategory::from_user_input)
-            .is_some_and(|c| c == PlanCategory::RandomSample);
-        if wants_sample {
-            let available = entries
-                .iter()
-                .filter(|(_, cat, _)| *cat == PlanCategory::RandomSample)
-                .count();
-            let want = sample_index.unwrap_or(1);
-            if want > available {
-                return sample_index_out_of_range_response(want, available);
-            }
-        }
-        return error_response(format!(
-            "No selected plan matches plan_category={plan_category:?} / plan_index={plan_index:?} / sample_index={sample_index:?}. Selected_plans has {} entries.",
-            entries.len()
-        ));
-    };
+    let (idx, category, plan) =
+        match pick_plan(&artifacts.selected, plan_category, sample_index, plan_index) {
+            Ok(picked) => picked,
+            Err(response) => return *response,
+        };
 
     let graph_id = category.file_name().to_string();
     let spec = spec_from_scored_plan(
@@ -232,6 +233,7 @@ pub fn execute(
     RenderPlanGraphResponse {
         success: true,
         error: None,
+        code: None,
         plan_category: Some(category.display_name().to_string()),
         plan_index: Some(idx),
         terms: Some(plan.score.terms_required),
@@ -239,11 +241,58 @@ pub fn execute(
         longest_delay: Some(plan.score.longest_delay),
         html: html_field,
         html_bytes,
+        path: None,
         node_count: Some(node_count),
         dry_run,
         available_samples: None,
         requested_sample_index: None,
     }
+}
+
+/// The selected plan the arguments name, or the response saying why none matches.
+///
+/// Asking for sample N when only M exist gets its own response, so a caller can retry
+/// with a valid index without another analysis.
+fn pick_plan<'a>(
+    selected: &'a SelectedPlans,
+    plan_category: Option<&str>,
+    sample_index: Option<usize>,
+    plan_index: Option<usize>,
+) -> Result<(usize, PlanCategory, &'a ScoredPlan), Box<RenderPlanGraphResponse>> {
+    // PlanCategory is Copy; capture each tuple as (index, category, &ScoredPlan)
+    // so the picker functions can return owned `PlanCategory` values cheaply.
+    let entries: Vec<(usize, PlanCategory, &ScoredPlan)> = selected
+        .iter()
+        .enumerate()
+        .map(|(idx, (cat, plan))| (idx, cat, plan))
+        .collect();
+
+    let picked = plan_index.map_or_else(
+        || pick_by_category(&entries, plan_category.unwrap_or(""), sample_index),
+        |idx| entries.iter().find(|(i, _, _)| *i == idx).copied(),
+    );
+    if let Some(found) = picked {
+        return Ok(found);
+    }
+    let wants_sample = plan_category
+        .and_then(PlanCategory::from_user_input)
+        .is_some_and(|c| c == PlanCategory::RandomSample);
+    if wants_sample {
+        let available = entries
+            .iter()
+            .filter(|(_, cat, _)| *cat == PlanCategory::RandomSample)
+            .count();
+        let want = sample_index.unwrap_or(1);
+        if want > available {
+            return Err(Box::new(sample_index_out_of_range_response(
+                want, available,
+            )));
+        }
+    }
+    Err(Box::new(error_response(format!(
+        "No selected plan matches plan_category={plan_category:?} / plan_index={plan_index:?} / sample_index={sample_index:?}. Selected_plans has {} entries.",
+        entries.len()
+    ))))
 }
 
 /// Approximate `html_bytes` for a dry-run probe without paying the renderer
@@ -264,31 +313,48 @@ const fn estimate_html_bytes(
     node_count * 200 + edge_count * 80 + fixed
 }
 
-/// Execute and serialize as JSON.
+/// Where a rendered graph goes: inline, or a file.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct GraphOutput<'a> {
+    /// File to write instead of returning the HTML inline.
+    pub path: Option<&'a str>,
+    /// Replace `path` if it exists.
+    pub overwrite: bool,
+}
+
+/// Write a rendered response's HTML to `output.path`, if one was given.
+fn deliver(
+    mut response: RenderPlanGraphResponse,
+    output: GraphOutput<'_>,
+) -> RenderPlanGraphResponse {
+    // Checked before taking the HTML: with no path it stays inline.
+    if output.path.is_none() {
+        return response;
+    }
+    let Some(html) = response.html.take() else {
+        return response;
+    };
+    match crate::mcp::tools::shared::deliver_output(html, output.path, output.overwrite) {
+        Ok((html, path)) => {
+            response.html = html;
+            response.path = path;
+            response
+        }
+        Err(refusal) => RenderPlanGraphResponse {
+            code: Some(refusal.code),
+            ..error_response(refusal.message)
+        },
+    }
+}
+
+/// [`execute`], delivered inline or to `output.path`, as JSON.
 #[must_use]
-#[allow(clippy::too_many_arguments)]
 pub fn execute_json(
     yaml_content: &str,
-    plan_category: Option<&str>,
-    sample_index: Option<usize>,
-    plan_index: Option<usize>,
-    format: VisualizationFormat,
-    max_plans: Option<usize>,
-    include_courses: Option<&[String]>,
-    dry_run: bool,
+    opts: &PlanGraphOptions<'_>,
+    output: GraphOutput<'_>,
 ) -> String {
-    let response = execute(
-        yaml_content,
-        plan_category,
-        sample_index,
-        plan_index,
-        format,
-        max_plans,
-        include_courses,
-        dry_run,
-    );
-    serde_json::to_string_pretty(&response)
-        .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
+    crate::core::json::to_json_pretty(&deliver(execute(yaml_content, opts), output))
 }
 
 // ============================================================================
@@ -299,11 +365,11 @@ pub fn execute_json(
 /// `category` is case-insensitive and accepts the kebab-case (`"calc-ready-shortest"`)
 /// or `PlanCategory::file_name` form. `sample_index` is 1-indexed when
 /// `category="sample"`; default 1.
-fn pick_by_category<'a, P>(
-    entries: &'a [(usize, PlanCategory, &'a P)],
+fn pick_by_category<'p, P>(
+    entries: &[(usize, PlanCategory, &'p P)],
     category: &str,
     sample_index: Option<usize>,
-) -> Option<(usize, PlanCategory, &'a P)> {
+) -> Option<(usize, PlanCategory, &'p P)> {
     let target = PlanCategory::from_user_input(category)?;
 
     if target == PlanCategory::RandomSample {
@@ -322,6 +388,7 @@ fn error_response(error: impl Into<String>) -> RenderPlanGraphResponse {
     RenderPlanGraphResponse {
         success: false,
         error: Some(error.into()),
+        code: None,
         plan_category: None,
         plan_index: None,
         terms: None,
@@ -329,6 +396,7 @@ fn error_response(error: impl Into<String>) -> RenderPlanGraphResponse {
         longest_delay: None,
         html: None,
         html_bytes: 0,
+        path: None,
         node_count: None,
         dry_run: false,
         available_samples: None,
@@ -390,16 +458,72 @@ courses:
 "#;
 
     #[test]
+    fn test_output_path_writes_the_graph_and_replaces_it_only_with_overwrite() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("graphs/plan.html");
+        let target = file.to_str().expect("utf8");
+        let run = |overwrite: bool, dry_run: bool| -> serde_json::Value {
+            let opts = PlanGraphOptions {
+                plan_category: Some("shortest"),
+                max_plans: Some(10),
+                dry_run,
+                ..PlanGraphOptions::default()
+            };
+            let output = GraphOutput {
+                path: Some(target),
+                overwrite,
+            };
+            serde_json::from_str(&execute_json(TEST_YAML, &opts, output)).expect("json")
+        };
+
+        let dry = run(false, true);
+        assert_eq!(dry["success"], true);
+        assert!(!file.exists(), "dry_run must not write");
+
+        let written = run(false, false);
+        assert_eq!(written["path"], target, "{written}");
+        assert!(written["html"].is_null(), "written, not inline");
+
+        std::fs::write(&file, "keep me").unwrap();
+        let refused = run(false, false);
+        assert_eq!(refused["success"], false);
+        assert_eq!(refused["code"], "bad_arguments");
+        assert!(refused["error"]
+            .as_str()
+            .unwrap()
+            .contains("overwrite=true"));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "keep me");
+
+        assert_eq!(run(true, false)["success"], true);
+        assert_ne!(std::fs::read_to_string(&file).unwrap(), "keep me");
+    }
+
+    #[test]
+    fn test_without_output_path_the_graph_stays_inline() {
+        let opts = PlanGraphOptions {
+            plan_category: Some("shortest"),
+            max_plans: Some(10),
+            ..PlanGraphOptions::default()
+        };
+        let out: serde_json::Value =
+            serde_json::from_str(&execute_json(TEST_YAML, &opts, GraphOutput::default()))
+                .expect("json");
+        assert!(
+            out["html"].as_str().is_some_and(|h| h.contains("<html")),
+            "inline HTML"
+        );
+        assert!(out["path"].is_null());
+    }
+
+    #[test]
     fn test_render_shortest_returns_standalone_html() {
         let response = execute(
             TEST_YAML,
-            Some("shortest"),
-            None,
-            None,
-            VisualizationFormat::Standalone,
-            Some(10),
-            None,
-            false,
+            &PlanGraphOptions {
+                plan_category: Some("shortest"),
+                max_plans: Some(10),
+                ..PlanGraphOptions::default()
+            },
         );
         assert!(response.success, "error: {:?}", response.error);
         let html = response.html.expect("html must be populated on success");
@@ -422,13 +546,12 @@ courses:
     fn test_render_plan_index_zero_targets_first_selected_plan() {
         let response = execute(
             TEST_YAML,
-            None,
-            None,
-            Some(0),
-            VisualizationFormat::Fragment,
-            Some(10),
-            None,
-            false,
+            &PlanGraphOptions {
+                plan_index: Some(0),
+                format: VisualizationFormat::Fragment,
+                max_plans: Some(10),
+                ..PlanGraphOptions::default()
+            },
         );
         assert!(response.success);
         assert_eq!(response.plan_index, Some(0));
@@ -439,16 +562,7 @@ courses:
 
     #[test]
     fn test_requires_either_category_or_index() {
-        let response = execute(
-            TEST_YAML,
-            None,
-            None,
-            None,
-            VisualizationFormat::Standalone,
-            None,
-            None,
-            false,
-        );
+        let response = execute(TEST_YAML, &PlanGraphOptions::default());
         assert!(!response.success);
         let err = response.error.unwrap();
         assert!(err.contains("plan_category") && err.contains("plan_index"));
@@ -458,13 +572,11 @@ courses:
     fn test_rejects_both_category_and_index() {
         let response = execute(
             TEST_YAML,
-            Some("shortest"),
-            None,
-            Some(0),
-            VisualizationFormat::Standalone,
-            None,
-            None,
-            false,
+            &PlanGraphOptions {
+                plan_category: Some("shortest"),
+                plan_index: Some(0),
+                ..PlanGraphOptions::default()
+            },
         );
         assert!(!response.success);
         assert!(response.error.unwrap().contains("not both"));
@@ -474,13 +586,11 @@ courses:
     fn test_unknown_category_surfaces_error() {
         let response = execute(
             TEST_YAML,
-            Some("nonsense"),
-            None,
-            None,
-            VisualizationFormat::Standalone,
-            Some(10),
-            None,
-            false,
+            &PlanGraphOptions {
+                plan_category: Some("nonsense"),
+                max_plans: Some(10),
+                ..PlanGraphOptions::default()
+            },
         );
         assert!(!response.success);
         assert!(response.error.unwrap().contains("No selected plan matches"));
@@ -490,13 +600,11 @@ courses:
     fn test_out_of_range_plan_index_surfaces_error() {
         let response = execute(
             TEST_YAML,
-            None,
-            None,
-            Some(999),
-            VisualizationFormat::Standalone,
-            Some(10),
-            None,
-            false,
+            &PlanGraphOptions {
+                plan_index: Some(999),
+                max_plans: Some(10),
+                ..PlanGraphOptions::default()
+            },
         );
         assert!(!response.success);
         assert!(response.error.unwrap().contains("Selected_plans has"));
@@ -563,13 +671,12 @@ courses:
     fn test_dry_run_skips_html_payload_but_reports_size_and_nodes() {
         let response = execute(
             TEST_YAML,
-            Some("shortest"),
-            None,
-            None,
-            VisualizationFormat::Standalone,
-            Some(10),
-            None,
-            true,
+            &PlanGraphOptions {
+                plan_category: Some("shortest"),
+                max_plans: Some(10),
+                dry_run: true,
+                ..PlanGraphOptions::default()
+            },
         );
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.dry_run);
@@ -595,13 +702,12 @@ courses:
         // "No selected plan matches" message.
         let response = execute(
             TEST_YAML,
-            Some("sample"),
-            Some(99),
-            None,
-            VisualizationFormat::Standalone,
-            Some(10),
-            None,
-            false,
+            &PlanGraphOptions {
+                plan_category: Some("sample"),
+                sample_index: Some(99),
+                max_plans: Some(10),
+                ..PlanGraphOptions::default()
+            },
         );
         assert!(!response.success);
         assert_eq!(response.requested_sample_index, Some(99));
@@ -624,13 +730,12 @@ courses:
     fn test_fragment_no_library_drops_shared_prelude() {
         let response = execute(
             TEST_YAML,
-            Some("shortest"),
-            None,
-            None,
-            VisualizationFormat::FragmentNoLibrary,
-            Some(10),
-            None,
-            false,
+            &PlanGraphOptions {
+                plan_category: Some("shortest"),
+                format: VisualizationFormat::FragmentNoLibrary,
+                max_plans: Some(10),
+                ..PlanGraphOptions::default()
+            },
         );
         assert!(response.success);
         let html = response.html.unwrap();
@@ -683,13 +788,11 @@ courses:
 
         let response = execute(
             &yaml,
-            Some("shortest"),
-            None,
-            None,
-            VisualizationFormat::Standalone,
-            Some(10),
-            None,
-            false,
+            &PlanGraphOptions {
+                plan_category: Some("shortest"),
+                max_plans: Some(10),
+                ..PlanGraphOptions::default()
+            },
         );
         assert!(
             response.success,

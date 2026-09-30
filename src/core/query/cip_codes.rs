@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::core::json::{error_json, parse_json_array, to_json_pretty};
+use crate::core::json::{parse_json_array, to_json_pretty};
 use serde::{Deserialize, Serialize};
 
 /// Request parameters for `search_cip_codes`
@@ -75,7 +75,7 @@ pub async fn execute_json(client: &Arc<DbClient>, req: SearchCipCodesRequest) ->
         .await
     {
         Ok(v) => v,
-        Err(e) => return error_json(e),
+        Err(e) => return e.to_json("searching CIP codes"),
     };
 
     let cip_codes: Vec<CipCodeResult> = parse_json_array(&result);

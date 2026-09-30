@@ -1,22 +1,30 @@
-//! `search_degrees`, `get_degree`, `compare_degrees`, and `store_degree` MCP tools
+//! Stored degree programs: `search_degrees`, `get_degree`, and resolving a reference.
 //!
-//! `search_degrees` / `get_degree` / `compare_degrees` read the normalized
-//! `programs` table written by `import_degree` (the unified-JSON `document` is
-//! the lossless source of truth). The legacy `store_degree` still targets the
-//! old `degrees` yaml-blob table and is retained only for back-compat.
+//! Everything here reads the normalized `programs` table `db import` writes; its
+//! `document` column is the lossless unified-JSON degree.
 
 use std::sync::Arc;
 
-use crate::core::database::models::StoredDegree;
 use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::core::json::{error_json, parse_first, parse_json_array, to_json_pretty};
+use crate::core::json::{error_code, parse_first, parse_json_array, to_json_pretty};
 use serde::{Deserialize, Serialize};
 
+/// The `programs` columns every program record carries, as a literal both projections
+/// are built from.
+macro_rules! program_summary_cols {
+    () => {
+        "program_key,name,unitid,cip_code,catalog_year,degree_type,program_kind,discipline,verified,institution_resolved,has_impossible_requirements"
+    };
+}
+
 /// Lightweight projection for `search_degrees` results.
-const PROGRAM_SUMMARY_COLS: &str = "program_key,name,unitid,cip_code,catalog_year,degree_type,program_kind,discipline,verified,institution_resolved,has_impossible_requirements";
+const PROGRAM_SUMMARY_COLS: &str = program_summary_cols!();
 /// Full projection for `get_degree` — the summary fields plus provenance and
 /// the lossless `document` (unified-JSON degree) for downstream analysis.
-const PROGRAM_DETAIL_COLS: &str = "program_key,name,unitid,cip_code,catalog_year,degree_type,program_kind,discipline,verified,institution_resolved,has_impossible_requirements,degree_id,institution_raw,total_credits,source_url,document";
+const PROGRAM_DETAIL_COLS: &str = concat!(
+    program_summary_cols!(),
+    ",degree_id,institution_raw,total_credits,source_url,document"
+);
 
 // ============================================================================
 // Request types
@@ -25,6 +33,11 @@ const PROGRAM_DETAIL_COLS: &str = "program_key,name,unitid,cip_code,catalog_year
 /// Request parameters for `search_degrees`
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SearchDegreesRequest {
+    /// Words from the program's name, matched anywhere in it, case-insensitively.
+    #[schemars(
+        description = "Words in the program name, e.g. \"computer science\" (case-insensitive substring)"
+    )]
+    pub name: Option<String>,
     /// IPEDS UNITID of the institution
     #[schemars(description = "IPEDS UNITID of the institution")]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
@@ -83,99 +96,12 @@ pub struct GetDegreeRequest {
     /// Catalog year string (e.g. `\"2024-2025\"`)
     #[schemars(description = "Catalog year (e.g. \"2024-2025\")")]
     pub catalog_year: Option<String>,
-}
-
-/// Request parameters for `compare_degrees`.
-///
-/// Accept either the legacy `degree_ids` comma-separated form (DB-only) or
-/// the structured `sources` array — the latter lets callers mix stored
-/// degrees with inline YAML / filesystem paths in one comparison without
-/// having to `store_degree` first.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct CompareDegreesRequest {
-    /// Legacy comma-separated degree IDs to compare (e.g.
-    /// `\"neu-cs-2024,mit-cs-2024\"`). Each ID is looked up in the stored
-    /// degrees table.
+    /// Include the lossless degree document (default false).
     #[schemars(
-        description = "Comma-separated stored degree IDs to compare (legacy form; prefer `sources` for mixed inline/stored input)."
-    )]
-    pub degree_ids: Option<String>,
-
-    /// Structured list of degree sources to compare. Each entry resolves
-    /// from one of `degree_id`, `yaml_content`, or `yaml_path`. Use this
-    /// when you want to benchmark an in-progress YAML against a stored peer.
-    #[schemars(
-        description = "Structured per-degree sources (mix of stored IDs, inline YAMLs, and filesystem paths). Each entry must specify exactly one of degree_id/yaml_content/yaml_path. Optional `label` controls the response order key."
-    )]
-    pub sources: Option<Vec<DegreeSource>>,
-
-    /// Include side-by-side analyze metrics (`complexity`, `longest_delay`,
-    /// `total_credits`) for each degree. Default true. Set false to skip the
-    /// analysis pass when you only want metadata + YAML.
-    #[schemars(
-        description = "Include analyze-style metrics per degree (default true). Set false to skip the analysis pass for performance."
+        description = "Include the lossless unified-JSON document, about 30 KB (default false). Any degree tool takes the program_key as degree instead."
     )]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
-    pub include_metrics: Option<bool>,
-
-    /// Cap on plans generated per degree during the analysis pass. Forwarded
-    /// to `analyze_degree`'s `max_plans`. Default 500.
-    #[schemars(description = "max_plans for the per-degree analysis pass (default 500)")]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
-    pub max_plans: Option<usize>,
-}
-
-/// One degree to include in a comparison.
-///
-/// Exactly one of the three source fields (`degree_id`, `yaml_content`,
-/// `yaml_path`) must be set. An optional `label` controls the response's
-/// display name when the caller wants something more readable than the
-/// resolved slug or filename.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct DegreeSource {
-    /// Free-form label used in the response. Falls back to the resolved
-    /// `degree_id` or YAML's degree id when omitted.
-    #[schemars(description = "Display label for this source in the response (optional).")]
-    pub label: Option<String>,
-
-    /// Stored degree id — looked up in the database.
-    #[schemars(description = "Stored degree ID (DB lookup).")]
-    pub degree_id: Option<String>,
-
-    /// Inline YAML body.
-    #[schemars(description = "Inline YAML body for this degree.")]
-    pub yaml_content: Option<String>,
-
-    /// Filesystem path the MCP server will read.
-    #[schemars(description = "Path to a YAML file on the MCP server's filesystem.")]
-    pub yaml_path: Option<String>,
-}
-
-/// Request parameters for `store_degree`
-///
-/// Saves a validated degree YAML to the database. Requires authentication
-/// (`nuanalytics db login`). Uses upsert on `degree_id` — safe to re-run.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct StoreDegreeRequest {
-    /// Unique identifier for this degree program (e.g. `\"neu-khoury-bscs-2024\"`).
-    /// Used as the upsert key — re-submitting the same ID updates the record.
-    #[schemars(
-        description = "Unique degree ID (e.g. \"neu-khoury-bscs-2024\"). Used as upsert key."
-    )]
-    pub degree_id: String,
-    /// IPEDS UNITID of the institution offering this degree
-    #[schemars(description = "IPEDS UNITID of the institution")]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_i32")]
-    pub unitid: Option<i32>,
-    /// CIP code in dot notation (e.g. `\"11.0101\"`)
-    #[schemars(description = "CIP code (e.g. \"11.0101\")")]
-    pub cip_code: Option<String>,
-    /// Catalog year (e.g. `\"2024-2025\"`)
-    #[schemars(description = "Catalog year (e.g. \"2024-2025\")")]
-    pub catalog_year: Option<String>,
-    /// Full YAML content of the degree program (from `validate_degree` / `audit_degree`)
-    #[schemars(description = "Full degree YAML content")]
-    pub yaml_content: String,
+    pub include_document: Option<bool>,
 }
 
 // ============================================================================
@@ -202,23 +128,11 @@ struct ProgramSummary {
 }
 
 /// Full program record for `get_degree`, including the lossless unified-JSON
-/// `document` that downstream tools (`analyze_degree`, `cache_yaml`) accept.
+/// `document`, which every degree tool accepts by `program_key`.
 #[derive(Debug, Serialize, Deserialize)]
 struct ProgramDetail {
-    program_key: String,
-    name: String,
-    unitid: Option<i32>,
-    cip_code: Option<String>,
-    catalog_year: Option<String>,
-    degree_type: Option<String>,
-    program_kind: Option<String>,
-    discipline: Option<String>,
-    #[serde(default)]
-    verified: bool,
-    #[serde(default)]
-    institution_resolved: bool,
-    #[serde(default)]
-    has_impossible_requirements: bool,
+    #[serde(flatten)]
+    summary: ProgramSummary,
     degree_id: Option<String>,
     institution_raw: Option<String>,
     total_credits: Option<i32>,
@@ -230,40 +144,140 @@ struct ProgramDetail {
 // Execute functions
 // ============================================================================
 
-/// Fetch a stored degree YAML by `degree_id`. Returns the YAML content on
-/// success; on failure returns a JSON error string ready to surface.
+/// The `document` column alone.
+#[derive(Debug, Deserialize)]
+struct DocumentRow {
+    document: serde_json::Value,
+}
+
+/// One `program_key` column, for the identity probes below.
+#[derive(Debug, Deserialize)]
+struct KeyRow {
+    program_key: String,
+}
+
+/// How many `degree_id` matches to read before reporting the list as truncated.
+///
+/// One more than we would ever want to print, so `keys.len() > AMBIGUITY_PROBE` is a
+/// reliable "there are more than this" rather than a guess.
+const AMBIGUITY_PROBE: usize = 50;
+
+/// Resolve `degree` to a `program_key`.
+///
+/// Tries `program_key` first because it is unique. A `degree_id` can match several
+/// programs (one per catalog year), and silently reporting one of them as "the" answer
+/// would be worse than saying so — hence the ambiguity error.
 ///
 /// # Errors
-/// Returns a JSON error string if the database query fails or the row is missing.
-pub async fn fetch_yaml_by_degree_id(
-    client: &Arc<DbClient>,
-    degree_id: &str,
-) -> Result<String, String> {
-    let filters = QueryFilters::new().eq("degree_id", Some(degree_id));
-    let result = client
-        .select(tables::DEGREES, "yaml_content", &filters, Some(1))
+/// A finished JSON payload, not a message — callers return it verbatim — when nothing
+/// matches, when a `degree_id` matches several programs (listing them), or when the
+/// backend fails.
+pub async fn resolve_program_key(client: &DbClient, degree: &str) -> Result<String, String> {
+    let by_key = QueryFilters::new().eq("program_key", Some(degree));
+    match client
+        .select(tables::PROGRAMS, "program_key", &by_key, Some(1))
         .await
-        .map_err(error_json)?;
-    result
-        .as_array()
-        .and_then(|a| a.first())
-        .and_then(|item| item.get("yaml_content"))
-        .and_then(serde_json::Value::as_str)
-        .map(String::from)
+    {
+        Ok(v) if parse_first::<KeyRow>(&v).is_some() => return Ok(degree.to_string()),
+        Ok(_) => {}
+        Err(e) => return Err(e.to_json(&format!("looking up stored program \"{degree}\""))),
+    }
+
+    let by_id = QueryFilters::new().eq("degree_id", Some(degree));
+    let rows = match client
+        .select(
+            tables::PROGRAMS,
+            "program_key",
+            &by_id,
+            Some(AMBIGUITY_PROBE + 1),
+        )
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => return Err(e.to_json(&format!("looking up degree_id \"{degree}\""))),
+    };
+    let mut keys: Vec<String> = parse_json_array::<KeyRow>(&rows)
+        .into_iter()
+        .map(|r| r.program_key)
+        .collect();
+
+    match keys.len() {
+        0 => Err(serde_json::json!({
+            "error": format!(
+                "no row in `programs` has program_key or degree_id = \"{degree}\""
+            ),
+            "code": error_code::SOURCE_NOT_FOUND,
+            "degree": degree,
+            "tip": "Search the stored programs by school or name for the exact program_key",
+        })
+        .to_string()),
+        1 => Ok(keys.remove(0)),
+        n => {
+            // Say so rather than present a capped list as if it were complete.
+            let truncated = n > AMBIGUITY_PROBE;
+            keys.truncate(AMBIGUITY_PROBE);
+            Err(serde_json::json!({
+                "error": format!(
+                    "degree_id \"{degree}\" matches {}{} rows in `programs` — pass one program_key",
+                    if truncated { "more than " } else { "" },
+                    keys.len()
+                ),
+                "degree": degree,
+                "code": error_code::AMBIGUOUS_REFERENCE,
+                "matches": keys,
+                "truncated": truncated,
+            })
+            .to_string())
+        }
+    }
+}
+
+/// A stored program's lossless degree document, by `program_key` or `degree_id`.
+///
+/// The document is the unified-JSON degree `db import` wrote — the same thing `get_degree`
+/// returns — so any tool that analyses a degree can take a stored one by reference.
+/// Returns the resolved `program_key` beside it, so a caller can say which program it read.
+///
+/// # Errors
+/// A finished JSON payload, as [`resolve_program_key`]'s, when the reference does not
+/// resolve, when the backend fails, or when the program has no document.
+pub async fn fetch_document(
+    client: &DbClient,
+    reference: &str,
+) -> Result<(String, serde_json::Value), String> {
+    let program_key = resolve_program_key(client, reference.trim()).await?;
+    document_for_key(client, &program_key)
+        .await
+        .map_err(|e| e.to_json(&format!("reading the document of {program_key}")))?
+        .map(|doc| (program_key.clone(), doc))
         .ok_or_else(|| {
             serde_json::json!({
-                "error": "degree_id not found",
-                "degree_id": degree_id,
+                "error": format!("stored program `{program_key}` has no degree document"),
+                "program_key": program_key,
             })
             .to_string()
         })
 }
 
-/// Execute `search_degrees` and return JSON.
+/// The `document` of the program with exactly this `program_key`: `None` when there is no
+/// such program, or it has no document object.
 ///
-/// Reads the normalized `programs` table, so the new queryable dimensions
-/// (`degree_type`, `program_kind`, `discipline`) filter alongside the legacy
-/// `unitid` / `cip_prefix`.
+/// # Errors
+/// When the backend fails.
+pub(crate) async fn document_for_key(
+    client: &DbClient,
+    program_key: &str,
+) -> Result<Option<serde_json::Value>, crate::core::database::DatabaseError> {
+    let filters = QueryFilters::new().eq("program_key", Some(program_key));
+    let value = client
+        .select(tables::PROGRAMS, "document", &filters, Some(1))
+        .await?;
+    Ok(parse_first::<DocumentRow>(&value)
+        .map(|row| row.document)
+        .filter(serde_json::Value::is_object))
+}
+
+/// Execute `search_degrees` and return JSON.
 pub async fn execute_search_json(client: &Arc<DbClient>, req: SearchDegreesRequest) -> String {
     let limit = req.limit.unwrap_or(20).min(50);
 
@@ -273,6 +287,10 @@ pub async fn execute_search_json(client: &Arc<DbClient>, req: SearchDegreesReque
         .eq("degree_type", req.degree_type.as_deref())
         .eq("program_kind", req.program_kind.as_deref())
         .eq("discipline", req.discipline.as_deref())
+        .ilike(
+            "name",
+            req.name.as_deref().map(str::trim).filter(|n| !n.is_empty()),
+        )
         .starts_with("cip_code", req.cip_prefix.as_deref());
 
     let result = match client
@@ -285,7 +303,7 @@ pub async fn execute_search_json(client: &Arc<DbClient>, req: SearchDegreesReque
         .await
     {
         Ok(v) => v,
-        Err(e) => return error_json(e),
+        Err(e) => return e.to_json("searching stored programs"),
     };
 
     let programs: Vec<ProgramSummary> = parse_json_array(&result);
@@ -296,26 +314,18 @@ pub async fn execute_search_json(client: &Arc<DbClient>, req: SearchDegreesReque
     }))
 }
 
-/// Execute `get_degree` and return JSON (includes the full unified-JSON
-/// `document`).
+/// Execute `get_degree` and return JSON: the program, which runs are stored for it, and —
+/// with `include_document` — its unified-JSON `document`.
 ///
 /// Lookup precedence: `program_key` (unique) → `degree_id` → natural key
 /// `(unitid, cip_code, catalog_year)`. Exactly 1 match → full detail; >1 →
 /// disambiguation summaries.
 pub async fn execute_get_json(client: &Arc<DbClient>, req: GetDegreeRequest) -> String {
-    let filters = if let Some(pk) = req.program_key.as_deref() {
-        QueryFilters::new().eq("program_key", Some(pk))
-    } else if let Some(id) = req.degree_id.as_deref() {
-        QueryFilters::new().eq("degree_id", Some(id))
-    } else if req.unitid.is_some() || req.cip_code.is_some() || req.catalog_year.is_some() {
-        QueryFilters::new()
-            .eq("unitid", req.unitid)
-            .eq("cip_code", req.cip_code.as_deref())
-            .eq("catalog_year", req.catalog_year.as_deref())
-    } else {
+    let Some(filters) = get_filters(&req) else {
         return serde_json::json!({
             "error": "Provide at least one of: program_key, degree_id, unitid, cip_code, or catalog_year",
-            "tip": "Search for degrees first to browse the available programs"
+            "code": error_code::BAD_ARGUMENTS,
+            "tip": "Search the stored programs first to find a program_key"
         })
         .to_string();
     };
@@ -326,280 +336,86 @@ pub async fn execute_get_json(client: &Arc<DbClient>, req: GetDegreeRequest) -> 
         .await
     {
         Ok(v) => v,
-        Err(e) => return error_json(e),
+        Err(e) => return e.to_json("reading stored programs"),
     };
-
     let programs: Vec<ProgramDetail> = parse_json_array(&result);
 
-    match programs.len() {
-        0 => serde_json::json!({
-            "error": "No program found matching the given filters",
-            "tip": "Search for degrees to see what is available"
+    match programs.as_slice() {
+        [] => serde_json::json!({
+            "error": "no stored program matches the given fields",
+            "code": error_code::SOURCE_NOT_FOUND,
+            "program_key": req.program_key,
+            "degree_id": req.degree_id,
+            "unitid": req.unitid,
+            "cip_code": req.cip_code,
+            "catalog_year": req.catalog_year,
+            "tip": "Search the stored programs by school or name for the exact program_key"
         })
         .to_string(),
-        1 => to_json_pretty(&programs[0]),
-        _ => {
-            // Return summaries and ask to narrow.
-            let summaries: Vec<_> = programs
-                .iter()
-                .map(|p| {
-                    serde_json::json!({
-                        "program_key": p.program_key,
-                        "name": p.name,
-                        "unitid": p.unitid,
-                        "cip_code": p.cip_code,
-                        "catalog_year": p.catalog_year,
-                        "degree_type": p.degree_type
-                    })
-                })
-                .collect();
-            serde_json::json!({
-                "message": "Multiple programs match — provide program_key or more filters to narrow",
-                "count": programs.len(),
-                "matches": summaries
-            })
-            .to_string()
-        }
+        [program] => detail_json(client, program, req.include_document.unwrap_or(false)).await,
+        many => matches_json(many),
     }
 }
 
-/// Execute `compare_degrees` and return JSON.
-///
-/// When `include_metrics=true` (default), each returned degree carries a
-/// `metrics` object with the analyze pipeline's aggregate statistics so
-/// callers can diff `complexity` / `longest_delay` / `total_credits` side-by-side
-/// in a single call.
-///
-/// Accepts both the legacy `degree_ids` comma-separated form and the
-/// structured `sources` list. When both are provided, `sources` is processed
-/// first; the legacy IDs are appended without labels.
-/// Per-degree analysis metrics for `compare_degrees`, supplied by the caller.
-///
-/// The analysis pipeline still lives under `crate::mcp` (see
-/// `docs/clean-up-analysis-todo.md` step 3), and `core` must not reach into `mcp` — that
-/// invariant is what lets these engines build under `--features database` alone. So the
-/// comparison takes its metrics function as a parameter. When `core::analysis` lands,
-/// the MCP and CLI closures collapse into a single call here.
-///
-/// `+ Sync` is required, not decorative: `&T` is `Send` only when `T: Sync`, and the MCP
-/// server spawns these futures, so without it `execute_compare_json` stops being `Send`.
-pub type CompareMetricsFn<'a> = &'a (dyn Fn(&str, Option<usize>) -> serde_json::Value + Sync);
+/// The filters `get_degree`'s fields select by, in precedence order; `None` when it names
+/// no field at all.
+fn get_filters(req: &GetDegreeRequest) -> Option<QueryFilters> {
+    if let Some(pk) = req.program_key.as_deref() {
+        return Some(QueryFilters::new().eq("program_key", Some(pk)));
+    }
+    if let Some(id) = req.degree_id.as_deref() {
+        return Some(QueryFilters::new().eq("degree_id", Some(id)));
+    }
+    (req.unitid.is_some() || req.cip_code.is_some() || req.catalog_year.is_some()).then(|| {
+        QueryFilters::new()
+            .eq("unitid", req.unitid)
+            .eq("cip_code", req.cip_code.as_deref())
+            .eq("catalog_year", req.catalog_year.as_deref())
+    })
+}
 
-/// Execute `compare_degrees` and return JSON.
-///
-/// `compute_metrics` supplies the per-degree analysis numbers; see
-/// [`CompareMetricsFn`] for why it is a parameter rather than a direct call.
-pub async fn execute_compare_json(
-    client: &Arc<DbClient>,
-    req: CompareDegreesRequest,
-    compute_metrics: CompareMetricsFn<'_>,
-) -> String {
-    let include_metrics = req.include_metrics.unwrap_or(true);
-    let max_plans = req.max_plans;
-
-    let mut resolved: Vec<ResolvedDegree> = Vec::new();
-    let mut not_found: Vec<String> = Vec::new();
-
-    if let Some(sources) = &req.sources {
-        for (idx, source) in sources.iter().enumerate() {
-            match resolve_source(client, source, idx).await {
-                Ok(rd) => resolved.push(rd),
-                Err(missing) => not_found.push(missing),
-            }
+/// One program in full, with the runs stored for it — which variants have been analysed,
+/// and when: the figures a caller can read back instead of enumerating plans afresh.
+async fn detail_json(client: &DbClient, program: &ProgramDetail, include_document: bool) -> String {
+    let mut detail = serde_json::to_value(program).unwrap_or_default();
+    if !include_document {
+        if let Some(obj) = detail.as_object_mut() {
+            obj.remove("document");
         }
     }
-
-    if let Some(ids_str) = req.degree_ids.as_deref() {
-        let ids: Vec<&str> = ids_str
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .collect();
-        for id in ids {
-            match fetch_program_detail(client, id).await {
-                Some(detail) => resolved.push(ResolvedDegree::from_detail(None, detail)),
-                None => not_found.push(id.to_string()),
-            }
-        }
+    let key = &program.summary.program_key;
+    match super::metrics::run_summaries(client, key).await {
+        Ok(runs) => detail["stored_runs"] = serde_json::Value::from(runs),
+        Err(e) => return e.to_json(&format!("reading the analysis runs of {key}")),
     }
+    to_json_pretty(&detail)
+}
 
-    if resolved.is_empty() && not_found.is_empty() {
-        return error_json(
-            "No degrees to compare. Provide `sources` (structured list) or `degree_ids` (legacy comma-separated form).",
-        );
-    }
-
-    let degree_records: Vec<serde_json::Value> = resolved
+/// Several matching programs, in brief, to narrow down.
+///
+/// A list to choose from, not a failure: nothing was asked for by a name that should have
+/// been unique.
+fn matches_json(programs: &[ProgramDetail]) -> String {
+    let summaries: Vec<_> = programs
         .iter()
-        .map(|rd| {
-            let mut record = serde_json::json!({
-                "label": rd.label,
-                "program_key": rd.program_key,
-                "name": rd.name,
-                "degree_id": rd.degree_id,
-                "unitid": rd.unitid,
-                "cip_code": rd.cip_code,
-                "catalog_year": rd.catalog_year,
-                "source": rd.source,
-            });
-            if include_metrics {
-                record["metrics"] = compute_metrics(&rd.source, max_plans);
-            }
-            record
+        .map(|p| {
+            let s = &p.summary;
+            serde_json::json!({
+                "program_key": s.program_key,
+                "name": s.name,
+                "unitid": s.unitid,
+                "cip_code": s.cip_code,
+                "catalog_year": s.catalog_year,
+                "degree_type": s.degree_type
+            })
         })
         .collect();
-
-    to_json_pretty(&serde_json::json!({
-        "count": resolved.len(),
-        "degrees": degree_records,
-        "not_found": not_found,
-    }))
-}
-
-/// Internal: an already-resolved degree ready to fold into the response.
-/// `source` holds the degree's source text — unified JSON for a stored program,
-/// raw YAML for an inline/filesystem source.
-struct ResolvedDegree {
-    label: Option<String>,
-    program_key: Option<String>,
-    name: Option<String>,
-    degree_id: Option<String>,
-    unitid: Option<i32>,
-    cip_code: Option<String>,
-    catalog_year: Option<String>,
-    source: String,
-}
-
-impl ResolvedDegree {
-    fn from_detail(label: Option<String>, detail: ProgramDetail) -> Self {
-        Self {
-            label,
-            program_key: Some(detail.program_key),
-            name: Some(detail.name),
-            degree_id: detail.degree_id,
-            unitid: detail.unitid,
-            cip_code: detail.cip_code,
-            catalog_year: detail.catalog_year,
-            source: serde_json::to_string(&detail.document).unwrap_or_default(),
-        }
-    }
-
-    const fn from_inline(label: Option<String>, source: String) -> Self {
-        Self {
-            label,
-            program_key: None,
-            name: None,
-            degree_id: None,
-            unitid: None,
-            cip_code: None,
-            catalog_year: None,
-            source,
-        }
-    }
-}
-
-/// Resolve one `DegreeSource` entry. Returns `Err(missing_label)` when the
-/// source pointed at a stored id that doesn't exist (collected into
-/// `not_found`) or when the entry's three input fields are misconfigured.
-async fn resolve_source(
-    client: &Arc<DbClient>,
-    source: &DegreeSource,
-    idx: usize,
-) -> Result<ResolvedDegree, String> {
-    let label = source
-        .label
-        .clone()
-        .unwrap_or_else(|| format!("sources[{idx}]"));
-
-    // Surface validation + lookup failures via `not_found` rather than a
-    // top-level error so the rest of the compare call still produces useful
-    // output for the good entries. Each error label embeds the underlying
-    // cause so the caller can debug without a second round-trip.
-    if let Err(msg) = validate_source_count(source) {
-        return Err(format!("{label}: {msg}"));
-    }
-
-    if let Some(id) = source.degree_id.as_deref() {
-        return fetch_program_detail(client, id)
-            .await
-            .map(|detail| ResolvedDegree::from_detail(source.label.clone(), detail))
-            .ok_or_else(|| format!("{label}: stored id {id:?} not found in database"));
-    }
-    if let Some(yaml) = source.yaml_content.clone() {
-        return Ok(ResolvedDegree::from_inline(source.label.clone(), yaml));
-    }
-    if let Some(path) = source.yaml_path.as_deref() {
-        return match crate::core::json::read_yaml_file(path) {
-            Ok(yaml) => Ok(ResolvedDegree::from_inline(source.label.clone(), yaml)),
-            Err(read_err) => Err(format!(
-                "{label}: yaml_path={path:?} failed to read — {read_err}"
-            )),
-        };
-    }
-    // Unreachable given `validate_source_count` succeeded above.
-    Err(format!(
-        "{label}: internal error — no source field resolved"
-    ))
-}
-
-/// Validate that a [`DegreeSource`] sets exactly one of its three source
-/// fields. Returned as a free function so unit tests can exercise the
-/// invariant without needing an async test harness or a stub `DbClient`.
-fn validate_source_count(source: &DegreeSource) -> Result<(), &'static str> {
-    let count = u8::from(source.degree_id.is_some())
-        + u8::from(source.yaml_content.is_some())
-        + u8::from(source.yaml_path.is_some());
-    match count {
-        0 => Err("expected exactly one of degree_id, yaml_content, yaml_path (got none)"),
-        1 => Ok(()),
-        _ => Err("expected exactly one of degree_id, yaml_content, yaml_path (got multiple)"),
-    }
-}
-
-/// Fetch a stored program's full detail by `id`, trying `program_key` (unique)
-/// first and then `degree_id`. Returns `None` if neither matches or the row
-/// fails to deserialize.
-async fn fetch_program_detail(client: &Arc<DbClient>, id: &str) -> Option<ProgramDetail> {
-    for col in ["program_key", "degree_id"] {
-        let filters = QueryFilters::new().eq(col, Some(id));
-        if let Ok(value) = client
-            .select(tables::PROGRAMS, PROGRAM_DETAIL_COLS, &filters, Some(1))
-            .await
-        {
-            if let Some(detail) = parse_first::<ProgramDetail>(&value) {
-                return Some(detail);
-            }
-        }
-    }
-    None
-}
-
-/// Execute `store_degree` and return JSON. The client is always
-/// authenticated by construction (`DbClient::from_config` refuses to
-/// build without a valid session), so this function just performs the
-/// write.
-pub async fn execute_store_json(client: &Arc<DbClient>, req: StoreDegreeRequest) -> String {
-    let degree = StoredDegree {
-        id: None,
-        degree_id: req.degree_id.clone(),
-        unitid: req.unitid,
-        cip_code: req.cip_code,
-        catalog_year: req.catalog_year,
-        yaml_content: req.yaml_content,
-        created_at: None,
-    };
-
-    match client
-        .upsert_batch(tables::DEGREES, vec![degree], &["degree_id"])
-        .await
-    {
-        Ok(()) => serde_json::json!({
-            "stored": true,
-            "degree_id": req.degree_id
-        })
-        .to_string(),
-        Err(e) => error_json(e),
-    }
+    serde_json::json!({
+        "message": "Multiple programs match — provide program_key or more filters to narrow",
+        "count": programs.len(),
+        "matches": summaries
+    })
+    .to_string()
 }
 
 #[cfg(test)]
@@ -608,7 +424,7 @@ mod tests {
 
     /// Guards the `PROGRAM_SUMMARY_COLS` → `ProgramSummary` contract: a row
     /// shaped like a `PostgREST` `programs` select must deserialize cleanly. A
-    /// typo'd column name (the original Issue A failure mode) would break this.
+    /// typo'd column name would break this.
     #[test]
     fn test_program_summary_deserializes_from_programs_row() {
         let row = serde_json::json!({
@@ -630,6 +446,57 @@ mod tests {
         assert_eq!(summary.unitid, Some(126_818));
         assert_eq!(summary.degree_type.as_deref(), Some("BS"));
         assert!(summary.institution_resolved);
+    }
+
+    fn get_request(v: serde_json::Value) -> GetDegreeRequest {
+        serde_json::from_value(v).expect("request decodes")
+    }
+
+    #[test]
+    fn test_get_filters_follow_the_documented_precedence() {
+        let filters = |v| format!("{:?}", get_filters(&get_request(v)));
+        let by_key =
+            filters(serde_json::json!({"program_key": "k", "degree_id": "d", "unitid": 1}));
+        assert!(
+            by_key.contains("program_key") && !by_key.contains("degree_id"),
+            "{by_key}"
+        );
+        let by_id = filters(serde_json::json!({"degree_id": "d", "unitid": 1}));
+        assert!(
+            by_id.contains("degree_id") && !by_id.contains("unitid"),
+            "{by_id}"
+        );
+        let natural = filters(serde_json::json!({"unitid": 1, "catalog_year": "2024-2025"}));
+        assert!(
+            natural.contains("unitid") && natural.contains("catalog_year"),
+            "{natural}"
+        );
+        assert_eq!(filters(serde_json::json!({})), "None");
+    }
+
+    #[test]
+    fn test_matches_json_lists_each_program_in_brief() {
+        let row = |key: &str| {
+            serde_json::from_value::<ProgramDetail>(serde_json::json!({
+                "program_key": key, "name": "BS", "unitid": 1, "cip_code": "11.0701",
+                "catalog_year": "2024-2025", "degree_type": "BS", "program_kind": null,
+                "discipline": null, "degree_id": "d", "institution_raw": null,
+                "total_credits": 120, "source_url": null, "document": {"big": true}
+            }))
+            .expect("row decodes")
+        };
+        let out: serde_json::Value =
+            serde_json::from_str(&matches_json(&[row("a"), row("b")])).unwrap();
+        assert_eq!(out["count"], 2);
+        assert_eq!(out["matches"][1]["program_key"], "b");
+        assert!(
+            out["matches"][0].get("document").is_none(),
+            "no documents in the list"
+        );
+        assert!(
+            out.get("error").is_none(),
+            "a list to choose from, not a failure"
+        );
     }
 
     /// Guards the `PROGRAM_DETAIL_COLS` → `ProgramDetail` contract, including
@@ -657,63 +524,19 @@ mod tests {
         });
         let detail: ProgramDetail =
             serde_json::from_value(row).expect("programs detail row must deserialize");
-        assert_eq!(detail.cip_code, None);
+        assert_eq!(detail.summary.cip_code, None);
         assert_eq!(detail.degree_id, None);
         assert_eq!(detail.total_credits, Some(120));
+        let flat = serde_json::to_value(&detail).expect("serializes");
+        assert_eq!(
+            flat["program_key"], "prog:141574||2024-2025|BS",
+            "the summary fields stay at the top level"
+        );
+        assert!(flat.get("summary").is_none());
         assert_eq!(
             detail.document["degree"]["institution"],
             serde_json::json!("University of Hawaii at Manoa"),
             "the lossless document must survive deserialization intact"
         );
-    }
-
-    #[test]
-    fn test_validate_source_count_rejects_zero_fields_set() {
-        let source = DegreeSource {
-            label: Some("none-set".to_string()),
-            degree_id: None,
-            yaml_content: None,
-            yaml_path: None,
-        };
-        let err = validate_source_count(&source).unwrap_err();
-        assert!(err.contains("none"), "unexpected error: {err}");
-    }
-
-    #[test]
-    fn test_validate_source_count_rejects_multiple_fields_set() {
-        let source = DegreeSource {
-            label: None,
-            degree_id: Some("id".to_string()),
-            yaml_content: Some("yaml".to_string()),
-            yaml_path: None,
-        };
-        let err = validate_source_count(&source).unwrap_err();
-        assert!(err.contains("multiple"), "unexpected error: {err}");
-    }
-
-    #[test]
-    fn test_validate_source_count_accepts_exactly_one_field() {
-        for source in [
-            DegreeSource {
-                label: None,
-                degree_id: Some("id".to_string()),
-                yaml_content: None,
-                yaml_path: None,
-            },
-            DegreeSource {
-                label: None,
-                degree_id: None,
-                yaml_content: Some("yaml".to_string()),
-                yaml_path: None,
-            },
-            DegreeSource {
-                label: None,
-                degree_id: None,
-                yaml_content: None,
-                yaml_path: Some("/tmp/x.yaml".to_string()),
-            },
-        ] {
-            assert!(validate_source_count(&source).is_ok());
-        }
     }
 }

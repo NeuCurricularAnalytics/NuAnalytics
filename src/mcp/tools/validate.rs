@@ -12,8 +12,8 @@ use crate::core::{
     ValidationResult, ValidationWarning,
 };
 use crate::mcp::tools::shared::{
-    format_degree_parse_error, format_yaml_context, ToolFollowup, TOOL_ANALYZE_DEGREE,
-    TOOL_AUDIT_DEGREE, TOOL_GET_DEGREE_SCHEMA,
+    format_degree_parse_error, format_yaml_context, DegreeSourceArgs, ToolFollowup,
+    TOOL_ANALYZE_DEGREE, TOOL_AUDIT_DEGREE, TOOL_GET_REFERENCE,
 };
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
@@ -24,29 +24,13 @@ use serde::{Deserialize, Serialize};
 
 /// Request parameters for the `validate_degree` tool
 ///
-/// Provide exactly one YAML source: `yaml_content` (inline string),
-/// `yaml_path` (workspace-relative file), or `degree_id` (stored in the
-/// database — requires the `database` feature). Inline content avoids
-/// re-pasting the whole YAML on every call once it's stored.
+/// The degree comes from `source`: exactly one of `degree` (a `sample:`, `cache:` or
+/// stored reference), `content` (inline) or `path` (a file on the server).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ValidateDegreeRequest {
-    /// Inline YAML content. Mutually exclusive with `yaml_path` / `degree_id`.
-    #[schemars(description = "Complete degree program YAML content (inline)")]
-    pub yaml_content: Option<String>,
-
-    /// Filesystem path (workspace-relative) to a YAML file the server will read.
-    /// Mutually exclusive with `yaml_content` / `degree_id`.
-    #[schemars(
-        description = "Path to a YAML file on the MCP server's filesystem. Mutually exclusive with yaml_content/degree_id."
-    )]
-    pub yaml_path: Option<String>,
-
-    /// Stored `degree_id` (from `store_degree`). Looked up via the database;
-    /// the same YAML is then validated. Mutually exclusive with the others.
-    #[schemars(
-        description = "Stored degree ID (DB lookup). Requires the database feature; mutually exclusive with yaml_content/yaml_path."
-    )]
-    pub degree_id: Option<String>,
+    /// Where the degree comes from: exactly one of `degree`, `content`, `path`.
+    #[serde(flatten)]
+    pub source: DegreeSourceArgs,
 
     /// If true, patterns that match no enumerated courses (e.g. external
     /// gen-ed pools like `*:100+`, `POLS:100+`) become warnings instead of
@@ -212,12 +196,16 @@ pub fn execute(
                 resolved_pools: vec![],
                 suggestions: vec![
                     "Fix the YAML syntax error first, then re-validate.".to_string(),
-                    "Use get_degree_schema to review the expected format.".to_string(),
+                    "Use get_reference (topic degree-yaml) to review the expected format."
+                        .to_string(),
                 ],
                 tool_followups: vec![ToolFollowup {
-                    tool: TOOL_GET_DEGREE_SCHEMA,
+                    tool: TOOL_GET_REFERENCE,
                     reason: "YAML parse error; review the schema before retrying.".to_string(),
-                    suggested_args: serde_json::json!({ "section": "quickstart" }),
+                    suggested_args: serde_json::json!({
+                        "topic": crate::mcp::tools::reference::ReferenceTopic::DegreeYaml,
+                        "section": "quickstart",
+                    }),
                 }],
             };
         }
@@ -324,8 +312,7 @@ pub fn execute_json(
         allow_unmatched_patterns,
         include_hidden_prereq_warnings,
     );
-    serde_json::to_string_pretty(&response)
-        .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
+    crate::core::json::to_json_pretty(&response)
 }
 
 // ============================================================================
@@ -1206,8 +1193,8 @@ courses:
             response
                 .tool_followups
                 .iter()
-                .any(|f| f.tool == "get_degree_schema"),
-            "parse-error response must point at get_degree_schema; got {:?}",
+                .any(|f| f.tool == "get_reference"),
+            "parse-error response must point at get_reference; got {:?}",
             response.tool_followups
         );
     }

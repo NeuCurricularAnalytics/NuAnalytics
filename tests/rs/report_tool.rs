@@ -1,4 +1,4 @@
-//! Integration tests for the `generate_degree_report` MCP tool.
+//! Integration tests for the `render_degree_report` MCP tool.
 //!
 //! Drives the real CSU sample through the tool's `execute_json` entry point
 //! and asserts the resulting HTML matches the structure the browser-facing
@@ -16,7 +16,7 @@ fn read_csu() -> String {
 #[test]
 fn report_tool_returns_inline_html_for_csu_sample() {
     let yaml = read_csu();
-    let json = report::execute_json(&yaml, Some(200), None, None, None, None, None, None);
+    let json = report::execute_json(&yaml, Some(200), None, None, None, None, None, None, false);
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
     assert_eq!(parsed["success"].as_bool(), Some(true));
@@ -57,10 +57,11 @@ fn report_tool_writes_companion_files_to_output_dir() {
         Some(200),
         None,
         Some(&dir_str),
-        None, // write_plan_csvs default: true in disk mode
-        None, // write_jsonl_summary default: true in disk mode
-        None, // write_index_csv default: true in disk mode
-        None, // return_html_inline default: false in disk mode
+        None,  // write_plan_csvs default: true in disk mode
+        None,  // write_jsonl_summary default: true in disk mode
+        None,  // write_index_csv default: true in disk mode
+        None,  // return_html_inline default: false in disk mode
+        false, // overwrite: a fresh directory, nothing to replace
     );
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed["success"].as_bool(), Some(true));
@@ -94,44 +95,6 @@ fn report_tool_writes_companion_files_to_output_dir() {
 }
 
 #[test]
-fn caching_yaml_and_referencing_via_degree_id_round_trips() {
-    // P0 lookup-chain integration test: stash a YAML via the cache tool, then
-    // confirm the layered resolver in run_yaml_tool can fetch it back when an
-    // analyze-degree-style consumer passes the handle as `degree_id`.
-    use nu_analytics::mcp::cache::{YamlCache, YAML_CACHE};
-    use nu_analytics::mcp::tools::cache;
-
-    let yaml = read_csu();
-    let response_json = cache::execute_json(yaml.clone());
-    let response: serde_json::Value = serde_json::from_str(&response_json).unwrap();
-    let handle = response["handle"]
-        .as_str()
-        .expect("handle string")
-        .to_owned();
-    assert!(handle.starts_with("cache:"));
-
-    // The handle must be retrievable from the same process-wide cache.
-    // `get` returns (body, remaining_ttl) — assert both.
-    let (body, remaining) = YAML_CACHE
-        .lock()
-        .expect("yaml cache mutex poisoned")
-        .get(&handle)
-        .expect("cache hit");
-    assert_eq!(&*body, &yaml);
-    // Fresh insert ⇒ remaining TTL is positive and at most the full window.
-    assert!(remaining.as_secs() > 0, "remaining TTL must be positive");
-
-    // Re-caching the same body returns the same handle (idempotent).
-    let again_json = cache::execute_json(yaml.clone());
-    let again: serde_json::Value = serde_json::from_str(&again_json).unwrap();
-    assert_eq!(again["handle"], handle);
-
-    // Handle format matches YamlCache::handle_for exactly so the caller can
-    // pre-compute handles without round-tripping the tool.
-    assert_eq!(YamlCache::handle_for(&yaml), handle);
-}
-
-#[test]
 fn bundled_sample_key_is_accepted_as_degree_id() {
     // P0 sample-key resolution: list_sample_degrees advertises three short
     // keys (csu, neu-khoury, uhm); each must resolve via the layered lookup
@@ -159,6 +122,7 @@ fn report_tool_honours_include_courses_constraint() {
         None,
         None,
         None,
+        false,
     );
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed["success"].as_bool(), Some(true));

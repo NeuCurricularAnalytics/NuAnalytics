@@ -13,8 +13,8 @@ use crate::core::models::CourseGraph;
 use crate::core::validate_degree_program;
 use crate::core::DegreeProgram;
 use crate::mcp::tools::shared::{
-    ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_GET_COURSE_DETAIL, TOOL_RENDER_PLAN_GRAPH,
-    TOOL_VALIDATE_DEGREE,
+    DegreeSourceArgs, ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_GET_COURSE_DETAIL,
+    TOOL_RENDER_PLAN_GRAPH, TOOL_VALIDATE_DEGREE,
 };
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
@@ -25,26 +25,13 @@ use serde::{Deserialize, Serialize};
 
 /// Request parameters for the `audit_degree` tool
 ///
-/// Provide exactly one YAML source: `yaml_content` (inline), `yaml_path`
-/// (workspace-relative file), or `degree_id` (stored in the database —
-/// requires the `database` feature).
+/// The degree comes from `source`: exactly one of `degree` (a `sample:`, `cache:` or
+/// stored reference), `content` (inline) or `path` (a file on the server).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct AuditDegreeRequest {
-    /// Inline YAML content. Mutually exclusive with `yaml_path` / `degree_id`.
-    #[schemars(description = "Complete degree program YAML content (inline)")]
-    pub yaml_content: Option<String>,
-
-    /// Filesystem path the server will read. Mutually exclusive with the others.
-    #[schemars(
-        description = "Path to a YAML file on the MCP server's filesystem. Mutually exclusive with yaml_content/degree_id."
-    )]
-    pub yaml_path: Option<String>,
-
-    /// Stored `degree_id` (DB lookup). Mutually exclusive with the others.
-    #[schemars(
-        description = "Stored degree ID (DB lookup). Requires the database feature; mutually exclusive with yaml_content/yaml_path."
-    )]
-    pub degree_id: Option<String>,
+    /// Where the degree comes from: exactly one of `degree`, `content`, `path`.
+    #[serde(flatten)]
+    pub source: DegreeSourceArgs,
 
     /// Prerequisite chain depth threshold (default: 3)
     #[schemars(description = "Minimum chain length to flag as deep (default: 3)")]
@@ -345,8 +332,7 @@ pub fn execute_json(
         chain_threshold,
         include_missing_intermediate_prereqs,
     );
-    serde_json::to_string_pretty(&response)
-        .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
+    crate::core::json::to_json_pretty(&response)
 }
 
 // ============================================================================

@@ -60,7 +60,7 @@ const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Keys off SQLSTATE `42P01` first and the message text only as a fallback, because the
 /// prose wording is not part of any contract.
 fn is_undefined_relation(message: &str) -> bool {
-    message.contains("42P01")
+    message.contains(super::codes::UNDEFINED_TABLE)
         || (message.contains("does not exist") && message.contains("relation"))
 }
 

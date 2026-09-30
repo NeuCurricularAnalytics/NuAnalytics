@@ -4,6 +4,78 @@ All notable changes to NuAnalytics are recorded here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the
 project uses semantic versioning.
 
+## [Unreleased]
+
+The MCP server is redesigned: fewer, broader tools; SQL access in layers; stored analysis
+reachable; skills rewritten. **Breaking for MCP clients**: tools and parameters are renamed
+or removed, as below. The CLI is unchanged apart from additions.
+
+### Breaking — MCP tools
+
+| Was | Now |
+|---|---|
+| `get_degree_schema`, `get_degree_json_schema` | `get_reference(topic="degree-yaml" \| "degree-json-schema" \| "database")` |
+| `generate_degree_report` | `render_degree_report` |
+| `get_institution` | `search_institutions(unitid=…)` returns the full record |
+| `get_institution_completions`, `get_schools_completion_demographics` | `get_completion_demographics(group_by="cip" \| "school")` |
+| `cache_yaml` | none: inline `content` is cached by every degree tool, and its handle returned as `source.handle` |
+| `degree_pipeline` | none: call `validate_degree`, `audit_degree` and `analyze_degree` in parallel |
+| `get_curriculum_visualization` | `render_plan_graph` |
+| `scaffold_degree_yaml` | none: it read the legacy `degrees` table |
+| `import_degree` | unchanged, but served only with `nuanalytics mcp --allow-writes` |
+
+| Parameter was | Now |
+|---|---|
+| `yaml_content` | `content` |
+| `yaml_path` | `path` |
+| `degree_id` (on degree tools) | `degree`, which also takes `sample:<key>`, `cache:<hash>` and a stored `program_key` |
+| `trimmed_cache_id` (in `trim_degree`'s response) | `trimmed_degree` |
+| `analyze_degree(include_graph_spec, plan_indices)` | removed; `render_plan_graph` draws a plan |
+| `compare_degrees(degree_ids, include_metrics)` | `sources: [{label?, degree \| content \| path}]`, with `metrics: stored \| fresh \| none` |
+
+A failed call now returns `isError: true` and one envelope,
+`{"error": {"code", "message", "next_steps"?, "details"?}}`. An argument a tool does not
+take is refused by name instead of ignored.
+
+### Added
+
+- **`get_stored_analysis`**: a stored program's newest run per variant, with its plans and
+  course metrics on request. **`render_stored_report`**: the same HTML as `db report`,
+  from the stored run.
+- **`query_sql`**: one read-only statement, inputs bound through `$1` via the new
+  `query_readonly_params` database function, capped at 2,000 rows and 30 seconds.
+- `get_reference(topic="database")`: the tables, columns and joins, generated from the
+  compiled-in schema files.
+- `search_degrees(name=…)` and `db query degrees --name`.
+- `output_path` / `output_dir` on the tools that render, refusing to replace a file unless
+  `overwrite=true`. `nuanalytics mcp --list-tools`.
+- `db doctor` checks that the two query functions are installed.
+
+### Changed
+
+- **Completion demographics run as one SQL query each**, from compiled-in `.sql` files,
+  instead of up to 252 PostgREST calls. They no longer miss the latest year, cap at 5,000
+  institutions, or drop a failed batch silently.
+- `nuanalytics init` ships five rewritten skills (degree-author, degree-review,
+  degree-analyze, stored-programs, curriculum-research) and writes `.mcp.json` plus a
+  `settings.json` that approves it. The old `mcpServers` block in `settings.json` was never
+  read.
+
+### Fixed
+
+- The server advertised `import_degree` in `tools/list` without `--allow-writes`, because
+  `#[tool_handler]` defaulted to a fresh full router.
+- `get_reference(topic="database")` invented columns from words in comments (`not`, `so`,
+  `which`) and dropped real ones (`complexity_mean`, `random_seed`, …).
+- `trim_degree` replaced existing files without asking, and its input guard could be
+  bypassed by another spelling of the path.
+- A prerequisite cycle broken for analysis was drawn again in the report's graph.
+- Course keys containing `_` lost their prerequisites in the report's course list.
+- The degree-format reference no longer teaches `"{[A, B], [C, D]}"`, which no tool
+  parses, and its quickstart keys no longer look like elective placeholders.
+- `institution_completion_totals` ingest no longer adds IPEDS's CIP `99` grand-total rows
+  to the totals.
+
 ## [0.5.1] — 2026-06-10
 
 Bug-fix release addressing issues found while live-testing the MCP server

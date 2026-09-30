@@ -615,7 +615,7 @@ impl Config {
     /// Exists so the tiers can be merged as tables *before* anything is deserialised.
     /// Once serde has run, an absent key is indistinguishable from one written with its
     /// default value, and every attempt to tell them apart by inspecting the value gets
-    /// some legitimate value wrong — see [`Config::merge_tables`].
+    /// some legitimate value wrong — see `Config::merge_tables`.
     ///
     /// # Errors
     /// Returns the deserialisation error if the table does not describe a valid config.

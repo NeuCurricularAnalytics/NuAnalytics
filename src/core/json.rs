@@ -7,19 +7,29 @@
 
 use serde::{de, Deserialize, Deserializer};
 
-/// Read a YAML file from `path`. Errors are returned as JSON strings ready to
-/// surface to the MCP client.
+/// Machine-readable codes a failure payload carries in `code`.
 ///
-/// # Errors
-/// Returns a JSON error string if the file cannot be opened or read.
-pub fn read_yaml_file(path: &str) -> Result<String, String> {
-    std::fs::read_to_string(path).map_err(|e| {
-        serde_json::json!({
-            "error": format!("Failed to read yaml_path: {e}"),
-            "path": path,
-        })
-        .to_string()
-    })
+/// The MCP envelope passes the code through, so a client can branch on it; the CLI prints
+/// the message. One list, so a producer and the envelope cannot disagree on a spelling.
+pub mod error_code {
+    /// The arguments were invalid: missing, contradictory, or of the wrong shape.
+    pub const BAD_ARGUMENTS: &str = "bad_arguments";
+    /// The degree, file or record the arguments name does not exist.
+    pub const SOURCE_NOT_FOUND: &str = "source_not_found";
+    /// A reference matched several records; the payload lists them.
+    pub const AMBIGUOUS_REFERENCE: &str = "ambiguous_reference";
+    /// A `cache:` handle has expired.
+    pub const CACHE_EXPIRED: &str = "cache_expired";
+    /// The database the tool needs is not available.
+    pub const DB_UNAVAILABLE: &str = "db_unavailable";
+    /// An output file could not be written, for a reason other than already existing.
+    pub const WRITE_FAILED: &str = "write_failed";
+}
+
+/// A failure payload carrying a machine-readable `code` (see [`error_code`]).
+#[must_use]
+pub fn coded_error(code: &str, message: impl std::fmt::Display) -> serde_json::Value {
+    serde_json::json!({ "error": message.to_string(), "code": code })
 }
 
 /// Serialize a JSON error response string from a display-able error value.
@@ -68,25 +78,23 @@ pub fn parse_comma_list(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// Parse a comma-separated list of `usize` values, silently dropping any
-/// entry that fails to parse (negative, non-numeric, etc.).
-///
-/// `"0, 2, abc, 5"` → `[0, 2, 5]`. Used for tool parameters like
-/// `analyze_degree`'s `plan_indices`, where invalid entries should be
-/// ignored rather than rejecting the whole request.
-#[must_use]
-pub fn parse_comma_list_usize(s: &str) -> Vec<usize> {
-    s.split(',')
-        .map(str::trim)
-        .filter(|c| !c.is_empty())
-        .filter_map(|c| c.parse::<usize>().ok())
-        .collect()
-}
-
 /// Serialize a value to a pretty-printed JSON string, falling back to an error JSON on failure.
 pub fn to_json_pretty(value: &impl serde::Serialize) -> String {
     serde_json::to_string_pretty(value)
         .unwrap_or_else(|e| error_json(format!("Serialization failed: {e}")))
+}
+
+/// A JSON value's type as a noun phrase — "an object", "null" — for error messages.
+#[must_use]
+pub const fn value_kind(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "a boolean",
+        serde_json::Value::Number(_) => "a number",
+        serde_json::Value::String(_) => "a string",
+        serde_json::Value::Array(_) => "an array",
+        serde_json::Value::Object(_) => "an object",
+    }
 }
 
 /// Coerce a JSON value into `Option<T>` accepting native, stringified, or null.
@@ -200,6 +208,14 @@ pub fn deserialize_opt_bool<'de, D: Deserializer<'de>>(d: D) -> Result<Option<bo
 mod tests {
     use super::*;
     use serde::{Deserialize, Serialize};
+
+    #[test]
+    fn test_coded_error_carries_code_and_message() {
+        let v = coded_error(error_code::SOURCE_NOT_FOUND, format_args!("no `{}`", "x"));
+        assert_eq!(v["code"], "source_not_found");
+        assert_eq!(v["error"], "no `x`");
+        assert_eq!(v.as_object().map(serde_json::Map::len), Some(2));
+    }
 
     #[test]
     fn test_error_json_formats_message() {
@@ -318,56 +334,6 @@ mod tests {
     #[test]
     fn test_parse_comma_list_single_entry() {
         assert_eq!(parse_comma_list("11.0101"), vec!["11.0101"]);
-    }
-
-    #[test]
-    fn test_parse_comma_list_usize_empty_returns_empty() {
-        assert!(parse_comma_list_usize("").is_empty());
-        assert!(parse_comma_list_usize(",,,").is_empty());
-    }
-
-    #[test]
-    fn test_parse_comma_list_usize_single_value() {
-        assert_eq!(parse_comma_list_usize("5"), vec![5]);
-    }
-
-    #[test]
-    fn test_parse_comma_list_usize_multiple_values_with_whitespace() {
-        assert_eq!(parse_comma_list_usize("1, 3, 5, 10"), vec![1, 3, 5, 10]);
-    }
-
-    #[test]
-    fn test_parse_comma_list_usize_silently_drops_invalid_entries() {
-        // Negatives and non-numeric tokens are dropped without aborting the
-        // parse — callers want best-effort filtering, not all-or-nothing.
-        assert_eq!(parse_comma_list_usize("1, abc, 3, -5, 7"), vec![1, 3, 7]);
-    }
-
-    #[test]
-    fn test_read_yaml_file_returns_content_for_existing_file() {
-        // Build a unique path under the OS temp dir so concurrent runs don't
-        // collide. PID + nanosecond time keeps the test hermetic without
-        // depending on unstable ThreadId APIs.
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos());
-        let path = std::env::temp_dir().join(format!(
-            "nuanalytics-shared-{}-{nanos}.yaml",
-            std::process::id()
-        ));
-        let body = "degree:\n  id: ok\n";
-        std::fs::write(&path, body).expect("temp write");
-        let read = read_yaml_file(path.to_str().unwrap()).expect("read");
-        assert_eq!(read, body);
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn test_read_yaml_file_missing_path_errors_with_context() {
-        let err = read_yaml_file("/nonexistent/nuanalytics/should-not-exist.yaml").unwrap_err();
-        assert!(err.contains("Failed to read yaml_path"));
-        assert!(err.contains("/nonexistent/nuanalytics/should-not-exist.yaml"));
     }
 
     #[test]

@@ -7,8 +7,9 @@
 //! the pool will contain before committing to the requirement definition.
 
 use crate::core::degree::audit::extract_course_level;
-use crate::core::degree::{parse_degree_yaml, DegreeParseError, RequirementResolver};
+use crate::core::degree::{parse_degree_auto, DegreeParseError, RequirementResolver};
 use crate::core::models::degree::FromClause;
+use crate::mcp::tools::shared::DegreeSourceArgs;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -19,21 +20,9 @@ use serde::{Deserialize, Serialize};
 /// Request parameters for `find_courses_matching`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FindCoursesMatchingRequest {
-    /// Inline YAML content. Mutually exclusive with `yaml_path` / `degree_id`.
-    #[schemars(description = "Complete degree program YAML content (inline)")]
-    pub yaml_content: Option<String>,
-
-    /// Filesystem path the server will read. Mutually exclusive with the others.
-    #[schemars(
-        description = "Path to a YAML file on the MCP server's filesystem. Mutually exclusive with yaml_content/degree_id."
-    )]
-    pub yaml_path: Option<String>,
-
-    /// Stored degree id (DB lookup). Mutually exclusive with the others.
-    #[schemars(
-        description = "Stored degree ID (DB lookup). Requires the database feature; mutually exclusive with yaml_content/yaml_path."
-    )]
-    pub degree_id: Option<String>,
+    /// Where the degree comes from: exactly one of `degree`, `content`, `path`.
+    #[serde(flatten)]
+    pub source: DegreeSourceArgs,
 
     /// Patterns to match against course keys defined in the YAML. Uses the
     /// same grammar as `select` requirement `from.pattern` / `from.include`:
@@ -105,8 +94,10 @@ pub fn execute(
         );
     }
 
-    let program = match parse_degree_yaml(yaml_content) {
-        Ok(p) => p,
+    // YAML or unified JSON, as every other degree tool accepts: a stored program's
+    // document arrives as JSON.
+    let program = match parse_degree_auto(yaml_content) {
+        Ok((p, _warnings)) => p,
         Err(e) => return error_response(patterns, exclude, format_parse_error(&e)),
     };
 
@@ -161,8 +152,7 @@ pub fn execute(
 #[must_use]
 pub fn execute_json(yaml_content: &str, patterns: Vec<String>, exclude: Vec<String>) -> String {
     let response = execute(yaml_content, patterns, exclude);
-    serde_json::to_string_pretty(&response)
-        .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
+    crate::core::json::to_json_pretty(&response)
 }
 
 // ============================================================================

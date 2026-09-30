@@ -1,0 +1,163 @@
+# A small, complete degree that validates with 0 errors. Fictional institution; every
+# construct below is one a real catalog needs. Mirror its shape, not its courses.
+
+degree:
+  id: example-state-bs-cs-2025
+  institution: Example State University
+  program: Bachelor of Science in Computer Science
+  degree_type: BS
+  cip_code: "11.0701"               # from search_cip_codes; a real degree also sets
+  system_type: semester             # unitid, from search_institutions
+  catalog_year: "2025-2026"
+  source_url: https://catalog.example.edu/cs/bs
+  total_credits: 60
+  upper_division_credits: null
+  in_major_credits: null
+  gpa_minimum: 2.0
+  gpa_major: null
+  grade_minimum: "C"
+  grade_minimum_note: "C (2.0), not C-, in all CS and MATH courses"
+  major_subjects: [CS]
+  allow_double_counting: false
+
+requirements:
+
+  # "Complete all of:" -> type: all. "(CS 210 or CS 211)" inside the list is a choice,
+  # written in braces; it is not two required courses.
+  cs_core:
+    name: Computer Science Core
+    type: all
+    category: major
+    courses:
+      - CS110
+      - CS120
+      - "{CS210, CS211}"
+      - CS220
+
+  # "Calculus I and II, or Accelerated Calculus" -> alternative sequences are one_of.
+  # Not "{[MATH151, MATH152], [MATH155]}": that form does not parse.
+  calculus:
+    name: Calculus
+    type: one_of
+    category: supporting
+    options:
+      - id: two_semester
+        name: Calculus I and II
+        requirements:
+          - name: Calculus sequence
+            type: all
+            courses: [MATH151, MATH152]
+      - id: accelerated
+        name: Accelerated Calculus
+        requirements:
+          - name: Accelerated
+            type: all
+            courses: [MATH155]
+
+  # A lecture and its lab are taken together: a bundle in square brackets.
+  lab_science:
+    name: Laboratory Science
+    type: all
+    category: supporting
+    courses:
+      - "[CHEM111, CHEM111L]"
+
+  # "9 credits of CS 300-level or above, excluding CS 390" -> select by credits from a
+  # pattern. The pattern matches courses listed under `courses:` below.
+  cs_electives:
+    name: Upper-Division CS Electives
+    type: select
+    category: major
+    credits: 9
+    from:
+      pattern: "CS:300+"
+      exclude: [CS390]
+
+  # "One course from two of these three areas" -> groups.
+  breadth:
+    name: Breadth
+    type: select
+    category: major
+    count: 2
+    from:
+      groups:
+        - id: systems
+          name: Systems
+          courses: [CS330, CS335]
+        - id: theory
+          name: Theory
+          courses: [CS340, CS345]
+        - id: data
+          name: Data
+          courses: [CS350, CS355]
+      groups_required: 2
+      per_group: 1
+
+  # "Choose a track" -> one_of; each option's requirements must all be met.
+  track:
+    name: Track
+    type: one_of
+    category: major
+    options:
+      - id: software
+        name: Software Engineering
+        requirements:
+          - name: Software Core
+            type: all
+            courses: [CS360]
+      - id: security
+        name: Security
+        requirements:
+          - name: Security Core
+            type: all
+            courses: [CS370]
+
+  # A university pool the catalog does not enumerate. The pattern matches no listed
+  # course, so validate with allow_unmatched_patterns=true, which makes it a warning.
+  humanities:
+    name: Humanities
+    type: select
+    category: gen_ed
+    credits: 6
+    from:
+      pattern: "HUM:100+"
+
+courses:
+
+  CS110: {subject: CS, number: "110", title: Programming I, credits: 3, prerequisites: null}
+  CS120: {subject: CS, number: "120", title: Programming II, credits: 3, prerequisites: "CS110[C]"}
+  CS210: {subject: CS, number: "210", title: Data Structures, credits: 3, prerequisites: "CS120"}
+  CS211: {subject: CS, number: "211", title: Data Structures (Honors), credits: 3, prerequisites: "CS120"}
+  CS220:
+    subject: CS
+    number: "220"
+    title: Discrete Structures
+    credits: 3
+    # Either data-structures course, and either calculus route's first course.
+    prerequisites: "(CS210 | CS211) & (MATH151 | MATH155)"
+  CS330: {subject: CS, number: "330", title: Operating Systems, credits: 3, prerequisites: "CS220"}
+  CS335: {subject: CS, number: "335", title: Networks, credits: 3, prerequisites: "CS220"}
+  CS340: {subject: CS, number: "340", title: Algorithms, credits: 3, prerequisites: "CS220"}
+  CS345: {subject: CS, number: "345", title: Theory of Computation, credits: 3, prerequisites: "CS220"}
+  CS350: {subject: CS, number: "350", title: Databases, credits: 3, prerequisites: "CS220"}
+  CS355: {subject: CS, number: "355", title: Machine Learning, credits: 3, prerequisites: "CS220"}
+  CS360: {subject: CS, number: "360", title: Software Engineering, credits: 3, prerequisites: "CS220"}
+  CS370: {subject: CS, number: "370", title: Computer Security, credits: 3, prerequisites: "CS330"}
+  CS390: {subject: CS, number: "390", title: Internship, credits: 3, prerequisites: null, repeatable: true, max_repeat_credits: 6}
+  MATH151: {subject: MATH, number: "151", title: Calculus I, credits: 4, prerequisites: null}
+  MATH152: {subject: MATH, number: "152", title: Calculus II, credits: 4, prerequisites: "MATH151[C]"}
+  MATH155: {subject: MATH, number: "155", title: Accelerated Calculus, credits: 5, prerequisites: null}
+  CHEM111:
+    subject: CHEM
+    number: "111"
+    title: General Chemistry I
+    credits: 3
+    prerequisites: null
+    corequisites: [CHEM111L]      # bidirectional: the lab names the lecture too
+  CHEM111L:
+    subject: CHEM
+    number: "111L"
+    title: General Chemistry I Lab
+    credits: 1
+    prerequisites: null
+    corequisites: [CHEM111]

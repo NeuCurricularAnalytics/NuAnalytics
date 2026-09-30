@@ -32,7 +32,9 @@
 # QUICKSTART
 # =============================================================================
 #
-# A complete, valid degree YAML in ~60 lines. Copy this and modify.
+# A complete, valid degree YAML in ~60 lines. Copy this and modify. Key each course
+# by its prefix and full number (CS1100): a key of 2-4 letters and a number below 100,
+# or one starting ELEC, is read as an elective placeholder.
 # For full reference, request section="all" or one of the dedicated
 # sections: degree, requirements, courses, examples.
 
@@ -53,7 +55,7 @@
 #     name: Introductory CS
 #     type: all
 #     category: major
-#     courses: [CS1, CS2]
+#     courses: [CS1100, CS2100]
 #
 #   # type: select — choose N courses (or N credits) from a pool
 #   cs_electives:
@@ -72,7 +74,7 @@
 #     category: gen_ed
 #     count: 1
 #     from:
-#       courses: [MATH1, STAT1]
+#       courses: [MATH1100, STAT2100]
 #
 #   # type: one_of with nested select requirements — model
 #   # "(intro pair A or intro pair B) + (data structures pair X or pair Y)"
@@ -86,47 +88,47 @@
 #     category: major
 #     options:
 #       - id: track_a
-#         name: Track A (CS1 + CS2)
+#         name: Track A (CS1100 + CS2100)
 #         requirements:
 #           - name: Intro pair
 #             type: select
 #             count: 1
 #             from:
-#               courses: [CS1, CS1_HONORS]
+#               courses: [CS1100, CS1100H]
 #           - name: Data structures pair
 #             type: select
 #             count: 1
 #             from:
-#               courses: [CS2, CS2_FAST]
+#               courses: [CS2100, CS2100F]
 #       - id: track_b
 #         name: Track B (alt sequence)
 #         requirements:
 #           - name: Alt intro
 #             type: all
-#             courses: [CS1_ALT, CS2_ALT]
+#             courses: [CS1105, CS2105]
 #
 # courses:
 #
-#   CS1:
+#   CS1100:
 #     title: Introduction to Computing
 #     prefix: CS
 #     number: "1100"
 #     credits: 4
 #
-#   CS2:
+#   CS2100:
 #     title: Data Structures
 #     prefix: CS
 #     number: "2100"
 #     credits: 4
-#     prerequisites_raw: "CS1"        # boolean expression: course IDs joined by & |
+#     prerequisites_raw: "CS1100"        # boolean expression: course IDs joined by & |
 #
-#   MATH1:
+#   MATH1100:
 #     title: Calculus I
 #     prefix: MATH
 #     number: "1100"
 #     credits: 4
 #
-#   STAT1:
+#   STAT2100:
 #     title: Probability and Statistics
 #     prefix: STAT
 #     number: "2100"
@@ -363,9 +365,9 @@ requirements:
 #    "{CS250, CS270}"
 #    Any one of these courses satisfies the requirement
 #
-# 5. Combination:
-#    "{[CHEM111, CHEM112], [CHEM107, CHEM108]}"
-#    Pick one bundle from the options
+# 5. Alternative sequences ("CHEM 111-112, or CHEM 107-108") are not a course_ref:
+#    a choice of bundles such as "{[CHEM111, CHEM112], [CHEM107, CHEM108]}" does not
+#    parse. Write a type: one_of requirement with one option per sequence.
 #
 # 6. Exclusion in patterns (used in 'from.exclude'):
 #    "CS:480-499"   - Exclude CS courses 480-499

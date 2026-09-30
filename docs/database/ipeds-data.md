@@ -14,7 +14,7 @@ single pass to populate two tables:
 | Survey | Tables | Content |
 |--------|--------|---------|
 | **HD** — Institutional Characteristics Directory | `institutions` | Name, location, Carnegie classification, control type, HBCU status |
-| **C** — Completions by Award Level | `completions` + `institution_completion_totals` | CS-filtered completions AND institution-wide totals for representation ratios |
+| **C** — Completions by Award Level | `completions` + `institution_completion_totals` | Every completion row (all CIPs, both majors), and per-institution totals |
 
 The **Fall Enrollment (EF)** survey is not needed. Using completions-as-denominator
 gives a more meaningful representation metric:
@@ -31,8 +31,11 @@ Computing-relevant CIP code families:
 
 ### Institution totals (for `institution_completion_totals` table)
 
-All CIP codes, all award levels, primary major only (MAJORNUM=1).
-One aggregated row per institution per year.
+Every CIP code except 99, both majors, one row per institution, award level and year.
+CIP 99 is IPEDS's grand-total row — the sum of the others — and is left out of every sum;
+it is still stored in `completions`. No query reads this table: the demographics queries
+compute each baseline from `completions` directly (see
+[database-audit-todo.md](../database-audit-todo.md) for why).
 
 ---
 
@@ -162,7 +165,7 @@ nuanalytics db ipeds-import --year 2024 --dir ~/ipeds/
 Importing institutions from /home/.../HD2024.zip ...
   ✓ 6072 read, 6072 upserted, 0 skipped
 Importing completions from /home/.../C2024_A.zip ...
-  (all completions → `completions` table; all-major totals → `institution_completion_totals`)
+  (all completions → `completions` table; per-institution totals → `institution_completion_totals`)
   ✓ 313566 rows read, 313566 with a usable UNITID, 313566 upserted, 0 skipped
 ```
 

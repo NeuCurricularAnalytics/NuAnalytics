@@ -15,6 +15,7 @@ use crate::core::degree::{parse_degree_auto, DegreeParseError};
 use crate::core::models::CourseGraph;
 use crate::core::DegreeProgram;
 use crate::mcp::tools::analyze::{metric_stats_json, AnalysisArtifacts, MetricStatsJson};
+use crate::mcp::tools::shared::DegreeSourceArgs;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -31,21 +32,9 @@ use serde::{Deserialize, Serialize};
 /// in roughly an order of magnitude less time.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetCourseDetailRequest {
-    /// Inline YAML content. Mutually exclusive with `yaml_path` / `degree_id`.
-    #[schemars(description = "Complete degree program YAML content (inline)")]
-    pub yaml_content: Option<String>,
-
-    /// Filesystem path the server will read. Mutually exclusive with the others.
-    #[schemars(
-        description = "Path to a YAML file on the MCP server's filesystem. Mutually exclusive with yaml_content/degree_id."
-    )]
-    pub yaml_path: Option<String>,
-
-    /// Stored degree id (DB lookup). Mutually exclusive with the others.
-    #[schemars(
-        description = "Stored degree ID (DB lookup). Requires the database feature; mutually exclusive with yaml_content/yaml_path."
-    )]
-    pub degree_id: Option<String>,
+    /// Where the degree comes from: exactly one of `degree`, `content`, `path`.
+    #[serde(flatten)]
+    pub source: DegreeSourceArgs,
 
     /// Target course identifier (must match a key under `courses:` in the YAML).
     #[schemars(description = "Course key (e.g. \"CS165\") to inspect.")]
@@ -60,7 +49,7 @@ pub struct GetCourseDetailRequest {
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub include_analysis: Option<bool>,
 
-    /// Forwarded to `analyze_degree` when `include_analysis=true`. Default 500.
+    /// Forwarded to the analysis when `include_analysis=true`. Default 500.
     #[schemars(description = "max_plans for the analysis pass (default 500)")]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub max_plans: Option<usize>,
@@ -183,8 +172,7 @@ pub fn execute_json(
     max_plans: Option<usize>,
 ) -> String {
     let response = execute(yaml_content, course_id, include_analysis, max_plans);
-    serde_json::to_string_pretty(&response)
-        .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
+    crate::core::json::to_json_pretty(&response)
 }
 
 // ============================================================================

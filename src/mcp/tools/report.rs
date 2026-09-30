@@ -1,11 +1,11 @@
 //! Degree HTML report generation tool.
 //!
-//! Provides the `generate_degree_report` MCP tool that produces the same
-//! artifacts as the CLI `degree --analyze` command: the HTML report and
-//! optional per-plan CSVs, JSONL summary, and index CSV. The pipeline is
-//! shared with `analyze_degree` through
-//! `crate::mcp::tools::analyze::build_artifacts` (a `pub(crate)` helper);
-//! this tool then feeds the resulting artifacts into [`DegreeReportGenerator`].
+//! Provides the `render_degree_report` MCP tool that produces the same
+//! artifacts as the CLI `degree analyze` command: the HTML report and
+//! optional per-plan CSVs, JSONL summary, and index CSV. The analysis is
+//! shared with `analyze_degree` through `crate::mcp::cache::cached_artifacts`;
+//! this tool feeds the resulting artifacts into [`DegreeReportGenerator`].
+//! `render_stored_report`'s response is built here too, from a stored run.
 //!
 //! Two output modes:
 //!
@@ -22,6 +22,7 @@ use crate::core::report::plan_export::{
     export_degree_summary_jsonl, export_index_csv, export_selected_plans, PlanExportConfig,
 };
 use crate::mcp::tools::analyze::AnalysisArtifacts;
+use crate::mcp::tools::shared::DegreeSourceArgs;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -29,29 +30,16 @@ use serde::{Deserialize, Serialize};
 // Request / Response types
 // ============================================================================
 
-/// Request parameters for the `generate_degree_report` tool.
+/// Request parameters for the `render_degree_report` tool.
 ///
-/// Provide exactly one YAML source — `yaml_content`, `yaml_path`, or
-/// `degree_id` — together with the same analysis knobs `analyze_degree`
-/// accepts. Set `output_dir` to write artifacts to disk; otherwise the
+/// Takes the degree as `source` — exactly one of `degree`, `content` or `path` —
+/// together with the same analysis knobs `analyze_degree` accepts. Set `output_dir` to write artifacts to disk; otherwise the
 /// rendered HTML is returned inline.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GenerateDegreeReportRequest {
-    /// Inline YAML content. Mutually exclusive with `yaml_path` / `degree_id`.
-    #[schemars(description = "Complete degree program YAML content (inline)")]
-    pub yaml_content: Option<String>,
-
-    /// Path to a YAML file the MCP server will read.
-    #[schemars(
-        description = "Path to a YAML file on the MCP server's filesystem. Mutually exclusive with yaml_content/degree_id."
-    )]
-    pub yaml_path: Option<String>,
-
-    /// Stored degree id (database lookup).
-    #[schemars(
-        description = "Stored degree ID (DB lookup). Requires the database feature; mutually exclusive with yaml_content/yaml_path."
-    )]
-    pub degree_id: Option<String>,
+pub struct RenderDegreeReportRequest {
+    /// Where the degree comes from: exactly one of `degree`, `content`, `path`.
+    #[serde(flatten)]
+    pub source: DegreeSourceArgs,
 
     /// Maximum number of plans to generate (default 500). Forwarded directly
     /// to the analysis pipeline; higher values give more accurate per-course
@@ -107,11 +95,18 @@ pub struct GenerateDegreeReportRequest {
     )]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
     pub return_html_inline: Option<bool>,
+
+    /// Replace an existing report in `output_dir`.
+    #[schemars(
+        description = "Replace the report if output_dir already has one for this degree (default false)"
+    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
+    pub overwrite: Option<bool>,
 }
 
-/// Response for `generate_degree_report`.
+/// Response for `render_degree_report`.
 #[derive(Debug, Serialize)]
-pub struct GenerateDegreeReportResponse {
+pub struct RenderDegreeReportResponse {
     /// Whether the report was rendered successfully.
     pub success: bool,
     /// Error message when `success` is false.
@@ -156,7 +151,7 @@ pub struct GenerateDegreeReportResponse {
 // Execution
 // ============================================================================
 
-/// Execute the `generate_degree_report` tool.
+/// Execute the `render_degree_report` tool.
 ///
 /// The argument count crosses clippy's default ceiling because every option
 /// the CLI exposes (`max_plans`, `include_courses`, disk-mode toggles, the
@@ -174,7 +169,8 @@ pub fn execute(
     write_jsonl_summary: Option<bool>,
     write_index_csv: Option<bool>,
     return_html_inline: Option<bool>,
-) -> GenerateDegreeReportResponse {
+    overwrite: bool,
+) -> RenderDegreeReportResponse {
     let artifacts = match crate::mcp::cache::cached_artifacts(
         yaml_content,
         max_plans,
@@ -206,9 +202,12 @@ pub fn execute(
             dir,
             &html,
             &artifacts,
-            write_csvs,
-            write_jsonl,
-            write_index,
+            Companions {
+                csvs: write_csvs,
+                jsonl: write_jsonl,
+                index: write_index,
+            },
+            overwrite,
             &mut paths,
         ) {
             return error_response(&format!("Failed to write artifacts: {e}"));
@@ -216,7 +215,7 @@ pub fn execute(
     }
 
     let html_bytes = html.len();
-    GenerateDegreeReportResponse {
+    RenderDegreeReportResponse {
         success: true,
         error: None,
         degree_id: Some(artifacts.program.degree.degree_id()),
@@ -248,6 +247,7 @@ pub fn execute_json(
     write_jsonl_summary: Option<bool>,
     write_index_csv: Option<bool>,
     return_html_inline: Option<bool>,
+    overwrite: bool,
 ) -> String {
     let response = execute(
         yaml_content,
@@ -258,9 +258,71 @@ pub fn execute_json(
         write_jsonl_summary,
         write_index_csv,
         return_html_inline,
+        overwrite,
     );
-    serde_json::to_string_pretty(&response)
-        .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
+    crate::core::json::to_json_pretty(&response)
+}
+
+// ============================================================================
+// Stored report
+// ============================================================================
+
+/// Request parameters for `render_stored_report`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RenderStoredReportRequest {
+    /// The stored program: its `program_key`, or a `degree_id` that names one program.
+    #[schemars(
+        description = "Stored program: its program_key, or a degree_id that names one program (search_degrees lists both)"
+    )]
+    pub degree: String,
+
+    /// The analysed variant to report on. Omit for the newest run of any variant.
+    #[schemars(
+        description = "Variant to report on: \"full\" or \"trimmed\". Omit for the newest run of any variant."
+    )]
+    pub variant: Option<String>,
+
+    /// File to write the HTML to. When omitted the HTML is returned inline.
+    #[schemars(
+        description = "File to write the HTML report to; parent directories are created. When omitted, the HTML is returned inline."
+    )]
+    pub output_path: Option<String>,
+
+    /// Replace `output_path` when it already exists.
+    #[schemars(description = "Replace output_path if it already exists (default false)")]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
+    pub overwrite: Option<bool>,
+}
+
+/// The `render_stored_report` response, with the HTML inline or written to `output_path`.
+///
+/// Carries the run the report was built from. A failure to write `output_path` — including
+/// an existing file without `overwrite` — comes back as an `{"error": ...}` payload.
+#[must_use]
+pub fn stored_report_json(
+    rendered: &crate::core::query::report_source::RenderedReport,
+    output_path: Option<&str>,
+    overwrite: bool,
+) -> String {
+    let run = &rendered.run;
+    let mut body = serde_json::json!({
+        "success": true,
+        "degree_name": rendered.degree_name,
+        "run": {
+            "run_key": run.run_key,
+            "variant": run.variant,
+            "created_at": run.created_at,
+            "analyzer_version": run.analyzer_version,
+            "variations_run": run.variations_run,
+        },
+    });
+    match crate::mcp::tools::shared::deliver_output(rendered.html.clone(), output_path, overwrite) {
+        Ok((Some(html), _)) => body["html_content"] = html.into(),
+        Ok((None, Some(path))) => body["report_html_path"] = path.into(),
+        Ok((None, None)) => {}
+        Err(refusal) => return refusal.to_json(),
+    }
+    crate::core::json::to_json_pretty(&body)
 }
 
 // ============================================================================
@@ -287,23 +349,36 @@ fn render_html(artifacts: &AnalysisArtifacts) -> Result<String, Box<dyn std::err
     DegreeReportGenerator::new().render(&ctx)
 }
 
+/// Which companion files disk mode writes beside the report.
+#[derive(Debug, Clone, Copy)]
+struct Companions {
+    csvs: bool,
+    jsonl: bool,
+    index: bool,
+}
+
 /// Write the HTML + optional companion artifacts into `output_dir`. The
 /// directory is created if it does not already exist.
 fn write_artifacts_to_disk(
     output_dir: &str,
     html: &str,
     artifacts: &AnalysisArtifacts,
-    write_csvs: bool,
-    write_jsonl: bool,
-    write_index: bool,
+    companions: Companions,
+    overwrite: bool,
     out: &mut WrittenPaths,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let Companions {
+        csvs: write_csvs,
+        jsonl: write_jsonl,
+        index: write_index,
+    } = companions;
     let dir = PathBuf::from(output_dir);
-    std::fs::create_dir_all(&dir)?;
-
     let html_filename = format!("{}-analysis.html", artifacts.program.degree.degree_id());
     let html_path = dir.join(&html_filename);
-    std::fs::write(&html_path, html)?;
+    // The report is the file that stands for the rest: refusing when it exists keeps a
+    // mistyped output_dir from replacing a previous run's artifacts.
+    crate::mcp::tools::shared::write_output(&html_path.to_string_lossy(), html, overwrite)
+        .map_err(|refusal| refusal.message)?;
     out.report_html = Some(html_path.to_string_lossy().into_owned());
 
     if write_csvs {
@@ -346,8 +421,8 @@ fn write_artifacts_to_disk(
     Ok(())
 }
 
-fn error_response(error: &str) -> GenerateDegreeReportResponse {
-    GenerateDegreeReportResponse {
+fn error_response(error: &str) -> RenderDegreeReportResponse {
+    RenderDegreeReportResponse {
         success: false,
         error: Some(error.to_string()),
         degree_id: None,
@@ -409,7 +484,17 @@ courses:
 
     #[test]
     fn test_inline_mode_returns_html_body() {
-        let response = execute(TEST_YAML, Some(10), None, None, None, None, None, None);
+        let response = execute(
+            TEST_YAML,
+            Some(10),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        );
         assert!(response.success, "error: {:?}", response.error);
         let html = response
             .html_content
@@ -434,6 +519,7 @@ courses:
             None,
             None,
             None,
+            false,
         );
         assert!(!response.success);
         assert!(response.error.is_some());
@@ -461,6 +547,7 @@ courses:
             None,
             None,
             None,
+            false,
         );
         assert!(response.success, "error: {:?}", response.error);
         // Disk-mode default: HTML written, not echoed back inline.
@@ -503,6 +590,7 @@ courses:
             Some(false),
             Some(false),
             Some(true),
+            false,
         );
         assert!(response.success);
         assert!(
@@ -519,7 +607,17 @@ courses:
 
     #[test]
     fn test_execute_json_serializes_response_with_expected_keys() {
-        let json = execute_json(TEST_YAML, Some(10), None, None, None, None, None, None);
+        let json = execute_json(
+            TEST_YAML,
+            Some(10),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        );
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["success"].as_bool(), Some(true));
         assert!(parsed["html_content"].is_string());
@@ -551,6 +649,7 @@ courses:
             None,
             None,
             None,
+            false,
         );
         assert!(!response.success);
         let err = response.error.expect("error must be populated");
@@ -581,6 +680,7 @@ courses:
             Some(false),
             Some(false),
             Some(false),
+            false,
         );
         assert!(response.success, "error: {:?}", response.error);
         assert!(
@@ -595,6 +695,99 @@ courses:
         assert!(response.plan_csv_paths.is_empty());
         assert!(response.jsonl_summary_path.is_none());
         assert!(response.index_csv_path.is_none());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_output_dir_replaces_an_existing_report_only_with_overwrite() {
+        let dir = unique_tmp_path("nuanalytics-report-overwrite");
+        let dir_str = dir.to_string_lossy().into_owned();
+        let run = |overwrite: bool| {
+            execute(
+                TEST_YAML,
+                Some(10),
+                None,
+                Some(&dir_str),
+                Some(false),
+                Some(false),
+                Some(false),
+                None,
+                overwrite,
+            )
+        };
+        let first = run(false);
+        assert!(first.success, "error: {:?}", first.error);
+        let html_path = first.report_html_path.expect("written");
+        std::fs::write(&html_path, "previous run").expect("mark");
+
+        let refused = run(false);
+        assert!(!refused.success, "replaced without overwrite=true");
+        assert!(
+            refused
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("overwrite=true")),
+            "{:?}",
+            refused.error
+        );
+        assert_eq!(std::fs::read_to_string(&html_path).unwrap(), "previous run");
+
+        assert!(run(true).success);
+        assert_ne!(std::fs::read_to_string(&html_path).unwrap(), "previous run");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn rendered() -> crate::core::query::report_source::RenderedReport {
+        use crate::core::query::report_source::{RenderedReport, StoredRun};
+        RenderedReport {
+            program_key: "prog:1|x".into(),
+            degree_name: "BS Test".into(),
+            run: StoredRun {
+                run_key: "run_1".into(),
+                variant: "full".into(),
+                created_at: Some("2026-09-29".into()),
+                analyzer_version: Some("0.5.4".into()),
+                variations_run: Some(12),
+            },
+            html: "<!DOCTYPE html><p>ʻāina</p>".into(),
+        }
+    }
+
+    #[test]
+    fn test_stored_report_json_inline_writes_or_refuses() {
+        let report = rendered();
+
+        let inline: serde_json::Value =
+            serde_json::from_str(&stored_report_json(&report, None, false)).unwrap();
+        assert_eq!(inline["html_content"], report.html.as_str());
+        assert!(inline.get("report_html_path").is_none());
+        assert_eq!(inline["run"]["variant"], "full");
+        assert_eq!(inline["run"]["variations_run"], 12);
+
+        let dir = std::env::temp_dir().join(format!("nuanalytics-stored-{}", std::process::id()));
+        let path = dir.join("nested/report.html");
+        let path_str = path.to_string_lossy().into_owned();
+        let written: serde_json::Value =
+            serde_json::from_str(&stored_report_json(&report, Some(&path_str), false)).unwrap();
+        assert_eq!(written["report_html_path"], path_str.as_str());
+        assert!(
+            written.get("html_content").is_none(),
+            "file mode must not inline"
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), report.html);
+
+        let refused: serde_json::Value =
+            serde_json::from_str(&stored_report_json(&report, Some(&path_str), false)).unwrap();
+        assert_eq!(refused["code"], "bad_arguments");
+        assert!(refused["error"]
+            .as_str()
+            .unwrap()
+            .contains("overwrite=true"));
+
+        let replaced: serde_json::Value =
+            serde_json::from_str(&stored_report_json(&report, Some(&path_str), true)).unwrap();
+        assert_eq!(replaced["success"], true);
 
         std::fs::remove_dir_all(&dir).ok();
     }

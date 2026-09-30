@@ -33,7 +33,7 @@ It is based off the work of Greg Heileman, and CurricularAnalytics.org. Current 
   - **Markdown**: Text-based reports for documentation
 - **Term Scheduling**: Automatic course scheduling respecting prerequisites and credit limits
 - **Configuration Management**: Flexible configuration system with CLI overrides
-- **MCP Server** (optional): AI model integration for interactive degree building via Model Context Protocol. Degree tools accept YAML, unified JSON, or raw ai-landscape JSON; `convert_degree` *(new in 0.4.1)* converts ai-landscape JSON to the unified format and `get_degree_json_schema` *(new in 0.4.1)* returns the machine schema. The `trim_degree` tool pipes a fresh `cache:<hash>` handle back for chained `validate_degree` / `audit_degree` calls.
+- **MCP Server** (optional): the degree, stored-program and IPEDS tools for a model, over the Model Context Protocol — author, validate, analyze and render degrees; read stored programs and their stored analysis; query completion demographics, or read-only SQL with `query_sql`. Tools that write to the database are served only with `nuanalytics mcp --allow-writes`. See [docs/mcp.md](docs/mcp.md).
 - **Authenticated Database Access** *(behavior change in 0.4.0)*: Supabase reads and writes both require a logged-in user (`nuanalytics db login`); session tokens auto-refresh.
 - **Degree Database Import & Stored Programs** *(new in 0.5.0)*: Import degree reports into a normalized, queryable program store (`nuanalytics db import`, or the `import_degree` MCP tool) — one report becomes a program plus its courses, flattened requirement tree, and analysis run, alongside the lossless source document. Stored programs can be analyzed straight from the database with `degree analyze --from-db <NAME>`. See [Database Setup](docs/database/setup.md#stored-programs-normalized).
 
@@ -112,8 +112,8 @@ outside the major):
 nuanalytics degree trim samples/degrees/csu-cs-bscs-general.yaml
 ```
 
-Scaffold a new research project (creates `degrees/`, `plans/`, MCP
-wiring, and three SKILL.md skills for Claude Code under `.claude/`):
+Scaffold a new research project (creates `degrees/`, `plans/`, `.mcp.json`,
+and five skills for Claude Code under `.claude/skills/`):
 
 ```bash
 nuanalytics init my-research-project

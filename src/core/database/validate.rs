@@ -525,7 +525,7 @@ pub fn survey_kind_of(path: &Path) -> DatabaseResult<SurveyKind> {
 
 /// Parse an HD survey file into institutions, keyed by `unitid`.
 ///
-/// Uses the importer's own [`build_institution`], so the comparison answers "does the
+/// Uses the importer's own `build_institution`, so the comparison answers "does the
 /// backend hold what importing this file would produce". It therefore cannot detect a
 /// parsing defect — [`diff_provenance`] covers the case where that has actually bitten.
 ///

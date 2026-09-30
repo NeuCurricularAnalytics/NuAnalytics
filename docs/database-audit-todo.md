@@ -109,8 +109,14 @@ numbers, so results stay comparable:
 
 - **Completions for 2022–2024.** Only the 2025 source files are available locally, so the
   earlier years were checked for row counts only, never column values.
-- **`institution_completion_totals` (77,422 rows).** Not compared against a recomputation
-  from the source file.
+- **`institution_completion_totals` (77,422 rows).** Recomputed against `completions` on
+  2026-09-29: every row is exactly **twice** the real total. Ingest summed the CIP 99
+  grand-total row beside the detail rows it totals. Ingest now leaves CIP 99 out
+  (`counts_toward_institution_totals`), but the live table keeps the doubled figures
+  until IPEDS is re-ingested. Nothing reads the table any more — the demographics queries
+  sum `completions` directly, which is why their answers are right — so either re-ingest or
+  drop it; it is kept for now only because doctor's 20-table check, bootstrap and setup all
+  list it.
 - **The `C2025_B` and `C2025_C` files.** Not imported and not examined.
 - **Policy state on the live database.** The policies were read from `schema.sql`, not
   from `pg_policies` — there is no SQL path from this client to confirm the live database

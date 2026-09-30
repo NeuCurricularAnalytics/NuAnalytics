@@ -185,74 +185,22 @@ This roadmap organizes planned features by functional area. Items marked with �
   - Reuses core library (`nu_analytics` crate)
 - **Documentation**: See [docs/mcp.md](../mcp.md)
 
-### 3.2 MCP Tools - Degree Validation
-- **Status**: ✅ Implemented
-- **Tools**:
-  
-  **Get Degree Schema** (`get_degree_schema`)
-  - Input: Optional section filter ("all", "degree", "requirements", "courses", "examples")
-  - Output: Markdown documentation with YAML examples
-  - Use case: Help models understand valid degree YAML structure
-  
-  **Validate Degree** (`validate_degree`)
-  - Input: YAML degree definition as string
-  - Output: Structured validation report (errors, warnings, context, suggestions)
-  - Use case: AI iteratively fixes degree definition until valid
+### 3.2 MCP Tools
+- **Status**: ✅ Implemented. `nuanalytics mcp --list-tools` is the current list;
+  [docs/mcp.md](../mcp.md) describes how they work.
+- **Degrees:** reference (`get_reference`), validation, audit, pattern preview, course
+  detail, conversion, trimming; fresh analysis, the HTML report and plan graphs.
+- **Stored programs:** search, fetch, stored analysis, the stored report, and comparison
+  on stored or fresh metrics. `import_degree` writes, served only with `--allow-writes`.
+- **IPEDS:** institutions, CIP and lookup codes, completion demographics by total, school
+  or CIP; ad-hoc read-only SQL (`query_sql`) over a catalog of `include_str!`'d queries.
+- **Skills:** `nuanalytics init` ships five, tested against the server's tool list.
 
-### 3.3 MCP Tools - Additional Degree Operations
-- **Status**: 📋 Not Started
-- **Tools**:
-  
-  **Audit Degree** (`audit_degree`)
-  - Input: Degree YAML string
-  - Output: Full audit report (validation + missing prereqs + deep chains)
-  - Use case: Comprehensive degree quality assessment
-  
-  **Analyze Degree** (`analyze_degree`)
-  - Input: Degree YAML string
-  - Output: Metrics summary, complexity distribution, bottleneck courses
-  - Use case: Quick degree assessment for curriculum designers
-
-### 3.4 MCP Tools - Plan Operations
-- **Status**: 📋 Not Started
-- **Tools**:
-  
-  **Analyze Plan** (`analyze_plan`)
-  - Input: CSV plan content as string
-  - Output: Metrics and analysis results
-  - Use case: Quick metrics computation from CSV
-  
-  **Schedule Plan** (`schedule_plan`)
-  - Input: Course list + constraints (credits per term, system type)
-  - Output: Term-by-term schedule
-  - Use case: Generate optimal course sequencing
-
-### 3.5 MCP Tools - Future Operations
-- **Status**: 📋 Not Started (requires Phase 1 & 2)
-- **Tools**:
-  
-  **Search Institutions** (`search_institutions`)
-  - Input: Filters (name, location, type, size)
-  - Output: List of matching institutions with IDs
-  
-  **Search Degrees** (`search_degrees`)
-  - Input: Filters (institution, program, complexity, year)
-  - Output: List of matching degrees with metadata
-  
-  **Get Degree** (`get_degree`)
-  - Input: Degree ID
-  - Output: Full degree YAML definition
-  
-  **Compare Degrees** (`compare_degrees`)
-  - Input: List of degree IDs
-  - Output: Comparative metrics, requirement differences, complexity analysis
-
-### 3.5 MCP Workflows
-- **Status**: 📋 Not Started
-- **Iterative Degree Building**: AI agent creates degree YAML, validates, fixes errors, re-validates until valid
-- **Curriculum Comparison**: AI agent searches database, retrieves multiple degrees, compares structures
-- **Plan Optimization**: AI agent generates multiple plans, analyzes metrics, recommends best option
-- **Institutional Analysis**: AI agent pulls all degrees from institution, generates comparative report
+### 3.3 MCP Tools - Not Started
+- **Plan operations over MCP** (`analyze_plan`, `schedule_plan` for CurricularAnalytics.org
+  CSV plans). The skills route CSV plans to `nuanalytics planner` for now.
+- **MCP resources and prompts:** the `get_reference` topics as resources, and the skills as
+  prompts, for clients without skill support.
 
 ---
 

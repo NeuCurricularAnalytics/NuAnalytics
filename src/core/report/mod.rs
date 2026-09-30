@@ -6,6 +6,7 @@
 
 pub mod degree_report;
 pub mod formats;
+pub mod inputs;
 pub mod plan_export;
 pub mod report_stats;
 pub mod term_scheduler;

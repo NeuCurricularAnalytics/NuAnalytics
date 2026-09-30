@@ -1,32 +1,27 @@
 //! MCP (Model Context Protocol) server for `NuAnalytics`
 //!
-//! This module provides an MCP server that exposes `NuAnalytics` tools for AI model integration.
-//! The server allows AI models to:
-//!
-//! - Get schema documentation for degree YAML files
-//! - Validate degree YAML content and receive structured feedback
-//! - (Future) Audit degrees, analyze plans, and more
+//! This module provides an MCP server that exposes `NuAnalytics` to a model: author,
+//! validate, analyze and render degrees; read the stored programs and their analysis; and
+//! query IPEDS completion data, through typed tools or read-only SQL.
 //!
 //! # Architecture
 //!
 //! ```text
 //! src/mcp/
 //! ├── mod.rs              # This file - module exports
-//! ├── server.rs           # MCP server setup and entry point
-//! ├── tools/              # Tool implementations
-//! │   ├── mod.rs          # Tool exports (+ re-exports of the core query engines)
-//! │   ├── schema.rs       # get_degree_schema tool
-//! │   └── validate.rs     # validate_degree tool
-//! └── schema_content.rs   # Static schema documentation
+//! ├── server.rs           # The tools, their router, instructions, source resolution
+//! ├── envelope.rs         # A failed call's JSON → a protocol error with one envelope
+//! ├── cache.rs            # Cached degree bodies (`cache:` handles) and analysis runs
+//! ├── schema_content.rs   # Sections of the degree-format reference
+//! └── tools/              # One module per degree tool, plus shared argument types
 //! ```
 //!
-//! The database **query** engines are not here. `institutions`, `cip_codes`, `lookup`,
-//! `completions` and most of `degrees` live in [`crate::core::query`] so the CLI can call
-//! the same code without the `mcp` feature; `tools/mod.rs` re-exports them under their
-//! old names, so the `#[tool]` handlers in `server.rs` are unaffected. `core` must stay
-//! free of `crate::mcp` — the CI matrix builds `--features database` alone to enforce it.
-//! The one exception is `compare_degrees`' analysis hook, which `tools/degrees.rs`
-//! injects because the analysis pipeline is still MCP-gated.
+//! The layering rule: a handler in `server.rs` parses its arguments and calls one engine.
+//! The database engines live in [`crate::core::query`], shared with the CLI; SQL lives in
+//! its catalog and reaches the database only through `DbClient`. `core` must stay free
+//! of `crate::mcp` — the CI matrix builds `--features database` alone to enforce it.
+//! `compare_degrees` lives in `tools/degrees.rs` because fresh metrics need the analysis,
+//! which is still in this module.
 //!
 //! # Usage
 //!
@@ -41,17 +36,18 @@
 //! ```ignore
 //! use nu_analytics::mcp;
 //!
-//! // Async
-//! mcp::run_server().await?;
+//! // Async: the database config, and whether to serve the tools that write.
+//! mcp::run_server(&config.database, false).await?;
 //!
 //! // Sync wrapper
-//! mcp::run()?;
+//! mcp::run(&config.database, false)?;
 //! ```
 
 pub mod cache;
+pub mod envelope;
 pub mod schema_content;
 pub mod server;
 pub mod tools;
 
 // Re-export main entry points
-pub use server::run;
+pub use server::{run, tool_list};

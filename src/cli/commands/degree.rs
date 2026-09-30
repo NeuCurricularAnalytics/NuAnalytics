@@ -14,9 +14,11 @@ use nu_analytics::core::degree::{
 };
 use nu_analytics::core::metrics::compute_all_metrics;
 use nu_analytics::core::models::course_graph::{CourseNode, PrerequisiteEdge, PrerequisiteType};
-use nu_analytics::core::models::degree::Requirement;
 use nu_analytics::core::models::{CourseGraph, School, DAG};
 use nu_analytics::core::report::degree_report::{DegreeReportContext, DegreeReportGenerator};
+use nu_analytics::core::report::inputs::{
+    build_dag_from_graph, build_equivalence_map, build_school_from_program,
+};
 use nu_analytics::core::report::plan_export::{
     export_degree_summary_jsonl, export_index_csv, export_selected_plans, PlanExportConfig,
 };
@@ -1316,71 +1318,6 @@ struct AnalysisContext<'a> {
     exclude_from_prereqs: HashSet<String>,
 }
 
-/// Build an equivalence map from requirement definitions
-///
-/// Scans requirements for equivalent course syntax like `{MATH215, MATH241, MATH251A}`
-/// and builds a bidirectional map where each course maps to all its equivalents.
-fn build_equivalence_map(
-    requirements: &HashMap<String, Requirement>,
-) -> HashMap<String, HashSet<String>> {
-    let mut equivalences: HashMap<String, HashSet<String>> = HashMap::new();
-
-    for req in requirements.values() {
-        // Check courses list for equivalent syntax
-        if let Some(courses) = &req.courses {
-            for course_ref in courses {
-                if let Some(equiv_set) = parse_equivalent_courses(course_ref) {
-                    // Add bidirectional mappings
-                    for course in &equiv_set {
-                        equivalences
-                            .entry(course.clone())
-                            .or_default()
-                            .extend(equiv_set.iter().cloned());
-                    }
-                }
-            }
-        }
-
-        // Check from.courses for equivalent syntax
-        if let Some(from) = &req.from {
-            if let Some(courses) = &from.courses {
-                for course_ref in courses {
-                    if let Some(equiv_set) = parse_equivalent_courses(course_ref) {
-                        for course in &equiv_set {
-                            equivalences
-                                .entry(course.clone())
-                                .or_default()
-                                .extend(equiv_set.iter().cloned());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Check nested options
-        if let Some(options) = &req.options {
-            for option in options {
-                for nested in &option.requirements {
-                    if let Some(courses) = &nested.courses {
-                        for course_ref in courses {
-                            if let Some(equiv_set) = parse_equivalent_courses(course_ref) {
-                                for course in &equiv_set {
-                                    equivalences
-                                        .entry(course.clone())
-                                        .or_default()
-                                        .extend(equiv_set.iter().cloned());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    equivalences
-}
-
 /// Build a set of courses to exclude from prerequisite expansion
 ///
 /// Identifies courses that should be excluded when expanding prerequisites for included courses.
@@ -1638,24 +1575,6 @@ fn group_prereqs_by_or_group(
     or_groups
 }
 
-/// Parse equivalent courses from `{A, B, C}` syntax
-///
-/// Returns `Some(set)` if the input is an equivalent group, `None` otherwise.
-fn parse_equivalent_courses(course_ref: &str) -> Option<HashSet<String>> {
-    if course_ref.starts_with('{') && course_ref.ends_with('}') {
-        let inner = &course_ref[1..course_ref.len() - 1];
-        let courses: HashSet<String> = inner
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if courses.len() > 1 {
-            return Some(courses);
-        }
-    }
-    None
-}
-
 /// Print `target_course_stats` for one degree and return the completion sentinel.
 ///
 /// The analysis pipeline lives under `nu_analytics::mcp`, so this path needs the `mcp`
@@ -1674,15 +1593,12 @@ fn emit_target_course_stats(
     };
     let json_out = nu_analytics::mcp::tools::analyze::execute_json(
         &raw,
-        options.max_plans,
-        options.include_courses.as_deref(),
-        false,
-        None,
-        false,
-        false,
-        None,
-        None,
-        Some(course_id),
+        &nu_analytics::mcp::tools::analyze::AnalyzeOptions {
+            max_plans: options.max_plans,
+            include_courses: options.include_courses.as_deref(),
+            target_course: Some(course_id),
+            ..Default::default()
+        },
     );
     // Keep the parse error: without it the caller sees the unparseable body but no
     // statement of why it failed, which is the defect pattern this repo has already
@@ -2917,143 +2833,6 @@ fn validate_selected_plans(
     }
 }
 
-/// Build a School model from the degree program
-/// Build the structural inputs a report needs from a degree program alone.
-///
-/// The same graph construction `analyze_program` does — including breaking prerequisite
-/// cycles, without which the DAG would not be acyclic — factored out so `db report` can
-/// derive `School`, `DAG` and the equivalence map from a stored `document` without
-/// re-running any analysis.
-// Only `db report` calls this, and that command needs a backend.
-#[cfg(feature = "database")]
-pub(super) fn build_report_inputs(
-    program: &nu_analytics::core::DegreeProgram,
-) -> (School, DAG, HashMap<String, HashSet<String>>) {
-    let mut graph_result = CourseGraph::from_degree_program(program);
-    if !graph_result.cycles.is_empty() {
-        graph_result.graph.break_cycles(&graph_result.cycles);
-    }
-    (
-        build_school_from_program(program),
-        build_dag_from_graph(&graph_result.graph),
-        build_equivalence_map(&program.requirements),
-    )
-}
-
-fn build_school_from_program(program: &nu_analytics::core::DegreeProgram) -> School {
-    let mut school = School::new(
-        program
-            .degree
-            .institution
-            .clone()
-            .unwrap_or_else(|| "Unknown".to_string()),
-    );
-
-    for (key, course) in &program.courses {
-        let mut school_course = nu_analytics::core::models::Course::new(
-            course.name.clone(),
-            course.prefix.clone(),
-            course.number.clone(),
-            course.credit_hours,
-        );
-        school_course.canonical_name = Some(key.clone());
-
-        // Copy prerequisites from raw string if available
-        school_course
-            .prerequisites_raw
-            .clone_from(&course.prerequisites_raw);
-
-        // Also populate the prerequisites vector from prerequisites_raw
-        if let Some(raw) = &course.prerequisites_raw {
-            school_course.prerequisites = parse_prerequisites_from_raw(raw);
-        }
-
-        // Copy corequisites (Vec<String>, not Option)
-        school_course.corequisites.clone_from(&course.corequisites);
-
-        // Copy typically offered and gen_ed attributes
-        school_course
-            .typically_offered
-            .clone_from(&course.typically_offered);
-        school_course
-            .gen_ed_attributes
-            .clone_from(&course.gen_ed_attributes);
-
-        // Keyed by the document key, not `prefix + number`: every lookup downstream is
-        // by the plan's course id, which is the document key. A lab entry sharing its
-        // lecture's prefix and number (`CHEM1410` / `CHEM1410L`, both `CHEM` `1410`)
-        // would otherwise overwrite it in hash order, and a key that is not
-        // `prefix + number` (`COMSW3137`) would miss and be credited as a placeholder.
-        school.add_course_with_key(key.clone(), school_course);
-    }
-
-    school
-}
-
-/// Parse prerequisite course codes from a raw prerequisite string
-///
-/// Extracts course codes from expressions like:
-/// - `"CS165[C]"` → `["CS165"]`
-/// - `"(CS220[C] & CS165[C])"` → `["CS220", "CS165"]`
-/// - `"CS162[C] | CS163[C] | CS164[C]"` → `["CS162", "CS163", "CS164"]`
-fn parse_prerequisites_from_raw(raw: &str) -> Vec<String> {
-    let mut prereqs = Vec::new();
-
-    // Replace operators and brackets with spaces
-    let cleaned = raw.replace(['(', ')', '&', '|', '[', ']'], " ");
-
-    for part in cleaned.split_whitespace() {
-        // Skip grade requirements like "B", "C", etc.
-        if part.len() <= 2
-            && part
-                .chars()
-                .all(|c| c.is_alphabetic() || c == '-' || c == '+')
-        {
-            continue;
-        }
-
-        // Must start with a letter (course code)
-        if part.chars().next().is_some_and(char::is_alphabetic) {
-            // Remove any trailing grade requirement
-            let key = part
-                .find(|c: char| !c.is_alphanumeric())
-                .map_or(part, |idx| &part[..idx]);
-            if !key.is_empty() && !prereqs.contains(&key.to_string()) {
-                prereqs.push(key.to_string());
-            }
-        }
-    }
-
-    prereqs
-}
-
-/// Build a DAG from the course graph
-fn build_dag_from_graph(graph: &CourseGraph) -> DAG {
-    let mut dag = DAG::new();
-
-    for key in graph.course_keys() {
-        if let Some(node) = graph.get(key) {
-            // Add node to DAG
-            dag.add_course(key.to_string());
-
-            // Add edges for prerequisites (using prerequisite_paths for flattened list)
-            // Use the first path (simplest/shortest) from DNF form
-            if !node.prerequisite_paths.is_empty() {
-                for prereq in &node.prerequisite_paths[0] {
-                    dag.add_prerequisite(key.to_string(), prereq);
-                }
-            }
-
-            // Also add required prerequisites from edges
-            for prereq in node.required_prerequisites() {
-                dag.add_prerequisite(key.to_string(), prereq);
-            }
-        }
-    }
-
-    dag
-}
-
 /// Expand a plan's courses to include all required prerequisites
 ///
 /// For each course in the plan, finds the minimum prerequisite chain and adds
@@ -3940,37 +3719,6 @@ courses:
             lines[1],
             "fp:abcdef  ·  Data Science  ·  (unknown)  ·  (no catalog year)"
         );
-    }
-
-    /// Two entries sharing `prefix + number` and a key that is not `prefix + number`
-    /// must each be found under their own key with their own credits. Keying by
-    /// `Course::key()` lost the lecture or the lab at random and credited
-    /// `COMSW3137` as a 3-credit placeholder.
-    #[test]
-    fn test_build_school_from_program_keys_by_document_key() {
-        let json = r#"{
-            "degree": {"name": "T", "institution": "T", "total_credits": 8},
-            "requirements": {"core": {"type": "all", "category": "major",
-                "courses": ["CHEM1410", "CHEM1410L", "COMSW3137"]}},
-            "courses": {
-                "CHEM1410":  {"name": "Chem",     "prefix": "CHEM", "number": "1410", "credit_hours": 3.0},
-                "CHEM1410L": {"name": "Chem Lab", "prefix": "CHEM", "number": "1410", "credit_hours": 1.0},
-                "COMSW3137": {"name": "Data Str", "prefix": "COMS", "number": "3137", "credit_hours": 4.0}
-            }
-        }"#;
-        let program = nu_analytics::core::degree::parse_degree_json(json)
-            .expect("inline degree fixture should parse");
-        let school = build_school_from_program(&program);
-        for (key, credits) in [("CHEM1410", 3.0), ("CHEM1410L", 1.0), ("COMSW3137", 4.0)] {
-            let course = school
-                .get_course(key)
-                .unwrap_or_else(|| panic!("{key} missing from School"));
-            assert!(
-                (course.credit_hours - credits).abs() < f32::EPSILON,
-                "{key}: {} credits, expected {credits}",
-                course.credit_hours
-            );
-        }
     }
 
     #[cfg(feature = "database")]

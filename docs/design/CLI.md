@@ -180,14 +180,16 @@ program again adds a row rather than replacing one — so a program accumulates 
 analyzer versions. `--all` shows the history.
 
 **`db query demographics` ratios are never about enrolment.** The baseline is always the
-group's share of *all-major completions* (`institution_completion_totals`); this database
-holds no enrolment data. The output columns are nonetheless named `enrolled`,
-`total_enrolled` and `enrollment_pct` — a historical misnomer, not a second measure. `--group-by`
-picks what a row is — one aggregate (`total`), one institution (`school`), or one CIP code
-at one school (`cip`) — and the three engines accept different filters. A filter the
-chosen grouping cannot honour is **refused by name** rather than silently dropped, because
-silently dropping `--hbcu` would answer for every school under a heading that said
-otherwise.
+group's share of *all completions* in the same year and award level — every CIP, both
+majors — summed from `completions` with the CIP 99 grand-total rows left out; this
+database holds no enrolment data. The output columns are nonetheless named `enrolled`,
+`total_enrolled` and `enrollment_pct` — a historical misnomer, not a second measure.
+`--group-by` picks what a row is — one aggregate (`total`), one institution (`school`), or
+one CIP code at one school (`cip`) — and each is one SQL query
+(`src/core/query/catalog/completions_*.sql`). A filter the chosen grouping cannot honour —
+an institution filter with `cip`, which is one school, or `--limit` with `total` — is
+**refused by name** rather than silently dropped, because silently dropping `--state`
+would answer for the one school under a heading that said otherwise.
 
 ### `degree` subcommands
 * `degree validate    <FILES>...`         — structural validation (schema, prereq cycles, cross-listings)

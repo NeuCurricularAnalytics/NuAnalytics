@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod degree;
+pub mod init_assets;
 pub mod json;
 pub mod metrics;
 pub mod metrics_export;

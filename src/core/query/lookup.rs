@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use crate::core::database::{DbClient, QueryFilters};
-use crate::core::json::{error_json, to_json_pretty};
+use crate::core::json::to_json_pretty;
 use serde::Deserialize;
 
 /// Names of queryable lookup tables
@@ -57,7 +57,7 @@ pub async fn execute_json(client: &Arc<DbClient>, req: GetLookupCodesRequest) ->
 
     let result = match client.select(table, "*", &QueryFilters::new(), None).await {
         Ok(v) => v,
-        Err(e) => return error_json(e),
+        Err(e) => return e.to_json(&format!("reading lookup table {table}")),
     };
 
     to_json_pretty(&serde_json::json!({

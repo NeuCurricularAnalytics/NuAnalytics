@@ -103,6 +103,55 @@ pub fn total_bytes() -> usize {
 mod tests {
     use super::*;
 
+    /// Both backend functions keep every property the read-only guarantee rests on.
+    ///
+    /// The SQL reaches a live backend by hand (`docs/database/setup.md`, step 4c), so
+    /// nothing else notices an edit that drops one of these. `STABLE` is the guarantee
+    /// itself: `VOLATILE` makes the endpoint writable with no error. `qr_row.*` and the
+    /// newline before the wrapper's closing parenthesis are the two wrapper fixes — a
+    /// bare alias is captured by a same-named result column, and a trailing `--` comment
+    /// otherwise comments out the parenthesis.
+    #[test]
+    fn both_backend_functions_keep_the_read_only_properties() {
+        use crate::core::database::functions::{QUERY_READONLY, QUERY_READONLY_PARAMS};
+        let schema = SCHEMA_FILES
+            .iter()
+            .find(|f| f.path.ends_with("programs-schema.sql"))
+            .expect("programs-schema.sql is a bootstrap file")
+            .sql;
+        for (name, args) in [
+            (QUERY_READONLY, "text, integer"),
+            (QUERY_READONLY_PARAMS, "text, jsonb, integer"),
+        ] {
+            let signature = format!("{name}({args})");
+            let start = schema
+                .find(&format!("CREATE OR REPLACE FUNCTION public.{name}("))
+                .unwrap_or_else(|| panic!("{name} is not defined in programs-schema.sql"));
+            let body = &schema[start..];
+            let body = &body[..body.find("$$;").expect("function body is closed")];
+            for property in [
+                "STABLE",
+                "SECURITY INVOKER",
+                "SET search_path = public, pg_temp",
+                "SET statement_timeout",
+                "jsonb_agg(qr_row.*)",
+                "%s\\n) AS inner_q",
+            ] {
+                assert!(body.contains(property), "{name} lost `{property}`");
+            }
+            assert!(!body.contains("VOLATILE"), "{name} must not be VOLATILE");
+            for grant in [
+                format!("REVOKE ALL ON FUNCTION public.{signature} FROM PUBLIC;"),
+                format!("GRANT EXECUTE ON FUNCTION public.{signature} TO authenticated;"),
+            ] {
+                assert!(schema.contains(&grant), "missing `{grant}`");
+            }
+            if name == QUERY_READONLY_PARAMS {
+                assert!(body.contains("USING params"), "{name} must bind its params");
+            }
+        }
+    }
+
     #[test]
     fn every_embedded_file_has_content() {
         for file in &SCHEMA_FILES {

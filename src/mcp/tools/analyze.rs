@@ -4,9 +4,9 @@
 //! generates plans, computes aggregate metrics, and returns structured results.
 //!
 //! The pipeline (parse → graph → plan generation → aggregation) is factored
-//! into `build_artifacts` / `AnalysisArtifacts` (`pub(crate)` items) so
-//! sibling tools (e.g. `generate_degree_report`) can reuse the same flow
-//! without duplicating ~50 lines of orchestration.
+//! into `build_artifacts` / `AnalysisArtifacts` (`pub(crate)` items), cached by
+//! `crate::mcp::cache::cached_artifacts`, so sibling tools (`render_degree_report`,
+//! `render_plan_graph`, `get_course_detail`) reuse one run.
 
 use crate::core::degree::{
     is_placeholder_course, parse_degree_auto, DegreeParseError, PlanGenerationStats, PlanGenerator,
@@ -16,13 +16,12 @@ use crate::core::degree::{
 use crate::core::metrics::compute_all_metrics;
 use crate::core::models::{Course, CourseGraph, School, DAG};
 use crate::core::report::term_scheduler::TermScheduler;
-use crate::core::report::visualization::{spec_from_scored_plan, CurriculumGraphSpec};
 use crate::core::report::ReportStats;
 use crate::core::report::SchedulerConfig;
 use crate::core::statistics::{AggregatorConfig, MetricStats, MetricsAggregator};
 use crate::core::DegreeProgram;
 use crate::mcp::tools::shared::{
-    ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_AUDIT_DEGREE, TOOL_VALIDATE_DEGREE,
+    DegreeSourceArgs, ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_AUDIT_DEGREE, TOOL_VALIDATE_DEGREE,
 };
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
@@ -35,26 +34,13 @@ use std::time::{Duration, Instant};
 
 /// Request parameters for the `analyze_degree` tool
 ///
-/// Provide exactly one YAML source: `yaml_content` (inline), `yaml_path`
-/// (workspace-relative file), or `degree_id` (stored in the database —
-/// requires the `database` feature).
+/// The degree comes from `source`: exactly one of `degree` (a `sample:`, `cache:` or
+/// stored reference), `content` (inline) or `path` (a file on the server).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct AnalyzeDegreeRequest {
-    /// Inline YAML content. Mutually exclusive with `yaml_path` / `degree_id`.
-    #[schemars(description = "Complete degree program YAML content (inline)")]
-    pub yaml_content: Option<String>,
-
-    /// Filesystem path the server will read. Mutually exclusive with the others.
-    #[schemars(
-        description = "Path to a YAML file on the MCP server's filesystem. Mutually exclusive with yaml_content/degree_id."
-    )]
-    pub yaml_path: Option<String>,
-
-    /// Stored `degree_id` (DB lookup). Mutually exclusive with the others.
-    #[schemars(
-        description = "Stored degree ID (DB lookup). Requires the database feature; mutually exclusive with yaml_content/yaml_path."
-    )]
-    pub degree_id: Option<String>,
+    /// Where the degree comes from: exactly one of `degree`, `content`, `path`.
+    #[serde(flatten)]
+    pub source: DegreeSourceArgs,
 
     /// Maximum number of plans to generate (default: 500)
     #[schemars(
@@ -69,37 +55,8 @@ pub struct AnalyzeDegreeRequest {
     )]
     pub include_courses: Option<String>,
 
-    /// Include full visualization `graph_spec` for each selected plan (default false).
-    ///
-    /// `selected_plans` always returns a curated set independent of `max_plans`:
-    /// shortest + longest + (optional) calc-ready-shortest + 3 random samples.
-    /// Typical size is 5–6 plans (5 when no calculus track, 6 with calc-ready).
-    /// Each `graph_spec` is ~30 KB; pass true only when you'll render the
-    /// visualization. Pair with `get_curriculum_visualization` to render the
-    /// returned spec to HTML. Use `plan_indices` to limit which plans get a
-    /// `graph_spec` instead of paying the cost for all of them.
-    #[schemars(
-        description = "Include full graph_spec per selected plan (default false). selected_plans is always a curated 5-6 plans (shortest + longest + optional calc-ready + 3 random) regardless of max_plans. Each spec is ~30 KB; opt in only when rendering. Combine with plan_indices to limit which plans receive a spec."
-    )]
-    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
-    pub include_graph_spec: Option<bool>,
-
-    /// Comma-separated `selected_plans` indices that should receive a
-    /// `graph_spec` (only consulted when `include_graph_spec=true`).
-    ///
-    /// E.g. `"0,2"` keeps the spec on the shortest path and the calc-ready
-    /// shortest while dropping it from the longest and the random samples.
-    /// Indices outside the returned `selected_plans` range are ignored.
-    /// When omitted, every selected plan receives a spec (current behavior).
-    #[schemars(
-        description = "Comma-separated selected_plans indices to include graph_spec for (e.g. \"0,2\"). Only honored when include_graph_spec=true. Omit to include specs for all selected plans."
-    )]
-    pub plan_indices: Option<String>,
-
     /// Emit a `per_course_metrics` array alongside the degree-level
-    /// statistics. Default false — the metrics are buried in the rendered
-    /// `graph_spec` payload otherwise, which costs ~30 KB per plan and
-    /// forces the caller to render HTML just to read the numbers.
+    /// statistics. Default false: it is one entry per course.
     ///
     /// When true, the response gains one entry per course the aggregator
     /// tracked (typically the union of courses that appeared in any of
@@ -236,14 +193,6 @@ pub struct PlanSummaryJson {
     pub course_count: usize,
     /// Term-by-term schedule
     pub schedule: Vec<TermJson>,
-    /// Complete visualization spec for this plan. Only populated when
-    /// `include_graph_spec=true` is set on the `analyze_degree` request;
-    /// otherwise the field is omitted from the response entirely.
-    ///
-    /// Pass the serialized form of this field directly to
-    /// `get_curriculum_visualization` to render an interactive HTML graph.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub graph_spec: Option<CurriculumGraphSpec>,
 }
 
 /// Per-course aggregate metrics for one tracked course.
@@ -424,46 +373,45 @@ const MAX_ANALYSIS_TIMEOUT_SECS: u64 = 600;
 // Tool Implementation
 // ============================================================================
 
-/// Execute the `analyze_degree` tool
+/// What an analysis computes and returns beyond the degree-level figures.
 ///
-/// # Arguments
-/// * `yaml_content` - The degree program YAML content
-/// * `max_plans` - Maximum number of plans to generate (default: 500)
-/// * `include_courses` - Optional courses to always include in all plans
-/// * `include_graph_spec` - When true, populates `graph_spec` on each
-///   selected plan (default false; suppresses ~30 KB per plan)
-/// * `plan_indices` - When `Some`, only the listed `selected_plans` indices
-///   receive a `graph_spec` (only consulted when `include_graph_spec=true`)
-/// * `include_per_course_metrics` - When true, populates the
-///   `per_course_metrics` array on the response (default false)
+/// Every field defaults to "off" or "the pipeline's default", so a caller names only what
+/// it changes.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AnalyzeOptions<'a> {
+    /// Maximum plans to generate (default 500).
+    pub max_plans: Option<usize>,
+    /// Courses every generated plan must include.
+    pub include_courses: Option<&'a [String]>,
+    /// Populate `per_course_metrics`.
+    pub include_per_course_metrics: bool,
+    /// Keep wildcard and elective placeholders in `per_course_metrics`.
+    pub include_placeholder_metrics: bool,
+    /// Seeds plan sampling and selection. `None` derives a stable seed from the degree, so
+    /// the same input yields the same plan population.
+    pub random_seed: Option<u64>,
+    /// Wall-clock budget for plan generation (default 180, clamped to 1..=600). When it
+    /// trips, the response says `time_limit_reached`.
+    pub analysis_timeout_seconds: Option<u64>,
+    /// Report which terms this course was scheduled in across the plans.
+    pub target_course: Option<&'a str>,
+}
+
+/// Execute the `analyze_degree` tool on a degree's text.
 #[must_use]
-#[allow(clippy::too_many_arguments)]
-pub fn execute(
-    yaml_content: &str,
-    max_plans: Option<usize>,
-    include_courses: Option<&[String]>,
-    include_graph_spec: bool,
-    plan_indices: Option<&[usize]>,
-    include_per_course_metrics: bool,
-    include_placeholder_metrics: bool,
-    random_seed: Option<u64>,
-    analysis_timeout_seconds: Option<u64>,
-    target_course: Option<&str>,
-) -> AnalysisResponse {
+pub fn execute(yaml_content: &str, opts: &AnalyzeOptions<'_>) -> AnalysisResponse {
     match crate::mcp::cache::cached_artifacts(
         yaml_content,
-        max_plans,
-        include_courses,
-        random_seed,
-        analysis_timeout_seconds,
-        target_course,
+        opts.max_plans,
+        opts.include_courses,
+        opts.random_seed,
+        opts.analysis_timeout_seconds,
+        opts.target_course,
     ) {
         Ok(artifacts) => build_response(
             &artifacts,
-            include_graph_spec,
-            plan_indices,
-            include_per_course_metrics,
-            include_placeholder_metrics,
+            opts.include_per_course_metrics,
+            opts.include_placeholder_metrics,
         ),
         Err(e) => parse_error_response(&e),
     }
@@ -926,8 +874,6 @@ fn build_response_notes(artifacts: &AnalysisArtifacts) -> Vec<String> {
 /// Build the analysis response from a populated [`AnalysisArtifacts`] bundle.
 fn build_response(
     artifacts: &AnalysisArtifacts,
-    include_graph_spec: bool,
-    plan_indices: Option<&[usize]>,
     include_per_course_metrics: bool,
     include_placeholder_metrics: bool,
 ) -> AnalysisResponse {
@@ -936,44 +882,25 @@ fn build_response(
     let selected_plans: Vec<PlanSummaryJson> = artifacts
         .selected
         .iter()
-        .enumerate()
-        .map(|(idx, (cat, plan))| {
-            let spec_wanted =
-                include_graph_spec && plan_indices.is_none_or(|allowed| allowed.contains(&idx));
-            let graph_spec = if spec_wanted {
-                let graph_id = cat.display_name().to_lowercase().replace(' ', "-");
-                Some(spec_from_scored_plan(
-                    &artifacts.school,
-                    &artifacts.equivalences,
-                    plan,
-                    Some(&artifacts.report_stats),
-                    &graph_id,
-                ))
-            } else {
-                None
-            };
-
-            PlanSummaryJson {
-                category: cat.display_name().to_string(),
-                terms: plan.score.terms_required,
-                complexity: plan.score.total_complexity,
-                longest_delay: plan.score.longest_delay,
-                critical_path: plan.score.longest_delay_chain.clone(),
-                credits: plan.variant.total_credits,
-                course_count: plan.variant.courses.len(),
-                schedule: plan
-                    .schedule
-                    .terms
-                    .iter()
-                    .filter(|t| !t.courses.is_empty())
-                    .map(|t| TermJson {
-                        term: t.number,
-                        courses: t.courses.clone(),
-                        credits: t.total_credits,
-                    })
-                    .collect(),
-                graph_spec,
-            }
+        .map(|(cat, plan)| PlanSummaryJson {
+            category: cat.display_name().to_string(),
+            terms: plan.score.terms_required,
+            complexity: plan.score.total_complexity,
+            longest_delay: plan.score.longest_delay,
+            critical_path: plan.score.longest_delay_chain.clone(),
+            credits: plan.variant.total_credits,
+            course_count: plan.variant.courses.len(),
+            schedule: plan
+                .schedule
+                .terms
+                .iter()
+                .filter(|t| !t.courses.is_empty())
+                .map(|t| TermJson {
+                    term: t.number,
+                    courses: t.courses.clone(),
+                    credits: t.total_credits,
+                })
+                .collect(),
         })
         .collect();
 
@@ -1211,53 +1138,10 @@ fn finalize_followups(
     followups
 }
 
-/// Execute and serialize as JSON
-///
-/// # Arguments
-/// * `yaml_content` - The degree program YAML content
-/// * `max_plans` - Maximum number of plans to generate
-/// * `include_courses` - Optional courses to always include in all plans
-/// * `include_graph_spec` - When true, include `graph_spec` per selected plan
-/// * `plan_indices` - Optional whitelist of `selected_plans` indices for
-///   `graph_spec` inclusion; consulted only when `include_graph_spec=true`
-/// * `include_per_course_metrics` - When true, populate `per_course_metrics`
-/// * `include_placeholder_metrics` - When true, keep wildcard/elective placeholders in
-///   `per_course_metrics` instead of filtering them out
-/// * `random_seed` - Seeds plan sampling and selection. `None` derives a stable seed
-///   from `yaml_content`, so the same input yields the same plan population.
-/// * `analysis_timeout_seconds` - Wall-clock budget for the plan-generation loop
-///   (default 180, clamped to 1..=600). When tripped, the response carries
-///   `time_limit_reached = true`.
-/// * `target_course` - When set, populate [`TargetCourseStats`] describing which terms
-///   that course was scheduled in across the enumerated plans
+/// [`execute`], serialized as JSON.
 #[must_use]
-#[allow(clippy::too_many_arguments)]
-pub fn execute_json(
-    yaml_content: &str,
-    max_plans: Option<usize>,
-    include_courses: Option<&[String]>,
-    include_graph_spec: bool,
-    plan_indices: Option<&[usize]>,
-    include_per_course_metrics: bool,
-    include_placeholder_metrics: bool,
-    random_seed: Option<u64>,
-    analysis_timeout_seconds: Option<u64>,
-    target_course: Option<&str>,
-) -> String {
-    let response = execute(
-        yaml_content,
-        max_plans,
-        include_courses,
-        include_graph_spec,
-        plan_indices,
-        include_per_course_metrics,
-        include_placeholder_metrics,
-        random_seed,
-        analysis_timeout_seconds,
-        target_course,
-    );
-    serde_json::to_string_pretty(&response)
-        .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize response: {e}\"}}"))
+pub fn execute_json(yaml_content: &str, opts: &AnalyzeOptions<'_>) -> String {
+    crate::core::json::to_json_pretty(&execute(yaml_content, opts))
 }
 
 // ============================================================================
@@ -1302,7 +1186,7 @@ fn build_school(program: &crate::core::DegreeProgram) -> School {
             sc.prerequisites = parse_prereqs(raw);
         }
         sc.corequisites.clone_from(&course.corequisites);
-        // By document key, as in the CLI's `build_school_from_program`: lookups are by
+        // By document key, as in `core::report::inputs::build_school_from_program`: lookups are by
         // plan course id, and `prefix + number` collides for lecture/lab pairs.
         school.add_course_with_key(key.clone(), sc);
     }
@@ -1549,15 +1433,10 @@ courses:
     fn test_analyze_valid_degree() {
         let response = execute(
             TEST_YAML,
-            Some(10),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(10),
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
@@ -1602,15 +1481,10 @@ courses:
         // Capped below the population → truncated → a concrete recommendation.
         let capped = execute(
             SELECT_YAML,
-            Some(1),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(1),
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(capped.success, "error: {:?}", capped.error);
         assert!(
@@ -1625,15 +1499,10 @@ courses:
         // Full population → nothing to widen → no recommendation.
         let full = execute(
             SELECT_YAML,
-            Some(50),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(50),
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(full.success, "error: {:?}", full.error);
         assert!(
@@ -1778,15 +1647,10 @@ courses:
         // and plans_processed < 50, which triggers the audit suggestion.
         let response = execute(
             TEST_YAML,
-            Some(500),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(500),
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(response.success);
         assert!(response.is_full_population);
@@ -1812,15 +1676,10 @@ courses:
     fn test_analyze_malformed_yaml() {
         let response = execute(
             "not: valid: yaml: {{",
-            Some(10),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(10),
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(!response.success);
         assert!(response.error.is_some());
@@ -1830,15 +1689,10 @@ courses:
     fn test_analyze_json_output() {
         let json = execute_json(
             TEST_YAML,
-            Some(10),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(10),
+                ..AnalyzeOptions::default()
+            },
         );
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["success"].as_bool().unwrap());
@@ -1849,15 +1703,10 @@ courses:
     fn test_selected_plans_have_schedules() {
         let response = execute(
             TEST_YAML,
-            Some(10),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(10),
+                ..AnalyzeOptions::default()
+            },
         );
         for plan in &response.selected_plans {
             assert!(
@@ -1927,15 +1776,11 @@ courses:
     fn test_include_courses() {
         let response = execute(
             TEST_YAML,
-            Some(10),
-            Some(&["CS101".to_string()]),
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(10),
+                include_courses: Some(&["CS101".to_string()]),
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(response.success, "error: {:?}", response.error);
         assert!(response.plans_analyzed > 0);
@@ -1957,161 +1802,6 @@ courses:
     }
 
     #[test]
-    fn test_analyze_omits_graph_spec_by_default() {
-        // include_graph_spec=false (default) — graph_spec must be None in-memory and
-        // skipped entirely from the JSON output (no `"graph_spec": null` either).
-        let response = execute(
-            TEST_YAML,
-            Some(10),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
-        );
-        assert!(response.success);
-        assert!(!response.selected_plans.is_empty());
-        for plan in &response.selected_plans {
-            assert!(
-                plan.graph_spec.is_none(),
-                "Plan {} unexpectedly carries graph_spec when flag is false",
-                plan.category
-            );
-        }
-        let json: serde_json::Value = serde_json::from_str(&execute_json(
-            TEST_YAML,
-            Some(10),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
-        ))
-        .unwrap();
-        for plan in json["selected_plans"].as_array().unwrap() {
-            assert!(
-                plan.get("graph_spec").is_none(),
-                "graph_spec key must not appear in JSON when include_graph_spec=false"
-            );
-        }
-    }
-
-    #[test]
-    fn test_analyze_includes_graph_spec_when_requested() {
-        let response = execute(
-            TEST_YAML,
-            Some(10),
-            None,
-            true,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
-        );
-        assert!(response.success);
-        assert!(!response.selected_plans.is_empty());
-        for plan in &response.selected_plans {
-            let spec = plan.graph_spec.as_ref().unwrap_or_else(|| {
-                panic!(
-                    "Plan {} should have graph_spec when flag is true",
-                    plan.category
-                )
-            });
-            assert!(!spec.graph_id.is_empty(), "graph_id must not be empty");
-            assert!(!spec.nodes.is_empty(), "nodes must not be empty");
-            assert!(!spec.terms.is_empty(), "terms must not be empty");
-        }
-    }
-
-    #[test]
-    fn test_plan_indices_filters_graph_spec_attachment() {
-        // Only index 0 should carry graph_spec; the rest must be None even
-        // though include_graph_spec=true.
-        let response = execute(
-            TEST_YAML,
-            Some(10),
-            None,
-            true,
-            Some(&[0]),
-            false,
-            false,
-            None,
-            None,
-            None,
-        );
-        assert!(response.success);
-        let mut plans = response.selected_plans.into_iter();
-        let first = plans.next().expect("at least one selected plan");
-        assert!(
-            first.graph_spec.is_some(),
-            "plan_indices=[0] must keep graph_spec on the first plan"
-        );
-        for plan in plans {
-            assert!(
-                plan.graph_spec.is_none(),
-                "plan_indices=[0] must drop graph_spec from plan '{}'",
-                plan.category
-            );
-        }
-    }
-
-    #[test]
-    fn test_plan_indices_ignored_when_include_graph_spec_false() {
-        // plan_indices is a no-op when graph_spec attachment is off.
-        let response = execute(
-            TEST_YAML,
-            Some(10),
-            None,
-            false,
-            Some(&[0, 1, 2]),
-            false,
-            false,
-            None,
-            None,
-            None,
-        );
-        assert!(response.success);
-        for plan in &response.selected_plans {
-            assert!(
-                plan.graph_spec.is_none(),
-                "plan_indices must not force graph_spec when include_graph_spec=false"
-            );
-        }
-    }
-
-    #[test]
-    fn test_plan_indices_out_of_range_silently_ignored() {
-        // Index past the end is dropped without error.
-        let response = execute(
-            TEST_YAML,
-            Some(10),
-            None,
-            true,
-            Some(&[999]),
-            false,
-            false,
-            None,
-            None,
-            None,
-        );
-        assert!(response.success);
-        for plan in &response.selected_plans {
-            assert!(
-                plan.graph_spec.is_none(),
-                "out-of-range plan_indices should produce no graph_specs"
-            );
-        }
-    }
-
-    #[test]
     fn test_population_size_matches_plans_analyzed_when_full() {
         // The simple TEST_YAML has only one valid plan (CS101 → CS201).
         // With max_plans well above the population we expect:
@@ -2119,15 +1809,10 @@ courses:
         //   population_size==plans_analyzed.
         let response = execute(
             TEST_YAML,
-            Some(500),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(500),
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(response.success);
         assert!(!response.was_truncated);
@@ -2141,15 +1826,10 @@ courses:
         // Default: per_course_metrics empty and skipped during serialisation.
         let off = execute(
             TEST_YAML,
-            Some(10),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(10),
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(off.per_course_metrics.is_empty());
         let off_json = serde_json::to_string(&off).unwrap();
@@ -2162,15 +1842,11 @@ courses:
         // each carrying the four metric stats objects.
         let on = execute(
             TEST_YAML,
-            Some(10),
-            None,
-            false,
-            None,
-            true,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(10),
+                include_per_course_metrics: true,
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(on.success);
         assert!(
@@ -2283,15 +1959,11 @@ courses:
             .expect("csu sample key must resolve to embedded YAML");
         let off = execute(
             yaml,
-            Some(10),
-            None,
-            false,
-            None,
-            true,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(10),
+                include_per_course_metrics: true,
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(off.success, "error: {:?}", off.error);
         for entry in &off.per_course_metrics {
@@ -2305,15 +1977,12 @@ courses:
 
         let on = execute(
             yaml,
-            Some(10),
-            None,
-            false,
-            None,
-            true,
-            true,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(10),
+                include_per_course_metrics: true,
+                include_placeholder_metrics: true,
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(on.success);
         for entry in &on.per_course_metrics {
@@ -2385,15 +2054,11 @@ courses:
         let seed = 42_u64;
         let response = execute(
             csu,
-            Some(50),
-            None,
-            false,
-            None,
-            false,
-            false,
-            Some(seed),
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(50),
+                random_seed: Some(seed),
+                ..AnalyzeOptions::default()
+            },
         );
         assert_eq!(response.seed_used, seed);
     }
@@ -2414,15 +2079,10 @@ courses:
         // TEST_YAML has only 2 courses → tiny population → exhaustive.
         let response = execute(
             TEST_YAML,
-            Some(500),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(500),
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(response.is_full_population);
         assert_eq!(response.sampling_method, "exhaustive");
@@ -2432,15 +2092,10 @@ courses:
     fn test_seed_used_surfaced_on_response() {
         let response = execute(
             TEST_YAML,
-            Some(10),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(10),
+                ..AnalyzeOptions::default()
+            },
         );
         // Default seed is non-zero (DefaultHasher.finish() on non-empty input
         // virtually never returns 0).
@@ -2454,15 +2109,10 @@ courses:
         // (< 2 s) — anything higher would catch a real regression.
         let response = execute(
             TEST_YAML,
-            Some(10),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(10),
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(!response.time_limit_reached);
         assert!(
@@ -2504,15 +2154,11 @@ courses:
             .expect("csu sample key must resolve to embedded YAML");
         let response = execute(
             csu,
-            Some(500),
-            None,
-            false,
-            None,
-            false,
-            false,
-            None,
-            Some(1),
-            None,
+            &AnalyzeOptions {
+                max_plans: Some(500),
+                analysis_timeout_seconds: Some(1),
+                ..AnalyzeOptions::default()
+            },
         );
         assert!(response.success, "error: {:?}", response.error);
         assert!(

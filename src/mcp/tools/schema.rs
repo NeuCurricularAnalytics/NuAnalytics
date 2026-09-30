@@ -1,27 +1,12 @@
-//! Schema documentation tool
-//!
-//! Provides the `get_degree_schema` MCP tool that returns documentation
-//! about the degree YAML format.
+//! The degree YAML format's documentation: `get_reference(topic="degree-yaml")`.
 
 use crate::mcp::schema_content::get_schema_content;
-use rmcp::schemars;
-use serde::Deserialize;
 
-/// Request parameters for the `get_degree_schema` tool
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GetSchemaRequest {
-    /// Optional section filter: "quickstart" (~2 KB minimal example), "all" (~25 KB full reference),
-    /// "degree", "requirements", "courses", or "examples"
-    #[schemars(
-        description = "Section: 'quickstart' (~2 KB minimal example), 'all' (default, ~25 KB), 'degree', 'requirements', 'courses', or 'examples'"
-    )]
-    pub section: Option<String>,
-}
-
-/// Execute the `get_degree_schema` tool
+/// The degree format's documentation, whole or one section.
 ///
 /// # Arguments
-/// * `section` - Optional section filter
+/// * `section` - `quickstart` (~2 KB minimal example), `all` (the default, ~25 KB),
+///   `degree`, `requirements`, `courses` or `examples`
 ///
 /// # Returns
 /// Schema documentation sourced from the embedded `Degree-schema.yaml` asset
