@@ -104,7 +104,7 @@ numbers, so results stay comparable:
 | database-only programs | `degree analyze --from-db` | blocked |
 | history | appends a run | would patch in place |
 
-## 4. Stored runs against the current analyzer — measured 2026-10-01, parser fixed the same day
+## 4. Stored runs against the current analyzer — measured, fixed and re-imported 2026-10-01
 
 61 programs (every 18th by `program_key`), each re-analysed with the current analyzer at its
 stored settings: 10,000-plan cap, shuffled, duplicates skipped, the stored seed. All 1,088
@@ -161,11 +161,21 @@ analyzers agree on every one of them:
 Both matter only when a stored program is re-run fresh, and fixing either would move
 stored figures, so neither is fixed yet.
 
-**What is left: re-import.** The stored runs now trail the analyzer for the 96 full programs
-whose report changed (91 with moved figures — `clean-up-analysis-todo.md` section 6 has the
-table). Trimmed variants were not measured; the same re-import redoes them. Re-analyse
-`full_degree/v2/degree/` and `trimmed_degree/`, then `db import --replace`. Runs append,
-so `db prune` afterwards if the history is not wanted.
+**Re-imported 2026-10-01.** Both trees of the corpus (`full_degree/v2/`,
+`trimmed_degree/v2/`) were re-analysed with the same documents, parameters and seeds and
+imported as 1,088 `full` and 1,088 `trimmed` runs. Every program's newest run of each
+variant now equals its report in the corpus repo, 2,176 / 2,176. Against the 2026-09-28
+runs, 95 full and 85 trimmed programs' means moved: 91 of the full ones are the OR-of-AND
+fix, and the rest predate it. The corpus repo's README ("Generations") has the breakdown and
+the archive of the previous `v2/`. Runs append, so `analysis_runs` keeps the earlier
+generations; `db prune` removes them if the history is not wanted.
+
+**Open: two Northeastern degrees lost plans before the OR-of-AND fix.** The BA in CS
+(Boston) analyses 9,364 distinct plans where the 09-28 build (`3f10dbc`) gave 9,978 on every
+run, and the BS in CS concentration 9,099 where it gave 9,985. The analyzer just before the
+fix (`0e44789`) already gives the new counts, so the change is in `f055948..0e44789`: the
+pipeline merge or the reproducibility fixes, both meant to leave the CLI's plans alone. No
+other corpus degree's plan count moved.
 
 ---
 

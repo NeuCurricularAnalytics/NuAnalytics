@@ -101,8 +101,8 @@ two traps a self-hoster hits — seed tables are read-only through the API, and 
 `supabase/postgres` image, not a stock one — are in `docs/database/setup.md`.
 
 `docs/database-audit-todo.md` is the live backend work list, trimmed to what is left:
-re-import the corpus (its runs predate OR-of-AND branch resolution — section 4 has the
-measurement), two loose ends of the corpus-repo tidy, and why `db remetric` is
+two Northeastern degrees whose plan count fell for an unidentified reason (section 4, beside
+the 2026-10-01 re-import), two loose ends of the corpus-repo tidy, and why `db remetric` is
 deliberately not built.
 It also records the settled decisions that are easy to re-litigate — notably that **writes
 stay open to any authenticated member**: ownership policies were implemented and reverted
