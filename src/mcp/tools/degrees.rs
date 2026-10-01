@@ -3,9 +3,9 @@
 //! Each entry is any degree source — a stored program, a sample, a cache handle, inline, a
 //! file — which the server loads as it loads the source of every other degree tool. This
 //! module turns the loaded degrees into the comparison: identity from the degree itself,
-//! then metrics — computed afresh by the analysis pipeline, or read from the newest stored
-//! run. The degree text is not echoed back: the caller already has it, and three whole
-//! documents would dwarf the comparison.
+//! then metrics — read from a stored program's newest stored run, or computed afresh for
+//! any other source, unless `metrics` says otherwise. The degree text is not echoed back:
+//! the caller already has it, and three whole documents would dwarf the comparison.
 
 use rmcp::schemars;
 use serde::Deserialize;
@@ -13,12 +13,12 @@ use serde::Deserialize;
 use crate::core::degree::parse_degree_auto;
 use crate::mcp::tools::shared::DegreeSourceArgs;
 
-/// Where a comparison's metrics come from.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+/// Where a comparison's metrics come from. Omitted, each entry follows its source: a
+/// stored program's stored run, a fresh enumeration for anything else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum CompareMetrics {
-    /// Enumerate each degree's plans now. Works for any source.
-    #[default]
+    /// Enumerate each degree's plans now, stored programs included. Works for any source.
     Fresh,
     /// The newest stored run of `variant`. Reproducible and cheap; stored programs only.
     Stored,
@@ -47,7 +47,7 @@ pub struct CompareDegreesRequest {
     pub sources: Vec<CompareSource>,
     /// Where the metrics come from.
     #[schemars(
-        description = "\"fresh\" (enumerate plans now, default), \"stored\" (the newest imported run; stored programs only) or \"none\""
+        description = "Omitted: each stored program's newest stored run, and a fresh enumeration for any other source. \"fresh\" enumerates every degree now, stored programs included; \"stored\" reads stored runs only (stored programs); \"none\" gives identity only."
     )]
     #[serde(default)]
     pub metrics: Option<CompareMetrics>,
@@ -57,7 +57,9 @@ pub struct CompareDegreesRequest {
     )]
     pub variant: Option<String>,
     /// Fresh metrics: cap on plans per degree.
-    #[schemars(description = "Fresh metrics only: maximum plans to enumerate per degree")]
+    #[schemars(
+        description = "Fresh metrics only: maximum plans to enumerate per degree. With a stored program among the sources it needs metrics=\"fresh\"."
+    )]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub max_plans: Option<usize>,
 }
@@ -100,14 +102,27 @@ pub fn fresh_metrics(yaml: &str, max_plans: Option<usize>) -> serde_json::Value 
     })
 }
 
+impl CompareMetrics {
+    /// The name the request and the response use.
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Fresh => "fresh",
+            Self::Stored => "stored",
+            Self::None => "none",
+        }
+    }
+}
+
 /// The comparison, as JSON.
 ///
-/// `stored` returns a stored program's newest run, or why there is none; it is called only
-/// for [`CompareMetrics::Stored`] and only for degrees that are stored programs. One entry's
-/// missing metrics are reported in that entry, not as the call's failure.
+/// `mode` omitted reads each stored program's stored run and enumerates every other source
+/// afresh; each entry's `metrics_from` says which. `stored` returns a stored program's
+/// newest run, or why there is none; it is called only for degrees that are stored
+/// programs. One entry's missing metrics are reported in that entry, not as the call's
+/// failure.
 pub fn compare_json(
     degrees: Vec<LoadedDegree>,
-    mode: CompareMetrics,
+    mode: Option<CompareMetrics>,
     max_plans: Option<usize>,
     stored: &dyn Fn(&str) -> Result<serde_json::Value, String>,
 ) -> String {
@@ -115,21 +130,27 @@ pub fn compare_json(
         .into_iter()
         .map(|d| {
             let mut entry = identity(&d);
-            match mode {
+            let this = mode.unwrap_or_else(|| {
+                if d.program_key.is_some() {
+                    CompareMetrics::Stored
+                } else {
+                    CompareMetrics::Fresh
+                }
+            });
+            match this {
                 CompareMetrics::None => {}
                 CompareMetrics::Fresh => entry["metrics"] = fresh_metrics(&d.text, max_plans),
                 CompareMetrics::Stored => entry["metrics"] = stored_metrics(&d, stored),
+            }
+            if this != CompareMetrics::None {
+                entry["metrics_from"] = this.name().into();
             }
             entry
         })
         .collect();
     crate::core::json::to_json_pretty(&serde_json::json!({
         "count": entries.len(),
-        "metrics": match mode {
-            CompareMetrics::Fresh => "fresh",
-            CompareMetrics::Stored => "stored",
-            CompareMetrics::None => "none",
-        },
+        "metrics": mode.map_or("by_source", CompareMetrics::name),
         "degrees": entries,
     }))
 }
@@ -244,7 +265,7 @@ courses:
         };
         let out: serde_json::Value = serde_json::from_str(&compare_json(
             vec![loaded(yaml, Some("prog:none"))],
-            CompareMetrics::Stored,
+            Some(CompareMetrics::Stored),
             None,
             &stored,
         ))
@@ -265,7 +286,7 @@ courses:
         let stored = |key: &str| Ok(serde_json::json!({ "run_key": format!("run-{key}") }));
         let out: serde_json::Value = serde_json::from_str(&compare_json(
             vec![loaded(yaml, Some("prog:1")), loaded(yaml, None)],
-            CompareMetrics::Stored,
+            Some(CompareMetrics::Stored),
             None,
             &stored,
         ))
@@ -287,6 +308,28 @@ courses:
         );
     }
 
+    /// Omitted, `metrics` follows each source: the stored program is read from its stored
+    /// run, never enumerated, and the inline degree is enumerated.
+    #[test]
+    fn metrics_omitted_reads_stored_programs_and_enumerates_the_rest() {
+        let tiny = "degree: {id: t, institution: T, program: T, total_credits: 3, gpa_minimum: 2.0}\n\
+                    requirements:\n  core: {name: Core, type: all, category: major, courses: [CS101]}\n\
+                    courses:\n  CS101: {title: Intro, prefix: CS, number: \"101\", credits: 3}\n";
+        let stored = |key: &str| Ok(serde_json::json!({ "run_key": format!("run-{key}") }));
+        let out: serde_json::Value = serde_json::from_str(&compare_json(
+            vec![loaded(tiny, Some("prog:1")), loaded(tiny, None)],
+            None,
+            None,
+            &stored,
+        ))
+        .expect("json");
+        assert_eq!(out["metrics"], "by_source");
+        assert_eq!(out["degrees"][0]["metrics_from"], "stored");
+        assert_eq!(out["degrees"][0]["metrics"]["run_key"], "run-prog:1");
+        assert_eq!(out["degrees"][1]["metrics_from"], "fresh");
+        assert_eq!(out["degrees"][1]["metrics"]["plans_analyzed"], 1);
+    }
+
     #[test]
     fn metrics_none_gives_identity_only() {
         let yaml = include_str!("../../../samples/degrees/uhm-ics-bscs-general.yaml");
@@ -295,7 +338,7 @@ courses:
         };
         let out: serde_json::Value = serde_json::from_str(&compare_json(
             vec![loaded(yaml, None)],
-            CompareMetrics::None,
+            Some(CompareMetrics::None),
             None,
             &never,
         ))

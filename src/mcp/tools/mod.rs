@@ -16,6 +16,7 @@ pub mod schema;
 pub mod shared;
 pub mod trim;
 pub mod validate;
+pub(crate) mod view;
 
 // The database tools' engines live in `crate::core::query`, shared with the CLI. These two
 // stay here: `compare_degrees` computes fresh metrics with the analysis in this module, and

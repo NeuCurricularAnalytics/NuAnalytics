@@ -4,7 +4,7 @@
 //! statistics, and selected plan details.
 
 use crate::core::degree::plan_selector::{PlanCategory, ScoredPlan, SelectedPlans};
-use crate::core::models::{Degree, School, DAG};
+use crate::core::models::{Degree, School};
 use crate::core::report::report_stats::ReportStats;
 use crate::core::report::visualization::renderer::escape_html;
 use crate::core::statistics::aggregator::AggregatedDegreeStats;
@@ -29,8 +29,6 @@ pub struct DegreeReportContext<'a> {
     pub stats: &'a ReportStats,
     /// Selected special plans
     pub selected_plans: &'a SelectedPlans,
-    /// DAG for prerequisite/corequisite edges
-    pub dag: &'a DAG,
     /// Map from course key to equivalent courses
     pub equivalences: &'a std::collections::HashMap<String, std::collections::HashSet<String>>,
 }
@@ -43,7 +41,6 @@ impl<'a> DegreeReportContext<'a> {
         degree: &'a Degree,
         stats: &'a ReportStats,
         selected_plans: &'a SelectedPlans,
-        dag: &'a DAG,
         equivalences: &'a std::collections::HashMap<String, std::collections::HashSet<String>>,
     ) -> Self {
         Self {
@@ -51,7 +48,6 @@ impl<'a> DegreeReportContext<'a> {
             degree,
             stats,
             selected_plans,
-            dag,
             equivalences,
         }
     }
@@ -682,10 +678,6 @@ mod tests {
         )
     }
 
-    fn create_test_dag() -> DAG {
-        DAG::new()
-    }
-
     fn create_test_aggregator() -> ReportStats {
         let mut agg = crate::core::statistics::aggregator::MetricsAggregator::new(
             AggregatorConfig::default(),
@@ -747,17 +739,9 @@ mod tests {
         let degree = create_test_degree();
         let aggregator = create_test_aggregator();
         let selected = create_test_selected_plans();
-        let dag = create_test_dag();
         let equivalences = std::collections::HashMap::new();
 
-        let ctx = DegreeReportContext::new(
-            &school,
-            &degree,
-            &aggregator,
-            &selected,
-            &dag,
-            &equivalences,
-        );
+        let ctx = DegreeReportContext::new(&school, &degree, &aggregator, &selected, &equivalences);
         let gen = DegreeReportGenerator::new();
 
         let result = gen.render(&ctx);
@@ -833,7 +817,6 @@ mod tests {
         let school = create_test_school();
         let degree = create_test_degree();
         let aggregator = create_test_aggregator();
-        let dag = create_test_dag();
         let equivalences = std::collections::HashMap::new();
         let selected = SelectedPlans {
             shortest: Some(make_test_scored_plan("CS1000", 8, 50)),
@@ -847,14 +830,7 @@ mod tests {
             total_plans_seen: 200,
             calc_ready_suppressed: false,
         };
-        let ctx = DegreeReportContext::new(
-            &school,
-            &degree,
-            &aggregator,
-            &selected,
-            &dag,
-            &equivalences,
-        );
+        let ctx = DegreeReportContext::new(&school, &degree, &aggregator, &selected, &equivalences);
         let html = DegreeReportGenerator::new().render(&ctx).unwrap();
 
         assert_eq!(
@@ -893,7 +869,6 @@ mod tests {
         let school = create_test_school();
         let degree = create_test_degree();
         let aggregator = create_test_aggregator();
-        let dag = create_test_dag();
         let equivalences = std::collections::HashMap::new();
         let selected = SelectedPlans {
             shortest: None,
@@ -903,14 +878,7 @@ mod tests {
             total_plans_seen: 0,
             calc_ready_suppressed: false,
         };
-        let ctx = DegreeReportContext::new(
-            &school,
-            &degree,
-            &aggregator,
-            &selected,
-            &dag,
-            &equivalences,
-        );
+        let ctx = DegreeReportContext::new(&school, &degree, &aggregator, &selected, &equivalences);
         let html = DegreeReportGenerator::new().render(&ctx).unwrap();
         assert!(html.contains("plan-tabs-empty"));
         assert!(!html.contains("class=\"tab-btn"));
@@ -922,17 +890,9 @@ mod tests {
         let degree = create_test_degree();
         let aggregator = create_test_aggregator();
         let selected = create_test_selected_plans();
-        let dag = create_test_dag();
         let equivalences = std::collections::HashMap::new();
 
-        let ctx = DegreeReportContext::new(
-            &school,
-            &degree,
-            &aggregator,
-            &selected,
-            &dag,
-            &equivalences,
-        );
+        let ctx = DegreeReportContext::new(&school, &degree, &aggregator, &selected, &equivalences);
         assert_eq!(ctx.degree.name, "Computer Science");
         assert_eq!(ctx.school.name, "Test University");
     }

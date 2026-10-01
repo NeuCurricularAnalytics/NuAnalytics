@@ -158,6 +158,13 @@ impl WelfordAccumulator {
     }
 }
 
+/// Seed of every reservoir's own generator.
+///
+/// Fixed, so the same stream of values keeps the same sample in every process. The
+/// global `fastrand` generator this replaced is seeded from entropy, which made the
+/// quantiles of any analysis past the reservoir's capacity differ from run to run.
+const RESERVOIR_SEED: u64 = 0x5EED_0FA1_1CE5;
+
 /// Reservoir for approximate quantile computation
 ///
 /// Uses reservoir sampling to maintain a representative sample
@@ -170,6 +177,8 @@ pub struct QuantileReservoir {
     samples: Vec<f64>,
     /// Total count of values seen
     count: usize,
+    /// Chooses replacements; seeded, so sampling is reproducible.
+    rng: fastrand::Rng,
 }
 
 impl QuantileReservoir {
@@ -180,6 +189,7 @@ impl QuantileReservoir {
             capacity,
             samples: Vec::with_capacity(capacity),
             count: 0,
+            rng: fastrand::Rng::with_seed(RESERVOIR_SEED),
         }
     }
 
@@ -193,7 +203,7 @@ impl QuantileReservoir {
             self.samples.push(value);
         } else {
             // Algorithm R: replace with probability capacity/count
-            let idx = fastrand::usize(0..self.count);
+            let idx = self.rng.usize(0..self.count);
             if idx < self.capacity {
                 self.samples[idx] = value;
             }
@@ -255,7 +265,7 @@ impl QuantileReservoir {
                 self.samples.push(sample);
             } else {
                 // Probabilistically include based on relative counts
-                let idx = fastrand::usize(0..combined_count);
+                let idx = self.rng.usize(0..combined_count);
                 if idx < self.capacity {
                     self.samples[idx] = sample;
                 }
@@ -387,6 +397,27 @@ impl ExactQuantileAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_reservoir_keeps_the_same_sample_for_the_same_stream() {
+        // Past capacity, replacement is random; seeded, it is also repeatable — two
+        // reservoirs fed the same values agree exactly, in any process.
+        let fill = || {
+            let mut r = QuantileReservoir::new(100);
+            for i in 1..=5_000 {
+                r.push(f64::from(i));
+            }
+            r
+        };
+        let (a, b) = (fill(), fill());
+        assert_eq!(a.reservoir_size(), 100);
+        for p in [5.0, 25.0, 50.0, 75.0, 95.0] {
+            assert!(
+                (a.percentile(p) - b.percentile(p)).abs() < f64::EPSILON,
+                "p{p}"
+            );
+        }
+    }
 
     #[test]
     fn test_welford_basic() {

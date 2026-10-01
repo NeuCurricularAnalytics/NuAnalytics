@@ -103,7 +103,7 @@ fn expand_course_list(courses: &[String]) -> Vec<String> {
 /// as a placeholder).
 #[must_use]
 pub fn is_placeholder_course(course_key: &str) -> bool {
-    if course_key.starts_with("ELEC") {
+    if course_key.starts_with(crate::core::degree::placeholder::ELECTIVE_PREFIX) {
         return true;
     }
 
@@ -1219,7 +1219,10 @@ impl<'a> PlanIterator<'a> {
                     .sum::<f32>();
 
             let mut new_choices = plan.requirement_choices.clone();
-            new_choices.insert("_elective_placeholders".to_string(), elective_courses);
+            new_choices.insert(
+                super::plan_variant::ELECTIVE_PLACEHOLDERS_KEY.to_string(),
+                elective_courses,
+            );
 
             plan = PlanVariant::from_parts(new_courses, new_choices, total_credits);
         }

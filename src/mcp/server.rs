@@ -29,6 +29,7 @@ use crate::core::query::{
     GetDegreeMetricsRequest, GetDegreeRequest, GetLookupCodesRequest, SearchCipCodesRequest,
     SearchDegreesRequest, SearchInstitutionsRequest,
 };
+use crate::mcp::tools::view::{AnalysisView, StoredAnalysis};
 use crate::mcp::tools::{degrees as compare, import, CompareDegreesRequest, ImportDegreeRequest};
 // ============================================================================
 // MCP Server Implementation
@@ -203,7 +204,7 @@ impl NuAnalyticsMcpServer {
 
     /// Analyze a degree program YAML
     #[tool(
-        description = "Enumerate a degree's plans afresh and compute metrics: complexity, delay and credits as five-number summaries, plus curated selected_plans (shortest, longest, random samples). is_full_population says whether every plan was seen; max_plans and analysis_timeout_seconds bound the run, and tool_followups suggest a stable cutoff for large degrees.",
+        description = "A degree's plan metrics: complexity, delay and credits as five-number summaries, plus curated selected_plans (shortest, longest, random samples). A stored program is read from its stored run (variant, default full) and nothing is enumerated; any other source, or fresh=true, enumerates plans afresh, bounded by max_plans and analysis_timeout_seconds. is_full_population says whether every plan was seen, and tool_followups suggest a stable cutoff for large degrees.",
         annotations(read_only_hint = true)
     )]
     fn analyze_degree(&self, Parameters(req): Parameters<AnalyzeDegreeRequest>) -> String {
@@ -216,34 +217,75 @@ impl NuAnalyticsMcpServer {
         let analysis_timeout_seconds = req.analysis_timeout_seconds;
         let max_plans = req.max_plans;
         let target_course = req.target_course;
-        self.run_yaml_tool("analyze_degree", req.source, move |yaml, _| {
-            analyze::execute_json(
-                yaml,
-                &analyze::AnalyzeOptions {
-                    max_plans,
-                    include_courses: include_courses.as_deref(),
+        let generation = [
+            ("max_plans", max_plans.is_some()),
+            ("include_courses", include_courses.is_some()),
+            ("random_seed", random_seed.is_some()),
+            (
+                "analysis_timeout_seconds",
+                analysis_timeout_seconds.is_some(),
+            ),
+            // Never stored: where one course lands is computed during enumeration.
+            ("target_course", target_course.is_some()),
+        ];
+        self.run_analysis_tool(
+            "analyze_degree",
+            req.source,
+            &req.run,
+            &generation,
+            |view| {
+                analyze::view_json(
+                    view,
                     include_per_course_metrics,
                     include_placeholder_metrics,
-                    random_seed,
-                    analysis_timeout_seconds,
-                    target_course: target_course.as_deref(),
-                },
-            )
-        })
+                )
+            },
+            move |yaml, _| {
+                analyze::execute_json(
+                    yaml,
+                    &analyze::AnalyzeOptions {
+                        max_plans,
+                        include_courses: include_courses.as_deref(),
+                        include_per_course_metrics,
+                        include_placeholder_metrics,
+                        random_seed,
+                        analysis_timeout_seconds,
+                        target_course: target_course.as_deref(),
+                    },
+                )
+            },
+        )
     }
 
     /// Look up a single course's prerequisites, dependents, and stats
     #[tool(
-        description = "Everything about one course in a degree: credits and level, direct and transitive prerequisites, dependents, requirements naming it, equivalents, and — with include_analysis (default) — its metrics and term in each selected plan. include_analysis=false skips the analysis and is about ten times faster.",
+        description = "Everything about one course in a degree: credits and level, direct and transitive prerequisites, dependents, requirements naming it, equivalents, and — with include_analysis (default) — its metrics and term in each selected plan, from a stored program's stored run unless fresh=true. include_analysis=false skips the analysis and is about ten times faster.",
         annotations(read_only_hint = true)
     )]
     fn get_course_detail(&self, Parameters(req): Parameters<GetCourseDetailRequest>) -> String {
         let course_id = req.course_id.clone();
         let include_analysis = req.include_analysis.unwrap_or(true);
         let max_plans = req.max_plans;
-        self.run_yaml_tool("get_course_detail", req.source, move |yaml, _| {
-            course_detail::execute_json(yaml, &course_id, include_analysis, max_plans)
-        })
+        // Without the analysis nothing is enumerated, so the stored run has nothing to add.
+        if !include_analysis {
+            if req.run.variant.is_some() || req.run.fresh.is_some() {
+                return shared::bad_arguments(
+                    "variant and fresh choose the analysis, which include_analysis=false leaves out",
+                );
+            }
+            return self.run_yaml_tool("get_course_detail", req.source, move |yaml, _| {
+                course_detail::execute_json(yaml, &course_id, false, max_plans)
+            });
+        }
+        let stored_course = course_id.clone();
+        self.run_analysis_tool(
+            "get_course_detail",
+            req.source,
+            &req.run,
+            &[("max_plans", max_plans.is_some())],
+            |view| course_detail::present_json(&stored_course, view),
+            move |yaml, _| course_detail::execute_json(yaml, &course_id, true, max_plans),
+        )
     }
 
     /// Trim a degree program YAML to a single shortest-entry-path variant
@@ -273,7 +315,7 @@ impl NuAnalyticsMcpServer {
 
     /// Generate the full HTML degree report (plus optional CSV / JSONL / index artifacts)
     #[tool(
-        description = "Render the full HTML degree report, computed afresh — the report `degree analyze` writes. output_dir writes it, with plan CSVs, a JSONL summary and index.csv, and refuses to replace an existing report unless overwrite=true; without it the HTML (a few hundred KB) is returned inline.",
+        description = "Render the full HTML degree report — the report `degree analyze` writes. A stored program's comes from its stored run, the page render_stored_report renders, unless fresh=true; any other source is computed afresh. output_dir writes it, with plan CSVs, a JSONL summary and index.csv, and refuses to replace an existing report unless overwrite=true; without it the HTML (a few hundred KB) is returned inline.",
         annotations(read_only_hint = false, destructive_hint = true)
     )]
     fn render_degree_report(
@@ -290,19 +332,38 @@ impl NuAnalyticsMcpServer {
         let write_index_csv = req.write_index_csv;
         let return_html_inline = req.return_html_inline;
         let overwrite = req.overwrite.unwrap_or(false);
-        self.run_yaml_tool("render_degree_report", req.source, move |yaml, _| {
-            report::execute_json(
-                yaml,
-                max_plans,
-                include_courses.as_deref(),
-                output_dir.as_deref(),
-                write_plan_csvs,
-                write_jsonl_summary,
-                write_index_csv,
-                return_html_inline,
-                overwrite,
-            )
-        })
+        let generation = [
+            ("max_plans", max_plans.is_some()),
+            ("include_courses", include_courses.is_some()),
+        ];
+        let out = report::ReportOutput {
+            output_dir: output_dir.as_deref(),
+            write_plan_csvs,
+            write_jsonl_summary,
+            write_index_csv,
+            return_html_inline,
+            overwrite,
+        };
+        self.run_analysis_tool(
+            "render_degree_report",
+            req.source,
+            &req.run,
+            &generation,
+            |view| report::present_json(view, &out),
+            |yaml, _| {
+                report::execute_json(
+                    yaml,
+                    max_plans,
+                    include_courses.as_deref(),
+                    out.output_dir,
+                    write_plan_csvs,
+                    write_jsonl_summary,
+                    write_index_csv,
+                    return_html_inline,
+                    overwrite,
+                )
+            },
+        )
     }
 
     /// List the bundled sample degree YAMLs
@@ -337,7 +398,7 @@ impl NuAnalyticsMcpServer {
 
     /// Render the curriculum graph for one selected plan in a single call
     #[tool(
-        description = "Render one selected plan of a degree as a curriculum graph, computed afresh: choose it with plan_category, sample_index or plan_index. output_path writes the HTML to a file (refusing to replace one unless overwrite=true) instead of returning about 100 KB inline.",
+        description = "Render one selected plan of a degree as a curriculum graph — from a stored program's stored run unless fresh=true, afresh for any other source: choose it with plan_category, sample_index or plan_index. output_path writes the HTML to a file (refusing to replace one unless overwrite=true) instead of returning about 100 KB inline.",
         annotations(read_only_hint = false, destructive_hint = false)
     )]
     fn render_plan_graph(&self, Parameters(req): Parameters<RenderPlanGraphRequest>) -> String {
@@ -352,24 +413,31 @@ impl NuAnalyticsMcpServer {
         let dry_run = req.dry_run.unwrap_or(false);
         let output_path = req.output_path;
         let overwrite = req.overwrite.unwrap_or(false);
-        self.run_yaml_tool("render_plan_graph", req.source, move |yaml, _| {
-            plan_graph::execute_json(
-                yaml,
-                &plan_graph::PlanGraphOptions {
-                    plan_category: plan_category.as_deref(),
-                    sample_index,
-                    plan_index,
-                    format,
-                    max_plans,
-                    include_courses: include_courses.as_deref(),
-                    dry_run,
-                },
-                plan_graph::GraphOutput {
-                    path: output_path.as_deref(),
-                    overwrite,
-                },
-            )
-        })
+        let generation = [
+            ("max_plans", max_plans.is_some()),
+            ("include_courses", include_courses.is_some()),
+        ];
+        let opts = plan_graph::PlanGraphOptions {
+            plan_category: plan_category.as_deref(),
+            sample_index,
+            plan_index,
+            format,
+            max_plans,
+            include_courses: include_courses.as_deref(),
+            dry_run,
+        };
+        let output = plan_graph::GraphOutput {
+            path: output_path.as_deref(),
+            overwrite,
+        };
+        self.run_analysis_tool(
+            "render_plan_graph",
+            req.source,
+            &req.run,
+            &generation,
+            |view| plan_graph::present_json(view, &opts, output),
+            |yaml, _| plan_graph::execute_json(yaml, &opts, output),
+        )
     }
 
     // ── Institution tools ───────────────────────────────────────────────────
@@ -450,7 +518,7 @@ impl NuAnalyticsMcpServer {
 
     /// Compare degrees side by side
     #[tool(
-        description = "Compare degrees side by side: each source is {label?, degree | content | path}. metrics=\"fresh\" (default) enumerates each afresh; \"stored\" reads each stored program's newest run of variant, reproducible and cheap; \"none\" gives identity only. The degrees themselves are not echoed back.",
+        description = "Compare degrees side by side: each source is {label?, degree | content | path}. By default a stored program's metrics are its newest stored run of variant and any other source's are enumerated afresh; each entry's metrics_from says which. metrics=\"fresh\" enumerates every degree afresh, \"stored\" reads stored runs only, \"none\" gives identity only. The degrees themselves are not echoed back.",
         annotations(read_only_hint = true)
     )]
     fn compare_degrees(&self, Parameters(req): Parameters<CompareDegreesRequest>) -> String {
@@ -461,8 +529,18 @@ impl NuAnalyticsMcpServer {
             Ok(loaded) => loaded,
             Err(e) => return e,
         };
+        // The rule the other analysis tools follow: a stored program is read from its stored
+        // run unless the caller asks for a fresh one, so a fresh-run setting needs that ask.
+        if req.max_plans.is_some()
+            && req.metrics.is_none()
+            && loaded.iter().any(|d| d.program_key.is_some())
+        {
+            return shared::bad_arguments(
+                "max_plans shapes a fresh run, and a stored program among the sources is read from its stored run. Pass metrics=\"fresh\" to enumerate every degree afresh.",
+            );
+        }
         let stored = self.stored_run_lookup(req.variant.unwrap_or_else(|| "full".to_string()));
-        let (mode, max_plans) = (req.metrics.unwrap_or_default(), req.max_plans);
+        let (mode, max_plans) = (req.metrics, req.max_plans);
         guard_panics("compare_degrees", || {
             compare::compare_json(loaded, mode, max_plans, &stored)
         })
@@ -470,7 +548,7 @@ impl NuAnalyticsMcpServer {
 
     /// Read a stored program's analysis runs
     #[tool(
-        description = "A stored program's analysis as imported: the newest run per variant (full, trimmed) with its degree metrics, or the history with latest=false. include_plans adds the selected plans and their schedules, include_course_metrics the per-course figures. Reproducible, unlike analyze_degree, which enumerates afresh.",
+        description = "A stored program's analysis as imported: the newest run per variant (full, trimmed) with its degree metrics, or the history with latest=false. include_plans adds the selected plans and their schedules, include_course_metrics the per-course figures. analyze_degree reads the same newest run, in its own shape.",
         annotations(read_only_hint = true)
     )]
     fn get_stored_analysis(&self, Parameters(req): Parameters<GetDegreeMetricsRequest>) -> String {
@@ -545,6 +623,103 @@ impl NuAnalyticsMcpServer {
     /// Loads the degree, invokes `run` on its text and origin, and adds a `source` object to
     /// the response saying where the degree came from — and, for inline content, the
     /// `cache:` handle later calls can pass as `degree` instead of sending it again.
+    /// A stored program's stored run, when the source is a stored program and `fresh` is
+    /// not set; `None` when the tool should enumerate afresh.
+    ///
+    /// A degree pulled from the database means its stored run: its plans were enumerated
+    /// at import, and nothing already generated is generated again unless asked.
+    /// `generation` pairs each argument that shapes an enumeration with whether it was
+    /// given. A stored run's were fixed at import, so they are refused rather than
+    /// silently ignored, and a missing run is reported rather than replaced by a fresh one.
+    fn stored_analysis(
+        &self,
+        tool: &'static str,
+        source: &shared::DegreeSourceArgs,
+        run: &shared::StoredRunArgs,
+        generation: &[(&str, bool)],
+    ) -> Result<Option<(StoredAnalysis, SourceInfo)>, String> {
+        let fresh = run.fresh.unwrap_or(false);
+        let Some(reference) = source.stored_reference() else {
+            return match &run.variant {
+                Some(_) => Err(shared::bad_arguments(
+                    "variant selects a stored program's run; this source is analyzed afresh",
+                )),
+                None => Ok(None),
+            };
+        };
+        if fresh {
+            return match &run.variant {
+                Some(_) => Err(shared::bad_arguments(
+                    "variant selects a stored run, and fresh=true enumerates the program's degree instead; give one",
+                )),
+                None => Ok(None),
+            };
+        }
+        let given: Vec<&str> = generation
+            .iter()
+            .filter_map(|&(name, set)| set.then_some(name))
+            .collect();
+        if !given.is_empty() {
+            return Err(shared::bad_arguments(format_args!(
+                "{} shape a fresh run, and `{reference}` is a stored program, read from its stored run. \
+                 Pass fresh=true to enumerate it afresh with them.",
+                given.join(", ")
+            )));
+        }
+
+        let db = self.get_db(tool)?;
+        let reference = reference.to_string();
+        let variant = run.variant.clone().unwrap_or_else(|| "full".to_string());
+        let (program_key, report) = block_on(move || async move {
+            use crate::core::query::report_source::{load, LoadError};
+            let program_key =
+                crate::core::query::degrees::resolve_program_key(&db, &reference).await?;
+            match load(&db, &program_key, Some(&variant)).await {
+                Ok(report) => Ok((program_key, report)),
+                Err(LoadError::NoRun(message)) => Err(crate::core::json::coded_error(
+                    crate::core::json::error_code::SOURCE_NOT_FOUND,
+                    format_args!(
+                        "{message}. fresh=true enumerates the program's degree afresh instead."
+                    ),
+                )
+                .to_string()),
+                Err(LoadError::Failed(message)) => Err(serde_json::json!({
+                    "error": format!("reading the stored run of {program_key}: {message}"),
+                    "program_key": program_key,
+                })
+                .to_string()),
+            }
+        })?;
+        let stored = StoredAnalysis::new(report);
+        let origin = SourceInfo {
+            program_key: Some(program_key),
+            run: Some(StoredRunInfo::from(stored.run())),
+            ..SourceInfo::of("stored")
+        };
+        Ok(Some((stored, origin)))
+    }
+
+    /// Run `present` on a stored program's stored run, when [`Self::stored_analysis`]
+    /// finds one; otherwise `fresh` on the degree's text, as [`Self::run_yaml_tool`] does.
+    fn run_analysis_tool(
+        &self,
+        tool: &'static str,
+        source: shared::DegreeSourceArgs,
+        run: &shared::StoredRunArgs,
+        generation: &[(&str, bool)],
+        present: impl FnOnce(&AnalysisView<'_>) -> String,
+        fresh: impl FnOnce(&str, &SourceInfo) -> String,
+    ) -> String {
+        match self.stored_analysis(tool, &source, run, generation) {
+            Ok(Some((stored, origin))) => {
+                let raw = guard_panics(tool, || present(&stored.view()));
+                inject_source(&raw, &origin)
+            }
+            Ok(None) => self.run_yaml_tool(tool, source, fresh),
+            Err(refusal) => refusal,
+        }
+    }
+
     fn run_yaml_tool<F>(&self, tool: &'static str, args: shared::DegreeSourceArgs, run: F) -> String
     where
         F: FnOnce(&str, &SourceInfo) -> String,
@@ -791,6 +966,9 @@ struct SourceInfo {
     /// The file read, for a `file` source.
     #[serde(skip_serializing_if = "Option::is_none")]
     path: Option<String>,
+    /// The stored run read, when a stored program's analysis was read rather than run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run: Option<StoredRunInfo>,
 }
 
 impl SourceInfo {
@@ -802,6 +980,29 @@ impl SourceInfo {
             program_key: None,
             sample: None,
             path: None,
+            run: None,
+        }
+    }
+}
+
+/// Which stored run a response was read from.
+#[derive(Debug, Clone, Serialize)]
+struct StoredRunInfo {
+    run_key: String,
+    variant: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    created_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    analyzer_version: Option<String>,
+}
+
+impl From<&crate::core::query::report_source::StoredRun> for StoredRunInfo {
+    fn from(run: &crate::core::query::report_source::StoredRun) -> Self {
+        Self {
+            run_key: run.run_key.clone(),
+            variant: run.variant.clone(),
+            created_at: run.created_at.clone(),
+            analyzer_version: run.analyzer_version.clone(),
         }
     }
 }
@@ -1014,7 +1215,7 @@ const CAPABILITIES: &[Capability] = &[
     },
     Capability {
         group: "Analyze",
-        summary: "enumerate plans and compute metrics afresh, as JSON, a report or a graph",
+        summary: "plan metrics as JSON, a report or a graph: a stored program's from its stored run, anything else enumerated afresh",
         tools: &[
             "analyze_degree",
             "render_degree_report",
@@ -1076,8 +1277,8 @@ fn render_instructions(db_status: &str, serves: &dyn Fn(&str) -> bool) -> String
          A degree is passed as exactly one of degree (\"sample:<key>\", a \"cache:\" \
          handle, or a stored program_key), content (inline YAML or JSON) or path (a file); \
          the response's source says which, with a handle for reuse.\n\
-         Analyze tools enumerate plans afresh; get_stored_analysis reads the figures stored \
-         at import, which are reproducible.\n\
+         A stored program's analysis is its stored run, read and never re-run unless a tool \
+         is given fresh=true; files, content and samples are always enumerated afresh.\n\
          A failure is a protocol error whose JSON says {error: {code, message, next_steps}}.\n\
          \nTools:\n",
     );
@@ -1458,6 +1659,97 @@ mod tests {
             out["degrees"][1]["metrics"]["error"]
                 .as_str()
                 .is_some_and(|e| e.contains("stored program")),
+            "{out}"
+        );
+    }
+
+    /// One tool handler, taking its request as JSON.
+    type ToolCall<'s> = Box<dyn Fn(serde_json::Value) -> String + 's>;
+
+    /// A stored program means its stored run. Settings that shape a fresh run are refused
+    /// by name unless fresh=true — before anything is read, so no database is needed here.
+    #[test]
+    fn a_stored_program_refuses_fresh_run_settings_in_every_analysis_tool() {
+        let server = NuAnalyticsMcpServer::new();
+        let stored = "prog:1|11.0701|2025-2026|BS|test";
+        let calls: [(&str, ToolCall<'_>); 4] = [
+            (
+                "analyze_degree",
+                Box::new(|v| server.analyze_degree(Parameters(serde_json::from_value(v).unwrap()))),
+            ),
+            (
+                "render_degree_report",
+                Box::new(|v| {
+                    server.render_degree_report(Parameters(serde_json::from_value(v).unwrap()))
+                }),
+            ),
+            (
+                "render_plan_graph",
+                Box::new(|v| {
+                    server.render_plan_graph(Parameters(serde_json::from_value(v).unwrap()))
+                }),
+            ),
+            (
+                "get_course_detail",
+                Box::new(|v| {
+                    server.get_course_detail(Parameters(serde_json::from_value(v).unwrap()))
+                }),
+            ),
+        ];
+        for (tool, call) in &calls {
+            let args = |extra: serde_json::Value| {
+                let mut v = serde_json::json!({
+                    "degree": stored, "plan_category": "shortest", "course_id": "CS101"
+                });
+                v.as_object_mut()
+                    .unwrap()
+                    .extend(extra.as_object().unwrap().clone());
+                if *tool != "render_plan_graph" {
+                    v.as_object_mut().unwrap().remove("plan_category");
+                }
+                if *tool != "get_course_detail" {
+                    v.as_object_mut().unwrap().remove("course_id");
+                }
+                v
+            };
+            let out: serde_json::Value =
+                serde_json::from_str(&call(args(serde_json::json!({"max_plans": 50})))).unwrap();
+            assert_eq!(out["code"], "bad_arguments", "{tool}: {out}");
+            let message = out["error"].as_str().unwrap_or_default();
+            assert!(
+                message.contains("max_plans") && message.contains("fresh=true"),
+                "{tool}: {message}"
+            );
+
+            // No database: the stored run cannot be read, and is not replaced by a fresh one.
+            let unread: serde_json::Value =
+                serde_json::from_str(&call(args(serde_json::json!({})))).unwrap();
+            assert_eq!(unread["code"], "db_unavailable", "{tool}: {unread}");
+
+            // variant chooses a stored run: not for other sources, and not with fresh=true.
+            for extra in [
+                serde_json::json!({"degree": "sample:csu", "variant": "full"}),
+                serde_json::json!({"fresh": true, "variant": "trimmed"}),
+            ] {
+                let out: serde_json::Value = serde_json::from_str(&call(args(extra))).unwrap();
+                assert_eq!(out["code"], "bad_arguments", "{tool}: {out}");
+            }
+        }
+
+        // target_course is never stored, so it too needs fresh=true.
+        let out: serde_json::Value = serde_json::from_str(
+            &server.analyze_degree(Parameters(
+                serde_json::from_value(
+                    serde_json::json!({"degree": stored, "target_course": "CS101"}),
+                )
+                .unwrap(),
+            )),
+        )
+        .unwrap();
+        assert!(
+            out["error"]
+                .as_str()
+                .is_some_and(|m| m.contains("target_course")),
             "{out}"
         );
     }

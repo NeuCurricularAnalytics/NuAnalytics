@@ -3252,16 +3252,27 @@ async fn report_candidates(
         return Err(format!("no institution matches '{school}'"));
     }
 
-    let mut filters = QueryFilters::new().in_list("unitid", &unitids);
-    if let Some(pattern) = degree {
-        filters = filters.ilike("name", Some(pattern));
-    }
-    Ok(nu_analytics::core::json::parse_json_array(
-        &client
+    let select = |filters: QueryFilters| async move {
+        client
             .select(tables::PROGRAMS, REPORT_CANDIDATE_COLS, &filters, Some(200))
             .await
-            .map_err(|e| e.to_string())?,
-    ))
+            .map(|rows| nu_analytics::core::json::parse_json_array::<ReportCandidate>(&rows))
+            .map_err(|e| e.to_string())
+    };
+    let at_school = || QueryFilters::new().in_list("unitid", &unitids);
+    let Some(pattern) = degree.map(str::trim) else {
+        return select(at_school()).await;
+    };
+    // As `--degree` promises: an exact program key, then an exact degree id, then part of
+    // the name. A key or id is tried exactly first because as a name pattern it matches
+    // nothing — a program key is not part of any program's name.
+    for column in ["program_key", "degree_id"] {
+        let exact = select(at_school().eq(column, Some(pattern))).await?;
+        if !exact.is_empty() {
+            return Ok(exact);
+        }
+    }
+    select(at_school().ilike("name", Some(pattern))).await
 }
 
 /// Variants that actually have a stored run for `program_key`, newest first.
@@ -3349,7 +3360,7 @@ fn run_report(
         Some(&variant),
     )) {
         Ok(s) => s,
-        Err(e) => fail(&e),
+        Err(e) => fail(&e.to_string()),
     };
 
     let path = match resolve_report_path(output, &stored.program.degree.degree_id()) {

@@ -1,7 +1,6 @@
 //! Degree command handler for validating degree program YAML files
 
 use crate::args::DegreeFormat;
-use std::collections::HashMap as StdHashMap;
 
 use nu_analytics::config::Config;
 use nu_analytics::core::degree::audit::{
@@ -9,33 +8,19 @@ use nu_analytics::core::degree::audit::{
 };
 use nu_analytics::core::degree::ValidationOptions;
 use nu_analytics::core::degree::{
-    load_degree_from_json, load_degree_from_yaml, DegreeParseError, PlanGenerator,
-    PlanGeneratorConfig, PlanSelector, PlanSelectorConfig, PlanValidator, PlanValidatorConfig,
-    PlanVariant, SamplingStrategy,
+    load_degree_from_json, load_degree_from_yaml, DegreeParseError, PlanGeneratorConfig,
+    PlanValidator, PlanValidatorConfig, SamplingStrategy,
 };
-use nu_analytics::core::metrics::compute_all_metrics;
-use nu_analytics::core::models::course_graph::{CourseNode, PrerequisiteEdge, PrerequisiteType};
-use nu_analytics::core::models::{CourseGraph, School, DAG};
+use nu_analytics::core::models::{CourseGraph, School};
 use nu_analytics::core::report::degree_report::{DegreeReportContext, DegreeReportGenerator};
-use nu_analytics::core::report::inputs::{
-    build_dag_from_graph, build_equivalence_map, build_school_from_program,
-};
 use nu_analytics::core::report::plan_export::{
     export_degree_summary_jsonl, export_index_csv, export_selected_plans, PlanExportConfig,
 };
-use nu_analytics::core::report::term_scheduler::SchedulerConfig;
-use nu_analytics::core::statistics::aggregator::{AggregatorConfig, MetricsAggregator};
+use nu_analytics::core::statistics::aggregator::MetricsAggregator;
 use nu_analytics::core::{validate_degree_program, validate_degree_program_with_options};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process;
-
-/// Error-string prefix marking the `--target-course` fast path as handled.
-///
-/// `analyze_degree` prints its own output and generates no rollup, so it signals
-/// completion through the error channel; the dispatcher treats a value starting with
-/// this prefix as success rather than a failure.
-const TARGET_COURSE_DONE_SENTINEL: &str = "__target_course_done__";
 
 /// Validate a degree program YAML file
 ///
@@ -497,11 +482,11 @@ pub struct AnalyzeOptions {
     /// When set, treat the inputs as programs of one school and also emit a
     /// combined `<school>_school_report.json` rolling up degree-level metrics.
     pub school: Option<String>,
-    /// When set, compute and print earliest-semester stats for this course as
-    /// JSON to stdout. Pair with `--no-report --no-csv` for a fast query.
+    /// When set, print where this course lands across the analyzed plans as JSON on
+    /// stdout, instead of writing reports.
     pub target_course: Option<String>,
-    /// When set alongside `target_course`, write the full analysis JSON
-    /// (course complexity, plan stats, `target_course_stats`) to this path.
+    /// With `target_course`, also write the degree's report JSON here, with the
+    /// course's statistics under `analysis.target_course_stats`.
     pub metrics_out: Option<PathBuf>,
 }
 
@@ -536,7 +521,9 @@ const WORKER_ENV: &str = "NU_ANALYZE_WORKER";
 /// invocations run in-process.
 pub fn run_analyze(files: &[PathBuf], options: &AnalyzeOptions, config: &Config) {
     let in_worker = std::env::var_os(WORKER_ENV).is_some();
-    if in_worker || options.jobs <= 1 || options.school.is_some() {
+    // A `--target-course` query answers on stdout, which a worker's is not connected to.
+    if in_worker || options.jobs <= 1 || options.school.is_some() || options.target_course.is_some()
+    {
         run_analyze_inprocess(files, options, config);
         return;
     }
@@ -728,7 +715,9 @@ fn print_loaded_program(row: &StoredProgramRow) {
     let unitid = row
         .unitid
         .map_or_else(|| "unresolved".to_string(), |u| u.to_string());
-    println!(
+    // Status, not output: on stderr like the file path's "Loaded degree", so a
+    // `--target-course` answer on stdout stays parseable.
+    eprintln!(
         "✓ Loaded stored program: {} (program_key {} · unitid {unitid})",
         row.name, row.program_key
     );
@@ -968,12 +957,7 @@ fn analyze_child_flags(o: &AnalyzeOptions) -> Vec<String> {
 fn run_analyze_inprocess(files: &[PathBuf], options: &AnalyzeOptions, config: &Config) {
     let Some(school_name) = options.school.clone() else {
         run_batch(files, |path| {
-            match analyze_degree(path, options, config) {
-                Ok(_) => Ok(()),
-                // Sentinel used by --target-course fast path: not a real error.
-                Err(ref e) if e.starts_with(TARGET_COURSE_DONE_SENTINEL) => Ok(()),
-                Err(e) => Err(e),
-            }
+            analyze_degree(path, options, config).map(|_| ())
         });
         return;
     };
@@ -996,7 +980,7 @@ fn run_analyze_inprocess(files: &[PathBuf], options: &AnalyzeOptions, config: &C
             println!("=== [{}/{}] {} ===", idx + 1, total, path.display());
         }
         match analyze_degree(path, options, config) {
-            Ok(rollup) => rollups.push(rollup),
+            Ok(rollup) => rollups.extend(rollup),
             Err(e) => {
                 eprintln!("Error: {e}");
                 had_failure = true;
@@ -1311,350 +1295,36 @@ fn trim_one(
     Ok(())
 }
 
-/// Analysis context holding all data needed for degree analysis
+/// What the CLI's output layer reads from one analysis: the run's results, plus the
+/// CLI's own settings.
 struct AnalysisContext<'a> {
     program: &'a nu_analytics::core::DegreeProgram,
-    school: School,
-    dag: DAG,
+    /// The degree's course graph, cycles broken.
     graph: &'a CourseGraph,
-    gen_config: PlanGeneratorConfig,
+    school: &'a School,
+    gen_config: &'a PlanGeneratorConfig,
     /// `mean` | `median` — recorded on the analysis run so it can be reproduced.
     calc_strategy: String,
     verbose: bool,
     /// Map from course key to all equivalent courses (including itself)
-    /// Built from requirement definitions using `{A, B, C}` syntax
-    equivalences: HashMap<String, HashSet<String>>,
-    /// Courses to avoid adding as prerequisites
-    /// Built from alternatives to included courses in `select count:1` requirements
-    exclude_from_prereqs: HashSet<String>,
+    equivalences: &'a HashMap<String, HashSet<String>>,
+    /// The run's statistics reduced to what the report and exports read.
+    report_stats: &'a nu_analytics::core::report::ReportStats,
 }
 
-/// Build a set of courses to exclude from prerequisite expansion
-///
-/// Identifies courses that should be excluded when expanding prerequisites for included courses.
-/// This prevents adding conflicting prerequisite paths.
-///
-/// Excludes:
-/// 1. Alternative prerequisite paths: If MATH156 is included with prereqs `(MATH124 & MATH126) | MATH127`,
-///    we exclude the longer path (MATH124, MATH125, MATH126, etc.) and prefer the shorter (MATH127).
-/// 2. Pathway courses: Courses whose prerequisites REQUIRE excluded courses (all alternatives excluded).
-fn build_exclude_set(include_courses: &[String], graph: &CourseGraph) -> HashSet<String> {
-    let mut exclude_set = HashSet::new();
-
-    if include_courses.is_empty() {
-        return exclude_set;
-    }
-
-    let include_set: HashSet<&str> = include_courses.iter().map(String::as_str).collect();
-
-    // Phase 1: For included courses with OR-group prerequisites, exclude the non-preferred paths
-    // For example, if MATH156 is included with prereqs `(MATH124 & MATH126) | MATH127`,
-    // we exclude MATH124, MATH125, MATH126, MATH117, MATH118 (the longer path).
-    for include_course in include_courses {
-        if let Some(node) = graph.get(include_course) {
-            exclude_set.extend(find_excluded_prereq_paths(node, graph));
+impl AnalysisContext<'_> {
+    /// What the report records about this run, so it can be reproduced.
+    fn run_parameters(&self) -> nu_analytics::core::report::unified_report::RunParameters<'_> {
+        nu_analytics::core::report::unified_report::RunParameters {
+            max_plans: self.gen_config.max_plans,
+            sample_count: self.gen_config.sample_count,
+            sampling_strategy: sampling_strategy_label(&self.gen_config.sampling_strategy),
+            calc_strategy: &self.calc_strategy,
+            ignore_duplicates: self.gen_config.ignore_duplicates,
+            included_courses: &self.gen_config.include_courses,
+            random_seed: self.gen_config.random_seed,
         }
     }
-
-    // Phase 2: Expand exclusions to include "pathway" courses
-    // These are courses that REQUIRE excluded courses as prerequisites
-    // We iterate until no new exclusions are found
-    let mut changed = true;
-    while changed {
-        changed = false;
-        let current_excludes: Vec<String> = exclude_set.iter().cloned().collect();
-
-        for (course_key, node) in graph.iter() {
-            // Skip if already excluded or included
-            if exclude_set.contains(course_key) || include_set.contains(course_key.as_str()) {
-                continue;
-            }
-
-            // Check if this course REQUIRES any excluded course
-            // (i.e., all OR-alternatives for a prereq group are excluded)
-            if course_requires_excluded(node, &current_excludes, &include_set, graph) {
-                exclude_set.insert(course_key.clone());
-                changed = true;
-            }
-        }
-    }
-
-    exclude_set
-}
-
-/// Find courses that should be excluded based on included course's prereq OR-groups
-///
-/// For an included course like MATH156 with prereqs `(MATH124 & MATH126) | MATH127`,
-/// we identify the shorter path (MATH127) and exclude courses that are ONLY needed
-/// for the longer path (MATH124, MATH125, MATH126, MATH117, MATH118).
-fn find_excluded_prereq_paths(node: &CourseNode, graph: &CourseGraph) -> HashSet<String> {
-    let mut excluded = HashSet::new();
-
-    // Group prerequisites by their or_group (only care about actual OR-groups, not None)
-    let or_groups = group_prereqs_by_or_group(&node.prerequisites);
-
-    // For each OR-group, identify the shorter path and exclude courses from longer paths
-    for (group_id, edges) in or_groups {
-        // Skip non-OR-groups (required prereqs)
-        if group_id.is_none() || edges.len() <= 1 {
-            continue;
-        }
-
-        // Calculate the total prerequisite chain length for each option
-        let mut option_chains: Vec<(String, HashSet<String>)> = Vec::new();
-
-        for edge in &edges {
-            let chain = collect_all_prereqs(&edge.prerequisite, graph, &mut HashSet::new());
-            option_chains.push((edge.prerequisite.clone(), chain));
-        }
-
-        // Find the option with the shortest total chain
-        if let Some((shortest_prereq, shortest_chain)) =
-            option_chains.iter().min_by_key(|(_, chain)| chain.len())
-        {
-            // Exclude courses from other chains that aren't in the shortest chain
-            for (prereq, chain) in &option_chains {
-                if prereq != shortest_prereq {
-                    for course in chain {
-                        if !shortest_chain.contains(course) {
-                            excluded.insert(course.clone());
-                        }
-                    }
-                    // Also exclude the top-level alternative prereq itself
-                    if !shortest_chain.contains(prereq) {
-                        excluded.insert(prereq.clone());
-                    }
-                }
-            }
-        }
-    }
-
-    excluded
-}
-
-/// Collect all prerequisites transitively for a course
-fn collect_all_prereqs(
-    course: &str,
-    graph: &CourseGraph,
-    visited: &mut HashSet<String>,
-) -> HashSet<String> {
-    let mut prereqs = HashSet::new();
-
-    if visited.contains(course) {
-        return prereqs;
-    }
-    visited.insert(course.to_string());
-
-    let Some(node) = graph.get(course) else {
-        return prereqs;
-    };
-
-    for edge in &node.prerequisites {
-        prereqs.insert(edge.prerequisite.clone());
-        prereqs.extend(collect_all_prereqs(&edge.prerequisite, graph, visited));
-    }
-
-    prereqs
-}
-
-/// Check if a course requires an excluded course (no valid alternative)
-///
-/// Returns true if the course has a prerequisite OR-group where ALL options
-/// are either excluded or their prerequisites require excluded courses.
-fn course_requires_excluded(
-    node: &CourseNode,
-    exclude_set: &[String],
-    include_set: &HashSet<&str>,
-    graph: &CourseGraph,
-) -> bool {
-    let or_groups = group_prereqs_by_or_group(&node.prerequisites);
-
-    // Check each OR-group
-    for (group_id, edges) in or_groups {
-        // Handle required prerequisites (not part of any OR-group)
-        if group_id.is_none() {
-            for edge in &edges {
-                if edge.prereq_type == PrerequisiteType::Required
-                    && exclude_set.contains(&edge.prerequisite)
-                    && !include_set.contains(edge.prerequisite.as_str())
-                {
-                    return true;
-                }
-            }
-            continue;
-        }
-
-        // For OR-groups, check if ALL options are problematic
-        // (excluded directly, or their prereqs are exclusively excluded)
-        let all_problematic = edges.iter().all(|edge| {
-            let prereq = &edge.prerequisite;
-
-            // Directly excluded
-            if exclude_set.contains(prereq) && !include_set.contains(prereq.as_str()) {
-                return true;
-            }
-
-            // Check if this prereq's prerequisites eventually require excluded courses
-            prereq_chain_requires_excluded(
-                prereq,
-                exclude_set,
-                include_set,
-                graph,
-                &mut HashSet::new(),
-            )
-        });
-
-        if all_problematic && !edges.is_empty() {
-            return true;
-        }
-    }
-
-    false
-}
-
-/// Recursively check if a course's prerequisite chain requires excluded courses
-///
-/// Returns true if ALL prerequisite options for ANY OR-group lead to excluded courses.
-/// This handles transitive exclusions where a course's prerequisites eventually
-/// require an excluded course with no valid alternatives.
-fn prereq_chain_requires_excluded(
-    course: &str,
-    exclude_set: &[String],
-    include_set: &HashSet<&str>,
-    graph: &CourseGraph,
-    visited: &mut HashSet<String>,
-) -> bool {
-    // Avoid infinite loops
-    if visited.contains(course) {
-        return false;
-    }
-    visited.insert(course.to_string());
-
-    // If included, it's fine
-    if include_set.contains(course) {
-        return false;
-    }
-
-    // If excluded, this path requires excluded courses
-    if exclude_set.contains(&course.to_string()) {
-        return true;
-    }
-
-    // Check the course's prerequisites
-    let Some(node) = graph.get(course) else {
-        return false;
-    };
-
-    let or_groups = group_prereqs_by_or_group(&node.prerequisites);
-
-    // Check if any OR-group has all options leading to excluded courses
-    for (_group_id, edges) in or_groups {
-        if edges.is_empty() {
-            continue;
-        }
-
-        let all_require_excluded = edges.iter().all(|edge| {
-            prereq_chain_requires_excluded(
-                &edge.prerequisite,
-                exclude_set,
-                include_set,
-                graph,
-                visited,
-            )
-        });
-
-        if all_require_excluded {
-            return true;
-        }
-    }
-
-    false
-}
-
-/// Group prerequisite edges by their OR-group
-///
-/// Returns a map where:
-/// - `None` key contains required prerequisites (not part of any OR-group)
-/// - Numeric keys contain optional prerequisites grouped by their `or_group` ID
-fn group_prereqs_by_or_group(
-    prerequisites: &[PrerequisiteEdge],
-) -> StdHashMap<Option<usize>, Vec<&PrerequisiteEdge>> {
-    let mut or_groups: StdHashMap<Option<usize>, Vec<&PrerequisiteEdge>> = StdHashMap::new();
-    for edge in prerequisites {
-        or_groups.entry(edge.or_group).or_default().push(edge);
-    }
-    or_groups
-}
-
-/// Print `target_course_stats` for one degree and return the completion sentinel.
-///
-/// The analysis pipeline lives under `nu_analytics::mcp`, so this path needs the `mcp`
-/// feature; the `cfg(not(...))` counterpart below reports that instead of failing to
-/// compile. Returns a `String` because the caller signals "handled, stop here" through
-/// the error channel — see [`TARGET_COURSE_DONE_SENTINEL`].
-#[cfg(feature = "mcp")]
-fn emit_target_course_stats(
-    degree_path: &Path,
-    options: &AnalyzeOptions,
-    course_id: &str,
-) -> String {
-    let raw = match std::fs::read_to_string(degree_path) {
-        Ok(raw) => raw,
-        Err(e) => return format!("Failed to read {}: {e}", degree_path.display()),
-    };
-    let json_out = nu_analytics::mcp::tools::analyze::execute_json(
-        &raw,
-        &nu_analytics::mcp::tools::analyze::AnalyzeOptions {
-            max_plans: options.max_plans,
-            include_courses: options.include_courses.as_deref(),
-            target_course: Some(course_id),
-            ..Default::default()
-        },
-    );
-    // Keep the parse error: without it the caller sees the unparseable body but no
-    // statement of why it failed, which is the defect pattern this repo has already
-    // paid for once in the OAuth callback.
-    let response: serde_json::Value = serde_json::from_str(&json_out)
-        .unwrap_or_else(|e| serde_json::json!({"error": json_out, "parse_error": e.to_string()}));
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&response["target_course_stats"]).unwrap_or_default()
-    );
-    if let Some(ref out_path) = options.metrics_out {
-        // Surfaced, not swallowed: --metrics-out is an explicit request for a file, so
-        // silently not writing it is the same defect class as the discarded parse error
-        // above.
-        if let Some(parent) = out_path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                return format!(
-                    "--metrics-out: cannot create directory {}: {e}",
-                    parent.display()
-                );
-            }
-        }
-        if let Err(e) = std::fs::write(out_path, &json_out) {
-            return format!("--metrics-out: cannot write {}: {e}", out_path.display());
-        }
-    }
-    format!("{TARGET_COURSE_DONE_SENTINEL}{course_id}")
-}
-
-/// Reports that `--target-course` is unavailable in a build without the `mcp` feature.
-#[cfg(not(feature = "mcp"))]
-fn emit_target_course_stats(
-    _degree_path: &Path,
-    options: &AnalyzeOptions,
-    course_id: &str,
-) -> String {
-    let also = if options.metrics_out.is_some() {
-        " (--metrics-out is unavailable for the same reason)"
-    } else {
-        ""
-    };
-    format!(
-        "--target-course {course_id} requires the `mcp` feature, which this binary was \
-         built without{also}. Rebuild with `--features mcp`."
-    )
 }
 
 /// Run full degree analysis: generate plans, compute metrics, produce report
@@ -1670,13 +1340,7 @@ fn analyze_degree(
     degree_path: &Path,
     options: &AnalyzeOptions,
     config: &Config,
-) -> Result<nu_analytics::core::report::unified_report::ProgramRollup, String> {
-    // Fast path: --target-course prints target_course_stats and skips report
-    // generation entirely, so it returns the completion sentinel rather than a rollup.
-    if let Some(ref course_id) = options.target_course {
-        return Err(emit_target_course_stats(degree_path, options, course_id));
-    }
-
+) -> Result<Option<nu_analytics::core::report::unified_report::ProgramRollup>, String> {
     // Load and validate the degree program, then run the shared single-degree
     // analysis on it. This is the in-process, non-worker-pool seam shared with
     // the `--from-db` path (which supplies an already-loaded program).
@@ -1688,36 +1352,70 @@ fn analyze_degree(
 ///
 /// This is the shared analysis seam: [`analyze_degree`] calls it after loading a
 /// file, and the `--from-db` path calls it with a program parsed from a stored
-/// `document`. It builds the course graph (breaking cycles), generates plans,
-/// computes/aggregates metrics, validates the selected plans, writes the report
-/// + CSV outputs, prints the summary, and returns the program rollup.
+/// `document`. It runs the analysis pipeline, validates the selected plans, writes the
+/// report + CSV outputs, prints the summary, and returns the program rollup.
+///
+/// A `--target-course` query instead prints where that course lands, writes only the
+/// `--metrics-out` file if one was asked for, and returns `None`: it produces no rollup.
 fn analyze_program(
     program: &nu_analytics::core::DegreeProgram,
     options: &AnalyzeOptions,
     config: &Config,
-) -> Result<nu_analytics::core::report::unified_report::ProgramRollup, String> {
+) -> Result<Option<nu_analytics::core::report::unified_report::ProgramRollup>, String> {
+    use nu_analytics::core::degree::analysis::analyze;
     let verbose = options.verbose;
-
-    // Build course graph and handle cycles by breaking them
-    let mut graph_result = CourseGraph::from_degree_program(program);
-    if !graph_result.cycles.is_empty() {
-        if verbose {
-            eprintln!(
-                "⚠ Detected {} circular prerequisite(s), breaking cycles...",
-                graph_result.cycles.len()
-            );
-        }
-        let removed = graph_result.graph.break_cycles(&graph_result.cycles);
-        if verbose {
-            for (course, prereq) in &removed {
-                eprintln!("  Removed edge: {course} → {prereq}");
-            }
-        }
-        // Clear cycles since we broke them
-        graph_result.cycles.clear();
+    let analysis_config = analysis_config(options, config);
+    let progress_interval = (analysis_config.max_plans / 20).max(100);
+    let analysis = analyze(program.clone(), &analysis_config, &mut |event| {
+        report_analysis_event(&event, verbose, progress_interval);
+    });
+    if verbose {
+        print_selection_summary(&analysis.selected, analysis.plans_processed);
     }
 
-    // Parse sampling strategy: CLI option takes precedence over config
+    let ctx = AnalysisContext {
+        program: &analysis.program,
+        graph: &analysis.graph,
+        school: &analysis.school,
+        gen_config: &analysis.gen_config,
+        calc_strategy: options
+            .calc_strategy
+            .clone()
+            .unwrap_or_else(|| config.degree_analysis.calc_strategy.clone()),
+        verbose,
+        equivalences: &analysis.equivalences,
+        report_stats: &analysis.report_stats,
+    };
+
+    if let Some(stats) = &analysis.target_course_stats {
+        emit_target_course_stats(&ctx, &analysis, stats, options.metrics_out.as_deref())?;
+        return Ok(None);
+    }
+
+    // Validate the selected plans and report any issues
+    validate_selected_plans(&ctx, &analysis.selected);
+
+    // Generate outputs
+    generate_analysis_outputs(&ctx, options, &analysis.aggregator, &analysis.selected)?;
+
+    // Print summary
+    print_analysis_summary(&ctx, &analysis.aggregator, analysis.plans_processed);
+
+    Ok(Some(
+        nu_analytics::core::report::unified_report::ProgramRollup::from_analysis(
+            ctx.program,
+            &analysis.aggregator,
+        ),
+    ))
+}
+
+/// What `degree analyze` asks the pipeline for: each option given, otherwise the
+/// configuration's value.
+fn analysis_config<'a>(
+    options: &'a AnalyzeOptions,
+    config: &Config,
+) -> nu_analytics::core::degree::analysis::AnalysisConfig<'a> {
+    // CLI option takes precedence over config
     let sampling_strategy = options
         .sampling_strategy
         .as_ref()
@@ -1729,70 +1427,108 @@ fn analyze_program(
                 .parse::<SamplingStrategy>()
                 .unwrap_or_default()
         });
+    nu_analytics::core::degree::analysis::AnalysisConfig {
+        max_plans: options
+            .max_plans
+            .unwrap_or(config.degree_analysis.max_plans),
+        // Default is ignore_duplicates=true; --full-run disables it
+        ignore_duplicates: !options.full_run && config.degree_analysis.ignore_duplicates,
+        sample_count: options
+            .sample_plans
+            .unwrap_or(config.degree_analysis.sample_plan_count),
+        sampling_strategy,
+        include_courses: options.include_courses.clone().unwrap_or_default(),
+        // Derived from the degree itself, so the same degree always enumerates the same
+        // plans — see `default_seed_for_program`.
+        random_seed: None,
+        time_limit: None,
+        target_course: options.target_course.as_deref(),
+    }
+}
 
-    // Build equivalence map from requirements
-    let equivalences = build_equivalence_map(&program.requirements);
-
-    // Build exclude set from alternatives to included courses
-    let include_courses = options.include_courses.clone().unwrap_or_default();
-    let exclude_from_prereqs = build_exclude_set(&include_courses, &graph_result.graph);
-
-    // Build analysis context
-    let ctx = AnalysisContext {
-        program,
-        school: build_school_from_program(program),
-        dag: build_dag_from_graph(&graph_result.graph),
-        graph: &graph_result.graph,
-        calc_strategy: options
-            .calc_strategy
-            .clone()
-            .unwrap_or_else(|| config.degree_analysis.calc_strategy.clone()),
-        gen_config: PlanGeneratorConfig {
-            // Derived from the degree's own text, so the same degree always enumerates
-            // the same plans. Left unset, shuffled sampling took thread-local entropy
-            // and three runs of one degree disagreed in the third decimal — which made
-            // the corpus unreproducible and a metric backfill impossible.
-            // Blind to `fills_to_total`, which sizes credits after enumeration and must
-            // not re-sample the plans — see `default_seed_for_program`.
-            random_seed: Some(nu_analytics::core::degree::default_seed_for_program(
-                program,
-            )),
-            max_plans: options
-                .max_plans
-                .unwrap_or(config.degree_analysis.max_plans),
-            // Default is ignore_duplicates=true; --full-run disables it
-            ignore_duplicates: !options.full_run && config.degree_analysis.ignore_duplicates,
-            sample_count: options
-                .sample_plans
-                .unwrap_or(config.degree_analysis.sample_plan_count),
-            target_credits: program.degree.total_credits,
-            sampling_strategy,
-            include_courses,
-            exclude_courses: exclude_from_prereqs.iter().cloned().collect(),
-        },
-        verbose,
-        equivalences,
-        exclude_from_prereqs,
+/// Answer a `--target-course` query: print the course's term statistics as JSON, and with
+/// `--metrics-out` write the degree's report JSON — the file `degree analyze` writes as
+/// `<degree>_report.json` — with the statistics added to its `analysis` block.
+fn emit_target_course_stats(
+    ctx: &AnalysisContext<'_>,
+    analysis: &nu_analytics::core::degree::analysis::DegreeAnalysis,
+    stats: &nu_analytics::core::degree::analysis::TargetCourseStats,
+    metrics_out: Option<&Path>,
+) -> Result<(), String> {
+    use nu_analytics::core::report::unified_report::{build_degree_report, write_degree_report};
+    let stats_json = serde_json::to_value(stats)
+        .map_err(|e| format!("--target-course: cannot serialize the statistics: {e}"))?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&stats_json).unwrap_or_default()
+    );
+    let Some(out_path) = metrics_out else {
+        return Ok(());
     };
-
-    // Run plan enumeration and metrics aggregation
-    let (aggregator, selected, plans_processed) = enumerate_and_analyze_plans(&ctx);
-
-    // Validate the selected plans and report any issues
-    validate_selected_plans(&ctx, &selected);
-
-    // Generate outputs
-    generate_analysis_outputs(&ctx, options, &aggregator, &selected)?;
-
-    // Print summary
-    print_analysis_summary(&ctx, &aggregator, plans_processed);
-
-    Ok(
-        nu_analytics::core::report::unified_report::ProgramRollup::from_analysis(
-            ctx.program,
-            &aggregator,
-        ),
+    // Surfaced, not swallowed: --metrics-out is an explicit request for a file.
+    let params = ctx.run_parameters();
+    let mut report = build_degree_report(
+        ctx.program,
+        &analysis.aggregator,
+        &analysis.selected,
+        params.sampling_strategy,
+        &params,
     )
+    .map_err(|e| format!("--metrics-out: cannot build the report: {e}"))?;
+    if let Some(block) = report
+        .get_mut("analysis")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        block.insert("target_course_stats".to_string(), stats_json);
+    }
+    write_degree_report(&report, out_path)
+        .map_err(|e| format!("--metrics-out: cannot write {}: {e}", out_path.display()))
+}
+
+/// Print an analysis run's progress, when verbose — the same lines the pipeline printed
+/// itself before it moved into the library.
+fn report_analysis_event(
+    event: &nu_analytics::core::degree::analysis::AnalysisEvent<'_>,
+    verbose: bool,
+    progress_interval: usize,
+) {
+    use nu_analytics::core::degree::analysis::AnalysisEvent;
+    if !verbose {
+        return;
+    }
+    match event {
+        AnalysisEvent::CyclesBroken { cycles, removed } => {
+            eprintln!("⚠ Detected {cycles} circular prerequisite(s), breaking cycles...");
+            for (course, prereq) in *removed {
+                eprintln!("  Removed edge: {course} → {prereq}");
+            }
+        }
+        AnalysisEvent::Planning { stats, config } => {
+            eprintln!();
+            eprintln!("Plan Generation:");
+            if !config.include_courses.is_empty() {
+                eprintln!("  Included courses: {}", config.include_courses.join(", "));
+            }
+            eprintln!("  Estimated total plans: {}", stats.total_possible);
+            eprintln!("  Variable requirements: {}", stats.variable_requirements);
+            if stats.total_possible > config.max_plans {
+                eprintln!(
+                    "  ⚠ Will cap at {} plans (use --max-plans to adjust)",
+                    config.max_plans
+                );
+            }
+            eprintln!();
+            eprintln!("Processing plans...");
+        }
+        AnalysisEvent::Processed(n) => {
+            if n % progress_interval == 0 {
+                eprintln!("  Processed {n} plans...");
+            }
+        }
+        AnalysisEvent::PlanSkipped(e) => {
+            eprintln!("  Warning: Failed to compute metrics for plan: {e}");
+        }
+    }
 }
 
 /// The JSON Schema for the unified degree format, embedded at build time.
@@ -2375,190 +2111,6 @@ fn load_degree_program(
     Ok(program)
 }
 
-/// Enumerate all plans and compute aggregated metrics
-fn enumerate_and_analyze_plans(
-    ctx: &AnalysisContext<'_>,
-) -> (
-    MetricsAggregator,
-    nu_analytics::core::degree::SelectedPlans,
-    usize,
-) {
-    // Create plan generator
-    let generator = PlanGenerator::new(
-        &ctx.program.requirements,
-        &ctx.program.courses,
-        ctx.gen_config.clone(),
-    );
-    let stats = generator.get_stats();
-
-    if ctx.verbose {
-        eprintln!();
-        eprintln!("Plan Generation:");
-        if !ctx.gen_config.include_courses.is_empty() {
-            eprintln!(
-                "  Included courses: {}",
-                ctx.gen_config.include_courses.join(", ")
-            );
-        }
-        eprintln!("  Estimated total plans: {}", stats.total_possible);
-        eprintln!("  Variable requirements: {}", stats.variable_requirements);
-        if stats.total_possible > ctx.gen_config.max_plans {
-            eprintln!(
-                "  ⚠ Will cap at {} plans (use --max-plans to adjust)",
-                ctx.gen_config.max_plans
-            );
-        }
-    }
-
-    // Configure metrics aggregation
-    let agg_config = AggregatorConfig {
-        reservoir_size: 1000,
-        track_per_course: true,
-        exact_mode: stats.total_possible <= 10000,
-    };
-
-    // Configure plan selection. Seeded like enumeration, so the Random Sample plans are the
-    // same in every run of the same degree (and the same ones the MCP picks); unseeded,
-    // they drew from entropy. Stored runs keep their plans, so only fresh runs see this.
-    let selector_config = PlanSelectorConfig {
-        sample_count: ctx.gen_config.sample_count,
-        scheduler_config: SchedulerConfig::default(),
-        random_seed: ctx.gen_config.random_seed,
-        ..Default::default()
-    };
-
-    // Initialize aggregator and selector
-    let mut aggregator = MetricsAggregator::new(agg_config);
-    let mut selector = PlanSelector::new(&ctx.school, &ctx.dag, selector_config);
-
-    if ctx.verbose {
-        eprintln!();
-        eprintln!("Processing plans...");
-    }
-
-    // Process plans
-    let plans_processed = process_plan_variants(ctx, &generator, &mut aggregator, &mut selector);
-
-    let selected = selector.into_selected_plans();
-
-    if ctx.verbose {
-        print_selection_summary(&selected, plans_processed);
-    }
-
-    (aggregator, selected, plans_processed)
-}
-
-/// Process all plan variants, computing metrics and updating aggregator/selector
-fn process_plan_variants(
-    ctx: &AnalysisContext<'_>,
-    generator: &PlanGenerator<'_>,
-    aggregator: &mut MetricsAggregator,
-    selector: &mut PlanSelector<'_>,
-) -> usize {
-    let mut plans_processed = 0;
-    let mut seen_fingerprints = HashSet::new();
-    let progress_interval = (ctx.gen_config.max_plans / 20).max(100);
-    // Same set for every plan, so build it once.
-    let include_set: HashSet<String> = ctx.gen_config.include_courses.iter().cloned().collect();
-    // Requirements marked at conversion as existing only to reach the total. Read from the
-    // document's flag, never inferred here — see `core::degree::fill_electives`.
-    let fill_ids =
-        nu_analytics::core::degree::fill_electives::fill_requirement_ids(&ctx.program.requirements);
-
-    for variant in generator.generate() {
-        if plans_processed >= ctx.gen_config.max_plans {
-            break;
-        }
-
-        // Skip duplicates if configured
-        if ctx.gen_config.ignore_duplicates {
-            let fp = variant.fingerprint();
-            if seen_fingerprints.contains(&fp) {
-                continue;
-            }
-            seen_fingerprints.insert(fp);
-        }
-
-        // Expand courses to include all prerequisites
-        let mut expanded_courses = expand_courses_with_prerequisites(
-            &variant.courses,
-            ctx.graph,
-            &ctx.equivalences,
-            &ctx.exclude_from_prereqs,
-            &include_set,
-        );
-
-        // Size fill-to-total blocks to this plan. Done *before* the DAG and metrics so all
-        // three — metrics, credits and schedule — describe the same course list; doing it
-        // later would leave complexity counting placeholders the plan no longer contains.
-        let mut fill: Option<nu_analytics::core::degree::fill_electives::FillResize> = None;
-        if let Some(target) = ctx.gen_config.target_credits {
-            #[allow(clippy::cast_precision_loss)] // target credits < 1000
-            if let Some(resize) = nu_analytics::core::degree::fill_electives::shrink_fill_blocks(
-                &expanded_courses,
-                &variant.requirement_choices,
-                &fill_ids,
-                target as f32,
-                |c| {
-                    ctx.school
-                        .get_course(c)
-                        .map_or_else(|| placeholder_credits(c), |co| co.credit_hours)
-                },
-                |c| ctx.school.get_course(c).is_some(),
-                |c| c.starts_with("ELEC"),
-            ) {
-                expanded_courses.clone_from(&resize.courses);
-                fill = Some(resize);
-            }
-        }
-
-        // The final plan first — the `ELEC` filler re-fitted to the expanded course list —
-        // and only then its DAG and metrics. The other way round, metrics counted the
-        // generator's draft filler: a draft a credit short got an `ELEC` that prerequisite
-        // expansion then made unnecessary, so the scheduled plan lacked a placeholder that
-        // its complexity still included (Binghamton: 126 credits on target, complexity 331
-        // for a plan whose own courses sum to 330).
-        let expanded_variant = create_expanded_variant(
-            &variant,
-            &expanded_courses,
-            &ctx.school,
-            ctx.gen_config.target_credits,
-            fill.as_ref(),
-        );
-
-        let plan_dag = nu_analytics::core::degree::build_plan_dag(
-            &expanded_variant.courses,
-            ctx.graph,
-            &ctx.equivalences,
-            &include_set,
-        );
-        let course_metrics = match compute_all_metrics(&plan_dag) {
-            Ok(metrics) => metrics,
-            Err(e) => {
-                if ctx.verbose {
-                    eprintln!("  Warning: Failed to compute metrics for plan: {e}");
-                }
-                continue;
-            }
-        };
-
-        // Use the variant's total_credits which includes elective placeholders
-        aggregator.add_plan(&course_metrics, f64::from(expanded_variant.total_credits));
-
-        // Update plan selection
-        selector.process_plan(&expanded_variant, &course_metrics, &plan_dag);
-
-        plans_processed += 1;
-
-        // Progress reporting
-        if ctx.verbose && plans_processed % progress_interval == 0 {
-            eprintln!("  Processed {plans_processed} plans...");
-        }
-    }
-
-    plans_processed
-}
-
 /// Print summary of selected plans
 fn print_selection_summary(
     selected: &nu_analytics::core::degree::SelectedPlans,
@@ -2603,7 +2155,7 @@ fn generate_analysis_outputs(
 
     // Generate HTML report
     if !options.no_report {
-        let report_path = generate_html_report(ctx, options, aggregator, selected)?;
+        let report_path = generate_html_report(ctx, options, selected)?;
         outputs_generated.push(format!("Report: {}", report_path.display()));
     }
 
@@ -2622,9 +2174,9 @@ fn generate_analysis_outputs(
 
         // Export degree summary JSONL
         match export_degree_summary_jsonl(
-            &ctx.school,
+            ctx.school,
             &ctx.program.degree,
-            aggregator,
+            ctx.report_stats,
             selected,
             &metrics_dir,
         ) {
@@ -2638,9 +2190,9 @@ fn generate_analysis_outputs(
 
         // Export to index CSV for multi-degree analysis
         match export_index_csv(
-            &ctx.school,
+            ctx.school,
             &ctx.program.degree,
-            aggregator,
+            ctx.report_stats,
             selected,
             &metrics_dir,
         ) {
@@ -2655,21 +2207,12 @@ fn generate_analysis_outputs(
         // Unified metrics-rich report JSON (the whole degree structure plus
         // degree- and course-level metrics) for downstream viz/DB. Grouped with
         // the other metrics-dir exports, so `--no-csv` suppresses it too.
-        let sample_type = sampling_strategy_label(&ctx.gen_config.sampling_strategy);
-        let run_params = nu_analytics::core::report::unified_report::RunParameters {
-            max_plans: ctx.gen_config.max_plans,
-            sample_count: ctx.gen_config.sample_count,
-            sampling_strategy: sample_type,
-            calc_strategy: &ctx.calc_strategy,
-            ignore_duplicates: ctx.gen_config.ignore_duplicates,
-            included_courses: &ctx.gen_config.include_courses,
-            random_seed: ctx.gen_config.random_seed,
-        };
+        let run_params = ctx.run_parameters();
         match nu_analytics::core::report::unified_report::export_degree_report_json(
             ctx.program,
             aggregator,
             selected,
-            sample_type,
+            run_params.sampling_strategy,
             &run_params,
             &metrics_dir,
         ) {
@@ -2707,7 +2250,6 @@ const fn sampling_strategy_label(strategy: &SamplingStrategy) -> &'static str {
 fn generate_html_report(
     ctx: &AnalysisContext<'_>,
     options: &AnalyzeOptions,
-    aggregator: &MetricsAggregator,
     selected: &nu_analytics::core::degree::SelectedPlans,
 ) -> Result<std::path::PathBuf, String> {
     let report_dir = options
@@ -2732,14 +2274,12 @@ fn generate_html_report(
         eprintln!("Generating HTML report: {}", report_path.display());
     }
 
-    let stats = nu_analytics::core::report::ReportStats::from_aggregator(aggregator);
     let report_ctx = DegreeReportContext::new(
-        &ctx.school,
+        ctx.school,
         &ctx.program.degree,
-        &stats,
+        ctx.report_stats,
         selected,
-        &ctx.dag,
-        &ctx.equivalences,
+        ctx.equivalences,
     );
     let generator = DegreeReportGenerator::new();
     generator
@@ -2769,7 +2309,7 @@ fn export_csv_files(
         eprintln!("Exporting CSV files to: {}", export_config.base_dir);
     }
 
-    export_selected_plans(&ctx.school, &ctx.program.degree, selected, &export_config)
+    export_selected_plans(ctx.school, &ctx.program.degree, selected, &export_config)
         .map_err(|e| format!("Failed to export CSV files: {e}"))
 }
 
@@ -2847,358 +2387,6 @@ fn validate_selected_plans(
     }
 }
 
-/// Expand a plan's courses to include all required prerequisites
-///
-/// For each course in the plan, finds the minimum prerequisite chain and adds
-/// any missing prerequisites to the course list. This ensures the plan is
-/// complete and can be properly scheduled.
-///
-/// Uses a two-phase approach:
-/// 1. First pass: Sort courses by prerequisite depth (deepest first) so courses
-///    that need prerequisites are processed after their potential prereqs are known
-/// 2. Second pass: Remove redundant prerequisites where an alternative already exists
-///
-/// This prevents adding MATH117 for STAT301 when MATH127 (needed by MATH156)
-/// would also satisfy STAT301's prerequisite.
-///
-/// Uses the equivalence map to check if a prerequisite is satisfied by an
-/// equivalent course already in the plan.
-///
-/// Uses the exclude set to avoid adding courses that are alternatives to included
-/// courses (e.g., don't add MATH160 if user included MATH156 and they're alternatives).
-fn expand_courses_with_prerequisites(
-    courses: &[String],
-    graph: &CourseGraph,
-    equivalences: &HashMap<String, HashSet<String>>,
-    exclude_from_prereqs: &HashSet<String>,
-    protected_courses: &HashSet<String>,
-) -> Vec<String> {
-    // Phase 1: Sort courses by prerequisite depth (deepest chains first)
-    // This ensures courses like MATH156 (which needs MATH127) are processed
-    // before courses like STAT301 (which can use MATH127 as an alternative)
-    let mut sorted_courses: Vec<(String, usize)> = courses
-        .iter()
-        .map(|c| {
-            let depth = graph.min_prerequisite_depth(c).unwrap_or(0);
-            (c.clone(), depth)
-        })
-        .collect();
-    sorted_courses.sort_by_key(|(_, depth)| std::cmp::Reverse(*depth));
-
-    let mut expanded: HashSet<String> = courses.iter().cloned().collect();
-    let mut to_process: Vec<String> = sorted_courses.into_iter().map(|(c, _)| c).collect();
-
-    while let Some(course_key) = to_process.pop() {
-        // Get the minimum prerequisite chain, preferring courses already in the plan
-        // and avoiding excluded courses
-        if let Some(prereq_chain) = graph.min_prerequisite_chain_with_exclusions(
-            &course_key,
-            &expanded,
-            exclude_from_prereqs,
-        ) {
-            for prereq in prereq_chain {
-                // Skip excluded courses (alternatives to included courses)
-                if exclude_from_prereqs.contains(&prereq) {
-                    continue;
-                }
-
-                // Check if this prerequisite is satisfied by an equivalent course
-                let has_equivalent = equivalences
-                    .get(&prereq)
-                    .is_some_and(|equivs| equivs.iter().any(|e| expanded.contains(e)));
-
-                if !has_equivalent && !expanded.contains(&prereq) {
-                    expanded.insert(prereq.clone());
-                    to_process.push(prereq); // Process this prereq's chain too
-                }
-            }
-        }
-    }
-
-    // Phase 2: Remove redundant prerequisites
-    // A prerequisite is redundant if:
-    // - It was added as an OR-alternative for some course
-    // - Another course in the plan would also satisfy that OR requirement
-    // - OR an equivalent course is already in the plan
-    // BUT only courses ADDED during expansion (Phase 1) may be pruned. Courses
-    // from the original plan are degree requirements (e.g. a `type: all` core
-    // course) and must never be dropped here — even when they also happen to be
-    // an OR-prerequisite alternative for some elective. Without this guard a
-    // required course like CS320 ("Algorithms"), which is also an OR option of
-    // an elective's prereq (`CS320 | CS370`), gets deleted whenever the sibling
-    // CS370 is present, silently dropping it from generated plans.
-    // `protected_courses` additionally pins user --include courses.
-    let original_courses: HashSet<&str> = courses.iter().map(String::as_str).collect();
-    let expanded_clone = expanded.clone();
-    let redundant = find_redundant_prerequisites(&expanded_clone, graph, equivalences);
-    for course in redundant {
-        if !protected_courses.contains(&course) && !original_courses.contains(course.as_str()) {
-            expanded.remove(&course);
-        }
-    }
-
-    let mut result: Vec<String> = expanded.into_iter().collect();
-    result.sort();
-    result
-}
-
-/// Find prerequisites that are redundant because an alternative already exists
-///
-/// For each course in the plan, checks if any of its OR-prerequisites could be
-/// satisfied by a different course already in the plan. If so, and the current
-/// prerequisite is ONLY used for this OR-group (not required elsewhere), it's redundant.
-///
-/// Also considers equivalent courses: if MATH241 is a prereq but MATH215 (equivalent)
-/// is in the plan, MATH241 is redundant.
-fn find_redundant_prerequisites(
-    courses: &HashSet<String>,
-    graph: &CourseGraph,
-    equivalences: &HashMap<String, HashSet<String>>,
-) -> Vec<String> {
-    let mut redundant = Vec::new();
-
-    // Build a map of which courses ACTUALLY depend on which prerequisites
-    // Only count a prerequisite as "used" if no other option in its OR-group is in the plan
-    let mut prereq_usage: HashMap<String, Vec<String>> = HashMap::new();
-
-    for course_key in courses {
-        if let Some(node) = graph.get(course_key) {
-            // Group prerequisites by OR-group
-            let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
-            let mut required_prereqs: Vec<&str> = Vec::new();
-
-            for edge in &node.prerequisites {
-                if edge.prereq_type
-                    == nu_analytics::core::models::course_graph::PrerequisiteType::Required
-                {
-                    if courses.contains(&edge.prerequisite) {
-                        required_prereqs.push(&edge.prerequisite);
-                    }
-                } else if let Some(group) = edge.or_group {
-                    or_groups.entry(group).or_default().push(&edge.prerequisite);
-                }
-            }
-
-            // Required prereqs are always used
-            for prereq in required_prereqs {
-                prereq_usage
-                    .entry(prereq.to_string())
-                    .or_default()
-                    .push(course_key.clone());
-            }
-
-            // For OR-groups, only mark as "used" if this is the ONLY option in the plan
-            for (_group, options) in or_groups {
-                let in_plan: Vec<&str> = options
-                    .iter()
-                    .filter(|&&opt| courses.contains(opt))
-                    .copied()
-                    .collect();
-
-                if in_plan.len() == 1 {
-                    // Only one option satisfies this - it's truly needed
-                    prereq_usage
-                        .entry(in_plan[0].to_string())
-                        .or_default()
-                        .push(course_key.clone());
-                }
-                // If multiple options are in plan, we'll handle redundancy below
-            }
-        }
-    }
-
-    // Check for courses that are redundant because an equivalent is in the plan
-    for course in courses {
-        if let Some(equivs) = equivalences.get(course) {
-            for equiv in equivs {
-                if equiv != course && courses.contains(equiv) {
-                    let usages = prereq_usage.get(course);
-                    if usages.is_none_or(std::vec::Vec::is_empty) {
-                        let equiv_satisfies_same = prereq_usage
-                            .get(equiv)
-                            .is_some_and(|equiv_usages| !equiv_usages.is_empty());
-
-                        if equiv_satisfies_same {
-                            redundant.push(course.clone());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // For each course, check its OR-groups for redundant prerequisites
-    for course_key in courses {
-        if let Some(node) = graph.get(course_key) {
-            // Group prerequisites by OR-group
-            let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
-            for edge in &node.prerequisites {
-                if let Some(group) = edge.or_group {
-                    if edge.prereq_type
-                        == nu_analytics::core::models::course_graph::PrerequisiteType::Optional
-                    {
-                        or_groups.entry(group).or_default().push(&edge.prerequisite);
-                    }
-                }
-            }
-
-            // For each OR-group, check if we have multiple options in the plan
-            for (_group, options) in or_groups {
-                let in_plan: Vec<&str> = options
-                    .iter()
-                    .filter(|&&opt| courses.contains(opt))
-                    .copied()
-                    .collect();
-
-                if in_plan.len() > 1 {
-                    // Multiple options satisfy this OR-group - find redundant ones
-                    // A course is redundant if another course in this OR-group
-                    // is actually NEEDED by other courses (has real dependents)
-                    for &option in &in_plan {
-                        let option_usage = prereq_usage.get(option).map_or(0, Vec::len);
-
-                        // Check if another option has MORE dependents (is more useful)
-                        let better_exists = in_plan.iter().any(|&other| {
-                            if other == option {
-                                return false;
-                            }
-                            let other_usage = prereq_usage.get(other).map_or(0, Vec::len);
-                            other_usage > option_usage
-                        });
-
-                        // If this option has no unique dependents and a better option exists
-                        if option_usage == 0 && better_exists {
-                            redundant.push(option.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    redundant
-}
-
-/// Create an expanded plan variant with additional prerequisite courses
-///
-/// Takes the original variant and creates a new one with the expanded course list,
-/// preserving requirement choice metadata. Re-fits the `ELEC` filler so the plan reaches
-/// the target credits: exactly for an integral shortfall, overshooting by under one credit
-/// for a fractional one, and with no filler at all when real courses already reach it.
-///
-/// # Arguments
-/// * `original` - The original plan variant before prerequisite expansion
-/// * `expanded_courses` - All courses including added prerequisites
-/// * `school` - School data for credit lookup
-/// * `target_credits` - Target total credits for the degree
-/// * `fill` - How fill-to-total blocks were resized for this plan, if any; its removed
-///   and added placeholders are applied to the requirement choices
-fn create_expanded_variant(
-    original: &PlanVariant,
-    expanded_courses: &[String],
-    school: &School,
-    target_credits: Option<u32>,
-    fill: Option<&nu_analytics::core::degree::fill_electives::FillResize>,
-) -> PlanVariant {
-    let mut new_choices = original.requirement_choices.clone();
-    // Placeholders a fill-to-total block gave up for this plan. Dropping them from the
-    // choices too keeps the requirement breakdown in step with the courses actually
-    // scheduled, rather than listing placeholders the plan no longer contains.
-    if let Some(fill) = fill {
-        for chosen in new_choices.values_mut() {
-            chosen.retain(|c| !fill.removed.contains(c));
-        }
-        for (id, fresh) in &fill.added {
-            new_choices
-                .entry(id.clone())
-                .or_default()
-                .extend(fresh.iter().cloned());
-        }
-    }
-
-    // Find courses that were added (prerequisites not in original plan)
-    let original_set: HashSet<&str> = original.courses.iter().map(String::as_str).collect();
-    let added_prereqs: Vec<String> = expanded_courses
-        .iter()
-        .filter(|c| !original_set.contains(c.as_str()))
-        .cloned()
-        .collect();
-
-    // Add prerequisites as a special requirement
-    if !added_prereqs.is_empty() {
-        new_choices.insert("_prerequisites".to_string(), added_prereqs);
-    }
-
-    // Calculate actual credits from non-elective courses
-    let non_elective_credits: f32 = expanded_courses
-        .iter()
-        .filter(|c| !c.starts_with("ELEC"))
-        .map(|c| {
-            school
-                .get_course(c)
-                .map_or_else(|| placeholder_credits(c), |course| course.credit_hours)
-        })
-        .sum();
-
-    // Adjust electives if we have a target
-    #[allow(clippy::option_if_let_else)] // More readable with if-let here
-    #[allow(clippy::cast_precision_loss)] // Safe: target credits < 1000
-    let final_courses = if let Some(target) = target_credits {
-        let target_f32 = target as f32;
-        if non_elective_credits >= target_f32 {
-            // Already at or over target - remove all electives
-            new_choices.remove("_elective_placeholders");
-            expanded_courses
-                .iter()
-                .filter(|c| !c.starts_with("ELEC"))
-                .cloned()
-                .collect()
-        } else {
-            // Need some electives - calculate exactly how many
-            let elective_credits_needed = target_f32 - non_elective_credits;
-            let new_electives = nu_analytics::core::degree::placeholder::elective_placeholders(
-                elective_credits_needed,
-            );
-
-            // Replace elective placeholders with exact amount needed
-            if new_electives.is_empty() {
-                new_choices.remove("_elective_placeholders");
-            } else {
-                new_choices.insert("_elective_placeholders".to_string(), new_electives.clone());
-            }
-
-            // Build final course list with new electives
-            let mut courses: Vec<String> = expanded_courses
-                .iter()
-                .filter(|c| !c.starts_with("ELEC"))
-                .cloned()
-                .collect();
-            courses.extend(new_electives);
-            courses.sort();
-            courses
-        }
-    } else {
-        expanded_courses.to_vec()
-    };
-
-    // Calculate final total credits
-    let total_credits: f32 = final_courses
-        .iter()
-        .map(|c| {
-            school
-                .get_course(c)
-                .map_or_else(|| placeholder_credits(c), |course| course.credit_hours)
-        })
-        .sum();
-
-    PlanVariant::from_parts(final_courses, new_choices, total_credits)
-}
-
-/// Credits of a placeholder course, from its name. See `core::degree::placeholder`.
-fn placeholder_credits(course_key: &str) -> f32 {
-    nu_analytics::core::degree::placeholder::placeholder_credits(course_key)
-}
-
 /// Print a separator between sections
 fn print_separator() {
     println!();
@@ -3234,73 +2422,6 @@ courses:
             allow_unmatched_patterns: true,
         };
         assert_eq!(validate_degree(&path, allowed, false), Ok(()));
-    }
-
-    /// Regression: a required course that is ALSO an OR-prerequisite alternative
-    /// for another course must survive Phase-2 redundancy pruning in
-    /// `expand_courses_with_prerequisites`. This mirrors the CSU bug where CS320
-    /// (a `type: all` core course, and the `CS320 | CS370` OR-prereq of an
-    /// elective) was silently dropped from generated plans whenever its OR
-    /// sibling CS370 was present — only courses ADDED during expansion may be
-    /// pruned, never the plan's own required courses.
-    #[test]
-    fn test_expand_preserves_required_or_alternative() {
-        let yaml = r#"
-degree:
-  id: regress-or-alt
-  institution: T
-  program: T
-  total_credits: 12
-  gpa_minimum: 2.0
-requirements:
-  core:
-    name: Core
-    type: all
-    category: major
-    courses: [COR101, COR102]
-  upper:
-    name: Upper
-    type: all
-    category: major
-    courses: [UPP301, UPP401]
-courses:
-  COR101: {title: A, prefix: COR, number: "101", credits: 3}
-  COR102: {title: B, prefix: COR, number: "102", credits: 3}
-  UPP301: {title: X, prefix: UPP, number: "301", credits: 3, prerequisites_raw: "COR101 | COR102"}
-  UPP401: {title: Y, prefix: UPP, number: "401", credits: 3, prerequisites_raw: "COR101"}
-"#;
-        let tmp = tempfile::TempDir::new().expect("create tempdir");
-        let path = tmp.path().join("degree.yaml");
-        std::fs::write(&path, yaml).expect("write temp yaml");
-        let program = load_degree_from_yaml(&path).expect("parse degree");
-
-        let graph = CourseGraph::from_degree_program(&program).graph;
-        let equivalences = HashMap::new();
-        let exclude = HashSet::new();
-        let protected = HashSet::new();
-        // The plan as the generator produces it: both required core courses plus
-        // the two required upper courses.
-        let plan = vec![
-            "COR101".to_string(),
-            "COR102".to_string(),
-            "UPP301".to_string(),
-            "UPP401".to_string(),
-        ];
-        let expanded =
-            expand_courses_with_prerequisites(&plan, &graph, &equivalences, &exclude, &protected);
-
-        // COR102 is an OR-alternative of UPP301's `COR101 | COR102` prereq with no
-        // other dependents, while COR101 is independently required by UPP401 — so
-        // pre-fix COR102 was pruned as "redundant". It is a hard requirement and
-        // must survive expansion.
-        assert!(
-            expanded.contains(&"COR102".to_string()),
-            "required type:all course COR102 was dropped as a redundant OR-prereq: {expanded:?}"
-        );
-        assert!(
-            expanded.contains(&"COR101".to_string()),
-            "required core course COR101 must survive expansion: {expanded:?}"
-        );
     }
 
     #[test]

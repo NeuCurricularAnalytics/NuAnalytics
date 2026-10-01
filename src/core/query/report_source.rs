@@ -60,6 +60,12 @@ pub struct StoredRun {
     pub analyzer_version: Option<String>,
     /// Plans the run enumerated.
     pub variations_run: Option<i64>,
+    /// The plan cap the run was given.
+    pub max_plans: Option<i64>,
+    /// The seed the run enumerated with, as stored (a `u64`'s digits).
+    pub random_seed: Option<String>,
+    /// `sequential` | `shuffled` | `stratified`.
+    pub sampling_strategy: Option<String>,
 }
 
 /// Everything needed to render a report for one stored program.
@@ -84,18 +90,34 @@ impl StoredReport {
     /// # Errors
     /// Returns the renderer's message when the report template cannot be filled.
     pub fn render_html(&self) -> Result<String, String> {
-        let (school, dag, equivalences) = build_report_inputs(&self.program);
+        let (school, equivalences) = build_report_inputs(&self.program);
         let ctx = DegreeReportContext::new(
             &school,
             &self.program.degree,
             &self.stats,
             &self.selected,
-            &dag,
             &equivalences,
         );
         DegreeReportGenerator::new()
             .render(&ctx)
             .map_err(|e| format!("could not render the report: {e}"))
+    }
+}
+
+/// Why a stored run could not be loaded.
+#[derive(Debug)]
+pub enum LoadError {
+    /// The backend answered: no run of that variant is stored for the program.
+    NoRun(String),
+    /// The backend failed, or what it returned could not be used.
+    Failed(String),
+}
+
+impl std::fmt::Display for LoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoRun(message) | Self::Failed(message) => f.write_str(message),
+        }
     }
 }
 
@@ -123,7 +145,13 @@ struct RunRow {
     created_at: Option<String>,
     analyzer_version: Option<String>,
     variations_run: Option<i64>,
+    max_plans: Option<i64>,
+    random_seed: Option<String>,
+    sampling_strategy: Option<String>,
     degree_metrics: Option<serde_json::Value>,
+    /// The degree the run analyzed, when it is not the program's own document — a
+    /// trimmed run's trimmed degree. `NULL` for full runs.
+    analyzed_document: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -308,18 +336,36 @@ fn selected_plans_from_rows(rows: &[PlanRow], total_plans_seen: usize) -> Select
 // ============================================================================
 
 /// Columns needed from `analysis_runs`.
-const RUN_COLS: &str = "run_key,variant,created_at,analyzer_version,variations_run,degree_metrics";
+const RUN_COLS: &str = "run_key,variant,created_at,analyzer_version,variations_run,max_plans,\
+                        random_seed,sampling_strategy,degree_metrics,analyzed_document";
 
 /// Load the newest stored run for `program_key`, optionally pinned to one `variant`.
 ///
 /// # Errors
-/// Returns a human-readable message when the backend fails, when no run matches, or when
-/// the stored document cannot be parsed back into a degree.
+/// [`LoadError::NoRun`] when no run matches; [`LoadError::Failed`] when the backend fails
+/// or the stored rows cannot be read back into a degree and its statistics.
 pub async fn load(
     client: &Arc<DbClient>,
     program_key: &str,
     variant: Option<&str>,
-) -> Result<StoredReport, String> {
+) -> Result<StoredReport, LoadError> {
+    load_run(client, program_key, variant)
+        .await?
+        .ok_or_else(|| {
+            LoadError::NoRun(variant.map_or_else(
+                || format!("no analysis run stored for {program_key}"),
+                |v| format!("no `{v}` analysis run stored for {program_key}"),
+            ))
+        })
+}
+
+/// [`load`], with "no such run" as `None`.
+async fn load_run(
+    client: &Arc<DbClient>,
+    program_key: &str,
+    variant: Option<&str>,
+) -> Result<Option<StoredReport>, LoadError> {
+    let failed = LoadError::Failed;
     let filters = QueryFilters::new()
         .eq("program_key", Some(program_key))
         .eq("variant", variant)
@@ -328,21 +374,25 @@ pub async fn load(
         &client
             .select(tables::ANALYSIS_RUNS, RUN_COLS, &filters, Some(1))
             .await
-            .map_err(|e| e.to_string())?,
+            .map_err(|e| failed(e.to_string()))?,
     );
-    let run = runs.into_iter().next().ok_or_else(|| {
-        variant.map_or_else(
-            || format!("no analysis run stored for {program_key}"),
-            |v| format!("no `{v}` analysis run stored for {program_key}"),
-        )
-    })?;
+    let Some(run) = runs.into_iter().next() else {
+        return Ok(None);
+    };
 
-    let program = load_program(client, program_key).await?;
-    let stats = load_stats(client, &run).await?;
-    let plans = load_plans(client, &run.run_key).await?;
+    // The degree the run analyzed: a trimmed run's statistics describe the trimmed degree,
+    // and read against the program's full document they would sit beside courses the run
+    // never saw.
+    let program = match &run.analyzed_document {
+        Some(document) => program_from_document(document, program_key),
+        None => load_program(client, program_key).await,
+    }
+    .map_err(failed)?;
+    let stats = load_stats(client, &run).await.map_err(failed)?;
+    let plans = load_plans(client, &run.run_key).await.map_err(failed)?;
 
     let total_plans_seen = usize::try_from(run.variations_run.unwrap_or(0)).unwrap_or(0);
-    Ok(StoredReport {
+    Ok(Some(StoredReport {
         program,
         stats,
         selected: selected_plans_from_rows(&plans, total_plans_seen),
@@ -352,8 +402,11 @@ pub async fn load(
             created_at: run.created_at,
             analyzer_version: run.analyzer_version,
             variations_run: run.variations_run,
+            max_plans: run.max_plans,
+            random_seed: run.random_seed,
+            sampling_strategy: run.sampling_strategy,
         },
-    })
+    }))
 }
 
 /// Resolve `degree` — a `program_key`, or a `degree_id` naming one program — and render
@@ -372,7 +425,9 @@ pub async fn render_reference(
     let failed = |message: String| {
         serde_json::json!({ "error": message, "program_key": program_key }).to_string()
     };
-    let stored = load(client, &program_key, variant).await.map_err(failed)?;
+    let stored = load(client, &program_key, variant)
+        .await
+        .map_err(|e| failed(e.to_string()))?;
     let html = stored.render_html().map_err(failed)?;
     Ok(RenderedReport {
         degree_name: stored.program.degree.name.clone(),
@@ -388,10 +443,19 @@ async fn load_program(client: &Arc<DbClient>, program_key: &str) -> Result<Degre
         .await
         .map_err(|e| format!("reading the document of {program_key}: {e}"))?
         .ok_or_else(|| format!("no stored program `{program_key}` with a degree document"))?;
-    // `document` is the lossless unified JSON from `to_unified_value`, so it round-trips
-    // through the same loader the importer uses. `serde_json::from_value` would not:
-    // the model carries `prerequisites_raw`, not `prerequisites`.
-    let text = serde_json::to_string(&document)
+    program_from_document(&document, program_key)
+}
+
+/// Parse a stored degree document.
+///
+/// A document is the lossless unified JSON from `to_unified_value`, so it round-trips
+/// through the same loader the importer uses. `serde_json::from_value` would not: the
+/// model carries `prerequisites_raw`, not `prerequisites`.
+fn program_from_document(
+    document: &serde_json::Value,
+    program_key: &str,
+) -> Result<DegreeProgram, String> {
+    let text = serde_json::to_string(document)
         .map_err(|e| format!("could not serialize stored document: {e}"))?;
     parse_degree_auto(&text)
         .map(|(program, _warnings)| program)

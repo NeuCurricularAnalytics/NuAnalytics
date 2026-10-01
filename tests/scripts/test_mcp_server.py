@@ -298,6 +298,28 @@ def db_checks(client: McpTestClient, checks: Checks):
         return not err and body.get("count", 0) >= 1, f"{body.get('count')} runs"
     checks.check("get_stored_analysis(degree=…)", stored_analysis)
 
+    def analyze_stored():
+        err, body = tool_text(client.call_tool("analyze_degree", {"degree": found["key"]}))
+        run = body.get("source", {}).get("run", {}) if isinstance(body, dict) else {}
+        return (not err and body.get("success") and bool(run.get("run_key"))
+                and body.get("time_elapsed_ms") == 0), f"read run {run.get('run_key')}"
+    checks.check("analyze_degree(stored) reads the stored run", analyze_stored)
+
+    def analyze_stored_refuses_settings():
+        err, body = tool_text(client.call_tool(
+            "analyze_degree", {"degree": found["key"], "max_plans": 50}))
+        code = body.get("error", {}).get("code") if isinstance(body, dict) else None
+        return err and code == "bad_arguments", f"code={code}"
+    checks.check("analyze_degree(stored, max_plans) needs fresh=true", analyze_stored_refuses_settings)
+
+    def analyze_stored_fresh():
+        err, body = tool_text(client.call_tool(
+            "analyze_degree", {"degree": found["key"], "fresh": True, "max_plans": 50}))
+        source = body.get("source", {}) if isinstance(body, dict) else {}
+        return (not err and body.get("success") and "run" not in source
+                and body.get("plans_analyzed", 0) <= 50), f"{body.get('plans_analyzed')} plans enumerated"
+    checks.check("analyze_degree(stored, fresh=true) enumerates", analyze_stored_fresh)
+
     def demographics():
         err, body = tool_text(client.call_tool(
             "get_completion_demographics",

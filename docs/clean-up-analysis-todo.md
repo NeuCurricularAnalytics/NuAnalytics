@@ -1,6 +1,8 @@
 # Analysis-pipeline clean-up — plan
 
-Status: **step 1 done (2026-09-23); step 7's ordering fix done (2026-09-30); steps 2–6 not started.**
+Status (2026-09-30): **the merge is done — one pipeline, `core::degree::analysis`, which
+`degree analyze` and every MCP analysis tool call.** Steps 1–4 and 7 are done; what is left
+is in steps 5 and 6 (small, independent) and the out-of-scope notes in section 6.
 
 Completed detail has been trimmed — `git log` has it. What is here is what is left,
 plus the evidence the remaining steps depend on.
@@ -30,8 +32,10 @@ grep. **It is out of scope for this work and should not be merged into anything.
 The other two are the same level. Both build a `PlanGenerator` from
 `program.requirements` + `program.courses` and enumerate many candidate maps:
 
-- `degree.rs:2369 enumerate_and_analyze_plans` → `PlanGenerator::new(&ctx.program.requirements, &ctx.program.courses, …)`
-- `analyze.rs:563 build_artifacts` → the same call
+- `degree.rs enumerate_and_analyze_plans` → `PlanGenerator::new(&ctx.program.requirements, &ctx.program.courses, …)`
+- `analyze.rs build_artifacts` → the same call
+
+(Both now call `core::degree::analysis::analyze`, which makes that call once.)
 
 So the distinction worth preserving is **degree-vs-map** (`planner` vs the other two), not
 **CLI-vs-MCP**. What differs between the CLI and MCP paths is the *output layer*, not the
@@ -43,7 +47,7 @@ level of analysis:
 Those two output shapes are both legitimate and should both survive. Only the pipeline
 underneath them should be shared.
 
-## 2. Why this matters: they disagree today
+## 2. Why this mattered: they disagreed
 
 Same file, same cap, both reporting `plans_analyzed: 200`:
 
@@ -61,6 +65,10 @@ Same file, same cap, both reporting `plans_analyzed: 200`:
 A 19% difference in median complexity for the same degree. The MCP numbers are the ones
 served to AI agents.
 
+**Now:** on all 13 fixtures and 4 samples at `max_plans` 200, the MCP and the CLI agree on
+every metric's five-number summary, the plan count, the seed and the selected plans term
+by term (17/17). `tests/rs/one_pipeline.rs` asserts it exactly on three sampled fixtures.
+
 ## 3. Root cause of the divergence — *fixed, kept for the shape of the problem*
 
 The MCP per-plan DAG added an edge for **every** in-plan option of an OR-group; the CLI
@@ -71,38 +79,34 @@ Both copies are gone (step 1). The pattern is the point: two functions answering
 question, neither wrong-looking on its own, disagreeing only in aggregate. Sections 4
 onwards are the remaining instances of that shape.
 
-## 4. Divergence inventory
+## 4. Divergence inventory — resolved
 
-Twelve helper pairs (two now resolved), with which side is believed correct. Each needs confirming as it is
-merged — the merged version must take the union of behaviours, not one side wholesale.
+Where the two copies differed in anything that feeds a metric, the CLI's behaviour was
+kept, because the stored corpus was produced by it. So the CLI's output did not move —
+byte-identical before and after on every fixture, sample and the full 1,088-degree
+conversion corpus — and fresh MCP figures converged on the stored ones.
 
-| concern | CLI (`degree.rs`) | MCP (`analyze.rs`) | difference | keep |
-|---|---|---|---|---|
-| ~~per-plan DAG~~ | ~~`build_dag_for_plan`~~ | ~~`build_plan_dag`~~ | ~~one edge per OR-group vs every in-plan option~~ | **done** — both now call `core::degree::plan_dag` |
-| default seed | `default_seed_for_document` | `default_seed_for_yaml` | **different seed for the same degree** — Bowdoin derives `10047534808470998596` on the CLI and `13195075234172957162` on MCP, so the two report different samples by default even though they now compute identically | **one derivation** |
-| build `School` | `build_school_from_program` | `build_school` | MCP drops `typically_offered`, `gen_ed_attributes` | **CLI** |
-| degree-level DAG | `build_dag_from_graph` | `build_dag` | CLI omits corequisites; MCP includes them | **MCP** |
-| equivalence map | `build_equivalence_map` | `build_equivalences` | CLI also scans `req.from.courses` + nested options | **CLI** |
-| expand prereqs | `expand_courses_with_prerequisites` | `expand_with_prereqs` | MCP lacks `exclude_from_prereqs` + redundancy removal | **CLI** |
-| prereq tokenizer | `parse_prerequisites_from_raw` | `parse_prereqs` | different grade-letter handling; both duplicate `core::prerequisite_parser::extract_all_courses:377` | **neither** |
-| placeholder credits | `placeholder_credits` | `placeholder_credits` | MCP also treats `…SM` as small | **MCP** |
-| elective filler | `generate_elective_placeholders` | `gen_elective_placeholders` | different ids and thresholds | see note |
-| ~~equivalent-in-plan~~ | ~~`find_equivalent_in_plan_set`~~ | ~~`find_equivalent_in_plan`~~ | ~~identical~~ | **done** — `core::degree::plan_dag::equivalent_in_plan`, now also used by `curriculum_graph` |
-| expanded variant | `create_expanded_variant` | `build_expanded_variant` | identical | either |
-| plan loop | `process_plan_variants` | `run_plan_analysis` | MCP has deadline + seed + target-course; CLI has progress + exclude set | **union** |
+| concern | outcome |
+|---|---|
+| per-plan DAG | step 1 — `core::degree::plan_dag` |
+| default seed | `default_seed_for_program` (canonical JSON). The MCP's hashed the raw text, so re-indenting a file changed which plans it sampled |
+| `School` | `core::report::inputs::build_school_from_program`; the MCP's dropped `typically_offered` and `gen_ed_attributes` |
+| degree-level DAG | **deleted** — neither copy was read. `PlanSelector::new` ignored its `_dag` and `DegreeReportContext.dag` was never read, so decision 2 below was moot |
+| equivalence map | `build_equivalence_map`; the MCP's saw only top-level `courses` |
+| expand prerequisites | the CLI's exclusion set, shallow-first expansion and redundancy pruning, now in core |
+| prereq tokenizer | the MCP's copy went with its `build_school`; see step 6 for the rest |
+| placeholder credits, elective filler | already shared (`core::degree::placeholder`) |
+| expanded variant | one copy, in core |
+| plan loop | the union: the CLI's progress (as `AnalysisEvent`s) and exclusions, the MCP's deadline and target-course capture |
 
-Notes:
-- The elective-filler naming mismatch was already fixed in the placeholder consolidation
-  (`is_placeholder_course` is now single-sourced in `plan_generator`), but the two
-  *generators* still differ in id scheme and remainder threshold. Consolidating them is
-  step 4.
-- The `placeholder_credits` row is not theoretical: with the DAG fixed and the seed
-  pinned, Bowdoin's median total credits are 32.3834 on the CLI and 31.6166 on MCP, and
-  the min/max are exactly one credit apart at both ends (32–33 vs 31–32). It is the only
-  metric of the four that still disagrees. Resolve it in step 4 and re-measure.
-- `core::prerequisite_parser::extract_all_courses` already exists and is tested; both
-  copies should be deleted in favour of it, and `build_school` should read the
-  already-populated `course.prerequisites` rather than re-parsing `prerequisites_raw`.
+What moved, measured on the 17 inputs at 200 plans: MCP complexity means by up to 2.5%
+(CSU 234.29 → 240.25), delay means by up to 0.16; the CLI not at all.
+
+**Found and deliberately not changed:** both school builders drop `strict_corequisites`,
+which `TermScheduler` reads, so the scheduler never enforces a degree's strict
+corequisites. 73 of the 1,088 corpus degrees declare some. Honouring them moves term
+counts and selected plans for those degrees, so it is its own change, with the corpus
+regenerated — not part of a merge whose gate is "the CLI does not move".
 
 ## 5. Step-by-step plan
 
@@ -126,58 +130,44 @@ Two consequences the remaining steps need to know about:
 - **`build_plan_dag` is the shared per-plan DAG.** Steps 3 and 4 should not move or
   duplicate it; it is already where it belongs.
 
-### Step 2 — Pin current behaviour before moving anything
-Add a characterisation test that runs both paths on the same degree and asserts they agree
-on complexity, longest delay, plan count, and the selected-plan credit totals. This is the
-safety net for steps 3–6: if the merge changes a number, this fails and names it.
-- Put it in `tests/rs/` and feature-gate on `mcp`, as `degree_fixtures` already is.
-- Assert only figures measured stable (see the reproducibility caveat in step 7).
+### Steps 2–4 — Characterise, move into core, fold the CLI in — **DONE 2026-09-30**
 
-### Step 3 — Create `src/core/analysis/`, not feature-gated
-Move, unchanged, from `analyze.rs`:
-`AnalysisArtifacts` (make `pub`), `build_artifacts`, `AnalysisCtx`, `run_plan_analysis`,
-`build_target_course_stats`, `build_target_term_stats`, `default_seed_for_yaml`, and the
-graph helpers (`build_school`, `build_dag`, `build_equivalences`, `expand_with_prereqs`,
-`build_expanded_variant`,
-`placeholder_credits`, `gen_elective_placeholders`).
+`src/core/degree/analysis.rs` (decision 3: beside the generator, selector and
+validator), not feature-gated. `analyze(program, &AnalysisConfig, on_event) ->
+DegreeAnalysis`; nothing in it prints. The CLI renders its `AnalysisEvent`s when
+verbose; the MCP ignores them. Each surface keeps its own defaults (MCP: 500 plans,
+three samples, a 180 s deadline; CLI: `Config`) and its own output layer
+(`generate_analysis_outputs`; `build_response`). `mcp::cache` caches
+`Arc<DegreeAnalysis>`, and `get_course_detail` reads its graph instead of rebuilding it.
 
-Leave in `mcp/tools/analyze.rs`: `AnalyzeDegreeRequest`, the `*Json` DTOs,
-`AnalysisResponse`, `execute`/`execute_json`, `build_response`, `build_response_notes`,
-`build_analysis_followups`, `finalize_followups`, `parse_error_response`,
-`recommend_max_plans`/`next_max_plans`/`complexity_cv`, `build_per_course_metrics`.
-`mcp::cache::cached_artifacts` stays in `mcp` — the `Arc` cache is a session concern; only
-the `AnalysisArtifacts` type needs to be public.
+- **Proof, CLI:** every fixture, sample and corpus conversion byte-identical to the
+  pre-merge binary, selected plans included, and verbose stderr and metrics files
+  identical with `--include` on all 13 fixtures (the exclusion path the golden capture
+  does not exercise).
+- **Proof, MCP:** equals the CLI on 17/17 inputs (section 2); `tests/rs/one_pipeline.rs`.
+- **`--target-course` and `--metrics-out` no longer need `mcp`**, and use the CLI's
+  configuration. `--metrics-out` now writes the CLI's report JSON with
+  `analysis.target_course_stats`, and `--from-db` honours `--target-course`. A
+  target-course query always runs in-process: a pooled run (`-j`, several files)
+  silently ignored it before, because workers were never passed the flag and their
+  stdout goes nowhere.
+- `degree_fixtures`, `degree_fidelity` and `target_course_population` dropped their
+  `mcp` gate; `target_course_selected_plans` keeps it, as it tests the MCP response.
 
-- **Gate:** step 2's test still passes; no behaviour change intended in this step.
-- **Bonus:** this removes the reason `--target-course` and `--metrics-out` are gated on the
-  `mcp` feature (`degree.rs emit_target_course_stats`), and lets the four `#[cfg(feature =
-  "mcp")]` test modules in `tests/rs/mod.rs` drop their gate.
+### Step 5 — One elective-placeholder owner — *partly done*
+Done: `ELECTIVE_PREFIX` (`core::degree::placeholder`) and the `PREREQUISITES_KEY` /
+`ELECTIVE_PLACEHOLDERS_KEY` requirement-choice keys (`core::degree::plan_variant`) replace
+the inline literals. Left: honour `PlanGeneratorConfig::default_elective_credits`, which
+only `plan_generator::add_elective_placeholders` respects, and route the credit fallback
+through `term_scheduler::course_credits_with_fallback`. Move `is_placeholder_course` to
+`placeholder` while there.
 
-### Step 4 — Fold the CLI's copies into core, taking the union
-Delete the ten CLI helpers, routing `analyze_program` through `core::analysis`. Per the `keep` column above, carry over the CLI-only behaviours the MCP copy lacks
-(`exclude_from_prereqs`, `typically_offered` /
-`gen_ed_attributes`, the `req.from.courses` + nested-options equivalence scan,
-`sampling_strategy` and `ignore_duplicates` from `Config`) and the MCP-only ones the CLI
-lacks (deadline, seed, target-course stats, `is_full_population` / `population_size`).
-
-Expect roughly 600 lines to leave `degree.rs`. Keep both output layers:
-`generate_analysis_outputs` (CLI report + CSVs) and `build_response` (MCP JSON).
-
-- **Gate:** step 2's test passes and now compares two callers of one pipeline.
-
-### Step 5 — One elective-placeholder owner
-`core::degree::placeholder`: the naming scheme, the generator (honouring
-`PlanGeneratorConfig::default_elective_credits`, which only
-`plan_generator::add_elective_placeholders` currently respects), the credit fallback
-(routed through `term_scheduler::course_credits_with_fallback`, which already has named
-constants), and `is_placeholder_course` (already single-sourced — move it here).
-Promote `"ELEC"`, `"_prerequisites"` and `"_elective_placeholders"` to constants there.
-
-### Step 6 — Delete the prereq-tokenizer copies
-Route `build_school` at `core::prerequisite_parser::extract_all_courses`, and have it read
-`course.prerequisites` (already populated by `resolve_prerequisites` at parse time)
-instead of re-parsing `prerequisites_raw`. Also fix `yaml_parser.rs:121`, which inlines a
-fourth variant.
+### Step 6 — Delete the prereq-tokenizer copies — *MCP copy gone*
+Left: route `build_school_from_program` at `core::prerequisite_parser::extract_all_courses`,
+reading `course.prerequisites` (already populated by `resolve_prerequisites` at parse
+time) instead of re-parsing `prerequisites_raw`, and fold in the fourth variant in
+`yaml_parser.rs`. This changes `School.prerequisites`, which the scheduler reads, so gate
+it on the CLI output like the merge was.
 
 ### Step 7 — Tighten the reproducibility tests
 **The ordering fix is done (2026-09-30).** Fresh analysis was not reproducible across
@@ -196,21 +186,22 @@ Five hash-order sources, found with a cross-process probe:
 
 After: 0 of 60 vary in anything, and all 17 fixtures/samples are identical across 5
 processes on both paths. Aggregates never moved; stored runs are untouched.
-**Still to do:** tighten `test_build_artifacts_is_reproducible_for_identical_inputs` to
-assert `term_distribution`, and widen the `target_course_population` baselines beyond
-`earliest_term` — now safe to do.
+`test_build_artifacts_is_reproducible_for_identical_inputs` now asserts the whole
+`target_course_stats`, `term_distribution` included. The `target_course_population`
+baselines stay at `earliest_term`: runs are reproducible on one toolchain now, but the
+default seed still comes from `DefaultHasher`, which std does not promise to keep stable
+across toolchains, so the other figures could still move on a compiler upgrade.
 
 ## 6. Out of scope
 
 - **`planner` / `src/core/planner/`** — different level of analysis (section 1). Leave it.
-- **Splitting the large files** (`degree.rs` 3.9k, `analyze.rs` 2.7k, `completions.rs`
-  2.4k). Step 4 removes ~600 lines from `degree.rs` on its own; re-assess afterwards.
+- **Splitting the large files** (`completions.rs` 2.4k). The merge took `degree.rs` from
+  3.8k to 2.9k lines and `analyze.rs` from 2.5k to 1.7k.
 - ~~**`src/mcp/tools/completions.rs`** — the IPEDS demographics engine has the same
   trapped-in-`mcp` shape.~~ **Done 2026-09-24.** It, `institutions`, `cip_codes`, `lookup`
   and most of `degrees` now live in `src/core/query/`, with the shared JSON helpers in
-  `src/core/json.rs`. `compare_degrees`' analysis hook is the one piece still in `mcp`,
-  injected as a `CompareMetricsFn` parameter — it collapses into a direct call once
-  step 3 below lands `core::analysis`.
+  `src/core/json.rs`. `compare_degrees`' fresh metrics call the `analyze_degree` tool,
+  which now runs the shared pipeline.
 - **The flat edge model cannot represent OR-of-ANDs — but it is a much smaller problem
   than it first looks, and "fix" it carelessly and you move every metric you own.**
 
@@ -273,15 +264,13 @@ assert `term_distribution`, and widen the `target_course_population` baselines b
   (step 6) — advance the counter by the number of groups the recursion produced, not by
   one — and re-run the scan to confirm it stays at zero.
 
-## 7. Decisions needed before starting
+## 7. Decisions
 
 1. ~~**Step 1 changes published metrics.**~~ **Settled 2026-09-24: regenerate.** The
    full-corpus numbers are under step 1 — 72% of degrees unchanged, 2.8% moving ≥5%. Two
    CLI-visible outputs moved: the OR-group tie-break and rendered `graph_spec` edge order.
    The regenerated corpus is staged; re-import is item 1 of `database-audit-todo.md`.
-2. **Which side wins where the table above says "confirm".** The `build_dag_from_graph`
-   corequisite difference in particular: the CLI omits corequisites from the degree-level
-   DAG and the MCP path includes them. One of those is wrong and it is not obvious which.
-3. **Does `core::analysis` want to be `core::degree::analysis`?** `core::degree` already
-   holds the generator, selector and validator, so the pipeline arguably belongs beside
-   them rather than in a new top-level module.
+2. ~~**Which side wins where the table above says "confirm".**~~ **Moot 2026-09-30.** The
+   corequisite difference was in the degree-level DAG, which nothing read; it is deleted.
+3. ~~**Does `core::analysis` want to be `core::degree::analysis`?**~~ **Settled
+   2026-09-30:** `core::degree::analysis`, beside the generator, selector and validator.

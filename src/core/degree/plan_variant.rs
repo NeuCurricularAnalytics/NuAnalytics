@@ -7,6 +7,12 @@ use std::collections::{HashMap, HashSet};
 
 /// A specific plan variant through a degree program
 ///
+/// `requirement_choices` key listing the prerequisites that expansion added to a plan.
+pub const PREREQUISITES_KEY: &str = "_prerequisites";
+
+/// `requirement_choices` key listing a plan's free-elective filler (`ELEC001`, …).
+pub const ELECTIVE_PLACEHOLDERS_KEY: &str = "_elective_placeholders";
+
 /// Represents one possible way to complete all degree requirements,
 /// with specific course selections for each variable requirement.
 #[derive(Debug, Clone, PartialEq)]
@@ -14,7 +20,9 @@ pub struct PlanVariant {
     /// All courses in this plan (unique, sorted for consistency)
     pub courses: Vec<String>,
 
-    /// Mapping from requirement ID to chosen courses for that requirement
+    /// Mapping from requirement ID to chosen courses for that requirement. Besides the
+    /// degree's own requirement ids it can hold synthetic keys, such as
+    /// [`PREREQUISITES_KEY`] and [`ELECTIVE_PLACEHOLDERS_KEY`].
     pub requirement_choices: HashMap<String, Vec<String>>,
 
     /// Total credits in this plan

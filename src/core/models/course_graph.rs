@@ -1539,11 +1539,15 @@ fn flatten_chain_to_ordered_branch(chain: &PrerequisiteChain, graph: &CourseGrap
     // Collect all unique courses from all branches
     let all_courses: HashSet<String> = chain.branches.iter().flatten().cloned().collect();
 
-    // Build a mini dependency graph for ordering
+    // Build a mini dependency graph for ordering. Walked in key order: each course's
+    // `dependents` list is filled in walk order and decides the order same-level courses
+    // leave the queue, so a hash-ordered walk printed the same chain differently per run.
     let mut in_degree: HashMap<String, usize> = HashMap::new();
     let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
+    let mut ordered: Vec<&String> = all_courses.iter().collect();
+    ordered.sort_unstable();
 
-    for course in &all_courses {
+    for course in ordered {
         in_degree.entry(course.clone()).or_insert(0);
         if let Some(node) = graph.nodes.get(course) {
             for edge in &node.prerequisites {

@@ -22,6 +22,7 @@
 //! }
 //! ```
 
+pub mod analysis;
 pub mod audit;
 pub mod course_reference;
 pub mod fill_electives;

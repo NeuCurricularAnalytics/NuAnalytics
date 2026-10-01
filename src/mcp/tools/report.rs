@@ -21,8 +21,8 @@ use crate::core::report::degree_report::{DegreeReportContext, DegreeReportGenera
 use crate::core::report::plan_export::{
     export_degree_summary_jsonl, export_index_csv, export_selected_plans, PlanExportConfig,
 };
-use crate::mcp::tools::analyze::AnalysisArtifacts;
 use crate::mcp::tools::shared::DegreeSourceArgs;
+use crate::mcp::tools::view::AnalysisView;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +40,10 @@ pub struct RenderDegreeReportRequest {
     /// Where the degree comes from: exactly one of `degree`, `content`, `path`.
     #[serde(flatten)]
     pub source: DegreeSourceArgs,
+
+    /// For a stored program, its stored run or a fresh enumeration.
+    #[serde(flatten)]
+    pub run: crate::mcp::tools::shared::StoredRunArgs,
 
     /// Maximum number of plans to generate (default 500). Forwarded directly
     /// to the analysis pipeline; higher values give more accurate per-course
@@ -182,32 +186,66 @@ pub fn execute(
         Ok(a) => a,
         Err(e) => return error_response(&e),
     };
+    present(
+        &AnalysisView::fresh(&artifacts),
+        &ReportOutput {
+            output_dir,
+            write_plan_csvs,
+            write_jsonl_summary,
+            write_index_csv,
+            return_html_inline,
+            overwrite,
+        },
+    )
+}
 
-    let html = match render_html(&artifacts) {
+/// Where `render_degree_report` puts what it renders.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ReportOutput<'a> {
+    /// Directory to write the report and its companions into; `None` returns it inline.
+    pub output_dir: Option<&'a str>,
+    /// Write each selected plan's CSV (default: on in disk mode).
+    pub write_plan_csvs: Option<bool>,
+    /// Write the JSONL summary (default: on in disk mode).
+    pub write_jsonl_summary: Option<bool>,
+    /// Append to `index.csv` (default: on in disk mode).
+    pub write_index_csv: Option<bool>,
+    /// Return the HTML inline (default: only when not writing to disk).
+    pub return_html_inline: Option<bool>,
+    /// Replace an existing report.
+    pub overwrite: bool,
+}
+
+/// Render the report for an analysis, fresh or stored, and deliver it as `out` asks.
+pub(crate) fn present(
+    view: &AnalysisView<'_>,
+    out: &ReportOutput<'_>,
+) -> RenderDegreeReportResponse {
+    let html = match render_html(view) {
         Ok(s) => s,
         Err(e) => return error_response(&format!("Failed to render report: {e}")),
     };
 
-    let write_disk = output_dir.is_some();
+    let write_disk = out.output_dir.is_some();
     // Disk mode defaults: every companion file ON; inline HTML OFF (caller
     // opts back in). Inline mode defaults: companions ignored, HTML returned.
-    let inline_html = return_html_inline.unwrap_or(!write_disk);
-    let write_csvs = write_plan_csvs.unwrap_or(write_disk);
-    let write_jsonl = write_jsonl_summary.unwrap_or(write_disk);
-    let write_index = write_index_csv.unwrap_or(write_disk);
+    let inline_html = out.return_html_inline.unwrap_or(!write_disk);
+    let write_csvs = out.write_plan_csvs.unwrap_or(write_disk);
+    let write_jsonl = out.write_jsonl_summary.unwrap_or(write_disk);
+    let write_index = out.write_index_csv.unwrap_or(write_disk);
 
     let mut paths = WrittenPaths::default();
-    if let Some(dir) = output_dir {
+    if let Some(dir) = out.output_dir {
         if let Err(e) = write_artifacts_to_disk(
             dir,
             &html,
-            &artifacts,
+            view,
             Companions {
                 csvs: write_csvs,
                 jsonl: write_jsonl,
                 index: write_index,
             },
-            overwrite,
+            out.overwrite,
             &mut paths,
         ) {
             return error_response(&format!("Failed to write artifacts: {e}"));
@@ -218,21 +256,26 @@ pub fn execute(
     RenderDegreeReportResponse {
         success: true,
         error: None,
-        degree_id: Some(artifacts.program.degree.degree_id()),
-        degree_name: Some(artifacts.program.degree.name.clone()),
-        institution: artifacts.program.degree.institution.clone(),
-        plans_analyzed: artifacts.plans_processed,
-        population_size: artifacts.population_size(),
-        is_full_population: artifacts.is_full_population(),
-        selected_plans_count: artifacts.selected.total_count(),
+        degree_id: Some(view.program.degree.degree_id()),
+        degree_name: Some(view.program.degree.name.clone()),
+        institution: view.program.degree.institution.clone(),
+        plans_analyzed: view.plans_analyzed(),
+        population_size: view.population_size(),
+        is_full_population: view.is_full_population(),
+        selected_plans_count: view.selected.total_count(),
         html_bytes,
         html_content: if inline_html { Some(html) } else { None },
-        output_dir: output_dir.map(str::to_string),
+        output_dir: out.output_dir.map(str::to_string),
         report_html_path: paths.report_html,
         plan_csv_paths: paths.plan_csvs,
         jsonl_summary_path: paths.jsonl_summary,
         index_csv_path: paths.index_csv,
     }
+}
+
+/// [`present`], serialized as JSON.
+pub(crate) fn present_json(view: &AnalysisView<'_>, out: &ReportOutput<'_>) -> String {
+    crate::core::json::to_json_pretty(&present(view, out))
 }
 
 /// Execute and serialize as JSON.
@@ -337,14 +380,15 @@ struct WrittenPaths {
     index_csv: Option<String>,
 }
 
-fn render_html(artifacts: &AnalysisArtifacts) -> Result<String, Box<dyn std::error::Error>> {
+/// The report page. For a stored run this is the page `db report` renders: the same
+/// template, fed the same school and equivalences (`build_report_inputs`).
+fn render_html(artifacts: &AnalysisView<'_>) -> Result<String, Box<dyn std::error::Error>> {
     let ctx = DegreeReportContext::new(
-        &artifacts.school,
+        artifacts.school,
         &artifacts.program.degree,
-        &artifacts.report_stats,
-        &artifacts.selected,
-        &artifacts.dag,
-        &artifacts.equivalences,
+        artifacts.stats,
+        artifacts.selected,
+        artifacts.equivalences,
     );
     DegreeReportGenerator::new().render(&ctx)
 }
@@ -362,7 +406,7 @@ struct Companions {
 fn write_artifacts_to_disk(
     output_dir: &str,
     html: &str,
-    artifacts: &AnalysisArtifacts,
+    artifacts: &AnalysisView<'_>,
     companions: Companions,
     overwrite: bool,
     out: &mut WrittenPaths,
@@ -388,9 +432,9 @@ fn write_artifacts_to_disk(
             create_dirs: true,
         };
         let csvs = export_selected_plans(
-            &artifacts.school,
+            artifacts.school,
             &artifacts.program.degree,
-            &artifacts.selected,
+            artifacts.selected,
             &cfg,
         )?;
         out.plan_csvs = csvs;
@@ -398,10 +442,10 @@ fn write_artifacts_to_disk(
 
     if write_jsonl {
         let path = export_degree_summary_jsonl(
-            &artifacts.school,
+            artifacts.school,
             &artifacts.program.degree,
-            &artifacts.aggregator,
-            &artifacts.selected,
+            artifacts.stats,
+            artifacts.selected,
             &dir,
         )?;
         out.jsonl_summary = Some(path.to_string_lossy().into_owned());
@@ -409,10 +453,10 @@ fn write_artifacts_to_disk(
 
     if write_index {
         let path = export_index_csv(
-            &artifacts.school,
+            artifacts.school,
             &artifacts.program.degree,
-            &artifacts.aggregator,
-            &artifacts.selected,
+            artifacts.stats,
+            artifacts.selected,
             &dir,
         )?;
         out.index_csv = Some(path.to_string_lossy().into_owned());
@@ -749,6 +793,9 @@ courses:
                 created_at: Some("2026-09-29".into()),
                 analyzer_version: Some("0.5.4".into()),
                 variations_run: Some(12),
+                max_plans: Some(1000),
+                random_seed: Some("42".into()),
+                sampling_strategy: Some("shuffled".into()),
             },
             html: "<!DOCTYPE html><p>ʻāina</p>".into(),
         }

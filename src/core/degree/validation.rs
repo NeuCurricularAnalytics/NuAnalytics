@@ -998,7 +998,10 @@ fn extract_course_number(number: &str) -> u32 {
 /// 1. Cross-listed courses exist
 /// 2. Cross-listing is bidirectional (if A lists B, B should list A)
 fn validate_cross_listing(courses: &HashMap<String, Course>, result: &mut ValidationResult) {
-    for (course_key, course) in courses {
+    // In key order, so the findings list the same way in every run.
+    let mut ordered: Vec<(&String, &Course)> = courses.iter().collect();
+    ordered.sort_unstable_by_key(|(key, _)| *key);
+    for (course_key, course) in ordered {
         if let Some(cross_listed) = &course.cross_listed_as {
             for cross_listed_key in cross_listed {
                 // Check if cross-listed course exists
@@ -1155,8 +1158,12 @@ fn compute_strictly_reachable(
 
     // Queue stores (course_key, path_to_course)
     // For explicit courses, path is just [course_key]
-    let mut work_queue: Vec<(String, Vec<String>)> = explicitly_referenced
-        .iter()
+    // Roots in key order: the first path found is the one a warning reports, and a
+    // hash-ordered start named a different requiring course from one process to the next.
+    let mut roots: Vec<&String> = explicitly_referenced.iter().collect();
+    roots.sort_unstable();
+    let mut work_queue: Vec<(String, Vec<String>)> = roots
+        .into_iter()
         .map(|k| (k.clone(), vec![k.clone()]))
         .collect();
 

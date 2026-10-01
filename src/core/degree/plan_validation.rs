@@ -327,6 +327,11 @@ impl<'a> PlanValidator<'a> {
         stats.total_courses = plan.courses.len();
         stats.total_credits = plan.total_credits;
 
+        // A course can be listed under more than one requirement; it counts toward the
+        // first one found, so the search runs in key order rather than hash order.
+        let mut choices: Vec<_> = plan.requirement_choices.iter().collect();
+        choices.sort_unstable_by(|a, b| a.0.cmp(b.0));
+
         for course_key in &plan.courses {
             // Check if course has prerequisites
             if let Some(node) = self.graph.get(course_key) {
@@ -344,7 +349,7 @@ impl<'a> PlanValidator<'a> {
             let credits = self.courses.get(course_key).map_or(3.0, |c| c.credit_hours);
 
             // Categorize by requirement choice
-            for (category, courses) in &plan.requirement_choices {
+            for &(category, courses) in &choices {
                 if courses.contains(course_key) {
                     *stats
                         .courses_by_category
@@ -571,5 +576,29 @@ mod tests {
         assert!(report.contains("validation errors"));
         assert!(report.contains("CS3500"));
         assert!(report.contains("CS2500"));
+    }
+
+    /// A course listed under two requirements counts toward the first in key order. Each
+    /// `HashMap` hashes with its own seed, so a hash-order search would split these runs.
+    #[test]
+    fn test_collect_statistics_credits_a_shared_course_to_the_same_requirement() {
+        let courses = HashMap::new();
+        let graph = CourseGraph::default();
+        let validator = PlanValidator::new(&courses, &graph, PlanValidatorConfig::default());
+        let credits = HashMap::new();
+        for _ in 0..32 {
+            let choices = HashMap::from([
+                ("b_second".to_string(), vec!["CS100".to_string()]),
+                ("a_first".to_string(), vec!["CS100".to_string()]),
+                ("c_third".to_string(), vec!["CS100".to_string()]),
+            ]);
+            let stats = validator
+                .validate(&PlanVariant::new(choices, &credits))
+                .stats;
+            assert_eq!(
+                stats.courses_by_category,
+                HashMap::from([("a_first".to_string(), 1)])
+            );
+        }
     }
 }

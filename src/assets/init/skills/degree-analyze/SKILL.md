@@ -41,9 +41,10 @@ allowed-tools: mcp__nuanalytics__analyze_degree mcp__nuanalytics__get_course_det
 
 ## What you would otherwise get wrong
 
-- **Fresh is not stored.** `analyze_degree` re-enumerates every time, so sampled
-  figures move between runs. For a degree that is stored in the database, the
-  reproducible figures are its stored run (the stored-programs skill).
+- **A file is analyzed fresh; a stored program is not.** Given a file, content or a
+  sample, `analyze_degree` enumerates plans now. Given a stored program's `program_key`,
+  it reads the stored run instead, and `max_plans` and the other run settings are
+  refused unless `fresh=true` (the stored-programs skill).
 - **A curriculum CSV** (`plans/*.csv`, the CurricularAnalytics.org format) is not a
   degree file. Run `nuanalytics planner plans/<file>.csv` in the shell. `--no-report`
   gives metrics only, and `--term-credits` changes the term load.

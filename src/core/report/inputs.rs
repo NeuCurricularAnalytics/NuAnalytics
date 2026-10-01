@@ -1,4 +1,4 @@
-//! The structural inputs a degree report is drawn from: courses, prerequisite graph,
+//! The structural inputs a degree report is drawn from: its courses and their
 //! equivalences.
 //!
 //! Built from a degree alone, with no analysis — which is what lets a report be rendered
@@ -8,7 +8,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::core::models::degree::Requirement;
-use crate::core::models::{CourseGraph, School, DAG};
+use crate::core::models::School;
 
 /// Every course's equivalents, from the `{A, B, C}` groups the requirements name.
 ///
@@ -46,22 +46,15 @@ fn collect_equivalences(req: &Requirement, out: &mut HashMap<String, HashSet<Str
     }
 }
 
-/// Build the structural inputs a report needs from a degree program alone.
+/// The courses as a [`School`] and the equivalence map, from a degree alone.
 ///
-/// The same graph construction `analyze_program` does, including breaking prerequisite
-/// cycles, without which the DAG would not be acyclic. Needs no analysis, so a stored
-/// run's report can be drawn from its `document` alone.
+/// Needs no analysis, so a stored run's report can be drawn from its `document`.
 #[must_use]
 pub fn build_report_inputs(
     program: &crate::core::DegreeProgram,
-) -> (School, DAG, HashMap<String, HashSet<String>>) {
-    let mut graph_result = CourseGraph::from_degree_program(program);
-    if !graph_result.cycles.is_empty() {
-        graph_result.graph.break_cycles(&graph_result.cycles);
-    }
+) -> (School, HashMap<String, HashSet<String>>) {
     (
         build_school_from_program(program),
-        build_dag_from_graph(&graph_result.graph),
         build_equivalence_map(&program.requirements),
     )
 }
@@ -142,37 +135,6 @@ pub fn parse_prerequisites_from_raw(raw: &str) -> Vec<String> {
     }
 
     prereqs
-}
-
-/// The report's DAG: each course's first prerequisite path, plus its required edges.
-///
-/// The first path of the DNF form is the simplest alternative, which is the one a report
-/// draws; required prerequisites are added whichever alternative that is. A path course
-/// counts only while its edge remains: [`CourseGraph::break_cycles`] removes the edge but
-/// leaves the DNF paths as parsed, and reading them unfiltered put the cycle back.
-///
-/// Drawing only — plan metrics are computed on each plan's own DAG.
-#[must_use]
-pub fn build_dag_from_graph(graph: &CourseGraph) -> DAG {
-    let mut dag = DAG::new();
-    for key in graph.course_keys() {
-        let Some(node) = graph.get(key) else {
-            continue;
-        };
-        dag.add_course(key.to_string());
-        let has_edge = |p: &str| node.prerequisites.iter().any(|e| e.prerequisite == p);
-        let first_path = node
-            .prerequisite_paths
-            .first()
-            .into_iter()
-            .flatten()
-            .map(String::as_str)
-            .filter(|p| has_edge(p));
-        for prereq in first_path.chain(node.required_prerequisites()) {
-            dag.add_prerequisite(key.to_string(), prereq);
-        }
-    }
-    dag
 }
 
 /// Parse equivalent courses from `{A, B, C}` syntax
@@ -287,33 +249,6 @@ track:
         );
         assert!(!eq.contains_key("CS101") && !eq.contains_key("SOLO"));
         assert_eq!(eq.len(), 8);
-    }
-
-    #[test]
-    fn test_build_report_inputs_breaks_a_prerequisite_cycle() {
-        let yaml = r#"
-degree: {id: cyc, institution: T, program: T, total_credits: 6, gpa_minimum: 2.0}
-requirements:
-  core: {name: Core, type: all, category: major, courses: [A101, B101]}
-courses:
-  A101: {title: A, prefix: A, number: "101", credits: 3, prerequisites_raw: "B101"}
-  B101: {title: B, prefix: B, number: "101", credits: 3, prerequisites_raw: "A101"}
-"#;
-        let (program, _) = crate::core::degree::parse_degree_auto(yaml).expect("parses");
-        let (school, dag, _) = build_report_inputs(&program);
-        let has = |c: &str, p: &str| {
-            dag.get_prerequisites(c)
-                .is_some_and(|ps| ps.iter().any(|x| x == p))
-        };
-        assert!(
-            !(has("A101", "B101") && has("B101", "A101")),
-            "the cycle survived into the DAG"
-        );
-        assert!(
-            has("A101", "B101") || has("B101", "A101"),
-            "breaking the cycle removed both edges"
-        );
-        assert!(school.get_course("A101").is_some() && school.get_course("B101").is_some());
     }
 
     /// Two entries sharing `prefix + number` and a key that is not `prefix + number`

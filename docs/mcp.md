@@ -84,7 +84,7 @@ passed `overwrite=true`.
 |---|---|
 | Reference | `get_reference`: the degree format, its JSON Schema, and the database schema |
 | Author and check | `validate_degree`, `audit_degree`, `find_courses_matching`, `get_course_detail`, `convert_degree`, `trim_degree` |
-| Analyze afresh | `analyze_degree`, `render_degree_report`, `render_plan_graph` |
+| Analyze | `analyze_degree`, `render_degree_report`, `render_plan_graph` |
 | Samples | `list_sample_degrees` |
 | IPEDS | `search_institutions`, `search_cip_codes`, `get_lookup_codes`, `get_completion_demographics` |
 | Stored programs | `search_degrees`, `get_degree`, `get_stored_analysis`, `render_stored_report`, `compare_degrees` |
@@ -113,12 +113,25 @@ Every response says where its degree came from, in `source`.
 
 ### Stored or fresh
 
-`analyze_degree`, `render_degree_report`, `render_plan_graph` and
-`compare_degrees(metrics="fresh")` enumerate plans now. Large degrees are sampled, so
-their figures can move between runs; `is_full_population` and `seed_used` say which case
-applies. `get_stored_analysis`, `render_stored_report` and
-`compare_degrees(metrics="stored")` read the run stored at import. Those figures are
-reproducible.
+**A stored program means its stored run.** Its plans were enumerated when it was
+imported, so `analyze_degree`, `render_degree_report`, `render_plan_graph`,
+`get_course_detail` and `compare_degrees` read that run and enumerate nothing. The
+response's `source.run` names the run (`run_key`, `variant`, `created_at`,
+`analyzer_version`). `variant` picks `full` (the default) or `trimmed`.
+
+- **`fresh=true`** enumerates a stored program's degree afresh instead — with
+  `compare_degrees`, `metrics="fresh"`. It is also what the settings that shape a run
+  need: `max_plans`, `include_courses`, `random_seed`, `analysis_timeout_seconds` and
+  `target_course` are refused for a stored program without it, rather than ignored.
+- **A program with no run of that variant** is reported as `source_not_found`. It is
+  never replaced by a fresh run silently.
+- **Files, inline content and samples** are always enumerated afresh.
+
+A fresh run is reproducible: the same degree, settings and analyzer give the same
+figures. It can still differ from a stored run analyzed with other settings or an older
+analyzer. A stored run records its cap but not the size of its population, so a stored
+run that reached its cap reports `is_full_population: false` and `population_size` equal
+to the plans it analyzed.
 
 Runs append, so a program can hold several runs per variant. The stored tools report
 the newest run of each variant unless asked for the history.

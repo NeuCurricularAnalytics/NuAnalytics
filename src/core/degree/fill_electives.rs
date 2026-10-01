@@ -750,7 +750,7 @@ mod tests {
         c.starts_with("REAL")
     }
     fn elec(c: &str) -> bool {
-        c.starts_with("ELEC")
+        c.starts_with(crate::core::degree::placeholder::ELECTIVE_PREFIX)
     }
 
     fn plan_with_rest(rest: u32) -> (Vec<String>, HashMap<String, Vec<String>>) {

@@ -196,11 +196,26 @@ downstream knows the syntax. A degree using it therefore re-serializes — `conv
 import — as that `one_of`. The expansion scans first and touches nothing when the syntax is
 absent; that was proven byte-for-byte over all 1,088 stored documents before it shipped.
 
-`docs/clean-up-analysis-todo.md` plans the merge of the degree analysis pipeline, which
-still exists twice (CLI and MCP). It opens with evidence that the two are the same level
-of analysis, and that `planner` is not, so `planner` stays out of it. **Step 1 is done**:
-the per-plan DAG now exists once, in `src/core/degree/plan_dag.rs`, called by both — an
-OR-group contributes at most one edge. Steps 2–7 are not started.
+**A stored program means its stored run.** Pulled from the database, a degree is read
+from its stored run and never re-enumerated unless the caller passes `fresh=true`; files,
+inline content and samples are always analyzed fresh. The four MCP tools that present an
+analysis read an `AnalysisView` (`src/mcp/tools/view.rs`), which a fresh `DegreeAnalysis`
+and a stored run both provide, so a tool cannot reach for a figure the database does not
+keep — the view offers only `ReportStats`. `stored_analysis` in `server.rs` is the one
+place the rule is applied: fresh-run settings on a stored program are refused by name,
+and a missing run is `source_not_found`, never a silent fresh run.
+
+**The degree analysis pipeline exists once**, in `src/core/degree/analysis.rs`:
+`analyze(program, &AnalysisConfig, on_event) -> DegreeAnalysis`. `degree analyze`
+(including `--target-course` and `--from-db`) and every MCP analysis tool call it; each
+keeps only its defaults and its output layer. Where the two old copies differed, the CLI's
+behaviour was kept, because the stored corpus came from it — the CLI's output was
+byte-identical across the merge, and the MCP now equals the CLI at equal settings
+(`tests/rs/one_pipeline.rs`). Do not give either surface a pipeline step of its own; add
+an `AnalysisConfig` option instead. `planner` is a different level of analysis and stays
+out. `docs/clean-up-analysis-todo.md` has what is left (steps 5 and 6) and one known gap
+deliberately not fixed in the merge: the scheduler never sees a degree's
+`strict_corequisites`.
 
 Two things in that document are load-bearing before touching metrics. The tie-break change
 in step 1 moved **307 of 1,088 degrees** (2.8% by ≥5%), so the stored corpus is a

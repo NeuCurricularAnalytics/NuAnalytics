@@ -12,6 +12,7 @@ use crate::core::report::visualization::{
 };
 use crate::mcp::cache::cached_artifacts;
 use crate::mcp::tools::shared::DegreeSourceArgs;
+use crate::mcp::tools::view::AnalysisView;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +44,10 @@ pub struct RenderPlanGraphRequest {
     /// Where the degree comes from: exactly one of `degree`, `content`, `path`.
     #[serde(flatten)]
     pub source: DegreeSourceArgs,
+
+    /// For a stored program, its stored run or a fresh enumeration.
+    #[serde(flatten)]
+    pub run: crate::mcp::tools::shared::StoredRunArgs,
 
     /// Named plan category. Accepts `"shortest"`, `"longest"`,
     /// `"calc-ready-shortest"`, or `"sample"` (paired with `sample_index`).
@@ -177,40 +182,68 @@ pub struct PlanGraphOptions<'a> {
 pub fn execute(yaml_content: &str, opts: &PlanGraphOptions<'_>) -> RenderPlanGraphResponse {
     let PlanGraphOptions {
         plan_category,
-        sample_index,
         plan_index,
-        format,
         max_plans,
         include_courses,
-        dry_run,
+        ..
     } = *opts;
-    if plan_category.is_none() && plan_index.is_none() {
-        return error_response(
-            "Provide either plan_category (\"shortest\" / \"longest\" / \"calc-ready-shortest\" / \"sample\") or plan_index.",
-        );
-    }
-    if plan_category.is_some() && plan_index.is_some() {
-        return error_response("Provide plan_category OR plan_index, not both.");
-    }
 
+    if let Some(refusal) = refuse_ambiguous_choice(plan_category, plan_index) {
+        return refusal;
+    }
     let artifacts =
         match cached_artifacts(yaml_content, max_plans, include_courses, None, None, None) {
             Ok(a) => a,
             Err(e) => return error_response(e),
         };
+    present(&AnalysisView::fresh(&artifacts), opts)
+}
 
+/// `plan_category` and `plan_index` are alternatives: exactly one must be given.
+fn refuse_ambiguous_choice(
+    plan_category: Option<&str>,
+    plan_index: Option<usize>,
+) -> Option<RenderPlanGraphResponse> {
+    match (plan_category, plan_index) {
+        (None, None) => Some(error_response(
+            "Provide either plan_category (\"shortest\" / \"longest\" / \"calc-ready-shortest\" / \"sample\") or plan_index.",
+        )),
+        (Some(_), Some(_)) => Some(error_response(
+            "Provide plan_category OR plan_index, not both.",
+        )),
+        _ => None,
+    }
+}
+
+/// Draw the plan `opts` names from an analysis, fresh or stored. `max_plans` and
+/// `include_courses` in `opts` are the fresh run's and are not read here.
+pub(crate) fn present(
+    view: &AnalysisView<'_>,
+    opts: &PlanGraphOptions<'_>,
+) -> RenderPlanGraphResponse {
+    let PlanGraphOptions {
+        plan_category,
+        sample_index,
+        plan_index,
+        format,
+        dry_run,
+        ..
+    } = *opts;
+    if let Some(refusal) = refuse_ambiguous_choice(plan_category, plan_index) {
+        return refusal;
+    }
     let (idx, category, plan) =
-        match pick_plan(&artifacts.selected, plan_category, sample_index, plan_index) {
+        match pick_plan(view.selected, plan_category, sample_index, plan_index) {
             Ok(picked) => picked,
             Err(response) => return *response,
         };
 
     let graph_id = category.file_name().to_string();
     let spec = spec_from_scored_plan(
-        &artifacts.school,
-        &artifacts.equivalences,
+        view.school,
+        view.equivalences,
         plan,
-        Some(&artifacts.report_stats),
+        Some(view.stats),
         &graph_id,
     );
     let node_count = spec.nodes.len();
@@ -355,6 +388,15 @@ pub fn execute_json(
     output: GraphOutput<'_>,
 ) -> String {
     crate::core::json::to_json_pretty(&deliver(execute(yaml_content, opts), output))
+}
+
+/// [`present`], delivered inline or to `output.path`, as JSON.
+pub(crate) fn present_json(
+    view: &AnalysisView<'_>,
+    opts: &PlanGraphOptions<'_>,
+    output: GraphOutput<'_>,
+) -> String {
+    crate::core::json::to_json_pretty(&deliver(present(view, opts), output))
 }
 
 // ============================================================================

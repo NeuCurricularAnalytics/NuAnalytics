@@ -198,13 +198,25 @@ pub fn export_degree_report_json(
     out_dir: &Path,
 ) -> Result<PathBuf, Box<dyn Error>> {
     let value = build_degree_report(program, aggregator, selected, sample_type, params)?;
-    std::fs::create_dir_all(out_dir)?;
     let path = out_dir.join(format!(
         "{}_report.json",
         sanitize_filename(&program.degree.degree_id())
     ));
-    std::fs::write(&path, report_value_to_pretty(&value)?)?;
+    write_degree_report(&value, &path)?;
     Ok(path)
+}
+
+/// Write a report built by [`build_degree_report`] to `path`, creating its directory, in
+/// the layout [`export_degree_report_json`] writes.
+///
+/// # Errors
+/// Returns an error if the directory cannot be created or the file written.
+pub fn write_degree_report(value: &Value, path: &Path) -> Result<(), Box<dyn Error>> {
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(path, report_value_to_pretty(value)?)?;
+    Ok(())
 }
 
 /// Serialize a built report `Value` to pretty JSON with `degree` first, then the

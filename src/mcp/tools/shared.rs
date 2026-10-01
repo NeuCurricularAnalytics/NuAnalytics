@@ -152,6 +152,44 @@ impl DegreeSourceArgs {
     }
 }
 
+impl DegreeSourceArgs {
+    /// The stored program named, when the source is one: `degree` alone, and neither a
+    /// `cache:` handle nor a `sample:` key.
+    #[must_use]
+    pub fn stored_reference(&self) -> Option<&str> {
+        match (&self.degree, &self.content, &self.path) {
+            (Some(d), None, None) => {
+                let d = d.trim();
+                let other = d.starts_with(crate::mcp::cache::YAML_CACHE_PREFIX)
+                    || d.starts_with(crate::mcp::tools::samples::SAMPLE_PREFIX);
+                (!other).then_some(d)
+            }
+            _ => None,
+        }
+    }
+}
+
+/// For a stored program: which stored run to read, or `fresh` to enumerate it instead.
+///
+/// A degree pulled from the database means its stored run — its plans were enumerated at
+/// import — so a stored program is re-enumerated only when the caller asks. Files, inline
+/// content and samples are always analyzed fresh.
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
+pub struct StoredRunArgs {
+    /// Which stored run to read.
+    #[schemars(
+        description = "For a stored program: the stored run to read, \"full\" (default) or \"trimmed\". Not taken with other sources, or with fresh=true."
+    )]
+    pub variant: Option<String>,
+
+    /// Enumerate a stored program's degree afresh instead of reading its stored run.
+    #[schemars(
+        description = "For a stored program: true enumerates its degree afresh instead of reading its stored run (default false), and is what max_plans and the other run settings need. Other sources are always fresh."
+    )]
+    #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
+    pub fresh: Option<bool>,
+}
+
 /// Why [`write_output`] wrote nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriteRefusal {

@@ -7,7 +7,7 @@
 //!   the handle as `degree` instead of sending the body again. That matters most for hosted
 //!   clients, whose files the server cannot read by `path`.
 //!
-//! - [`ARTIFACT_CACHE`] — small LRU of `AnalysisArtifacts` keyed by the
+//! - [`ARTIFACT_CACHE`] — small LRU of `DegreeAnalysis` keyed by the
 //!   (yaml-hash, `max_plans`, `include_courses`, `random_seed`,
 //!   `analysis_timeout_seconds`, `target_course`) tuple. All six are hashed; see
 //!   `make_artifact_key`. Three sequential
@@ -26,7 +26,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::mcp::tools::analyze::AnalysisArtifacts;
+use crate::core::degree::analysis::DegreeAnalysis;
 
 /// Prefix that marks an in-memory YAML-cache handle.
 ///
@@ -169,7 +169,7 @@ pub fn yaml_cache() -> std::sync::MutexGuard<'static, YamlCache> {
 // Artifact cache
 // ============================================================================
 
-/// Composite key — the inputs that uniquely determine an [`AnalysisArtifacts`].
+/// Composite key — the inputs that uniquely determine an [`DegreeAnalysis`].
 ///
 /// `include_courses` is canonicalised (sorted) before hashing so different
 /// orderings of the same set hit the same cache entry.
@@ -214,7 +214,7 @@ fn make_artifact_key(
 
 struct ArtifactEntry {
     key: ArtifactKey,
-    value: Arc<AnalysisArtifacts>,
+    value: Arc<DegreeAnalysis>,
     last_accessed: Instant,
 }
 
@@ -231,14 +231,14 @@ pub struct ArtifactCache {
 impl ArtifactCache {
     /// Look up by composite key. Updates the entry's last-accessed timestamp
     /// on hit so the eviction order tracks recency.
-    fn get(&mut self, key: ArtifactKey) -> Option<Arc<AnalysisArtifacts>> {
+    fn get(&mut self, key: ArtifactKey) -> Option<Arc<DegreeAnalysis>> {
         let idx = self.entries.iter().position(|e| e.key == key)?;
         self.entries[idx].last_accessed = Instant::now();
         Some(self.entries[idx].value.clone())
     }
 
     /// Insert. Evicts the oldest entry when at capacity.
-    fn insert(&mut self, key: ArtifactKey, value: Arc<AnalysisArtifacts>) {
+    fn insert(&mut self, key: ArtifactKey, value: Arc<DegreeAnalysis>) {
         if self.entries.len() >= ARTIFACT_CACHE_CAPACITY {
             if let Some(oldest_idx) = self
                 .entries
@@ -274,7 +274,7 @@ impl ArtifactCache {
 pub static ARTIFACT_CACHE: LazyLock<Mutex<ArtifactCache>> =
     LazyLock::new(|| Mutex::new(ArtifactCache::default()));
 
-/// Fetch a cached `AnalysisArtifacts` for the given inputs, building +
+/// Fetch a cached `DegreeAnalysis` for the given inputs, building +
 /// inserting on miss. Returns the same `Arc` on subsequent calls so
 /// `render_plan_graph` + `analyze_degree` + `course_detail` on the same
 /// YAML share one expensive pipeline run.
@@ -292,7 +292,7 @@ pub(crate) fn cached_artifacts(
     random_seed: Option<u64>,
     analysis_timeout_seconds: Option<u64>,
     target_course: Option<&str>,
-) -> Result<Arc<AnalysisArtifacts>, String> {
+) -> Result<Arc<DegreeAnalysis>, String> {
     let key = make_artifact_key(
         yaml,
         max_plans,

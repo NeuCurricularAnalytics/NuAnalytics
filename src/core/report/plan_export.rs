@@ -6,10 +6,12 @@
 //! Also provides JSONL (JSON Lines) and index CSV formats for aggregating
 //! multiple degree analyses.
 
+use crate::core::degree::placeholder::ELECTIVE_PREFIX;
 use crate::core::degree::plan_selector::{PlanCategory, ScoredPlan, SelectedPlans};
 use crate::core::models::{Course, Degree, Plan, School};
 use crate::core::prerequisite_parser::parse_to_dnf;
-use crate::core::statistics::aggregator::{AggregatedDegreeStats, MetricStats, MetricsAggregator};
+use crate::core::report::report_stats::ReportStats;
+use crate::core::statistics::aggregator::{AggregatedDegreeStats, MetricStats};
 use std::error::Error;
 use std::fs::{self, File};
 use std::io::Write;
@@ -337,10 +339,10 @@ struct CourseInfo {
 /// - Requirement placeholder courses (e.g., WRTC01 for `writing_composition`)
 fn classify_course_key(course_key: &str, course: Option<&Course>) -> CourseInfo {
     // Check for ELEC### pattern (free electives)
-    if let Some(suffix) = course_key.strip_prefix("ELEC") {
+    if let Some(suffix) = course_key.strip_prefix(ELECTIVE_PREFIX) {
         return CourseInfo {
             name: "Free Elective".to_string(),
-            prefix: "ELEC".to_string(),
+            prefix: ELECTIVE_PREFIX.to_string(),
             number: suffix.to_string(),
             credits: crate::core::degree::placeholder::placeholder_credits(course_key),
         };
@@ -391,7 +393,7 @@ fn classify_course_key(course_key: &str, course: Option<&Course>) -> CourseInfo 
 /// Maps common prefixes to descriptive names
 fn humanize_placeholder_prefix(prefix: &str) -> String {
     match prefix {
-        "ELEC" | "FE" => "Free Elective".to_string(),
+        ELECTIVE_PREFIX | "FE" => "Free Elective".to_string(),
         "WRTC" | "WC" => "Writing/Composition".to_string(),
         "AUCC" | "AC" => "Gen Ed Citizenship".to_string(),
         "AW" => "Advanced Writing".to_string(),
@@ -528,13 +530,13 @@ impl DegreeSummary {
     /// # Arguments
     /// * `school` - School containing course catalog
     /// * `degree` - Degree being analyzed
-    /// * `aggregator` - Metrics aggregator with statistics
+    /// * `stats` - The run's reduced statistics
     /// * `selected` - Selected plans
     #[must_use]
     pub fn from_analysis(
         school: &School,
         degree: &Degree,
-        aggregator: &MetricsAggregator,
+        stats: &ReportStats,
         selected: &SelectedPlans,
     ) -> Self {
         let selected_plans = selected
@@ -555,8 +557,8 @@ impl DegreeSummary {
             institution: school.name.clone(),
             cip_code: degree.cip_code.clone(),
             system_type: degree.system_type.clone(),
-            plans_analyzed: aggregator.plan_count(),
-            stats: aggregator.degree_stats(),
+            plans_analyzed: stats.degree_stats().plan_count,
+            stats: stats.degree_stats().clone(),
             selected_plans,
             timestamp: chrono::Utc::now().to_rfc3339(),
         }
@@ -644,7 +646,7 @@ fn escape_json(s: &str) -> String {
 /// # Arguments
 /// * `school` - School containing course catalog
 /// * `degree` - Degree being analyzed
-/// * `aggregator` - Metrics aggregator with statistics
+/// * `stats` - The run's reduced statistics
 /// * `selected` - Selected plans
 /// * `output_dir` - Directory to write JSONL file
 ///
@@ -656,11 +658,11 @@ fn escape_json(s: &str) -> String {
 pub fn export_degree_summary_jsonl(
     school: &School,
     degree: &Degree,
-    aggregator: &MetricsAggregator,
+    stats: &ReportStats,
     selected: &SelectedPlans,
     output_dir: &Path,
 ) -> Result<std::path::PathBuf, Box<dyn Error>> {
-    let summary = DegreeSummary::from_analysis(school, degree, aggregator, selected);
+    let summary = DegreeSummary::from_analysis(school, degree, stats, selected);
     let json_line = summary.to_json_line()?;
 
     let filename = format!("{}_summary.jsonl", sanitize_filename(&degree.degree_id()));
@@ -684,7 +686,7 @@ pub fn export_degree_summary_jsonl(
 /// # Arguments
 /// * `school` - School containing course catalog
 /// * `degree` - Degree being analyzed
-/// * `aggregator` - Metrics aggregator with statistics
+/// * `stats` - The run's reduced statistics
 /// * `selected` - Selected plans
 /// * `output_path` - Path to JSONL file to append to
 ///
@@ -693,11 +695,11 @@ pub fn export_degree_summary_jsonl(
 pub fn append_degree_summary_jsonl(
     school: &School,
     degree: &Degree,
-    aggregator: &MetricsAggregator,
+    stats: &ReportStats,
     selected: &SelectedPlans,
     output_path: &Path,
 ) -> Result<(), Box<dyn Error>> {
-    let summary = DegreeSummary::from_analysis(school, degree, aggregator, selected);
+    let summary = DegreeSummary::from_analysis(school, degree, stats, selected);
     let json_line = summary.to_json_line()?;
 
     let mut file = std::fs::OpenOptions::new()
@@ -720,7 +722,7 @@ const INDEX_CSV_HEADER: &str = "degree_id,degree_name,degree_type,institution,ci
 /// # Arguments
 /// * `school` - School containing course catalog
 /// * `degree` - Degree being analyzed
-/// * `aggregator` - Metrics aggregator with statistics
+/// * `stats` - The run's reduced statistics
 /// * `selected` - Selected plans
 /// * `output_dir` - Directory to write index.csv file
 ///
@@ -732,7 +734,7 @@ const INDEX_CSV_HEADER: &str = "degree_id,degree_name,degree_type,institution,ci
 pub fn export_index_csv(
     school: &School,
     degree: &Degree,
-    aggregator: &MetricsAggregator,
+    stats: &ReportStats,
     selected: &SelectedPlans,
     output_dir: &Path,
 ) -> Result<std::path::PathBuf, Box<dyn Error>> {
@@ -755,7 +757,7 @@ pub fn export_index_csv(
         writeln!(file, "{INDEX_CSV_HEADER}")?;
     }
 
-    let row = format_index_csv_row(school, degree, aggregator, selected);
+    let row = format_index_csv_row(school, degree, stats, selected);
     writeln!(file, "{row}")?;
 
     Ok(output_path)
@@ -785,10 +787,11 @@ pub fn write_index_csv_header(output_dir: &Path) -> Result<std::path::PathBuf, B
 fn format_index_csv_row(
     school: &School,
     degree: &Degree,
-    aggregator: &MetricsAggregator,
+    stats: &ReportStats,
     selected: &SelectedPlans,
 ) -> String {
-    let stats = aggregator.degree_stats();
+    let plans_analyzed = stats.degree_stats().plan_count;
+    let stats = stats.degree_stats();
     let timestamp = chrono::Utc::now().to_rfc3339();
 
     // Get shortest and longest plan stats
@@ -807,7 +810,7 @@ fn format_index_csv_row(
         csv_escape(&school.name),
         degree.cip_code.as_deref().unwrap_or(""),
         csv_escape(&degree.system_type),
-        aggregator.plan_count(),
+        plans_analyzed,
         stats.total_complexity.min,
         stats.total_complexity.max,
         stats.total_complexity.median,
@@ -843,7 +846,7 @@ mod tests {
     use crate::core::metrics::CourseMetrics;
     use crate::core::models::Course;
     use crate::core::report::term_scheduler::TermPlan;
-    use crate::core::statistics::aggregator::AggregatorConfig;
+    use crate::core::statistics::aggregator::{AggregatorConfig, MetricsAggregator};
     use std::collections::HashMap;
     use tempfile::TempDir;
 
@@ -991,7 +994,7 @@ mod tests {
         assert!(config.create_dirs);
     }
 
-    fn create_test_aggregator() -> MetricsAggregator {
+    fn create_test_stats() -> ReportStats {
         let mut agg = MetricsAggregator::new(AggregatorConfig::default());
         let mut metrics = HashMap::new();
         metrics.insert(
@@ -1005,7 +1008,7 @@ mod tests {
             },
         );
         agg.add_plan(&metrics, 120.0);
-        agg
+        ReportStats::from_aggregator(&agg)
     }
 
     #[test]
@@ -1026,10 +1029,10 @@ mod tests {
     fn test_degree_summary_creation() {
         let school = create_test_school();
         let degree = create_test_degree();
-        let aggregator = create_test_aggregator();
+        let stats = create_test_stats();
         let selected = create_test_selected();
 
-        let summary = DegreeSummary::from_analysis(&school, &degree, &aggregator, &selected);
+        let summary = DegreeSummary::from_analysis(&school, &degree, &stats, &selected);
 
         assert_eq!(summary.degree_name, "Computer Science");
         assert_eq!(summary.degree_type, "BS");
@@ -1042,10 +1045,10 @@ mod tests {
     fn test_degree_summary_to_json_line() {
         let school = create_test_school();
         let degree = create_test_degree();
-        let aggregator = create_test_aggregator();
+        let stats = create_test_stats();
         let selected = create_test_selected();
 
-        let summary = DegreeSummary::from_analysis(&school, &degree, &aggregator, &selected);
+        let summary = DegreeSummary::from_analysis(&school, &degree, &stats, &selected);
         let json_line = summary.to_json_line().unwrap();
 
         // Verify it's valid JSON
@@ -1062,11 +1065,10 @@ mod tests {
 
         let school = create_test_school();
         let degree = create_test_degree();
-        let aggregator = create_test_aggregator();
+        let stats = create_test_stats();
         let selected = create_test_selected();
 
-        let result =
-            export_degree_summary_jsonl(&school, &degree, &aggregator, &selected, tmp.path());
+        let result = export_degree_summary_jsonl(&school, &degree, &stats, &selected, tmp.path());
         assert!(result.is_ok());
 
         let path = result.unwrap();
@@ -1085,14 +1087,12 @@ mod tests {
 
         let school = create_test_school();
         let degree = create_test_degree();
-        let aggregator = create_test_aggregator();
+        let stats = create_test_stats();
         let selected = create_test_selected();
 
         // Append twice
-        append_degree_summary_jsonl(&school, &degree, &aggregator, &selected, &output_path)
-            .unwrap();
-        append_degree_summary_jsonl(&school, &degree, &aggregator, &selected, &output_path)
-            .unwrap();
+        append_degree_summary_jsonl(&school, &degree, &stats, &selected, &output_path).unwrap();
+        append_degree_summary_jsonl(&school, &degree, &stats, &selected, &output_path).unwrap();
 
         let contents = fs::read_to_string(&output_path).unwrap();
         assert_eq!(contents.lines().count(), 2);
@@ -1104,10 +1104,10 @@ mod tests {
 
         let school = create_test_school();
         let degree = create_test_degree();
-        let aggregator = create_test_aggregator();
+        let stats = create_test_stats();
         let selected = create_test_selected();
 
-        let result = export_index_csv(&school, &degree, &aggregator, &selected, tmp.path());
+        let result = export_index_csv(&school, &degree, &stats, &selected, tmp.path());
         assert!(result.is_ok());
 
         let path = result.unwrap();
@@ -1125,12 +1125,12 @@ mod tests {
 
         let school = create_test_school();
         let degree = create_test_degree();
-        let aggregator = create_test_aggregator();
+        let stats = create_test_stats();
         let selected = create_test_selected();
 
         // Export twice - second should append without header
-        export_index_csv(&school, &degree, &aggregator, &selected, tmp.path()).unwrap();
-        export_index_csv(&school, &degree, &aggregator, &selected, tmp.path()).unwrap();
+        export_index_csv(&school, &degree, &stats, &selected, tmp.path()).unwrap();
+        export_index_csv(&school, &degree, &stats, &selected, tmp.path()).unwrap();
 
         let path = tmp.path().join("index.csv");
         let contents = fs::read_to_string(&path).unwrap();
@@ -1173,9 +1173,9 @@ mod tests {
 
         let school = create_test_school();
         let degree = create_test_degree();
-        let aggregator = create_test_aggregator();
+        let stats = create_test_stats();
         let selected = create_test_selected();
-        export_index_csv(&school, &degree, &aggregator, &selected, tmp.path()).unwrap();
+        export_index_csv(&school, &degree, &stats, &selected, tmp.path()).unwrap();
 
         let contents = fs::read_to_string(tmp.path().join("index.csv")).unwrap();
         assert_eq!(contents.lines().count(), 2, "header + one appended row");

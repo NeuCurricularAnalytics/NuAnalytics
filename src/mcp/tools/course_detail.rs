@@ -14,8 +14,9 @@ use crate::core::degree::audit::extract_course_level;
 use crate::core::degree::{parse_degree_auto, DegreeParseError};
 use crate::core::models::CourseGraph;
 use crate::core::DegreeProgram;
-use crate::mcp::tools::analyze::{metric_stats_json, AnalysisArtifacts, MetricStatsJson};
+use crate::mcp::tools::analyze::{metric_stats_json, MetricStatsJson};
 use crate::mcp::tools::shared::DegreeSourceArgs;
+use crate::mcp::tools::view::AnalysisView;
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +36,10 @@ pub struct GetCourseDetailRequest {
     /// Where the degree comes from: exactly one of `degree`, `content`, `path`.
     #[serde(flatten)]
     pub source: DegreeSourceArgs,
+
+    /// For a stored program, its stored run or a fresh enumeration.
+    #[serde(flatten)]
+    pub run: crate::mcp::tools::shared::StoredRunArgs,
 
     /// Target course identifier (must match a key under `courses:` in the YAML).
     #[schemars(description = "Course key (e.g. \"CS165\") to inspect.")]
@@ -150,7 +155,9 @@ pub fn execute(
 
     if include_analysis {
         match crate::mcp::cache::cached_artifacts(yaml_content, max_plans, None, None, None, None) {
-            Ok(artifacts) => build_response_with_analysis(course_id, &artifacts),
+            Ok(artifacts) => {
+                build_response_with_analysis(course_id, &AnalysisView::fresh(&artifacts))
+            }
             Err(e) => error_response(course_id, e),
         }
     } else {
@@ -239,31 +246,28 @@ fn populate_static_fields(
     }
 }
 
-/// Build the response from already-computed `AnalysisArtifacts`.
+/// [`build_response_with_analysis`], serialized as JSON.
+pub(crate) fn present_json(course_id: &str, view: &AnalysisView<'_>) -> String {
+    crate::core::json::to_json_pretty(&build_response_with_analysis(course_id, view))
+}
+
+/// The response for one course of an analysis, fresh or stored.
 fn build_response_with_analysis(
     course_id: &str,
-    artifacts: &AnalysisArtifacts,
+    artifacts: &AnalysisView<'_>,
 ) -> CourseDetailResponse {
-    // The artifacts already broke cycles in their internal CourseGraph copy,
-    // but the graph itself is owned inside `build_artifacts`. Re-derive the
-    // graph from the parsed program here — cheap, milliseconds.
-    let mut graph_result = CourseGraph::from_degree_program(&artifacts.program);
-    if !graph_result.cycles.is_empty() {
-        graph_result.graph.break_cycles(&graph_result.cycles);
-        graph_result.cycles.clear();
-    }
     let analysis = course_analysis(course_id, artifacts);
     populate_static_fields(
         course_id,
-        &artifacts.program,
-        &graph_result.graph,
+        artifacts.program,
+        artifacts.graph,
         Some(analysis),
     )
 }
 
 /// Course analysis derived from the aggregated metrics + selected plans.
-fn course_analysis(course_id: &str, artifacts: &AnalysisArtifacts) -> CourseAnalysis {
-    let stats = artifacts.aggregator.course_stats(course_id);
+fn course_analysis(course_id: &str, artifacts: &AnalysisView<'_>) -> CourseAnalysis {
+    let stats = artifacts.stats.course_stats(course_id);
     let appears_in_selected_plans: Vec<PlanPlacement> = artifacts
         .selected
         .iter()

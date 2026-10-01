@@ -5,9 +5,10 @@
 //! once here and shared, so a fixture used by two test modules is embedded in the test
 //! binary once rather than per module.
 
-use nu_analytics::mcp::tools::analyze::{
-    execute, AnalysisResponse, AnalyzeOptions, TargetCourseStats,
-};
+use nu_analytics::core::degree::analysis::{analyze, AnalysisConfig, TargetCourseStats};
+use nu_analytics::core::degree::{parse_degree_auto, SamplingStrategy};
+#[cfg(feature = "mcp")]
+use nu_analytics::mcp::tools::analyze::{execute, AnalysisResponse, AnalyzeOptions};
 
 /// Plan cap used by the target-course cases, so their figures stay comparable.
 pub const MAX_PLANS: usize = 200;
@@ -45,10 +46,11 @@ pub const BELLEVUE: &str = include_str!(
     "../assets/degrees/bellevue-college-software-development-bas-artificial-intelligence-concentration.unified.json"
 );
 
-/// Analyze `degree_json` asking where `course` lands.
+/// Analyze `degree_json` through the MCP's `analyze_degree`, asking where `course` lands.
 ///
 /// `label` identifies the degree in failure messages — without it a panic from one of the
 /// thirteen fixtures does not say which one.
+#[cfg(feature = "mcp")]
 pub fn analyze_target(
     label: &str,
     degree_json: &str,
@@ -71,7 +73,9 @@ pub fn analyze_target(
     response
 }
 
-/// `target_course_stats` for one degree/course pair.
+/// `target_course_stats` for one degree/course pair, from the shared analysis pipeline at
+/// the MCP's settings (three Random Samples, shuffled, duplicates skipped), which the
+/// recorded baselines were taken under.
 ///
 /// Panics rather than returning an `Option`: every caller requests a target course, and
 /// the field is populated whenever one is requested.
@@ -81,7 +85,19 @@ pub fn target_stats(
     max_plans: usize,
     course: &str,
 ) -> TargetCourseStats {
-    analyze_target(label, degree_json, max_plans, course)
+    let (program, _) =
+        parse_degree_auto(degree_json).unwrap_or_else(|e| panic!("{label}: does not parse: {e}"));
+    let config = AnalysisConfig {
+        max_plans,
+        ignore_duplicates: true,
+        sample_count: 3,
+        sampling_strategy: SamplingStrategy::Shuffled,
+        include_courses: Vec::new(),
+        random_seed: None,
+        time_limit: None,
+        target_course: Some(course),
+    };
+    analyze(program, &config, &mut |_| {})
         .target_course_stats
         .unwrap_or_else(|| {
             panic!("{label}: requesting target_course={course} must populate target_course_stats")

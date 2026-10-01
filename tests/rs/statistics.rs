@@ -282,7 +282,8 @@ fn test_reservoir_percentile_accuracy() {
     let median = reservoir.median();
     let q3 = reservoir.q3();
 
-    // Allow 10% error due to sampling
+    // Allow 10% error due to sampling. The reservoir's generator is seeded, so this is
+    // one fixed sample, not a fresh draw per run.
     assert!(q1 > 2000.0 && q1 < 3000.0, "Q1 was {q1}");
     assert!(median > 4500.0 && median < 5500.0, "Median was {median}");
     assert!(q3 > 7000.0 && q3 < 8000.0, "Q3 was {q3}");

@@ -300,18 +300,18 @@ pub enum DegreeSubcommand {
         #[arg(long, value_name = "NAME")]
         school: Option<String>,
 
-        /// Compute earliest-semester stats for a specific target course and
-        /// print them as JSON to stdout. When set alongside `--no-report
-        /// --no-csv`, this is the fastest way to query a single course's
-        /// first-semester number without generating full reports.
+        /// Report which term a course lands in across the analyzed plans, as
+        /// JSON on stdout, instead of writing reports. The plans are the ones
+        /// `degree analyze` would analyze with the same options. Works with
+        /// `--from-db`; always runs in-process, whatever `--jobs` says.
         ///
         /// Example: --target-course CSE475
         #[arg(long, value_name = "COURSE_ID")]
         target_course: Option<String>,
 
-        /// When `--target-course` is set, write the full analysis JSON
-        /// (course complexity, plan stats, `target_course_stats`, etc.) to
-        /// this path in addition to printing `target_course_stats` to stdout.
+        /// With `--target-course`, also write the degree's report JSON — the
+        /// `<degree>_report.json` a normal run writes — to this path, with
+        /// the course's statistics under `analysis.target_course_stats`.
         ///
         /// Example: `--metrics-out metrics/tulane-cmps2200.json`
         #[arg(long, value_name = "PATH", requires = "target_course")]

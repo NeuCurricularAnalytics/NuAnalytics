@@ -1,18 +1,20 @@
 //! Where a target course lands across a degree's enumerated plan population.
 //!
-//! `analyze_degree` is asked for a specific course in a specific degree; the answer is
-//! checked against a recorded baseline plus the invariants `target_course_stats` is
-//! documented to hold (`TargetCourseStats`, `src/mcp/tools/analyze.rs`).
+//! The analysis pipeline is asked for a specific course in a specific degree, at the
+//! settings of the MCP's `analyze_degree`; the answer is checked against a recorded
+//! baseline plus the invariants `target_course_stats` is documented to hold
+//! (`TargetCourseStats`, `src/core/degree/analysis.rs`).
 //!
 //! Companion module: `target_course_selected_plans` covers the boundary between these
 //! population figures and the handful of plans `selected_plans` surfaces.
 //!
 //! # Why only `earliest_term` is baselined
 //!
-//! Plan enumeration is seeded (`build_artifacts` passes its seed to the generator), so a
-//! run is reproducible — `analyze::tests::test_build_artifacts_is_reproducible_for_identical_inputs`
-//! pins that directly, cache-free. But with `random_seed: None` the seed is derived via
-//! `DefaultHasher`, whose output std does not guarantee stable across toolchains. A
+//! Plan enumeration is seeded (`core::degree::analysis::analyze` passes its seed to the
+//! generator), so a run is reproducible — `analyze::tests::test_build_artifacts_is_reproducible_for_identical_inputs`
+//! pins that directly, cache-free. But with `random_seed: None` the seed is derived from
+//! the degree via `DefaultHasher` (`default_seed_for_program`), whose output std does not
+//! guarantee stable across toolchains. A
 //! different seed enumerates a different sample of the plan space, which moves
 //! `plans_containing`, `avg_term` and `term_distribution`.
 //!
@@ -27,7 +29,7 @@ use super::degree_fixtures::{
     bundled_sample, target_stats, ASU, BELLEVUE, BOWDOIN, CALSTATELA, COC, LIBERTY, MAX_PLANS,
     METRO, NMSU, RIC, SYRACUSE, TULANE, TXSTATE, WKU,
 };
-use nu_analytics::mcp::tools::analyze::{TargetCourseStats, TargetTermStats};
+use nu_analytics::core::degree::analysis::{TargetCourseStats, TargetTermStats};
 use std::sync::LazyLock;
 
 /// A course code none of these degrees uses, for the not-found path.
@@ -182,9 +184,8 @@ const CASES: &[Case] = &[
 
 /// Every case analyzed once, shared across the tests below.
 ///
-/// Each entry enumerates up to `MAX_PLANS` plans. The library's own artifact cache holds
-/// only `ARTIFACT_CACHE_CAPACITY` (4) entries against these 20+ distinct keys, so without
-/// this every test would pay full price again.
+/// Each entry enumerates up to `MAX_PLANS` plans, so without this every test would pay
+/// full price again.
 static PROBES: LazyLock<Vec<TargetCourseStats>> = LazyLock::new(|| {
     CASES
         .iter()

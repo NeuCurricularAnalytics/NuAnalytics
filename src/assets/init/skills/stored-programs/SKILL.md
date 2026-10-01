@@ -23,9 +23,10 @@ allowed-tools: mcp__nuanalytics__search_degrees mcp__nuanalytics__get_degree mcp
   the history.
 - `render_stored_report(degree=…, variant="full", output_path="reports/…")` writes the
   report of that stored run.
-- `compare_degrees(sources=[{degree: …}, …], metrics="stored")` compares stored runs
-  side by side.
+- `compare_degrees(sources=[{degree: …}, …])` compares stored runs side by side.
 - Any degree tool takes a `program_key` as `degree`. There is no need to export first.
+  `analyze_degree`, `render_degree_report`, `render_plan_graph` and `get_course_detail`
+  read its stored run, named in the response's `source.run`.
 
 ## What you would otherwise get wrong
 
@@ -36,9 +37,10 @@ allowed-tools: mcp__nuanalytics__search_degrees mcp__nuanalytics__get_degree mcp
   to one path. Never compare a full run with a trimmed one.
 - **Across `analyzer_version`s, a difference can come from the analyzer**, not the
   degree. Compare runs of the same version, or say that the versions differ.
-- **Stored figures are reproducible; fresh ones are not.** `analyze_degree` and
-  `compare_degrees(metrics="fresh")` enumerate again. Use them only when there is no
-  stored run, or when the question is about the degree as it stands now.
+- **A stored program is read, not re-run.** Only `fresh=true` (on `compare_degrees`,
+  `metrics="fresh"`) enumerates it again, and settings such as `max_plans` are refused
+  without it. Ask for a fresh run only when the question is about the degree as the
+  current analyzer sees it, and say that its figures are not the stored ones.
 - **A `degree_id` can span catalog years.** When it matches several programs, you get
   their `program_key`s. Pick one, and never average across the matches.
 - This skill only reads. Adding a program is `import_degree`, which the server offers

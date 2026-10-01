@@ -3,30 +3,23 @@
 //! Provides the `analyze_degree` MCP tool that runs full degree analysis:
 //! generates plans, computes aggregate metrics, and returns structured results.
 //!
-//! The pipeline (parse → graph → plan generation → aggregation) is factored
-//! into `build_artifacts` / `AnalysisArtifacts` (`pub(crate)` items), cached by
-//! `crate::mcp::cache::cached_artifacts`, so sibling tools (`render_degree_report`,
-//! `render_plan_graph`, `get_course_detail`) reuse one run.
+//! The pipeline itself is `core::degree::analysis`, the one `degree analyze` runs too;
+//! this module parses the request, applies the MCP's defaults and shapes the response.
+//! `build_artifacts` is cached by `crate::mcp::cache::cached_artifacts`, so sibling tools
+//! (`render_degree_report`, `render_plan_graph`, `get_course_detail`) reuse one run.
 
+use crate::core::degree::analysis::{analyze, AnalysisConfig, DegreeAnalysis};
 use crate::core::degree::{
-    is_placeholder_course, parse_degree_auto, DegreeParseError, PlanGenerationStats, PlanGenerator,
-    PlanGeneratorConfig, PlanSelector, PlanSelectorConfig, PlanVariant, SamplingStrategy,
-    SelectedPlans,
+    is_placeholder_course, parse_degree_auto, DegreeParseError, SamplingStrategy,
 };
-use crate::core::metrics::compute_all_metrics;
-use crate::core::models::{Course, CourseGraph, School, DAG};
-use crate::core::report::term_scheduler::TermScheduler;
-use crate::core::report::ReportStats;
-use crate::core::report::SchedulerConfig;
-use crate::core::statistics::{AggregatorConfig, MetricStats, MetricsAggregator};
-use crate::core::DegreeProgram;
+use crate::core::statistics::MetricStats;
 use crate::mcp::tools::shared::{
     DegreeSourceArgs, ToolFollowup, TOOL_ANALYZE_DEGREE, TOOL_AUDIT_DEGREE, TOOL_VALIDATE_DEGREE,
 };
+use crate::mcp::tools::view::{AnalysisView, Run};
 use rmcp::schemars;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 // ============================================================================
 // Request/Response Types
@@ -41,6 +34,10 @@ pub struct AnalyzeDegreeRequest {
     /// Where the degree comes from: exactly one of `degree`, `content`, `path`.
     #[serde(flatten)]
     pub source: DegreeSourceArgs,
+
+    /// For a stored program, its stored run or a fresh enumeration.
+    #[serde(flatten)]
+    pub run: crate::mcp::tools::shared::StoredRunArgs,
 
     /// Maximum number of plans to generate (default: 500)
     #[schemars(
@@ -116,40 +113,8 @@ pub struct AnalyzeDegreeRequest {
     pub analysis_timeout_seconds: Option<u64>,
 }
 
-/// Term-reach statistics for one slice of plans (all plans, or calc-ready only).
-#[derive(Debug, Default, Clone, Serialize)]
-pub struct TargetTermStats {
-    /// Number of plans that contained the target course.
-    pub plans_containing: usize,
-    /// Earliest term number the course was scheduled in, across containing plans.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub earliest_term: Option<usize>,
-    /// Mean scheduled term number across all containing plans.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub avg_term: Option<f64>,
-    /// How many plans landed on each term number. Sorted by term for readability.
-    pub term_distribution: std::collections::BTreeMap<usize, usize>,
-}
-
-/// Earliest-semester statistics for a specific target course.
-///
-/// Populated on `analyze_degree` responses when `target_course` is set.
-/// `all_plans` covers every plan that contained the course. `calc_ready_plans`
-/// is the subset of those where the plan also includes a recognised calculus
-/// course — i.e., plans where calc is part of the degree track and a
-/// calc-ready student would reach the target faster.
-#[derive(Debug, Clone, Serialize)]
-pub struct TargetCourseStats {
-    /// The course ID that was looked up.
-    pub course_id: String,
-    /// Set when the target course did not appear in any generated plan.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    /// Stats across all plans that contained the target course.
-    pub all_plans: TargetTermStats,
-    /// Stats restricted to plans that also include a calculus course.
-    pub calc_ready_plans: TargetTermStats,
-}
+/// The target-course statistics are computed by the shared pipeline.
+pub use crate::core::degree::analysis::{TargetCourseStats, TargetTermStats};
 
 /// Serializable metric statistics (includes quartiles for box plots).
 ///
@@ -409,7 +374,7 @@ pub fn execute(yaml_content: &str, opts: &AnalyzeOptions<'_>) -> AnalysisRespons
         opts.target_course,
     ) {
         Ok(artifacts) => build_response(
-            &artifacts,
+            &AnalysisView::fresh(&artifacts),
             opts.include_per_course_metrics,
             opts.include_placeholder_metrics,
         ),
@@ -417,82 +382,17 @@ pub fn execute(yaml_content: &str, opts: &AnalyzeOptions<'_>) -> AnalysisRespons
     }
 }
 
-/// Owned bundle of every value the analysis pipeline produces — the parsed
-/// program, the course graph (as a DAG + the equivalence map), the metrics
-/// aggregator, and the curated [`SelectedPlans`] alongside the generation
-/// stats. Sibling tools (e.g. the HTML report renderer) consume this struct
-/// so the pipeline is implemented exactly once.
+/// Parse `yaml_content` and run the shared analysis pipeline on it with the MCP's
+/// defaults: 500 plans, three Random Samples, shuffled order, and a 180 s wall-clock limit
+/// (clamped to 1..=600). A `None` seed is derived from the degree, so the same degree
+/// yields the same plans however its text is formatted.
 ///
-/// Exposed at `pub(crate)` so [`crate::mcp::cache::cached_artifacts`] can
-/// Arc-wrap the bundle and share it across tools.
-pub(crate) struct AnalysisArtifacts {
-    /// Parsed degree program.
-    pub program: DegreeProgram,
-    /// School/course catalog derived from the program.
-    pub school: School,
-    /// Course DAG built from the prerequisite graph (cycles already broken).
-    pub dag: DAG,
-    /// Map from course key to the set of equivalent courses.
-    pub equivalences: HashMap<String, HashSet<String>>,
-    /// Aggregated metrics across every plan that was processed.
-    pub aggregator: MetricsAggregator,
-    /// The reduced view of `aggregator` that reports and graphs consume. Built once
-    /// here because the per-plan graph loop would otherwise rebuild it for every plan.
-    pub report_stats: ReportStats,
-    /// Curated selected plans (shortest, longest, calc-ready, random samples).
-    pub selected: SelectedPlans,
-    /// Number of plans actually processed (after dedup, capped at `max_plans`).
-    pub plans_processed: usize,
-    /// Pre-generation stats; `stats.total_possible` is the upper bound on
-    /// distinct plans for this YAML.
-    pub stats: PlanGenerationStats,
-    /// The effective `max_plans` cap used by the run.
-    pub max_plans: usize,
-    /// Seed used for the reservoir-sample RNG. Either the caller-supplied
-    /// `random_seed` or the default derived from the YAML body — surfaced on
-    /// the response so reports can cite the seed and re-run reproducibly.
-    pub seed_used: u64,
-    /// `true` when the plan-generation loop stopped because the wall-clock
-    /// budget tripped rather than `max_plans` or natural exhaustion.
-    pub time_limit_reached: bool,
-    /// Wall-clock duration of the plan-generation phase in milliseconds.
-    pub time_elapsed_ms: u64,
-    /// Earliest-semester stats for the target course, if one was requested.
-    pub target_course_stats: Option<TargetCourseStats>,
-}
-
-impl AnalysisArtifacts {
-    /// True when every distinct plan was analyzed — the cap was not hit, or
-    /// the cap was hit but the underlying upper bound did not exceed it.
-    /// Sibling tools (`analyze_degree` JSON output, the HTML report) use this
-    /// to frame results honestly as "full population" vs "sample of N".
-    pub const fn is_full_population(&self) -> bool {
-        !(self.plans_processed >= self.max_plans && self.stats.total_possible > self.max_plans)
-    }
-
-    /// Effective population size: the actual processed count when the run
-    /// covered everything, otherwise the upper-bound estimate from the
-    /// requirement-choice product.
-    pub const fn population_size(&self) -> usize {
-        if self.is_full_population() {
-            self.plans_processed
-        } else {
-            self.stats.total_possible
-        }
-    }
-}
-
-/// Run the full analysis pipeline against `yaml_content` and return the
-/// produced artifacts. On YAML parse failure, returns a formatted error
-/// string suitable for surfacing through MCP tools.
-///
-/// Prefer [`crate::mcp::cache::cached_artifacts`] over calling this directly
-/// — the cache shares the resulting [`AnalysisArtifacts`] Arc across sibling
-/// tools so the expensive pipeline runs once per `(yaml, max_plans,
-/// include_courses)` combination.
+/// Prefer [`crate::mcp::cache::cached_artifacts`] over calling this directly — the cache
+/// shares the resulting [`DegreeAnalysis`] across sibling tools so the pipeline runs once
+/// per combination of inputs.
 ///
 /// # Errors
-/// Returns a formatted parse-error string when the YAML cannot be parsed.
+/// Returns a formatted parse-error string when the degree cannot be parsed.
 pub(crate) fn build_artifacts(
     yaml_content: &str,
     max_plans: Option<usize>,
@@ -500,186 +400,25 @@ pub(crate) fn build_artifacts(
     random_seed: Option<u64>,
     analysis_timeout_seconds: Option<u64>,
     target_course: Option<&str>,
-) -> Result<AnalysisArtifacts, String> {
-    let max = max_plans.unwrap_or(DEFAULT_MAX_PLANS);
-    let include = include_courses.map(<[String]>::to_vec).unwrap_or_default();
-    // Default seed = stable derivative of the YAML body, so same inputs
-    // always yield the same Random Sample plan. Callers that want a
-    // different sample pass `Some(seed)` explicitly.
-    let seed_used = random_seed.unwrap_or_else(|| default_seed_for_yaml(yaml_content));
-    let timeout_secs = analysis_timeout_seconds
-        .unwrap_or(DEFAULT_ANALYSIS_TIMEOUT_SECS)
-        .clamp(MIN_ANALYSIS_TIMEOUT_SECS, MAX_ANALYSIS_TIMEOUT_SECS);
-    let deadline = Some(Instant::now() + Duration::from_secs(timeout_secs));
-
+) -> Result<DegreeAnalysis, String> {
     // Accept YAML or unified/ai-landscape JSON (auto-detected). Conversion
     // warnings are surfaced by validate_degree / convert_degree, not here.
     let (program, _conversion_warnings) =
         parse_degree_auto(yaml_content).map_err(|e| format_parse_error(&e))?;
-
-    let school = build_school(&program);
-    let mut graph_result = CourseGraph::from_degree_program(&program);
-    if !graph_result.cycles.is_empty() {
-        graph_result.graph.break_cycles(&graph_result.cycles);
-        graph_result.cycles.clear();
-    }
-    let dag = build_dag(&graph_result.graph);
-    let equivalences = build_equivalences(&program.requirements);
-
-    let gen_config = PlanGeneratorConfig {
-        max_plans: max,
+    let timeout_secs = analysis_timeout_seconds
+        .unwrap_or(DEFAULT_ANALYSIS_TIMEOUT_SECS)
+        .clamp(MIN_ANALYSIS_TIMEOUT_SECS, MAX_ANALYSIS_TIMEOUT_SECS);
+    let config = AnalysisConfig {
+        max_plans: max_plans.unwrap_or(DEFAULT_MAX_PLANS),
         ignore_duplicates: true,
         sample_count: 3,
-        target_credits: program.degree.total_credits,
         sampling_strategy: SamplingStrategy::Shuffled,
-        include_courses: include,
-        random_seed: Some(seed_used),
-        ..Default::default()
+        include_courses: include_courses.map(<[String]>::to_vec).unwrap_or_default(),
+        random_seed,
+        time_limit: Some(Duration::from_secs(timeout_secs)),
+        target_course,
     };
-    let generator = PlanGenerator::new(&program.requirements, &program.courses, gen_config.clone());
-    let stats = generator.get_stats();
-
-    let agg_config = AggregatorConfig {
-        reservoir_size: 1000,
-        track_per_course: true,
-        exact_mode: stats.total_possible <= 10000,
-    };
-    let selector_config = PlanSelectorConfig {
-        sample_count: gen_config.sample_count,
-        scheduler_config: SchedulerConfig::default(),
-        random_seed: Some(seed_used),
-        ..Default::default()
-    };
-
-    let mut aggregator = MetricsAggregator::new(agg_config);
-    let plans_processed;
-    let time_limit_reached;
-    // Time only the plan-generation phase. Parse / graph build / aggregator
-    // setup are cheap and fixed-cost; what the caller cares about budgeting
-    // is the loop below.
-    let loop_start = Instant::now();
-    let mut target_all_terms: Vec<usize> = Vec::new();
-    let mut target_calc_ready_terms: Vec<usize> = Vec::new();
-    let selected = {
-        let mut selector = PlanSelector::new(&school, &dag, selector_config);
-        let ctx = AnalysisCtx {
-            graph: &graph_result.graph,
-            equivalences: &equivalences,
-            school: &school,
-            target_credits: program.degree.total_credits,
-            fill_ids: crate::core::degree::fill_electives::fill_requirement_ids(
-                &program.requirements,
-            ),
-        };
-        let (processed, hit_limit) = run_plan_analysis(
-            &generator,
-            &gen_config,
-            &ctx,
-            max,
-            deadline,
-            &mut aggregator,
-            &mut selector,
-            target_course,
-            &mut target_all_terms,
-            &mut target_calc_ready_terms,
-        );
-        plans_processed = processed;
-        time_limit_reached = hit_limit;
-        selector.into_selected_plans()
-    };
-    // u128 → u64 narrowing: 600 s upper clamp on the deadline keeps elapsed
-    // ≤ 600,000 ms, far below u64::MAX. Saturating fallback is purely a
-    // belt-and-braces guard against future clamp loosening.
-    let time_elapsed_ms = u64::try_from(loop_start.elapsed().as_millis()).unwrap_or(u64::MAX);
-
-    let target_course_stats = target_course.map(|course_id| {
-        build_target_course_stats(
-            course_id,
-            &target_all_terms,
-            &target_calc_ready_terms,
-            plans_processed,
-        )
-    });
-
-    Ok(AnalysisArtifacts {
-        program,
-        school,
-        dag,
-        equivalences,
-        report_stats: ReportStats::from_aggregator(&aggregator),
-        aggregator,
-        selected,
-        plans_processed,
-        stats,
-        max_plans: max,
-        seed_used,
-        time_limit_reached,
-        time_elapsed_ms,
-        target_course_stats,
-    })
-}
-
-/// Summarise where a target course landed across the enumerated plans.
-///
-/// `all_terms` holds one scheduled term number per plan that contained the course, and
-/// `calc_ready_terms` the same for the calc-ready subset.
-///
-/// An empty `all_terms` yields zeroed stats either way — `build_target_term_stats`
-/// returns the default for an empty slice. The `error` is what distinguishes the cases,
-/// and it carries `plans_processed` so a caller can tell "this degree does not offer the
-/// course" from "enumeration was capped before reaching it".
-fn build_target_course_stats(
-    course_id: &str,
-    all_terms: &[usize],
-    calc_ready_terms: &[usize],
-    plans_processed: usize,
-) -> TargetCourseStats {
-    TargetCourseStats {
-        course_id: course_id.to_string(),
-        // `calc_ready_terms` is only pushed alongside `all_terms`, so it is necessarily
-        // empty whenever `all_terms` is — one emptiness check covers both.
-        error: all_terms.is_empty().then(|| {
-            format!(
-                "Course '{course_id}' did not appear in any of the {plans_processed} generated plans."
-            )
-        }),
-        all_plans: build_target_term_stats(all_terms),
-        calc_ready_plans: build_target_term_stats(calc_ready_terms),
-    }
-}
-
-/// Compute `TargetTermStats` from one scheduled term number per containing plan.
-fn build_target_term_stats(terms: &[usize]) -> TargetTermStats {
-    if terms.is_empty() {
-        return TargetTermStats::default();
-    }
-    let mut dist = std::collections::BTreeMap::new();
-    for &t in terms {
-        *dist.entry(t).or_insert(0usize) += 1;
-    }
-    let earliest = terms.iter().copied().min();
-    #[allow(clippy::cast_precision_loss)]
-    let avg = terms.iter().sum::<usize>() as f64 / terms.len() as f64;
-    TargetTermStats {
-        plans_containing: terms.len(),
-        earliest_term: earliest,
-        avg_term: Some(avg),
-        term_distribution: dist,
-    }
-}
-
-/// Stable seed derived from the YAML body.
-///
-/// Reuses `DefaultHasher` so the value is consistent within a process run.
-/// Re-runs in different processes hash to the same value because the hasher
-/// is deterministic and the input is identical. Callers can pin the seed
-/// explicitly via the `random_seed` request field.
-fn default_seed_for_yaml(yaml: &str) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    yaml.hash(&mut hasher);
-    hasher.finish()
+    Ok(analyze(program, &config, &mut |_| {}))
 }
 
 /// Build the parse-error escape hatch for the analyze response.
@@ -716,168 +455,54 @@ fn parse_error_response(error: &str) -> AnalysisResponse {
     }
 }
 
-/// Context for plan analysis processing
-struct AnalysisCtx<'a> {
-    graph: &'a CourseGraph,
-    equivalences: &'a HashMap<String, HashSet<String>>,
-    school: &'a School,
-    target_credits: Option<u32>,
-    /// Requirements flagged `fills_to_total` in the document. Same sizing as the CLI
-    /// pipeline — the two copies of this loop drifting apart is how elective sizing
-    /// previously differed between CLI and MCP reports.
-    fill_ids: Vec<String>,
-}
-
-/// Process plan variants, updating aggregator and selector.
-///
-/// Stops early in either of two cases: the `max` plan-count cap is reached,
-/// or the optional `deadline` trips. Returns the plan count actually
-/// processed along with a `time_limit_reached` flag the caller can surface
-/// so the difference between cap-truncation and clock-truncation stays
-/// visible.
-#[allow(clippy::too_many_arguments)]
-fn run_plan_analysis(
-    generator: &PlanGenerator<'_>,
-    gen_config: &PlanGeneratorConfig,
-    ctx: &AnalysisCtx<'_>,
-    max: usize,
-    deadline: Option<Instant>,
-    aggregator: &mut MetricsAggregator,
-    selector: &mut PlanSelector<'_>,
-    target_course: Option<&str>,
-    target_all_terms: &mut Vec<usize>,
-    target_calc_ready_terms: &mut Vec<usize>,
-) -> (usize, bool) {
-    let mut plans_processed = 0;
-    let mut time_limit_reached = false;
-    let mut seen_fingerprints = HashSet::new();
-    // Same set for every plan, so build it once. `include_courses` is the request's
-    // forced-course list; it resolves an OR-group to the branch the caller pinned.
-    let include_set: HashSet<String> = gen_config.include_courses.iter().cloned().collect();
-
-    for variant in generator.generate() {
-        if plans_processed >= max {
-            break;
-        }
-        // Wall-clock deadline check. `Instant::now()` is sub-µs on every
-        // tier-1 target, so per-iteration polling is cheap relative to the
-        // schedule+metrics work that follows.
-        if let Some(d) = deadline {
-            if Instant::now() >= d {
-                time_limit_reached = true;
-                break;
-            }
-        }
-
-        if gen_config.ignore_duplicates {
-            let fp = variant.fingerprint();
-            if seen_fingerprints.contains(&fp) {
-                continue;
-            }
-            seen_fingerprints.insert(fp);
-        }
-
-        let mut expanded = expand_with_prereqs(&variant.courses, ctx.graph, ctx.equivalences);
-        // Before the DAG, so metrics describe the same course list as credits and schedule.
-        let mut fill: Option<crate::core::degree::fill_electives::FillResize> = None;
-        if let Some(target) = ctx.target_credits {
-            #[allow(clippy::cast_precision_loss)] // target credits < 1000
-            if let Some(resize) = crate::core::degree::fill_electives::shrink_fill_blocks(
-                &expanded,
-                &variant.requirement_choices,
-                &ctx.fill_ids,
-                target as f32,
-                |c| {
-                    ctx.school
-                        .get_course(c)
-                        .map_or_else(|| placeholder_credits(c), |co| co.credit_hours)
-                },
-                |c| ctx.school.get_course(c).is_some(),
-                |c| c.starts_with("ELEC"),
-            ) {
-                expanded.clone_from(&resize.courses);
-                fill = Some(resize);
-            }
-        }
-        // Final plan first, then its DAG and metrics — same order as the CLI pipeline, so
-        // complexity counts the placeholders the scheduled plan actually contains.
-        let expanded_variant = build_expanded_variant(
-            &variant,
-            &expanded,
-            ctx.school,
-            ctx.target_credits,
-            fill.as_ref(),
-        );
-
-        let plan_dag = crate::core::degree::build_plan_dag(
-            &expanded_variant.courses,
-            ctx.graph,
-            ctx.equivalences,
-            &include_set,
-        );
-
-        let Ok(course_metrics) = compute_all_metrics(&plan_dag) else {
-            continue;
-        };
-
-        // Accumulate the actual scheduled term for the target course.
-        // Must use expanded_variant.courses (includes prerequisite courses)
-        // to match the scheduler input used by the plan selector — otherwise
-        // courses without prerequisites get placed in wrong terms.
-        if let Some(target) = target_course {
-            if expanded_variant.courses.contains(&target.to_string()) {
-                let scheduler =
-                    TermScheduler::new(ctx.school, &plan_dag, SchedulerConfig::default());
-                let schedule = scheduler.schedule(&expanded_variant.courses);
-                let term = schedule
-                    .terms
-                    .iter()
-                    .find(|t| t.courses.contains(&target.to_string()))
-                    .map(|t| t.number);
-                if let Some(t) = term {
-                    target_all_terms.push(t);
-                    if selector.is_calc_ready_plan(&variant) {
-                        target_calc_ready_terms.push(t);
-                    }
-                }
-            }
-        }
-
-        aggregator.add_plan(&course_metrics, f64::from(expanded_variant.total_credits));
-        selector.process_plan(&expanded_variant, &course_metrics, &plan_dag);
-
-        plans_processed += 1;
-    }
-
-    (plans_processed, time_limit_reached)
-}
-
 /// Free-form notes the analyze pass produced as side effects (duplicate
-/// calc-ready suppression, clock-truncation). Empty when nothing notable
-/// happened.
-fn build_response_notes(artifacts: &AnalysisArtifacts) -> Vec<String> {
+/// calc-ready suppression, clock-truncation), and for a stored run which run it was.
+fn build_response_notes(artifacts: &AnalysisView<'_>) -> Vec<String> {
     let mut notes = Vec::new();
+    if let Run::Stored(run) = artifacts.run {
+        notes.push(format!(
+            "Read from the stored `{}` run {} (analyzer {}); nothing was enumerated. \
+             fresh=true enumerates the degree afresh instead.",
+            run.variant,
+            run.run_key,
+            run.analyzer_version.as_deref().unwrap_or("unrecorded"),
+        ));
+    }
     if artifacts.selected.calc_ready_suppressed {
         notes.push(
             "calc-ready-shortest suppressed as structural duplicate of shortest-path".to_string(),
         );
     }
-    if artifacts.time_limit_reached {
+    if artifacts.time_limit_reached() {
         notes.push(format!(
             "plan-generation loop stopped early at {} plans after {} ms — analysis_timeout_seconds tripped",
-            artifacts.plans_processed, artifacts.time_elapsed_ms,
+            artifacts.plans_analyzed(),
+            artifacts.time_elapsed_ms(),
         ));
     }
     notes
 }
 
-/// Build the analysis response from a populated [`AnalysisArtifacts`] bundle.
+/// The `analyze_degree` response for an analysis, fresh or stored, serialized.
+pub(crate) fn view_json(
+    view: &AnalysisView<'_>,
+    include_per_course_metrics: bool,
+    include_placeholder_metrics: bool,
+) -> String {
+    crate::core::json::to_json_pretty(&build_response(
+        view,
+        include_per_course_metrics,
+        include_placeholder_metrics,
+    ))
+}
+
+/// Build the analysis response from an analysis, fresh or stored.
 fn build_response(
-    artifacts: &AnalysisArtifacts,
+    artifacts: &AnalysisView<'_>,
     include_per_course_metrics: bool,
     include_placeholder_metrics: bool,
 ) -> AnalysisResponse {
-    let degree_stats = artifacts.aggregator.degree_stats();
+    let degree_stats = artifacts.stats.degree_stats();
 
     let selected_plans: Vec<PlanSummaryJson> = artifacts
         .selected
@@ -909,7 +534,7 @@ fn build_response(
     // them the same as cap-truncated runs (and `is_full_population=false`
     // for consistency).
     let raw_full_population = artifacts.is_full_population();
-    let was_truncated = !raw_full_population || artifacts.time_limit_reached;
+    let was_truncated = !raw_full_population || artifacts.time_limit_reached();
     let is_full_population = !was_truncated;
     let population_size = artifacts.population_size();
     let complexity_stats = metric_stats_json(&degree_stats.total_complexity);
@@ -940,28 +565,27 @@ fn build_response(
         institution: artifacts.program.degree.institution.clone(),
         total_courses: artifacts.program.courses.len(),
         total_requirements: artifacts.program.requirements.len(),
-        plans_analyzed: artifacts.plans_processed,
+        plans_analyzed: artifacts.plans_analyzed(),
         was_truncated,
         population_size,
         is_full_population,
         sampling_method,
-        seed_used: artifacts.seed_used,
-        recommended_max_plans: recommend_max_plans(
-            artifacts,
-            Some(&complexity_stats),
-            was_truncated,
-        ),
+        seed_used: artifacts.seed_used(),
+        // Widening the sample means enumerating again, which a stored run does not do.
+        recommended_max_plans: artifacts
+            .fresh_run()
+            .and_then(|fresh| recommend_max_plans(fresh, Some(&complexity_stats), was_truncated)),
         complexity: Some(complexity_stats),
         longest_delay: Some(metric_stats_json(&degree_stats.longest_delay)),
         total_credits: Some(metric_stats_json(&degree_stats.total_credits)),
         avg_chain_length: Some(metric_stats_json(&degree_stats.avg_chain_length)),
         selected_plans,
         per_course_metrics,
-        target_course_stats: artifacts.target_course_stats.clone(),
+        target_course_stats: artifacts.target_course_stats().cloned(),
         tool_followups,
         notes,
-        time_limit_reached: artifacts.time_limit_reached,
-        time_elapsed_ms: artifacts.time_elapsed_ms,
+        time_limit_reached: artifacts.time_limit_reached(),
+        time_elapsed_ms: artifacts.time_elapsed_ms(),
     }
 }
 
@@ -975,17 +599,19 @@ fn build_response(
 /// entry then carries a `placeholder: true` field so callers can group them
 /// separately.
 fn build_per_course_metrics(
-    artifacts: &AnalysisArtifacts,
+    artifacts: &AnalysisView<'_>,
     include_placeholders: bool,
 ) -> Vec<CourseMetricsJson> {
-    let mut ids = artifacts.aggregator.course_ids();
-    ids.sort();
-    ids.into_iter()
+    // Already sorted: see `ReportStats::course_ids`.
+    artifacts
+        .stats
+        .course_ids()
+        .into_iter()
         .filter(|id| include_placeholders || !is_placeholder_course(id))
         .filter_map(|id| {
             let placeholder = is_placeholder_course(&id);
             artifacts
-                .aggregator
+                .stats
                 .course_stats(&id)
                 .map(|s| CourseMetricsJson {
                     course_id: id,
@@ -1024,12 +650,12 @@ fn complexity_cv(complexity: Option<&MetricStatsJson>) -> Option<f64> {
 /// current cap, capped at the population estimate so we never recommend more
 /// plans than exist. `saturating_mul` guards usize overflow; `.max(+1)` covers
 /// the corner where doubling saturates back to the same value.
-fn next_max_plans(artifacts: &AnalysisArtifacts) -> usize {
+fn next_max_plans(artifacts: &DegreeAnalysis) -> usize {
     let doubled = artifacts
-        .max_plans
+        .max_plans()
         .saturating_mul(2)
-        .max(artifacts.max_plans + 1);
-    doubled.min(artifacts.stats.total_possible.max(artifacts.max_plans))
+        .max(artifacts.max_plans() + 1);
+    doubled.min(artifacts.stats.total_possible.max(artifacts.max_plans()))
 }
 
 /// Machine-readable `max_plans` recommendation, mirroring the truncation
@@ -1037,7 +663,7 @@ fn next_max_plans(artifacts: &AnalysisArtifacts) -> usize {
 /// current cap when complexity is CV-stable (widening won't move the
 /// conclusions); otherwise the doubled-and-capped `next_max_plans`.
 fn recommend_max_plans(
-    artifacts: &AnalysisArtifacts,
+    artifacts: &DegreeAnalysis,
     complexity: Option<&MetricStatsJson>,
     was_truncated: bool,
 ) -> Option<usize> {
@@ -1045,7 +671,7 @@ fn recommend_max_plans(
         return None;
     }
     match complexity_cv(complexity) {
-        Some(cv) if cv < STABLE_CV_THRESHOLD => Some(artifacts.max_plans),
+        Some(cv) if cv < STABLE_CV_THRESHOLD => Some(artifacts.max_plans()),
         _ => Some(next_max_plans(artifacts)),
     }
 }
@@ -1055,15 +681,17 @@ fn recommend_max_plans(
 /// material), tiny full population (cheap to audit deeply), or long critical
 /// path on the shortest plan (re-audit with a stricter chain threshold).
 fn build_analysis_followups(
-    artifacts: &AnalysisArtifacts,
+    view: &AnalysisView<'_>,
     selected_plans: &[PlanSummaryJson],
     complexity: Option<&MetricStatsJson>,
     was_truncated: bool,
     is_full_population: bool,
 ) -> Vec<ToolFollowup> {
     let mut followups = Vec::new();
+    let plans_analyzed = view.plans_analyzed();
 
-    if was_truncated {
+    // Widening a truncated sample means enumerating again, so only a fresh run suggests it.
+    if let (true, Some(artifacts)) = (was_truncated, view.fresh_run()) {
         // Coefficient of variation lets us decide whether bumping the cap
         // is worth the budget. A small CV (<10 %) means the medians have
         // stabilised — rerunning at 2× burns context for marginal change.
@@ -1075,7 +703,7 @@ fn build_analysis_followups(
                     tool: TOOL_ANALYZE_DEGREE,
                     reason: format!(
                         "Result truncated at max_plans={}, but complexity is stable (CV={cv:.2}). Bumping max_plans is unlikely to change the conclusions.",
-                        artifacts.max_plans,
+                        artifacts.max_plans(),
                     ),
                     suggested_args: serde_json::json!({}),
                 });
@@ -1092,17 +720,15 @@ fn build_analysis_followups(
             tool: TOOL_ANALYZE_DEGREE,
             reason: format!(
                 "Result was truncated at max_plans={} (population estimate {}){cv_note}. Rerun with a larger cap to widen the sample.",
-                artifacts.max_plans, artifacts.stats.total_possible,
+                artifacts.max_plans(), artifacts.stats.total_possible,
             ),
             suggested_args: serde_json::json!({ "max_plans": next }),
         });
-    } else if is_full_population && artifacts.plans_processed > 0 && artifacts.plans_processed < 50
-    {
+    } else if is_full_population && plans_analyzed > 0 && plans_analyzed < 50 {
         followups.push(ToolFollowup {
             tool: TOOL_AUDIT_DEGREE,
             reason: format!(
-                "Full population is small ({}). audit_degree's deep-chain analysis is cheap here and surfaces structural issues.",
-                artifacts.plans_processed,
+                "Full population is small ({plans_analyzed}). audit_degree's deep-chain analysis is cheap here and surfaces structural issues.",
             ),
             suggested_args: serde_json::json!({}),
         });
@@ -1164,209 +790,6 @@ pub(super) const fn metric_stats_json(s: &MetricStats) -> MetricStatsJson {
     }
 }
 
-fn build_school(program: &crate::core::DegreeProgram) -> School {
-    let mut school = School::new(
-        program
-            .degree
-            .institution
-            .clone()
-            .unwrap_or_else(|| "Unknown".to_string()),
-    );
-
-    for (key, course) in &program.courses {
-        let mut sc = Course::new(
-            course.name.clone(),
-            course.prefix.clone(),
-            course.number.clone(),
-            course.credit_hours,
-        );
-        sc.canonical_name = Some(key.clone());
-        sc.prerequisites_raw.clone_from(&course.prerequisites_raw);
-        if let Some(raw) = &course.prerequisites_raw {
-            sc.prerequisites = parse_prereqs(raw);
-        }
-        sc.corequisites.clone_from(&course.corequisites);
-        // By document key, as in `core::report::inputs::build_school_from_program`: lookups are by
-        // plan course id, and `prefix + number` collides for lecture/lab pairs.
-        school.add_course_with_key(key.clone(), sc);
-    }
-
-    school
-}
-
-fn parse_prereqs(raw: &str) -> Vec<String> {
-    let cleaned = raw.replace(['(', ')', '&', '|', '[', ']'], " ");
-    cleaned
-        .split_whitespace()
-        .filter(|s| s.len() > 1)
-        .map(String::from)
-        .collect()
-}
-
-fn build_dag(graph: &CourseGraph) -> DAG {
-    let mut dag = DAG::new();
-    for key in graph.course_keys() {
-        dag.add_course(key.to_string());
-        if let Some(node) = graph.get(key) {
-            for edge in &node.prerequisites {
-                if edge.prereq_type == crate::core::models::course_graph::PrerequisiteType::Required
-                {
-                    dag.add_prerequisite(key.to_string(), &edge.prerequisite);
-                } else if edge.prereq_type
-                    == crate::core::models::course_graph::PrerequisiteType::Corequisite
-                {
-                    dag.add_corequisite(key.to_string(), &edge.prerequisite);
-                }
-            }
-        }
-    }
-    dag
-}
-
-fn build_equivalences(
-    requirements: &HashMap<String, crate::core::models::degree::Requirement>,
-) -> HashMap<String, HashSet<String>> {
-    let mut equivs: HashMap<String, HashSet<String>> = HashMap::new();
-    for req in requirements.values() {
-        if let Some(courses) = &req.courses {
-            for course_ref in courses {
-                if course_ref.starts_with('{') && course_ref.ends_with('}') {
-                    let inner = &course_ref[1..course_ref.len() - 1];
-                    let parts: Vec<String> =
-                        inner.split(',').map(|s| s.trim().to_string()).collect();
-                    for a in &parts {
-                        for b in &parts {
-                            if a != b {
-                                equivs.entry(a.clone()).or_default().insert(b.clone());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    equivs
-}
-
-fn expand_with_prereqs(
-    courses: &[String],
-    graph: &CourseGraph,
-    equivalences: &HashMap<String, HashSet<String>>,
-) -> Vec<String> {
-    let mut expanded: HashSet<String> = courses.iter().cloned().collect();
-    let mut to_process: Vec<String> = courses.to_vec();
-
-    while let Some(key) = to_process.pop() {
-        if let Some(chain) = graph.min_prerequisite_chain_with_context(&key, &expanded) {
-            for prereq in chain {
-                let has_equiv = equivalences
-                    .get(&prereq)
-                    .is_some_and(|eq| eq.iter().any(|e| expanded.contains(e)));
-                if !has_equiv && !expanded.contains(&prereq) {
-                    expanded.insert(prereq.clone());
-                    to_process.push(prereq);
-                }
-            }
-        }
-    }
-
-    let mut result: Vec<String> = expanded.into_iter().collect();
-    result.sort();
-    result
-}
-
-fn build_expanded_variant(
-    original: &PlanVariant,
-    expanded: &[String],
-    school: &School,
-    target_credits: Option<u32>,
-    fill: Option<&crate::core::degree::fill_electives::FillResize>,
-) -> PlanVariant {
-    let mut choices = original.requirement_choices.clone();
-    // Keep the requirement breakdown in step with the courses actually scheduled.
-    if let Some(fill) = fill {
-        for chosen in choices.values_mut() {
-            chosen.retain(|c| !fill.removed.contains(c));
-        }
-        for (id, fresh) in &fill.added {
-            choices
-                .entry(id.clone())
-                .or_default()
-                .extend(fresh.iter().cloned());
-        }
-    }
-
-    let orig_set: HashSet<&str> = original.courses.iter().map(String::as_str).collect();
-    let added: Vec<String> = expanded
-        .iter()
-        .filter(|c| !orig_set.contains(c.as_str()))
-        .cloned()
-        .collect();
-    if !added.is_empty() {
-        choices.insert("_prerequisites".to_string(), added);
-    }
-
-    let non_elec_credits: f32 = expanded
-        .iter()
-        .filter(|c| !c.starts_with("ELEC"))
-        .map(|c| {
-            school
-                .get_course(c)
-                .map_or_else(|| placeholder_credits(c), |co| co.credit_hours)
-        })
-        .sum();
-
-    #[allow(clippy::cast_precision_loss)]
-    let final_courses = target_credits.map_or_else(
-        || expanded.to_vec(),
-        |target| {
-            let target_f32 = target as f32;
-            if non_elec_credits >= target_f32 {
-                choices.remove("_elective_placeholders");
-                expanded
-                    .iter()
-                    .filter(|c| !c.starts_with("ELEC"))
-                    .cloned()
-                    .collect()
-            } else {
-                let needed = target_f32 - non_elec_credits;
-                let electives = crate::core::degree::placeholder::elective_placeholders(needed);
-                if electives.is_empty() {
-                    choices.remove("_elective_placeholders");
-                } else {
-                    choices.insert("_elective_placeholders".to_string(), electives.clone());
-                }
-                let mut courses: Vec<String> = expanded
-                    .iter()
-                    .filter(|c| !c.starts_with("ELEC"))
-                    .cloned()
-                    .collect();
-                courses.extend(electives);
-                courses.sort();
-                courses
-            }
-        },
-    );
-
-    let total: f32 = final_courses
-        .iter()
-        .map(|c| {
-            school
-                .get_course(c)
-                .map_or_else(|| placeholder_credits(c), |co| co.credit_hours)
-        })
-        .sum();
-
-    PlanVariant::from_parts(final_courses, choices, total)
-}
-
-/// Credits of a placeholder course, from its name. See `core::degree::placeholder` —
-/// this pipeline used to keep its own copy, which had drifted to different names
-/// (`ELEC_01`) and a different remainder threshold from the CLI's.
-fn placeholder_credits(key: &str) -> f32 {
-    crate::core::degree::placeholder::placeholder_credits(key)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1402,32 +825,6 @@ courses:
     credits: 4
     prerequisites_raw: "CS101"
 "#;
-
-    /// See the CLI's `test_build_school_from_program_keys_by_document_key`: a lecture/lab
-    /// pair sharing `prefix + number`, and a key that is not `prefix + number`.
-    #[test]
-    fn test_build_school_keys_by_document_key() {
-        let json = r#"{
-            "degree": {"name": "T", "institution": "T", "total_credits": 8},
-            "requirements": {"core": {"type": "all", "category": "major",
-                "courses": ["CHEM1410", "CHEM1410L", "COMSW3137"]}},
-            "courses": {
-                "CHEM1410":  {"name": "Chem",     "prefix": "CHEM", "number": "1410", "credit_hours": 3.0},
-                "CHEM1410L": {"name": "Chem Lab", "prefix": "CHEM", "number": "1410", "credit_hours": 1.0},
-                "COMSW3137": {"name": "Data Str", "prefix": "COMS", "number": "3137", "credit_hours": 4.0}
-            }
-        }"#;
-        let program = crate::core::degree::parse_degree_json(json)
-            .expect("inline degree fixture should parse");
-        let school = build_school(&program);
-        for (key, credits) in [("CHEM1410", 3.0), ("CHEM1410L", 1.0), ("COMSW3137", 4.0)] {
-            assert_eq!(
-                school.get_course(key).map(|c| c.credit_hours),
-                Some(credits),
-                "{key} credits"
-            );
-        }
-    }
 
     #[test]
     fn test_analyze_valid_degree() {
@@ -1527,7 +924,7 @@ courses:
             artifacts.program.degree.institution.as_deref(),
             Some("Test University")
         );
-        assert_eq!(artifacts.max_plans, 10);
+        assert_eq!(artifacts.max_plans(), 10);
         assert!(artifacts.plans_processed > 0);
         assert!(artifacts.selected.total_count() > 0);
         assert!(artifacts.stats.total_possible > 0);
@@ -1538,9 +935,6 @@ courses:
 
     #[test]
     fn test_build_artifacts_returns_parse_error_for_malformed_yaml() {
-        // AnalysisArtifacts deliberately doesn't derive Debug (it owns a
-        // MetricsAggregator that wouldn't print usefully anyway), so use a
-        // match instead of `unwrap_err` to interrogate the failure.
         let result = build_artifacts("not: valid: yaml: {{", Some(10), None, None, None, None);
         let Err(err) = result else {
             panic!("expected parse failure for malformed YAML");
@@ -1796,12 +1190,6 @@ courses:
     }
 
     #[test]
-    fn test_placeholder_credits() {
-        assert!((super::placeholder_credits("GE01") - 3.0).abs() < f32::EPSILON);
-        assert!((super::placeholder_credits("GE01S") - 2.0).abs() < f32::EPSILON);
-    }
-
-    #[test]
     fn test_population_size_matches_plans_analyzed_when_full() {
         // The simple TEST_YAML has only one valid plan (CS101 → CS201).
         // With max_plans well above the population we expect:
@@ -2033,16 +1421,29 @@ courses:
         );
     }
 
+    /// The default seed is the degree's, not its text's: the same degree, reformatted and
+    /// commented, enumerates the same plans. (It was once a hash of the raw text, so
+    /// re-indenting a file changed which plans the MCP sampled.)
     #[test]
-    fn test_default_seed_is_stable_function_of_yaml() {
-        // Same YAML → same default seed every time. Exercise the helper
-        // directly so the test doesn't depend on the shared artifact cache
-        // (which is evicted under concurrent test load).
-        let csu = crate::mcp::tools::samples::yaml_for_key("csu")
-            .expect("csu sample key must resolve to embedded YAML");
-        assert_eq!(default_seed_for_yaml(csu), default_seed_for_yaml(csu));
-        // Different YAML → different seed.
-        assert_ne!(default_seed_for_yaml(csu), default_seed_for_yaml("other"));
+    fn test_default_seed_follows_the_degree_not_its_formatting() {
+        // Every line's indentation doubled, and a comment added.
+        let reindented: Vec<String> = TEST_YAML
+            .lines()
+            .map(|line| {
+                let body = line.trim_start();
+                format!("{}{body}", " ".repeat(2 * (line.len() - body.len())))
+            })
+            .collect();
+        let reformatted = format!("# the same degree\n{}", reindented.join("\n"));
+        let a = build_artifacts(TEST_YAML, Some(10), None, None, None, None).unwrap();
+        let b = build_artifacts(&reformatted, Some(10), None, None, None, None).unwrap();
+        assert_eq!(a.seed_used, b.seed_used);
+        let other = TEST_YAML.replace("credits: 4\n\n  CS201", "credits: 3\n\n  CS201");
+        let c = build_artifacts(&other, Some(10), None, None, None, None).unwrap();
+        assert_ne!(
+            a.seed_used, c.seed_used,
+            "a different degree seeds differently"
+        );
     }
 
     #[test]
@@ -2071,7 +1472,10 @@ courses:
         // assertion — same path the cached_artifacts wrapper uses on miss.
         let artifacts = build_artifacts(csu, Some(50), None, None, None, None)
             .expect("csu sample must analyze cleanly");
-        assert_eq!(artifacts.seed_used, default_seed_for_yaml(csu));
+        assert_eq!(
+            artifacts.seed_used,
+            crate::core::degree::default_seed_for_program(&artifacts.program)
+        );
     }
 
     #[test]
@@ -2120,16 +1524,6 @@ courses:
             "TEST_YAML analyze took {}ms; threshold 2s",
             response.time_elapsed_ms
         );
-    }
-
-    #[test]
-    fn test_default_seed_is_stable_function_of_yaml_with_timeout_seconds() {
-        // Same YAML body must derive the same default seed regardless of
-        // `analysis_timeout_seconds` — that field affects the cache key,
-        // not the seed.
-        let a = default_seed_for_yaml(TEST_YAML);
-        let b = default_seed_for_yaml(TEST_YAML);
-        assert_eq!(a, b);
     }
 
     #[test]
@@ -2238,19 +1632,6 @@ courses:
         );
     }
 
-    #[test]
-    fn test_parse_prereqs_strips_punct_and_filters_short_tokens() {
-        assert_eq!(parse_prereqs("CS101 & CS201"), vec!["CS101", "CS201"]);
-        assert_eq!(
-            parse_prereqs("(CS101 | CS201) & CS301"),
-            vec!["CS101", "CS201", "CS301"]
-        );
-        assert_eq!(parse_prereqs("[MATH101]"), vec!["MATH101"]);
-        assert!(parse_prereqs("").is_empty());
-        // single-character tokens are filtered out (stray operators, junk)
-        assert!(parse_prereqs("a b c").is_empty());
-    }
-
     // ---- target_course_stats ------------------------------------------------
 
     /// Sample with a plan space larger than the caps used below, so the
@@ -2258,124 +1639,6 @@ courses:
     fn sample_with_large_plan_space() -> &'static str {
         crate::mcp::tools::samples::yaml_for_key("csu")
             .expect("csu sample key resolves to embedded YAML")
-    }
-
-    /// One expected summary for a list of scheduled term numbers.
-    struct TermStatsCase {
-        terms: &'static [usize],
-        plans_containing: usize,
-        earliest: Option<usize>,
-        avg: Option<f64>,
-        distribution: &'static [(usize, usize)],
-    }
-
-    #[test]
-    fn test_build_target_term_stats_summarises_term_numbers() {
-        let cases = &[
-            // The "no plan contained the course" slice.
-            TermStatsCase {
-                terms: &[],
-                plans_containing: 0,
-                earliest: None,
-                avg: None,
-                distribution: &[],
-            },
-            // Single observation: earliest and mean are both the only term.
-            TermStatsCase {
-                terms: &[4],
-                plans_containing: 1,
-                earliest: Some(4),
-                avg: Some(4.0),
-                distribution: &[(4, 1)],
-            },
-            // Term 0 is a real term, not a sentinel for "absent".
-            TermStatsCase {
-                terms: &[0],
-                plans_containing: 1,
-                earliest: Some(0),
-                avg: Some(0.0),
-                distribution: &[(0, 1)],
-            },
-            // Repeats are counted, not deduplicated.
-            TermStatsCase {
-                terms: &[3, 3, 5],
-                plans_containing: 3,
-                earliest: Some(3),
-                avg: Some(11.0 / 3.0),
-                distribution: &[(3, 2), (5, 1)],
-            },
-            // Unsorted input: earliest is the minimum, distribution is keyed by term.
-            TermStatsCase {
-                terms: &[7, 2, 9, 2],
-                plans_containing: 4,
-                earliest: Some(2),
-                avg: Some(5.0),
-                distribution: &[(2, 2), (7, 1), (9, 1)],
-            },
-        ];
-
-        for case in cases {
-            let terms = case.terms;
-            let got = build_target_term_stats(terms);
-            assert_eq!(
-                got.plans_containing, case.plans_containing,
-                "plans_containing for {terms:?}"
-            );
-            assert_eq!(
-                got.earliest_term, case.earliest,
-                "earliest_term for {terms:?}"
-            );
-            match (got.avg_term, case.avg) {
-                (Some(got_avg), Some(want)) => assert!(
-                    (got_avg - want).abs() < 1e-9,
-                    "avg_term for {terms:?}: got {got_avg}, want {want}"
-                ),
-                (got_avg, want) => assert_eq!(got_avg, want, "avg_term for {terms:?}"),
-            }
-            let want: std::collections::BTreeMap<usize, usize> =
-                case.distribution.iter().copied().collect();
-            assert_eq!(
-                got.term_distribution, want,
-                "term_distribution for {terms:?}"
-            );
-            // The distribution must always account for exactly the inputs.
-            assert_eq!(
-                got.term_distribution.values().sum::<usize>(),
-                got.plans_containing,
-                "distribution total for {terms:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_build_target_course_stats_reports_a_found_course() {
-        let stats = build_target_course_stats("CS201", &[2, 3, 3], &[3], 10);
-        assert_eq!(stats.course_id, "CS201");
-        assert!(stats.error.is_none(), "a found course reports no error");
-        assert_eq!(stats.all_plans.earliest_term, Some(2));
-        assert_eq!(stats.calc_ready_plans.earliest_term, Some(3));
-        assert!(
-            stats.calc_ready_plans.plans_containing <= stats.all_plans.plans_containing,
-            "calc-ready slice cannot exceed all plans"
-        );
-    }
-
-    #[test]
-    fn test_build_target_course_stats_reports_a_missing_course_with_context() {
-        let stats = build_target_course_stats("ZZZ999", &[], &[], 42);
-        let err = stats
-            .error
-            .as_deref()
-            .expect("missing course reports error");
-        assert!(err.contains("ZZZ999"), "error names the course, got: {err}");
-        assert!(
-            err.contains("42"),
-            "error carries plans_processed so the caller can tell 'not offered' from \
-             'enumeration capped', got: {err}"
-        );
-        assert_eq!(stats.all_plans.plans_containing, 0);
-        assert!(stats.all_plans.earliest_term.is_none());
-        assert!(stats.calc_ready_plans.earliest_term.is_none());
     }
 
     #[test]
@@ -2402,25 +1665,12 @@ courses:
             first.all_plans.plans_containing > 0,
             "CS165 must appear in the csu sample's plans"
         );
+        // Where a course lands within a plan is reproducible too, now that the
+        // prerequisite and OR-group choices no longer follow hash order.
+        let json = |t: &TargetCourseStats| serde_json::to_value(t).expect("serializes");
         for (i, run) in runs.iter().enumerate().skip(1) {
-            assert_eq!(
-                run.all_plans.earliest_term, first.all_plans.earliest_term,
-                "run {i}: earliest_term differs from run 0"
-            );
-            assert_eq!(
-                run.all_plans.plans_containing, first.all_plans.plans_containing,
-                "run {i}: plans_containing differs from run 0"
-            );
+            assert_eq!(json(run), json(first), "run {i} differs from run 0");
         }
-
-        // `term_distribution` is deliberately NOT asserted. Which plans are enumerated
-        // is reproducible now that the generator receives the seed, but *where a course
-        // lands within* a plan is not yet: prerequisite-chain selection breaks ties with
-        // a stable sort over an options list whose order is hash-derived upstream, so a
-        // tie can resolve differently per process, change a DAG edge, and move one
-        // course by a term. Measured at roughly 1 run in 30 on this sample.
-        //
-        // Tighten this to a full equality assertion once that ordering is pinned.
     }
 
     #[test]

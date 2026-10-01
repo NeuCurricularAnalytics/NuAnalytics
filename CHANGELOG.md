@@ -8,7 +8,8 @@ project uses semantic versioning.
 
 The MCP server is redesigned: fewer, broader tools; SQL access in layers; stored analysis
 reachable; skills rewritten. **Breaking for MCP clients**: tools and parameters are renamed
-or removed, as below. The CLI is unchanged apart from additions.
+or removed, as below. The CLI changes only in `degree analyze --metrics-out`'s file, below;
+the rest is additions.
 
 ### Breaking — MCP tools
 
@@ -49,6 +50,12 @@ A failed call now returns `isError: true` and one envelope,
 `{"error": {"code", "message", "next_steps"?, "details"?}}`. An argument a tool does not
 take is refused by name instead of ignored.
 
+### Breaking — `degree analyze --metrics-out`
+
+The file is now the degree's report JSON — the `<degree>_report.json` a normal run writes —
+with the target course's statistics under `analysis.target_course_stats`. It was the MCP
+`analyze_degree` response. `--target-course`'s stdout is unchanged in shape.
+
 ### Added
 
 - **`"{[A, B], C}"` — a choice of course groups — in an `all` list.** Documented since
@@ -73,6 +80,32 @@ take is refused by name instead of ignored.
 
 ### Changed
 
+- **A stored program means its stored run** — breaking for MCP clients that pass a
+  `program_key` to the analysis tools. `analyze_degree`, `render_degree_report`,
+  `render_plan_graph` and `get_course_detail` read a stored program's newest stored run
+  (`variant`, default `full`) instead of enumerating its document afresh; the response's
+  `source.run` names the run. `fresh=true` enumerates it afresh, and is required for
+  `max_plans`, `include_courses`, `random_seed`, `analysis_timeout_seconds` and
+  `target_course`, which are refused for a stored program without it rather than
+  ignored. A program with no run of that variant is `source_not_found`, never a silent
+  fresh run. `render_degree_report` on a stored program renders the page
+  `render_stored_report` and `db report` do. `compare_degrees` without `metrics` now
+  reads each stored program's stored run and enumerates the other sources; each entry's
+  `metrics_from` says which. Files, inline content and samples are analyzed fresh, as
+  before.
+- **One analysis pipeline.** The MCP's `analyze_degree`, `render_degree_report`,
+  `render_plan_graph`, `get_course_detail` and fresh `compare_degrees` metrics run the
+  pipeline `degree analyze` runs (`core::degree::analysis`), so at equal settings their
+  figures equal the CLI's — and so the stored runs', which the CLI produced. The MCP had
+  its own copy, which built courses, equivalences and prerequisite expansion differently;
+  its complexity means differed from the CLI's by up to 2.5% on the test fixtures. The
+  CLI's output is unchanged. The MCP's default seed now follows the degree rather than its
+  text, so reformatting a file no longer changes which plans are sampled, and `seed_used`
+  differs from before.
+- `degree analyze --target-course` uses the CLI's configuration (`max_plans`, sampling
+  strategy) instead of the MCP's defaults, and works with `--from-db` and in builds
+  without the `mcp` feature. `--from-db` prints its "Loaded stored program" line on
+  stderr, so stdout carries only the answer.
 - **Completion demographics run as one SQL query each**, from compiled-in `.sql` files,
   instead of up to 252 PostgREST calls. They no longer miss the latest year, cap at 5,000
   institutions, or drop a failed batch silently.
@@ -90,6 +123,18 @@ take is refused by name instead of ignored.
   loses, and which critical path a tie reports. The CLI also never seeded its plan
   selector. After the fix, 0 of 60 vary in anything. Stored runs are read, not re-run, so
   they are unaffected.
+- A trimmed run's stored report (`db report --variant trimmed`, `render_stored_report`)
+  was built from the program's full document instead of the trimmed degree the run
+  analyzed, so its plan graphs could draw prerequisites the run never used — UHM's
+  ICS235 from MATH215, where its trimmed degree has MATH203. All 3,948 stored trimmed
+  runs carry their own document; it is now used.
+- `db report --degree` matched only part of a degree's name, though its help offered a
+  program key or degree id too. It now tries those exactly first.
+- `degree analyze --target-course` over several files ignored the flag and wrote full
+  reports: the worker processes were never given it. A target-course query now always
+  runs in-process.
+- The verbose plan-validation breakdown credited a course listed under two requirements
+  to whichever the hash visited first.
 - The server advertised `import_degree` in `tools/list` without `--allow-writes`, because
   `#[tool_handler]` defaulted to a fresh full router.
 - `get_reference(topic="database")` invented columns from words in comments (`not`, `so`,

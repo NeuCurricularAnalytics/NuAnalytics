@@ -236,12 +236,9 @@ pub struct PlanSelector<'a> {
 }
 
 impl<'a> PlanSelector<'a> {
-    /// Create a new plan selector
-    ///
-    /// Note: The DAG parameter is kept for API compatibility but is not used.
-    /// Plan-specific DAGs are now passed to `process_plan` instead.
+    /// Create a new plan selector. Each plan's own DAG is passed to `process_plan`.
     #[must_use]
-    pub fn new(school: &'a School, _dag: &'a DAG, config: PlanSelectorConfig) -> Self {
+    pub fn new(school: &'a School, config: PlanSelectorConfig) -> Self {
         let rng = config
             .random_seed
             .map_or_else(fastrand::Rng::new, fastrand::Rng::with_seed);
@@ -742,7 +739,7 @@ mod tests {
         let school = create_test_school();
         let dag = create_test_dag();
         let config = PlanSelectorConfig::default();
-        let mut selector = PlanSelector::new(&school, &dag, config);
+        let mut selector = PlanSelector::new(&school, config);
 
         // First plan
         let variant1 = create_test_variant(&["CS1000", "CS2000", "CS3000"]);
@@ -761,7 +758,7 @@ mod tests {
             sample_count: 3,
             ..Default::default()
         };
-        let mut selector = PlanSelector::new(&school, &dag, config);
+        let mut selector = PlanSelector::new(&school, config);
 
         // Process 10 plans
         for _i in 0..10 {
@@ -808,8 +805,8 @@ mod tests {
 
     #[test]
     fn test_is_calc_ready_plan_matches_configured_course_codes() {
-        let (school, dag) = (create_test_school(), create_test_dag());
-        let selector = PlanSelector::new(&school, &dag, PlanSelectorConfig::default());
+        let school = create_test_school();
+        let selector = PlanSelector::new(&school, PlanSelectorConfig::default());
 
         // (courses, expected, why)
         let cases: &[(&[&str], bool, &str)] = &[
@@ -853,7 +850,7 @@ mod tests {
         // `calculus_patterns` are matched against course *ids*, so the "Calculus" entry
         // can never fire — only an id-shaped entry like "CALC" can. Any fix that starts
         // matching course titles should make this test fail.
-        let (school, dag) = (create_test_school(), create_test_dag());
+        let school = create_test_school();
         let config = PlanSelectorConfig::default();
         assert!(
             config
@@ -862,7 +859,7 @@ mod tests {
                 .any(|p| p.eq_ignore_ascii_case("calculus")),
             "the default patterns still include the name-shaped entry this test is about"
         );
-        let selector = PlanSelector::new(&school, &dag, config);
+        let selector = PlanSelector::new(&school, config);
 
         assert!(
             !selector.is_calc_ready_plan(&create_test_variant(&["MATH241"])),
@@ -941,9 +938,8 @@ mod tests {
         };
 
         let school = create_test_school();
-        let dag = create_test_dag();
         let config = PlanSelectorConfig::default();
-        let mut selector = PlanSelector::new(&school, &dag, config);
+        let mut selector = PlanSelector::new(&school, config);
         selector.shortest = Some(make(false));
         selector.calc_ready_shortest = Some(make(true));
         let selected = selector.into_selected_plans();

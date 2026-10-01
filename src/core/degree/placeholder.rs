@@ -18,6 +18,9 @@
 //! a wildcard block stating 10 credits counted as 11, and 687 such blocks in the stored
 //! corpus each over-counted by one credit in every plan that contained them.
 
+/// Prefix of the generic free-elective filler, `ELEC001`, `ELEC002S`, …
+pub const ELECTIVE_PREFIX: &str = "ELEC";
+
 /// Credits a full placeholder stands for.
 pub const FULL_PLACEHOLDER_CREDITS: f32 = 3.0;
 
@@ -88,7 +91,7 @@ pub fn placeholder_names_for(prefix: &str, credits_needed: f32, width: usize) ->
 /// The generic free-elective filler, `ELEC001`…, for `credits_needed`.
 #[must_use]
 pub fn elective_placeholders(credits_needed: f32) -> Vec<String> {
-    placeholder_names_for("ELEC", credits_needed, 3)
+    placeholder_names_for(ELECTIVE_PREFIX, credits_needed, 3)
 }
 
 #[cfg(test)]
