@@ -74,6 +74,13 @@ impl<'a> DegreeReportContext<'a> {
     }
 }
 
+/// The HTML report's file name for a degree, `<degree-id>-analysis.html` — the one name
+/// `degree analyze`, `db report` and `render_degree_report` all write.
+#[must_use]
+pub fn report_file_name(degree_id: &str) -> String {
+    format!("{degree_id}-analysis.html")
+}
+
 /// Generates HTML reports for degree analysis
 pub struct DegreeReportGenerator;
 

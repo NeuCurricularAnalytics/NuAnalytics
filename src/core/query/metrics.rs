@@ -341,7 +341,7 @@ mod tests {
             run_key: format!("{variant}-{created}"),
             program_key: "prog:1".to_string(),
             variant: variant.to_string(),
-            trimmed: Some(variant == "trimmed"),
+            trimmed: Some(variant == crate::core::database::variants::TRIMMED),
             variations_run: None,
             sample_type: None,
             calc_strategy: None,

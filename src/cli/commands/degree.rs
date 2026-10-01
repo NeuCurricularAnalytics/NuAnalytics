@@ -605,7 +605,7 @@ pub fn run_analyze_from_db(name: &str, options: &AnalyzeOptions, config: &Config
         }
         1 => {
             let row = &rows[0];
-            let program = match program_from_document(&row.document) {
+            let program = match nu_analytics::core::degree::from_unified_value(&row.document) {
                 Ok(p) => p,
                 Err(e) => {
                     eprintln!(
@@ -633,79 +633,22 @@ pub fn run_analyze_from_db(name: &str, options: &AnalyzeOptions, config: &Config
     }
 }
 
-/// Resolve a `--from-db` name to candidate `programs` rows via the ladder:
-/// exact `program_key`, then exact `degree_id`, then `name` substring.
-///
-/// Each tier is tried in turn and the first non-empty result wins. The
-/// substring tier caps at [`FROM_DB_MAX_ROWS`] so an over-broad name can't pull
-/// the whole table.
+/// Resolve a `--from-db` name to candidate `programs` rows: an exact `program_key`, then
+/// an exact `degree_id`, then a `name` substring (`find_programs`), each capped at
+/// [`FROM_DB_MAX_ROWS`] so an over-broad name can't pull the whole table.
 #[cfg(feature = "database")]
 async fn resolve_program_rows(
     client: &nu_analytics::database::DbClient,
     name: &str,
 ) -> Result<Vec<StoredProgramRow>, nu_analytics::database::DatabaseError> {
-    use nu_analytics::database::{tables, QueryFilters};
-
-    // Tier 1: exact program_key.
-    let by_key = QueryFilters::new().eq("program_key", Some(name));
-    let rows = nu_analytics::core::json::parse_json_array::<StoredProgramRow>(
-        &client
-            .select(tables::PROGRAMS, FROM_DB_COLS, &by_key, Some(1))
-            .await?,
-    );
-    if !rows.is_empty() {
-        return Ok(rows);
-    }
-
-    // Tier 2: exact degree_id.
-    let by_id = QueryFilters::new().eq("degree_id", Some(name));
-    let rows = nu_analytics::core::json::parse_json_array::<StoredProgramRow>(
-        &client
-            .select(
-                tables::PROGRAMS,
-                FROM_DB_COLS,
-                &by_id,
-                Some(FROM_DB_MAX_ROWS),
-            )
-            .await?,
-    );
-    if !rows.is_empty() {
-        return Ok(rows);
-    }
-
-    // Tier 3: name substring (ILIKE '%name%').
-    let by_name = QueryFilters::new().ilike("name", Some(name));
-    Ok(
-        nu_analytics::core::json::parse_json_array::<StoredProgramRow>(
-            &client
-                .select(
-                    tables::PROGRAMS,
-                    FROM_DB_COLS,
-                    &by_name,
-                    Some(FROM_DB_MAX_ROWS),
-                )
-                .await?,
-        ),
+    nu_analytics::core::query::degrees::find_programs(
+        client,
+        FROM_DB_COLS,
+        nu_analytics::database::QueryFilters::new,
+        name,
+        FROM_DB_MAX_ROWS,
     )
-}
-
-/// Turn a stored `document` JSONB value into a `DegreeProgram`.
-///
-/// The `document` is the lossless unified-degree JSON produced by
-/// `to_unified_value` (prerequisites carried in the structured tagged form), so
-/// it round-trips through `parse_degree_auto` on its serialized string — the
-/// same loader the import core uses on report text. (`serde_json::from_value`
-/// would *not* round-trip: the model has no `prerequisites` field, only
-/// `prerequisites_raw`.)
-#[cfg(feature = "database")]
-fn program_from_document(
-    document: &serde_json::Value,
-) -> Result<nu_analytics::core::DegreeProgram, String> {
-    let text = serde_json::to_string(document)
-        .map_err(|e| format!("could not serialize stored document: {e}"))?;
-    nu_analytics::core::degree::parse_degree_auto(&text)
-        .map(|(program, _warnings)| program)
-        .map_err(|e| e.to_string())
+    .await
 }
 
 /// Print the "loaded program" banner for a resolved `--from-db` row
@@ -989,10 +932,7 @@ fn run_analyze_inprocess(files: &[PathBuf], options: &AnalyzeOptions, config: &C
     }
 
     if !rollups.is_empty() {
-        let metrics_dir = options
-            .metrics_dir
-            .as_ref()
-            .map_or_else(|| std::path::PathBuf::from("metrics"), Clone::clone);
+        let metrics_dir = metrics_dir_or_default(options);
         match nu_analytics::core::report::unified_report::export_school_report_json(
             &school_name,
             &rollups,
@@ -1318,7 +1258,7 @@ impl AnalysisContext<'_> {
         nu_analytics::core::report::unified_report::RunParameters {
             max_plans: self.gen_config.max_plans,
             sample_count: self.gen_config.sample_count,
-            sampling_strategy: sampling_strategy_label(&self.gen_config.sampling_strategy),
+            sampling_strategy: self.gen_config.sampling_strategy.as_str(),
             calc_strategy: &self.calc_strategy,
             ignore_duplicates: self.gen_config.ignore_duplicates,
             included_courses: &self.gen_config.include_courses,
@@ -1415,34 +1355,22 @@ fn analysis_config<'a>(
     options: &'a AnalyzeOptions,
     config: &Config,
 ) -> nu_analytics::core::degree::analysis::AnalysisConfig<'a> {
-    // CLI option takes precedence over config
-    let sampling_strategy = options
-        .sampling_strategy
-        .as_ref()
-        .and_then(|s| s.parse::<SamplingStrategy>().ok())
-        .unwrap_or_else(|| {
-            config
-                .degree_analysis
-                .sampling_strategy
-                .parse::<SamplingStrategy>()
-                .unwrap_or_default()
-        });
+    let base =
+        nu_analytics::core::degree::analysis::AnalysisConfig::from_config(&config.degree_analysis);
     nu_analytics::core::degree::analysis::AnalysisConfig {
-        max_plans: options
-            .max_plans
-            .unwrap_or(config.degree_analysis.max_plans),
-        // Default is ignore_duplicates=true; --full-run disables it
-        ignore_duplicates: !options.full_run && config.degree_analysis.ignore_duplicates,
-        sample_count: options
-            .sample_plans
-            .unwrap_or(config.degree_analysis.sample_plan_count),
-        sampling_strategy,
+        max_plans: options.max_plans.unwrap_or(base.max_plans),
+        // --full-run counts duplicate plans too
+        ignore_duplicates: !options.full_run && base.ignore_duplicates,
+        sample_count: options.sample_plans.unwrap_or(base.sample_count),
+        // An unparseable --sampling-strategy falls back to the configuration's
+        sampling_strategy: options
+            .sampling_strategy
+            .as_ref()
+            .and_then(|s| s.parse::<SamplingStrategy>().ok())
+            .unwrap_or(base.sampling_strategy),
         include_courses: options.include_courses.clone().unwrap_or_default(),
-        // Derived from the degree itself, so the same degree always enumerates the same
-        // plans — see `default_seed_for_program`.
-        random_seed: None,
-        time_limit: None,
         target_course: options.target_course.as_deref(),
+        ..base
     }
 }
 
@@ -1481,12 +1409,10 @@ fn emit_target_course_stats(
     {
         block.insert("target_course_stats".to_string(), stats_json);
     }
-    write_degree_report(&report, out_path)
-        .map_err(|e| format!("--metrics-out: cannot write {}: {e}", out_path.display()))
+    write_degree_report(&report, out_path).map_err(|e| format!("--metrics-out: {e}"))
 }
 
-/// Print an analysis run's progress, when verbose — the same lines the pipeline printed
-/// itself before it moved into the library.
+/// Print an analysis run's progress to stderr, when verbose.
 fn report_analysis_event(
     event: &nu_analytics::core::degree::analysis::AnalysisEvent<'_>,
     verbose: bool,
@@ -2167,10 +2093,7 @@ fn generate_analysis_outputs(
         }
 
         // Export JSONL and index CSV for aggregation (only when CSV export is enabled)
-        let metrics_dir = options
-            .metrics_dir
-            .as_ref()
-            .map_or_else(|| std::path::PathBuf::from("metrics"), Clone::clone);
+        let metrics_dir = metrics_dir_or_default(options);
 
         // Export degree summary JSONL
         match export_degree_summary_jsonl(
@@ -2236,16 +2159,6 @@ fn generate_analysis_outputs(
     Ok(outputs_generated)
 }
 
-/// Human-readable label for a sampling strategy (used as `sample_type` in the
-/// unified report JSON).
-const fn sampling_strategy_label(strategy: &SamplingStrategy) -> &'static str {
-    match strategy {
-        SamplingStrategy::Sequential => "sequential",
-        SamplingStrategy::Shuffled => "shuffled",
-        SamplingStrategy::Stratified => "stratified",
-    }
-}
-
 /// Generate HTML report
 fn generate_html_report(
     ctx: &AnalysisContext<'_>,
@@ -2267,7 +2180,9 @@ fn generate_html_report(
         })?;
     }
 
-    let report_path = report_dir.join(format!("{}-analysis.html", ctx.program.degree.degree_id()));
+    let report_path = report_dir.join(nu_analytics::core::report::report_file_name(
+        &ctx.program.degree.degree_id(),
+    ));
 
     if ctx.verbose {
         eprintln!();
@@ -2295,10 +2210,8 @@ fn export_csv_files(
     options: &AnalyzeOptions,
     selected: &nu_analytics::core::degree::SelectedPlans,
 ) -> Result<Vec<String>, String> {
-    let metrics_dir = options.metrics_dir.as_ref().map_or_else(
-        || "metrics".to_string(),
-        |p| p.to_string_lossy().to_string(),
-    );
+    let metrics_dir = metrics_dir_or_default(options);
+    let metrics_dir = metrics_dir.to_string_lossy();
 
     let export_config = PlanExportConfig {
         base_dir: format!("{metrics_dir}/plans"),
@@ -2397,6 +2310,99 @@ fn print_separator() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each option overrides the configuration; an unparseable `--sampling-strategy` falls
+    /// back to the configuration's, not to the default.
+    #[test]
+    fn test_analysis_config_takes_each_option_over_the_configuration() {
+        let mut config = Config::from_defaults();
+        config.degree_analysis.sampling_strategy = "sequential".into();
+        let none = AnalyzeOptions::default();
+        let defaults = analysis_config(&none, &config);
+        assert_eq!(
+            (
+                defaults.max_plans,
+                defaults.sample_count,
+                defaults.ignore_duplicates
+            ),
+            (
+                config.degree_analysis.max_plans,
+                config.degree_analysis.sample_plan_count,
+                config.degree_analysis.ignore_duplicates
+            )
+        );
+        assert_eq!(defaults.sampling_strategy, SamplingStrategy::Sequential);
+        assert!(defaults.random_seed.is_none() && defaults.time_limit.is_none());
+
+        let options = AnalyzeOptions {
+            max_plans: Some(7),
+            sample_plans: Some(2),
+            full_run: true,
+            sampling_strategy: Some("stratified".into()),
+            include_courses: Some(vec!["CS1".into()]),
+            target_course: Some("CS2".into()),
+            ..Default::default()
+        };
+        let given = analysis_config(&options, &config);
+        assert_eq!(
+            (given.max_plans, given.sample_count, given.ignore_duplicates),
+            (7, 2, false)
+        );
+        assert_eq!(given.sampling_strategy, SamplingStrategy::Stratified);
+        assert_eq!(given.include_courses, ["CS1"]);
+        assert_eq!(given.target_course, Some("CS2"));
+
+        let bogus = AnalyzeOptions {
+            sampling_strategy: Some("bogus".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            analysis_config(&bogus, &config).sampling_strategy,
+            SamplingStrategy::Sequential
+        );
+    }
+
+    /// A `--target-course` query writes the `--metrics-out` report, creating its directory,
+    /// and no other output; it produces no rollup. An unwritable path is an error naming
+    /// `--metrics-out`.
+    #[test]
+    fn test_a_target_course_run_writes_only_the_metrics_out_report() {
+        let (program, _) = nu_analytics::core::degree::parse_degree_auto(include_str!(
+            "../../../samples/degrees/csu-cs-bscs-general.yaml"
+        ))
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("nested/deeper/cs165.json");
+        let options = AnalyzeOptions {
+            max_plans: Some(20),
+            target_course: Some("CS165".into()),
+            metrics_out: Some(out.clone()),
+            report_dir: Some(dir.path().join("reports")),
+            metrics_dir: Some(dir.path().join("metrics")),
+            ..Default::default()
+        };
+        let config = Config::from_defaults();
+        assert!(analyze_program(&program, &options, &config)
+            .unwrap()
+            .is_none());
+        assert!(!dir.path().join("reports").exists() && !dir.path().join("metrics").exists());
+
+        let report: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+        assert_eq!(
+            report["analysis"]["target_course_stats"]["course_id"],
+            "CS165"
+        );
+        assert_eq!(report["analysis"]["parameters"]["max_plans"], 20);
+        assert!(report["degree"].is_object() && report["courses"].is_object());
+
+        let blocked = AnalyzeOptions {
+            metrics_out: Some(out.join("under-a-file.json")),
+            ..options
+        };
+        let err = analyze_program(&program, &blocked, &config).unwrap_err();
+        assert!(err.starts_with("--metrics-out"), "{err}");
+    }
 
     #[test]
     fn test_validate_degree_allows_an_unmatched_pattern_only_when_asked() {
@@ -2880,47 +2886,5 @@ courses:
             lines[1],
             "fp:abcdef  ·  Data Science  ·  (unknown)  ·  (no catalog year)"
         );
-    }
-
-    #[cfg(feature = "database")]
-    #[test]
-    fn test_program_from_document_round_trips_unified_json() {
-        // A stored `document` carries prerequisites in the structured tagged
-        // form (what `to_unified_value` emits); parsing it back must recover the
-        // model — including the `prerequisites_raw` for CS201 → CS101.
-        let document = serde_json::json!({
-            "degree": {
-                "name": "Computer Science",
-                "degree_type": "BS",
-                "system_type": "semester",
-                "institution": "Test University",
-                "total_credits": 8
-            },
-            "requirements": {
-                "core": { "type": "all", "category": "major", "courses": ["CS101", "CS201"] }
-            },
-            "courses": {
-                "CS101": { "name": "Intro", "prefix": "CS", "number": "101", "credit_hours": 4.0 },
-                "CS201": {
-                    "name": "Data Structures", "prefix": "CS", "number": "201",
-                    "credit_hours": 4.0, "prerequisites": "CS101"
-                }
-            }
-        });
-        let program = program_from_document(&document).expect("document should round-trip");
-        assert_eq!(program.degree.name, "Computer Science");
-        assert_eq!(program.courses.len(), 2);
-        let cs201 = program.courses.get("CS201").expect("CS201 present");
-        assert_eq!(cs201.prerequisites_raw.as_deref(), Some("CS101"));
-    }
-
-    #[cfg(feature = "database")]
-    #[test]
-    fn test_program_from_document_rejects_invalid_document() {
-        // A JSON object that isn't a degree must error cleanly, never panic.
-        let bad = serde_json::json!({ "not_a_degree": true });
-        let err = program_from_document(&bad)
-            .expect_err("invalid document must return an error, not panic");
-        assert!(!err.is_empty(), "error message should not be empty");
     }
 }

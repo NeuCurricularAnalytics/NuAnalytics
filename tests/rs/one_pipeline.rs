@@ -1,16 +1,16 @@
 //! `degree analyze` and the MCP's `analyze_degree` run one pipeline,
 //! `core::degree::analysis::analyze`, and differ only in their defaults.
 //!
-//! The MCP once had its own copy, which built courses, equivalences, prerequisite expansion
-//! and the seed its own way, so the same degree gave different figures on the two surfaces
-//! (and fresh MCP figures disagreed with the stored corpus, which the CLI produced). This
-//! runs the MCP tool and the core pipeline, configured as the CLI configures it, on real
-//! fixtures at equal settings and asserts the results are identical — exactly, not within a
-//! tolerance — so any step the MCP adds to the pipeline shows up here.
+//! Guards against either surface growing a pipeline step of its own: one that builds
+//! courses, equivalences, prerequisite expansion or the seed differently makes the same
+//! degree give different figures on the two surfaces, and fresh MCP figures disagree with
+//! the stored corpus, which the CLI produced. This runs the MCP tool and the core pipeline,
+//! configured as the CLI configures it, on real fixtures at equal settings and asserts the
+//! results are identical — exactly, not within a tolerance.
 
 use nu_analytics::core::config::Config;
 use nu_analytics::core::degree::analysis::{analyze, AnalysisConfig, DegreeAnalysis};
-use nu_analytics::core::degree::{parse_degree_auto, SamplingStrategy, SelectedPlans};
+use nu_analytics::core::degree::{parse_degree_auto, SelectedPlans};
 use nu_analytics::core::statistics::MetricStats;
 use nu_analytics::mcp::tools::analyze::{
     execute, AnalysisResponse, AnalyzeOptions, MetricStatsJson,
@@ -25,23 +25,14 @@ const MAX_PLANS: usize = 150;
 /// The MCP's fixed Random Sample count.
 const MCP_SAMPLE_COUNT: usize = 3;
 
-/// The CLI's analysis of `text`: the compiled default configuration, as `degree analyze`
-/// reads it, at `MAX_PLANS` and the MCP's sample count.
+/// The CLI's analysis of `text`: the compiled default configuration, mapped as
+/// `degree analyze` maps it, at `MAX_PLANS` and the MCP's sample count.
 fn cli_analysis(text: &str) -> DegreeAnalysis {
-    let defaults = Config::from_defaults().degree_analysis;
     let (program, _) = parse_degree_auto(text).expect("fixture parses");
     let config = AnalysisConfig {
         max_plans: MAX_PLANS,
-        ignore_duplicates: defaults.ignore_duplicates,
         sample_count: MCP_SAMPLE_COUNT,
-        sampling_strategy: defaults
-            .sampling_strategy
-            .parse::<SamplingStrategy>()
-            .expect("default sampling strategy parses"),
-        include_courses: Vec::new(),
-        random_seed: None,
-        time_limit: None,
-        target_course: None,
+        ..AnalysisConfig::from_config(&Config::from_defaults().degree_analysis)
     };
     analyze(program, &config, &mut |_| {})
 }
@@ -59,11 +50,11 @@ fn mcp_analysis(text: &str) -> AnalysisResponse {
 }
 
 /// The seven figures reported for a metric, as bit patterns: the comparison is exact.
-fn five_numbers(s: &MetricStats) -> [u64; 7] {
+fn summary_bits(s: &MetricStats) -> [u64; 7] {
     [s.min, s.q1, s.median, s.q3, s.max, s.mean, s.std_dev].map(f64::to_bits)
 }
 
-fn five_numbers_json(s: Option<&MetricStatsJson>) -> [u64; 7] {
+fn summary_bits_json(s: Option<&MetricStatsJson>) -> [u64; 7] {
     let s = s.expect("the MCP reports this metric");
     [s.min, s.q1, s.median, s.q3, s.max, s.mean, s.std_dev].map(f64::to_bits)
 }
@@ -122,8 +113,8 @@ fn the_mcp_and_the_cli_configuration_give_identical_results() {
             ),
         ] {
             assert_eq!(
-                five_numbers(core),
-                five_numbers_json(tool),
+                summary_bits(core),
+                summary_bits_json(tool),
                 "{name}: {metric}"
             );
         }

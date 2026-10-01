@@ -89,7 +89,8 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
             jobs,
         } => {
             let opts = ImportOptions {
-                variant: variant.unwrap_or_else(|| "full".to_string()),
+                variant: variant
+                    .unwrap_or_else(|| nu_analytics::database::variants::FULL.to_string()),
                 unitid,
                 institution,
                 cip_code: cip,
@@ -3252,27 +3253,30 @@ async fn report_candidates(
         return Err(format!("no institution matches '{school}'"));
     }
 
-    let select = |filters: QueryFilters| async move {
-        client
-            .select(tables::PROGRAMS, REPORT_CANDIDATE_COLS, &filters, Some(200))
-            .await
-            .map(|rows| nu_analytics::core::json::parse_json_array::<ReportCandidate>(&rows))
-            .map_err(|e| e.to_string())
-    };
     let at_school = || QueryFilters::new().in_list("unitid", &unitids);
-    let Some(pattern) = degree.map(str::trim) else {
-        return select(at_school()).await;
-    };
-    // As `--degree` promises: an exact program key, then an exact degree id, then part of
-    // the name. A key or id is tried exactly first because as a name pattern it matches
-    // nothing — a program key is not part of any program's name.
-    for column in ["program_key", "degree_id"] {
-        let exact = select(at_school().eq(column, Some(pattern))).await?;
-        if !exact.is_empty() {
-            return Ok(exact);
+    let found = match degree.map(str::trim) {
+        // `--degree` as promised: a program key, a degree id, or part of the name.
+        Some(pattern) => {
+            nu_analytics::core::query::degrees::find_programs(
+                client,
+                REPORT_CANDIDATE_COLS,
+                at_school,
+                pattern,
+                200,
+            )
+            .await
         }
-    }
-    select(at_school().ilike("name", Some(pattern))).await
+        None => client
+            .select(
+                tables::PROGRAMS,
+                REPORT_CANDIDATE_COLS,
+                &at_school(),
+                Some(200),
+            )
+            .await
+            .map(|rows| nu_analytics::core::json::parse_json_array(&rows)),
+    };
+    found.map_err(|e| format!("searching the stored programs at '{school}': {e}"))
 }
 
 /// Variants that actually have a stored run for `program_key`, newest first.
@@ -3294,7 +3298,7 @@ fn resolve_report_path(
     output: Option<&std::path::Path>,
     degree_id: &str,
 ) -> Result<std::path::PathBuf, String> {
-    let default_name = format!("{degree_id}-analysis.html");
+    let default_name = nu_analytics::core::report::report_file_name(degree_id);
     let path = match output {
         Some(p)
             if p.extension()

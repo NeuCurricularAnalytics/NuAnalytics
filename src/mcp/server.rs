@@ -350,19 +350,7 @@ impl NuAnalyticsMcpServer {
             &req.run,
             &generation,
             |view| report::present_json(view, &out),
-            |yaml, _| {
-                report::execute_json(
-                    yaml,
-                    max_plans,
-                    include_courses.as_deref(),
-                    out.output_dir,
-                    write_plan_csvs,
-                    write_jsonl_summary,
-                    write_index_csv,
-                    return_html_inline,
-                    overwrite,
-                )
-            },
+            |yaml, _| report::execute_json(yaml, max_plans, include_courses.as_deref(), &out),
         )
     }
 
@@ -529,17 +517,15 @@ impl NuAnalyticsMcpServer {
             Ok(loaded) => loaded,
             Err(e) => return e,
         };
-        // The rule the other analysis tools follow: a stored program is read from its stored
-        // run unless the caller asks for a fresh one, so a fresh-run setting needs that ask.
-        if req.max_plans.is_some()
-            && req.metrics.is_none()
-            && loaded.iter().any(|d| d.program_key.is_some())
-        {
-            return shared::bad_arguments(
-                "max_plans shapes a fresh run, and a stored program among the sources is read from its stored run. Pass metrics=\"fresh\" to enumerate every degree afresh.",
-            );
+        // The rule the other analysis tools follow: a fresh-run setting is refused where
+        // nothing would be enumerated with it, rather than silently ignored.
+        if let Some(refusal) = compare::refuse_fresh_settings(req.max_plans, req.metrics, &loaded) {
+            return refusal;
         }
-        let stored = self.stored_run_lookup(req.variant.unwrap_or_else(|| "full".to_string()));
+        let stored = self.stored_run_lookup(
+            req.variant
+                .unwrap_or_else(|| crate::core::database::variants::FULL.to_string()),
+        );
         let (mode, max_plans) = (req.metrics, req.max_plans);
         guard_panics("compare_degrees", || {
             compare::compare_json(loaded, mode, max_plans, &stored)
@@ -618,11 +604,6 @@ impl NuAnalyticsMcpServer {
         })
     }
 
-    /// Run a degree tool against the degree its arguments name.
-    ///
-    /// Loads the degree, invokes `run` on its text and origin, and adds a `source` object to
-    /// the response saying where the degree came from — and, for inline content, the
-    /// `cache:` handle later calls can pass as `degree` instead of sending it again.
     /// A stored program's stored run, when the source is a stored program and `fresh` is
     /// not set; `None` when the tool should enumerate afresh.
     ///
@@ -638,58 +619,35 @@ impl NuAnalyticsMcpServer {
         run: &shared::StoredRunArgs,
         generation: &[(&str, bool)],
     ) -> Result<Option<(StoredAnalysis, SourceInfo)>, String> {
-        let fresh = run.fresh.unwrap_or(false);
         let Some(reference) = source.stored_reference() else {
             return match &run.variant {
-                Some(_) => Err(shared::bad_arguments(
-                    "variant selects a stored program's run; this source is analyzed afresh",
-                )),
+                Some(_) => Err(shared::bad_arguments(format_args!(
+                    "variant selects a stored program's run, and {} is always analyzed afresh",
+                    source.describe()
+                ))),
                 None => Ok(None),
             };
         };
-        if fresh {
+        if run.fresh.unwrap_or(false) {
             return match &run.variant {
                 Some(_) => Err(shared::bad_arguments(
-                    "variant selects a stored run, and fresh=true enumerates the program's degree instead; give one",
+                    "variant reads a stored run, and fresh=true enumerates the program's degree instead: pass one or the other",
                 )),
                 None => Ok(None),
             };
         }
-        let given: Vec<&str> = generation
-            .iter()
-            .filter_map(|&(name, set)| set.then_some(name))
-            .collect();
-        if !given.is_empty() {
-            return Err(shared::bad_arguments(format_args!(
-                "{} shape a fresh run, and `{reference}` is a stored program, read from its stored run. \
-                 Pass fresh=true to enumerate it afresh with them.",
-                given.join(", ")
-            )));
-        }
+        refuse_fresh_run_settings(reference, generation)?;
 
         let db = self.get_db(tool)?;
         let reference = reference.to_string();
-        let variant = run.variant.clone().unwrap_or_else(|| "full".to_string());
+        let variant = run
+            .variant
+            .clone()
+            .unwrap_or_else(|| crate::core::database::variants::FULL.to_string());
         let (program_key, report) = block_on(move || async move {
-            use crate::core::query::report_source::{load, LoadError};
-            let program_key =
-                crate::core::query::degrees::resolve_program_key(&db, &reference).await?;
-            match load(&db, &program_key, Some(&variant)).await {
-                Ok(report) => Ok((program_key, report)),
-                Err(LoadError::NoRun(message)) => Err(crate::core::json::coded_error(
-                    crate::core::json::error_code::SOURCE_NOT_FOUND,
-                    format_args!(
-                        "{message}. fresh=true enumerates the program's degree afresh instead."
-                    ),
-                )
-                .to_string()),
-                Err(LoadError::Failed(message)) => Err(serde_json::json!({
-                    "error": format!("reading the stored run of {program_key}: {message}"),
-                    "program_key": program_key,
-                })
-                .to_string()),
-            }
-        })?;
+            crate::core::query::report_source::load_reference(&db, &reference, Some(&variant)).await
+        })
+        .map_err(stored_load_refusal)?;
         let stored = StoredAnalysis::new(report);
         let origin = SourceInfo {
             program_key: Some(program_key),
@@ -720,6 +678,11 @@ impl NuAnalyticsMcpServer {
         }
     }
 
+    /// Run a degree tool against the degree its arguments name.
+    ///
+    /// Loads the degree, invokes `run` on its text and origin, and adds a `source` object to
+    /// the response saying where the degree came from — and, for inline content, the
+    /// `cache:` handle later calls can pass as `degree` instead of sending it again.
     fn run_yaml_tool<F>(&self, tool: &'static str, args: shared::DegreeSourceArgs, run: F) -> String
     where
         F: FnOnce(&str, &SourceInfo) -> String,
@@ -823,13 +786,10 @@ impl NuAnalyticsMcpServer {
         tool: &'static str,
         reference: &str,
     ) -> Result<(String, SourceInfo), String> {
-        if reference.starts_with(crate::mcp::cache::YAML_CACHE_PREFIX) {
-            resolve_cache_handle(reference)
-        } else if let Some(key) = reference.strip_prefix(crate::mcp::tools::samples::SAMPLE_PREFIX)
-        {
-            resolve_sample(key, reference)
-        } else {
-            self.resolve_stored(tool, reference)
+        match shared::ReferenceKind::of(reference) {
+            shared::ReferenceKind::Cache(handle) => resolve_cache_handle(handle),
+            shared::ReferenceKind::Sample(key) => resolve_sample(key, reference),
+            shared::ReferenceKind::Stored(stored) => self.resolve_stored(tool, stored),
         }
     }
 
@@ -852,6 +812,41 @@ impl NuAnalyticsMcpServer {
                 ..SourceInfo::of("stored")
             },
         ))
+    }
+}
+
+/// Refuse the settings that shape a fresh run, when a stored program would be read from
+/// its stored run instead. `generation` pairs each such argument with whether it was given.
+fn refuse_fresh_run_settings(reference: &str, generation: &[(&str, bool)]) -> Result<(), String> {
+    let given: Vec<&str> = generation
+        .iter()
+        .filter_map(|&(name, set)| set.then_some(name))
+        .collect();
+    if given.is_empty() {
+        return Ok(());
+    }
+    Err(shared::bad_arguments(format_args!(
+        "{} shape a fresh run, and `{reference}` is a stored program, read from its stored run. \
+         Pass fresh=true to enumerate it afresh with them.",
+        given.join(", ")
+    )))
+}
+
+/// The payload for a stored run that could not be read. A program with no run of the
+/// variant is `source_not_found` and names `fresh=true`; any other failure is reported as
+/// it is, with the program it was for.
+fn stored_load_refusal(error: crate::core::query::report_source::ReferenceError) -> String {
+    use crate::core::query::report_source::{LoadError, ReferenceError};
+    match error {
+        ReferenceError::Load {
+            error: LoadError::NoRun(message),
+            ..
+        } => crate::core::json::coded_error(
+            crate::core::json::error_code::SOURCE_NOT_FOUND,
+            format_args!("{message}. fresh=true enumerates the program's degree afresh instead."),
+        )
+        .to_string(),
+        other => other.into_payload(),
     }
 }
 
@@ -1752,6 +1747,106 @@ mod tests {
                 .is_some_and(|m| m.contains("target_course")),
             "{out}"
         );
+    }
+
+    /// `fresh=true` lifts the refusal: the settings are taken and the program's document is
+    /// what is read next (unavailable here, not refused). Other sources take them freely.
+    #[test]
+    fn fresh_true_lifts_the_refusal_and_other_sources_take_run_settings() {
+        let server = NuAnalyticsMcpServer::new();
+        let analyze = |v: serde_json::Value| -> serde_json::Value {
+            serde_json::from_str(
+                &server.analyze_degree(Parameters(serde_json::from_value(v).unwrap())),
+            )
+            .unwrap()
+        };
+        let lifted = analyze(serde_json::json!({
+            "degree": "prog:1|x", "fresh": true, "max_plans": 5, "random_seed": 7
+        }));
+        assert_eq!(lifted["code"], "db_unavailable", "{lifted}");
+
+        let refused = analyze(serde_json::json!({
+            "degree": "prog:1|x", "max_plans": 5, "random_seed": 7
+        }));
+        assert!(
+            refused["error"]
+                .as_str()
+                .is_some_and(|m| m.contains("max_plans, random_seed")),
+            "every refused setting is named: {refused}"
+        );
+
+        for fresh in [None, Some(true)] {
+            let sample = analyze(serde_json::json!({
+                "degree": "sample:csu", "max_plans": 5, "fresh": fresh
+            }));
+            assert_eq!(sample["success"], true, "{sample}");
+            assert!(sample["plans_analyzed"].as_u64().is_some_and(|n| n <= 5));
+        }
+
+        let detail: serde_json::Value = serde_json::from_str(
+            &server.get_course_detail(Parameters(
+                serde_json::from_value(serde_json::json!({
+                    "degree": "sample:csu", "course_id": "CS165",
+                    "include_analysis": false, "fresh": true
+                }))
+                .unwrap(),
+            )),
+        )
+        .unwrap();
+        assert_eq!(detail["code"], "bad_arguments", "{detail}");
+    }
+
+    /// A program with no run of the variant is `source_not_found` and names `fresh=true`;
+    /// a failed read is reported as itself, with the program it was for.
+    #[test]
+    fn a_missing_stored_run_is_source_not_found_and_a_failed_read_is_not() {
+        use crate::core::query::report_source::{LoadError, ReferenceError};
+        let json = |s: String| serde_json::from_str::<serde_json::Value>(&s).unwrap();
+        let load = |error| ReferenceError::Load {
+            program_key: "prog:1".to_string(),
+            error,
+        };
+
+        let missing = json(stored_load_refusal(load(LoadError::NoRun(
+            "no `trimmed` analysis run stored for prog:1".to_string(),
+        ))));
+        assert_eq!(missing["code"], "source_not_found");
+        assert!(missing["error"]
+            .as_str()
+            .is_some_and(|m| m.contains("trimmed") && m.contains("fresh=true")));
+
+        let failed = json(stored_load_refusal(load(LoadError::Failed(
+            "timed out".to_string(),
+        ))));
+        assert_ne!(failed["code"], "source_not_found");
+        assert_eq!(failed["program_key"], "prog:1");
+        assert_eq!(failed["error"], "timed out");
+
+        let unresolved = r#"{"error":"no stored program","code":"source_not_found"}"#;
+        assert_eq!(
+            stored_load_refusal(ReferenceError::Unresolved(unresolved.to_string())),
+            unresolved,
+            "the resolution's own payload is returned as is"
+        );
+    }
+
+    /// Fresh-run settings are refused only when some were given.
+    #[test]
+    fn refuse_fresh_run_settings_names_only_what_was_given() {
+        assert!(refuse_fresh_run_settings("p", &[]).is_ok());
+        assert!(refuse_fresh_run_settings("p", &[("max_plans", false)]).is_ok());
+        let refused = refuse_fresh_run_settings(
+            "prog:1",
+            &[
+                ("max_plans", true),
+                ("random_seed", false),
+                ("target_course", true),
+            ],
+        )
+        .unwrap_err();
+        assert!(refused.contains("max_plans, target_course"), "{refused}");
+        assert!(!refused.contains("random_seed"), "{refused}");
+        assert!(refused.contains("prog:1") && refused.contains("fresh=true"));
     }
 }
 

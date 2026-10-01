@@ -159,6 +159,22 @@ pub fn unified_value_to_string(value: &Value, pretty: bool) -> Result<String, se
     }
 }
 
+/// Parse a unified-JSON `Value` back into a program — the inverse of [`to_unified_value`],
+/// and how a stored `programs.document` is read.
+///
+/// Goes through the text loader: `serde_json::from_value` would not round-trip, because
+/// the value carries structured `prerequisites` where the model has `prerequisites_raw`.
+///
+/// # Errors
+/// The serializer's or the parser's message.
+pub fn from_unified_value(value: &Value) -> Result<DegreeProgram, String> {
+    let text =
+        serde_json::to_string(value).map_err(|e| format!("could not serialize the degree: {e}"))?;
+    parse_degree_auto(&text)
+        .map(|(program, _warnings)| program)
+        .map_err(|e| e.to_string())
+}
+
 /// Build the unified-JSON `Value` for a program.
 ///
 /// Serializes the model, then rewrites each course's `prerequisites_raw`
@@ -211,6 +227,55 @@ pub fn save_degree_to_json<P: AsRef<Path>>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_from_unified_value_round_trips_a_stored_document() {
+        // A stored `document` carries prerequisites in the structured tagged form (what
+        // `to_unified_value` emits); parsing it back must recover the model — including
+        // the `prerequisites_raw` for CS201 → CS101.
+        let document = serde_json::json!({
+            "degree": {
+                "name": "Computer Science",
+                "degree_type": "BS",
+                "system_type": "semester",
+                "institution": "Test University",
+                "total_credits": 8
+            },
+            "requirements": {
+                "core": { "type": "all", "category": "major", "courses": ["CS101", "CS201"] }
+            },
+            "courses": {
+                "CS101": { "name": "Intro", "prefix": "CS", "number": "101", "credit_hours": 4.0 },
+                "CS201": {
+                    "name": "Data Structures", "prefix": "CS", "number": "201",
+                    "credit_hours": 4.0, "prerequisites": "CS101"
+                }
+            }
+        });
+        let program = from_unified_value(&document).expect("document should round-trip");
+        assert_eq!(program.degree.name, "Computer Science");
+        assert_eq!(program.courses.len(), 2);
+        let cs201 = program.courses.get("CS201").expect("CS201 present");
+        assert_eq!(cs201.prerequisites_raw.as_deref(), Some("CS101"));
+        let value = to_unified_value(&program).unwrap();
+        assert_eq!(
+            to_unified_value(&from_unified_value(&value).unwrap()).unwrap(),
+            value,
+            "and the value it serializes back to parses to the same program"
+        );
+    }
+
+    #[test]
+    fn test_from_unified_value_rejects_what_is_not_a_degree() {
+        for bad in [
+            serde_json::json!({ "not_a_degree": true }),
+            serde_json::json!([]),
+            serde_json::json!("text"),
+        ] {
+            let err = from_unified_value(&bad).expect_err("not a degree");
+            assert!(!err.is_empty(), "{bad}: the error says why");
+        }
+    }
+
     use super::*;
 
     #[test]

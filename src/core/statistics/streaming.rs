@@ -160,9 +160,9 @@ impl WelfordAccumulator {
 
 /// Seed of every reservoir's own generator.
 ///
-/// Fixed, so the same stream of values keeps the same sample in every process. The
-/// global `fastrand` generator this replaced is seeded from entropy, which made the
-/// quantiles of any analysis past the reservoir's capacity differ from run to run.
+/// Fixed, so the same stream of values keeps the same sample in every process. Not the
+/// global `fastrand` generator: that is seeded from entropy, so the quantiles of any
+/// analysis past the reservoir's capacity would differ from run to run.
 const RESERVOIR_SEED: u64 = 0x5EED_0FA1_1CE5;
 
 /// Reservoir for approximate quantile computation

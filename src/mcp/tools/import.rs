@@ -115,7 +115,9 @@ pub async fn execute_json(client: &Arc<DbClient>, req: ImportDegreeRequest) -> S
     };
 
     let opts = ImportOptions {
-        variant: req.variant.unwrap_or_else(|| "full".to_string()),
+        variant: req
+            .variant
+            .unwrap_or_else(|| crate::core::database::variants::FULL.to_string()),
         unitid: req.unitid,
         institution: req.institution,
         cip_code: req.cip,

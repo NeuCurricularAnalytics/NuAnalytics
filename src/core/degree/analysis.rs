@@ -3,12 +3,12 @@
 //! One pipeline, which `degree analyze` and the MCP analysis tools both call; each keeps
 //! only its own output layer and defaults.
 //!
-//! Where the two copies this replaces differed in anything that feeds a metric, the CLI's
-//! behaviour is the one kept, because the stored corpus was produced by it: prerequisite
-//! expansion avoids alternatives to `--include` courses and prunes redundant
-//! prerequisites; the seed is taken from the canonical degree; courses and equivalences
-//! come from `core::report::inputs`. The MCP-only features — a wall-clock limit and
-//! target-course statistics — are options here, off unless asked for.
+//! The stored corpus was produced by this pipeline, so everything that feeds a metric is
+//! load-bearing: prerequisite expansion avoids alternatives to `--include` courses and
+//! prunes redundant prerequisites, the seed comes from the canonical degree, and courses
+//! and equivalences come from `core::report::inputs`. Changing any of them moves stored
+//! figures. A wall-clock limit and target-course statistics are options, off unless asked
+//! for.
 //!
 //! Nothing here prints. Progress is reported through [`AnalysisEvent`]s, which the CLI
 //! renders when verbose and the MCP ignores.
@@ -29,7 +29,9 @@ use crate::core::models::course_graph::{CourseNode, PrerequisiteEdge, Prerequisi
 use crate::core::models::{CourseGraph, DegreeProgram, School};
 use crate::core::report::inputs::{build_equivalence_map, build_school_from_program};
 use crate::core::report::report_stats::ReportStats;
-use crate::core::report::term_scheduler::{SchedulerConfig, TermScheduler};
+use crate::core::report::term_scheduler::{
+    course_credits_with_fallback, SchedulerConfig, TermScheduler,
+};
 use crate::core::statistics::aggregator::{AggregatorConfig, MetricsAggregator};
 
 /// How an analysis run is bounded and what it computes beyond the aggregate metrics.
@@ -56,6 +58,27 @@ pub struct AnalysisConfig<'a> {
     pub time_limit: Option<Duration>,
     /// Record which term this course lands in across the plans.
     pub target_course: Option<&'a str>,
+}
+
+impl AnalysisConfig<'_> {
+    /// The analysis a configuration's `[degree_analysis]` section describes — what
+    /// `degree analyze` runs before its command-line options override it. An unknown
+    /// `sampling_strategy` falls back to the default.
+    #[must_use]
+    pub fn from_config(config: &crate::core::config::DegreeAnalysisConfig) -> Self {
+        Self {
+            max_plans: config.max_plans,
+            ignore_duplicates: config.ignore_duplicates,
+            sample_count: config.sample_plan_count,
+            sampling_strategy: config.sampling_strategy.parse().unwrap_or_default(),
+            include_courses: Vec::new(),
+            // Derived from the degree itself, so the same degree always enumerates the
+            // same plans — see `default_seed_for_program`.
+            random_seed: None,
+            time_limit: None,
+            target_course: None,
+        }
+    }
 }
 
 /// Progress an analysis reports while it runs.
@@ -180,16 +203,15 @@ pub fn analyze(
     config: &AnalysisConfig<'_>,
     on_event: &mut dyn FnMut(AnalysisEvent<'_>),
 ) -> DegreeAnalysis {
-    let mut graph_result = CourseGraph::from_degree_program(&program);
-    if !graph_result.cycles.is_empty() {
-        let removed = graph_result.graph.break_cycles(&graph_result.cycles);
+    let graph_result = CourseGraph::from_degree_program(&program);
+    let cycles = graph_result.cycles.len();
+    let (graph, removed) = graph_result.into_acyclic();
+    if cycles > 0 {
         on_event(AnalysisEvent::CyclesBroken {
-            cycles: graph_result.cycles.len(),
+            cycles,
             removed: &removed,
         });
-        graph_result.cycles.clear();
     }
-    let graph = graph_result.graph;
 
     let equivalences = build_equivalence_map(&program.requirements);
     let exclude_from_prereqs = build_exclude_set(&config.include_courses, &graph);
@@ -352,25 +374,9 @@ fn run_plans(
         // Size fill-to-total blocks to this plan. Done *before* the DAG and metrics so all
         // three — metrics, credits and schedule — describe the same course list; doing it
         // later would leave complexity counting placeholders the plan no longer contains.
-        let mut fill: Option<crate::core::degree::fill_electives::FillResize> = None;
-        if let Some(target) = ctx.gen_config.target_credits {
-            #[allow(clippy::cast_precision_loss)] // target credits < 1000
-            if let Some(resize) = crate::core::degree::fill_electives::shrink_fill_blocks(
-                &expanded_courses,
-                &variant.requirement_choices,
-                &fill_ids,
-                target as f32,
-                |c| {
-                    ctx.school
-                        .get_course(c)
-                        .map_or_else(|| placeholder_credits(c), |co| co.credit_hours)
-                },
-                |c| ctx.school.get_course(c).is_some(),
-                |c| c.starts_with(ELECTIVE_PREFIX),
-            ) {
-                expanded_courses.clone_from(&resize.courses);
-                fill = Some(resize);
-            }
+        let fill = resize_fill_blocks(ctx, &expanded_courses, &variant, &fill_ids);
+        if let Some(resize) = &fill {
+            expanded_courses.clone_from(&resize.courses);
         }
 
         // The final plan first — the `ELEC` filler re-fitted to the expanded course list —
@@ -404,22 +410,12 @@ fn run_plans(
         // The target course's actual scheduled term. Scheduled from the expanded course
         // list — the selector's input — so a course without prerequisites is not placed in
         // a term it would not really occupy.
-        if let Some(target) = target_course {
-            if expanded_variant.courses.iter().any(|c| c == target) {
-                let scheduler =
-                    TermScheduler::new(ctx.school, &plan_dag, SchedulerConfig::default());
-                let schedule = scheduler.schedule(&expanded_variant.courses);
-                let term = schedule
-                    .terms
-                    .iter()
-                    .find(|t| t.courses.iter().any(|c| c == target))
-                    .map(|t| t.number);
-                if let Some(t) = term {
-                    outcome.target_all_terms.push(t);
-                    if selector.is_calc_ready_plan(&variant) {
-                        outcome.target_calc_ready_terms.push(t);
-                    }
-                }
+        if let Some(term) =
+            target_course.and_then(|c| scheduled_term(ctx.school, &plan_dag, &expanded_variant, c))
+        {
+            outcome.target_all_terms.push(term);
+            if selector.is_calc_ready_plan(&variant) {
+                outcome.target_calc_ready_terms.push(term);
             }
         }
 
@@ -431,6 +427,45 @@ fn run_plans(
         on_event(AnalysisEvent::Processed(outcome.plans_processed));
     }
     outcome
+}
+
+/// Shrink a plan's fill-to-total blocks so it reaches the degree's credit target and no
+/// further, or `None` when there is no target or nothing to shrink.
+fn resize_fill_blocks(
+    ctx: &LoopContext<'_>,
+    courses: &[String],
+    variant: &PlanVariant,
+    fill_ids: &[String],
+) -> Option<crate::core::degree::fill_electives::FillResize> {
+    let target = ctx.gen_config.target_credits?;
+    #[allow(clippy::cast_precision_loss)] // target credits < 1000
+    crate::core::degree::fill_electives::shrink_fill_blocks(
+        courses,
+        &variant.requirement_choices,
+        fill_ids,
+        target as f32,
+        |c| course_credits_with_fallback(ctx.school, c),
+        |c| ctx.school.get_course(c).is_some(),
+        |c| c.starts_with(ELECTIVE_PREFIX),
+    )
+}
+
+/// The term `course` is scheduled in, when the plan contains it.
+fn scheduled_term(
+    school: &School,
+    plan_dag: &crate::core::models::DAG,
+    plan: &PlanVariant,
+    course: &str,
+) -> Option<usize> {
+    if !plan.courses.iter().any(|c| c == course) {
+        return None;
+    }
+    TermScheduler::new(school, plan_dag, SchedulerConfig::default())
+        .schedule(&plan.courses)
+        .terms
+        .iter()
+        .find(|t| t.courses.iter().any(|c| c == course))
+        .map(|t| t.number)
 }
 
 /// Summarise where a target course landed across the enumerated plans.
@@ -478,11 +513,6 @@ fn build_target_term_stats(terms: &[usize]) -> TargetTermStats {
         avg_term: Some(avg),
         term_distribution: dist,
     }
-}
-
-/// Credits of a placeholder course, from its name. See `core::degree::placeholder`.
-fn placeholder_credits(course_key: &str) -> f32 {
-    crate::core::degree::placeholder::placeholder_credits(course_key)
 }
 
 /// Build a set of courses to exclude from prerequisite expansion
@@ -556,32 +586,28 @@ fn find_excluded_prereq_paths(node: &CourseNode, graph: &CourseGraph) -> HashSet
             continue;
         }
 
-        // Calculate the total prerequisite chain length for each option
-        let mut option_chains: Vec<(String, HashSet<String>)> = Vec::new();
-
-        for edge in &edges {
-            let chain = collect_all_prereqs(&edge.prerequisite, graph, &mut HashSet::new());
-            option_chains.push((edge.prerequisite.clone(), chain));
-        }
-
-        // Find the option with the shortest total chain
-        if let Some((shortest_prereq, shortest_chain)) =
+        // Each option's whole prerequisite chain.
+        let option_chains: Vec<(String, HashSet<String>)> = edges
+            .iter()
+            .map(|edge| {
+                let chain = collect_all_prereqs(&edge.prerequisite, graph, &mut HashSet::new());
+                (edge.prerequisite.clone(), chain)
+            })
+            .collect();
+        let Some((shortest_prereq, shortest_chain)) =
             option_chains.iter().min_by_key(|(_, chain)| chain.len())
-        {
-            // Exclude courses from other chains that aren't in the shortest chain
-            for (prereq, chain) in &option_chains {
-                if prereq != shortest_prereq {
-                    for course in chain {
-                        if !shortest_chain.contains(course) {
-                            excluded.insert(course.clone());
-                        }
-                    }
-                    // Also exclude the top-level alternative prereq itself
-                    if !shortest_chain.contains(prereq) {
-                        excluded.insert(prereq.clone());
-                    }
-                }
-            }
+        else {
+            continue;
+        };
+        // Exclude what only the longer alternatives need, the alternatives included.
+        for (prereq, chain) in option_chains.iter().filter(|(p, _)| p != shortest_prereq) {
+            excluded.extend(
+                chain
+                    .iter()
+                    .chain(std::iter::once(prereq))
+                    .filter(|c| !shortest_chain.contains(*c))
+                    .cloned(),
+            );
         }
     }
 
@@ -850,126 +876,104 @@ fn find_redundant_prerequisites(
     graph: &CourseGraph,
     equivalences: &HashMap<String, HashSet<String>>,
 ) -> Vec<String> {
-    let mut redundant = Vec::new();
+    let usage = prerequisite_usage(courses, graph);
+    let mut redundant = redundant_by_equivalence(courses, equivalences, &usage);
+    redundant.extend(redundant_or_options(courses, graph, &usage));
+    redundant
+}
 
-    // Build a map of which courses ACTUALLY depend on which prerequisites
-    // Only count a prerequisite as "used" if no other option in its OR-group is in the plan
-    let mut prereq_usage: HashMap<String, Vec<String>> = HashMap::new();
-
-    for course_key in courses {
-        if let Some(node) = graph.get(course_key) {
-            // Group prerequisites by OR-group
-            let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
-            let mut required_prereqs: Vec<&str> = Vec::new();
-
-            for edge in &node.prerequisites {
-                if edge.prereq_type == crate::core::models::course_graph::PrerequisiteType::Required
-                {
-                    if courses.contains(&edge.prerequisite) {
-                        required_prereqs.push(&edge.prerequisite);
-                    }
-                } else if let Some(group) = edge.or_group {
-                    or_groups.entry(group).or_default().push(&edge.prerequisite);
-                }
-            }
-
-            // Required prereqs are always used
-            for prereq in required_prereqs {
-                prereq_usage
-                    .entry(prereq.to_string())
-                    .or_default()
-                    .push(course_key.clone());
-            }
-
-            // For OR-groups, only mark as "used" if this is the ONLY option in the plan
-            for (_group, options) in or_groups {
-                let in_plan: Vec<&str> = options
-                    .iter()
-                    .filter(|&&opt| courses.contains(opt))
-                    .copied()
-                    .collect();
-
-                if in_plan.len() == 1 {
-                    // Only one option satisfies this - it's truly needed
-                    prereq_usage
-                        .entry(in_plan[0].to_string())
+/// Which plan courses actually depend on each prerequisite.
+///
+/// A required prerequisite in the plan is always used. An OR-group's option counts as used
+/// only when it is the group's one option in the plan; with several in the plan, none is
+/// counted here, and [`redundant_or_options`] decides between them.
+fn prerequisite_usage(
+    courses: &HashSet<String>,
+    graph: &CourseGraph,
+) -> HashMap<String, Vec<String>> {
+    let mut usage: HashMap<String, Vec<String>> = HashMap::new();
+    for (course_key, node) in courses.iter().filter_map(|c| Some((c, graph.get(c)?))) {
+        let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
+        for edge in &node.prerequisites {
+            if edge.prereq_type == PrerequisiteType::Required {
+                if courses.contains(&edge.prerequisite) {
+                    usage
+                        .entry(edge.prerequisite.clone())
                         .or_default()
                         .push(course_key.clone());
                 }
-                // If multiple options are in plan, we'll handle redundancy below
+            } else if let Some(group) = edge.or_group {
+                or_groups.entry(group).or_default().push(&edge.prerequisite);
+            }
+        }
+        for options in or_groups.into_values() {
+            let mut in_plan = options.into_iter().filter(|opt| courses.contains(*opt));
+            if let (Some(only), None) = (in_plan.next(), in_plan.next()) {
+                usage
+                    .entry(only.to_string())
+                    .or_default()
+                    .push(course_key.clone());
             }
         }
     }
+    usage
+}
 
-    // Check for courses that are redundant because an equivalent is in the plan
-    for course in courses {
-        if let Some(equivs) = equivalences.get(course) {
-            for equiv in equivs {
-                if equiv != course && courses.contains(equiv) {
-                    let usages = prereq_usage.get(course);
-                    if usages.is_none_or(std::vec::Vec::is_empty) {
-                        let equiv_satisfies_same = prereq_usage
-                            .get(equiv)
-                            .is_some_and(|equiv_usages| !equiv_usages.is_empty());
-
-                        if equiv_satisfies_same {
-                            redundant.push(course.clone());
-                        }
-                    }
-                }
+/// Plan courses nothing depends on whose equivalent, also in the plan, is depended on.
+fn redundant_by_equivalence(
+    courses: &HashSet<String>,
+    equivalences: &HashMap<String, HashSet<String>>,
+    usage: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let used = |c: &str| usage.get(c).is_some_and(|u| !u.is_empty());
+    let mut redundant = Vec::new();
+    for (course, equivs) in courses
+        .iter()
+        .filter_map(|c| Some((c, equivalences.get(c)?)))
+    {
+        for equiv in equivs {
+            if equiv != course && courses.contains(equiv) && !used(course) && used(equiv) {
+                redundant.push(course.clone());
             }
         }
     }
+    redundant
+}
 
-    // For each course, check its OR-groups for redundant prerequisites
-    for course_key in courses {
-        if let Some(node) = graph.get(course_key) {
-            // Group prerequisites by OR-group
-            let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
-            for edge in &node.prerequisites {
-                if let Some(group) = edge.or_group {
-                    if edge.prereq_type
-                        == crate::core::models::course_graph::PrerequisiteType::Optional
-                    {
-                        or_groups.entry(group).or_default().push(&edge.prerequisite);
-                    }
-                }
+/// Options of an OR-group with several options in the plan that nothing depends on,
+/// when another of those options is depended on more.
+fn redundant_or_options(
+    courses: &HashSet<String>,
+    graph: &CourseGraph,
+    usage: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let uses = |c: &str| usage.get(c).map_or(0, Vec::len);
+    let mut redundant = Vec::new();
+    for node in courses.iter().filter_map(|c| graph.get(c)) {
+        let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
+        for edge in &node.prerequisites {
+            if let (Some(group), PrerequisiteType::Optional) = (edge.or_group, &edge.prereq_type) {
+                or_groups.entry(group).or_default().push(&edge.prerequisite);
             }
-
-            // For each OR-group, check if we have multiple options in the plan
-            for (_group, options) in or_groups {
-                let in_plan: Vec<&str> = options
+        }
+        for options in or_groups.into_values() {
+            let in_plan: Vec<&str> = options
+                .into_iter()
+                .filter(|opt| courses.contains(*opt))
+                .collect();
+            if in_plan.len() < 2 {
+                continue;
+            }
+            for &option in &in_plan {
+                let better_exists = in_plan
                     .iter()
-                    .filter(|&&opt| courses.contains(opt))
-                    .copied()
-                    .collect();
-
-                if in_plan.len() > 1 {
-                    // Multiple options satisfy this OR-group - find redundant ones
-                    // A course is redundant if another course in this OR-group
-                    // is actually NEEDED by other courses (has real dependents)
-                    for &option in &in_plan {
-                        let option_usage = prereq_usage.get(option).map_or(0, Vec::len);
-
-                        // Check if another option has MORE dependents (is more useful)
-                        let better_exists = in_plan.iter().any(|&other| {
-                            if other == option {
-                                return false;
-                            }
-                            let other_usage = prereq_usage.get(other).map_or(0, Vec::len);
-                            other_usage > option_usage
-                        });
-
-                        // If this option has no unique dependents and a better option exists
-                        if option_usage == 0 && better_exists {
-                            redundant.push(option.to_string());
-                        }
-                    }
+                    .any(|&other| other != option && uses(other) > uses(option));
+                if uses(option) == 0 && better_exists {
+                    redundant.push(option.to_string());
                 }
             }
         }
     }
-
     redundant
 }
 
@@ -1023,72 +1027,123 @@ fn create_expanded_variant(
         new_choices.insert(PREREQUISITES_KEY.to_string(), added_prereqs);
     }
 
-    // Calculate actual credits from non-elective courses
-    let non_elective_credits: f32 = expanded_courses
+    // The generator's `ELEC` filler is re-fitted to the expanded plan, so it is set aside
+    // and the real courses' credits decide how much filler the plan still needs.
+    let non_electives: Vec<String> = expanded_courses
         .iter()
         .filter(|c| !c.starts_with(ELECTIVE_PREFIX))
-        .map(|c| {
-            school
-                .get_course(c)
-                .map_or_else(|| placeholder_credits(c), |course| course.credit_hours)
-        })
-        .sum();
+        .cloned()
+        .collect();
+    let final_courses = target_credits.map_or_else(
+        || expanded_courses.to_vec(),
+        |target| refit_electives(non_electives, school, target, &mut new_choices),
+    );
 
-    // Adjust electives if we have a target
-    #[allow(clippy::option_if_let_else)] // More readable with if-let here
-    #[allow(clippy::cast_precision_loss)] // Safe: target credits < 1000
-    let final_courses = if let Some(target) = target_credits {
-        let target_f32 = target as f32;
-        if non_elective_credits >= target_f32 {
-            // Already at or over target - remove all electives
-            new_choices.remove(ELECTIVE_PLACEHOLDERS_KEY);
-            expanded_courses
-                .iter()
-                .filter(|c| !c.starts_with(ELECTIVE_PREFIX))
-                .cloned()
-                .collect()
-        } else {
-            // Need some electives - calculate exactly how many
-            let elective_credits_needed = target_f32 - non_elective_credits;
-            let new_electives =
-                crate::core::degree::placeholder::elective_placeholders(elective_credits_needed);
-
-            // Replace elective placeholders with exact amount needed
-            if new_electives.is_empty() {
-                new_choices.remove(ELECTIVE_PLACEHOLDERS_KEY);
-            } else {
-                new_choices.insert(ELECTIVE_PLACEHOLDERS_KEY.to_string(), new_electives.clone());
-            }
-
-            // Build final course list with new electives
-            let mut courses: Vec<String> = expanded_courses
-                .iter()
-                .filter(|c| !c.starts_with(ELECTIVE_PREFIX))
-                .cloned()
-                .collect();
-            courses.extend(new_electives);
-            courses.sort();
-            courses
-        }
-    } else {
-        expanded_courses.to_vec()
-    };
-
-    // Calculate final total credits
     let total_credits: f32 = final_courses
         .iter()
-        .map(|c| {
-            school
-                .get_course(c)
-                .map_or_else(|| placeholder_credits(c), |course| course.credit_hours)
-        })
+        .map(|c| course_credits_with_fallback(school, c))
         .sum();
 
     PlanVariant::from_parts(final_courses, new_choices, total_credits)
 }
 
+/// `non_electives` plus exactly the `ELEC` filler that brings them to `target` credits:
+/// none when they already reach it, sorted when filler is added. Records the filler under
+/// [`ELECTIVE_PLACEHOLDERS_KEY`] in `choices`, or removes the key when there is none.
+fn refit_electives(
+    non_electives: Vec<String>,
+    school: &School,
+    target: u32,
+    choices: &mut HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let credits: f32 = non_electives
+        .iter()
+        .map(|c| course_credits_with_fallback(school, c))
+        .sum();
+    #[allow(clippy::cast_precision_loss)] // target credits < 1000
+    let target = target as f32;
+    if credits >= target {
+        choices.remove(ELECTIVE_PLACEHOLDERS_KEY);
+        return non_electives;
+    }
+    let electives = crate::core::degree::placeholder::elective_placeholders(target - credits);
+    if electives.is_empty() {
+        choices.remove(ELECTIVE_PLACEHOLDERS_KEY);
+    } else {
+        choices.insert(ELECTIVE_PLACEHOLDERS_KEY.to_string(), electives.clone());
+    }
+    let mut courses = non_electives;
+    courses.extend(electives);
+    courses.sort();
+    courses
+}
+
 #[cfg(test)]
 mod tests {
+    fn config(max_plans: usize) -> AnalysisConfig<'static> {
+        AnalysisConfig {
+            max_plans,
+            ignore_duplicates: true,
+            sample_count: 3,
+            sampling_strategy: SamplingStrategy::Shuffled,
+            include_courses: Vec::new(),
+            random_seed: None,
+            time_limit: None,
+            target_course: None,
+        }
+    }
+
+    /// Two courses offering each other as one option of an OR: a cycle to break, and two
+    /// plans (`CS152` reached through either option).
+    const CYCLE_YAML: &str = "degree: {id: t, institution: T, program: T, total_credits: 6, gpa_minimum: 2.0}\n\
+        requirements:\n  core: {name: Core, type: all, category: major, courses: [CS152, CS163]}\n\
+        courses:\n  MATH127: {title: M, prefix: MATH, number: \"127\", credits: 3}\n  \
+        CS152: {title: A, prefix: CS, number: \"152\", credits: 3, prerequisites_raw: \"CS163 | MATH127\"}\n  \
+        CS163: {title: B, prefix: CS, number: \"163\", credits: 3, prerequisites_raw: \"CS152 | MATH127\"}\n";
+
+    /// The events are what the CLI prints when verbose: the broken cycle first, planning
+    /// once, then one per plan analyzed — none when a zero time limit stops the run.
+    #[test]
+    fn test_analyze_reports_its_progress_and_honours_a_time_limit() {
+        let (program, _) = crate::core::degree::parse_degree_auto(CYCLE_YAML).unwrap();
+        for (limit, expect_plans) in [(None, true), (Some(Duration::ZERO), false)] {
+            let (mut removed, mut planning, mut processed) = (0, 0, 0);
+            let run = analyze(
+                program.clone(),
+                &AnalysisConfig {
+                    time_limit: limit,
+                    ..config(50)
+                },
+                &mut |event| match event {
+                    AnalysisEvent::CyclesBroken { removed: r, .. } => removed += r.len(),
+                    AnalysisEvent::Planning { .. } => planning += 1,
+                    AnalysisEvent::Processed(n) => processed = n,
+                    AnalysisEvent::PlanSkipped(_) => {}
+                },
+            );
+            assert_eq!((removed, planning), (1, 1), "{limit:?}");
+            assert_eq!(processed, run.plans_processed, "{limit:?}");
+            assert_eq!(run.plans_processed > 0, expect_plans, "{limit:?}");
+            assert_eq!(run.time_limit_reached, !expect_plans, "{limit:?}");
+        }
+    }
+
+    /// A run that reaches its cap is complete only when the population is no larger.
+    #[test]
+    fn test_is_full_population_at_and_below_the_cap() {
+        let (program, _) = crate::core::degree::parse_degree_auto(CYCLE_YAML).unwrap();
+        let all = analyze(program.clone(), &config(50), &mut |_| {});
+        assert!(all.is_full_population());
+        assert_eq!(all.population_size(), all.plans_processed);
+
+        let at_cap = analyze(program, &config(all.plans_processed), &mut |_| {});
+        assert_eq!(at_cap.plans_processed, all.plans_processed);
+        assert_eq!(
+            at_cap.is_full_population(),
+            at_cap.stats.total_possible <= at_cap.plans_processed
+        );
+    }
+
     use super::*;
 
     /// Regression: a required course that is ALSO an OR-prerequisite alternative

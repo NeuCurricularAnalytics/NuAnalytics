@@ -156,14 +156,11 @@ pub struct StoredAnalysis {
 impl StoredAnalysis {
     /// Derive what a view needs from a loaded stored run.
     pub fn new(report: StoredReport) -> Self {
-        let mut graph = CourseGraph::from_degree_program(&report.program);
-        if !graph.cycles.is_empty() {
-            graph.graph.break_cycles(&graph.cycles);
-        }
+        let (graph, _) = CourseGraph::from_degree_program(&report.program).into_acyclic();
         let (school, equivalences) = build_report_inputs(&report.program);
         Self {
             report,
-            graph: graph.graph,
+            graph,
             school,
             equivalences,
         }
@@ -200,7 +197,7 @@ mod tests {
 
     const CAP: usize = 40;
 
-    /// A stored run holding exactly what a fresh run of `text` computed.
+    /// A stored run holding exactly what `fresh` computed.
     fn stored_copy(fresh: &DegreeAnalysis) -> StoredReport {
         StoredReport {
             program: fresh.program.clone(),
@@ -214,7 +211,6 @@ mod tests {
                 variations_run: i64::try_from(fresh.plans_processed).ok(),
                 max_plans: i64::try_from(CAP).ok(),
                 random_seed: Some(fresh.seed_used.to_string()),
-                sampling_strategy: Some("shuffled".to_string()),
             },
         }
     }
@@ -318,5 +314,21 @@ mod tests {
         let mut unrecorded = stored_copy(&fresh);
         unrecorded.run.max_plans = None;
         assert!(!StoredAnalysis::new(unrecorded).view().is_full_population());
+    }
+
+    /// A stored run's seed is the one it recorded; one it did not record, or recorded as
+    /// something that is not a `u64`, reads as 0 rather than failing.
+    #[test]
+    fn a_stored_seed_is_read_back_or_zero() {
+        let fresh = analyze::build_artifacts(TINY, Some(CAP), None, None, None, None).unwrap();
+        for (stored, want) in [
+            (Some(u64::MAX.to_string()), u64::MAX),
+            (None, 0),
+            (Some("not a seed".to_string()), 0),
+        ] {
+            let mut report = stored_copy(&fresh);
+            report.run.random_seed = stored;
+            assert_eq!(StoredAnalysis::new(report).view().seed_used(), want);
+        }
     }
 }

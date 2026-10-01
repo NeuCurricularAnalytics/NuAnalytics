@@ -161,12 +161,8 @@ pub fn execute(
             Err(e) => error_response(course_id, e),
         }
     } else {
-        let mut graph_result = CourseGraph::from_degree_program(&program);
-        if !graph_result.cycles.is_empty() {
-            graph_result.graph.break_cycles(&graph_result.cycles);
-            graph_result.cycles.clear();
-        }
-        populate_static_fields(course_id, &program, &graph_result.graph, None)
+        let (graph, _) = CourseGraph::from_degree_program(&program).into_acyclic();
+        populate_static_fields(course_id, &program, &graph, None)
     }
 }
 
@@ -252,23 +248,15 @@ pub(crate) fn present_json(course_id: &str, view: &AnalysisView<'_>) -> String {
 }
 
 /// The response for one course of an analysis, fresh or stored.
-fn build_response_with_analysis(
-    course_id: &str,
-    artifacts: &AnalysisView<'_>,
-) -> CourseDetailResponse {
-    let analysis = course_analysis(course_id, artifacts);
-    populate_static_fields(
-        course_id,
-        artifacts.program,
-        artifacts.graph,
-        Some(analysis),
-    )
+fn build_response_with_analysis(course_id: &str, view: &AnalysisView<'_>) -> CourseDetailResponse {
+    let analysis = course_analysis(course_id, view);
+    populate_static_fields(course_id, view.program, view.graph, Some(analysis))
 }
 
 /// Course analysis derived from the aggregated metrics + selected plans.
-fn course_analysis(course_id: &str, artifacts: &AnalysisView<'_>) -> CourseAnalysis {
-    let stats = artifacts.stats.course_stats(course_id);
-    let appears_in_selected_plans: Vec<PlanPlacement> = artifacts
+fn course_analysis(course_id: &str, view: &AnalysisView<'_>) -> CourseAnalysis {
+    let stats = view.stats.course_stats(course_id);
+    let appears_in_selected_plans: Vec<PlanPlacement> = view
         .selected
         .iter()
         .map(|(cat, plan)| {

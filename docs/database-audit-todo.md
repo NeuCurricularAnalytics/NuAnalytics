@@ -80,9 +80,10 @@ checked against the plans actually generated.
 ## 3. `db remetric` — deliberately not built
 
 An in-place metric backfill needs something that analyses a degree and returns its
-metrics. The only such entry point is `build_artifacts`, which is gated behind the `mcp`
-feature; the CLI's `run_analyze` / `run_analyze_from_db` write files and print, returning
-nothing.
+metrics. Since 2026-09-30 that exists without the `mcp` feature:
+`core::degree::analysis::analyze` returns a `DegreeAnalysis`, and it is the pipeline that
+produced the stored corpus. So the entry point is no longer the blocker; the verification
+problem below still is.
 
 The original blocker — that the MCP pipeline treated an OR-group as an AND — **was fixed
 on 2026-09-23**, so the two pipelines now build the same per-plan DAG. What still blocks

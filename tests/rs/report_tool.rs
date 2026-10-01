@@ -16,7 +16,7 @@ fn read_csu() -> String {
 #[test]
 fn report_tool_returns_inline_html_for_csu_sample() {
     let yaml = read_csu();
-    let json = report::execute_json(&yaml, Some(200), None, None, None, None, None, None, false);
+    let json = report::execute_json(&yaml, Some(200), None, &report::ReportOutput::default());
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
     assert_eq!(parsed["success"].as_bool(), Some(true));
@@ -56,12 +56,12 @@ fn report_tool_writes_companion_files_to_output_dir() {
         &yaml,
         Some(200),
         None,
-        Some(&dir_str),
-        None,  // write_plan_csvs default: true in disk mode
-        None,  // write_jsonl_summary default: true in disk mode
-        None,  // write_index_csv default: true in disk mode
-        None,  // return_html_inline default: false in disk mode
-        false, // overwrite: a fresh directory, nothing to replace
+        // Disk mode's defaults: every companion file on, no inline HTML. A fresh
+        // directory, so nothing to overwrite.
+        &report::ReportOutput {
+            output_dir: Some(&dir_str),
+            ..Default::default()
+        },
     );
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed["success"].as_bool(), Some(true));
@@ -117,12 +117,7 @@ fn report_tool_honours_include_courses_constraint() {
         &yaml,
         Some(50),
         Some(&["CS370".to_string()]),
-        None,
-        None,
-        None,
-        None,
-        None,
-        false,
+        &report::ReportOutput::default(),
     );
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed["success"].as_bool(), Some(true));

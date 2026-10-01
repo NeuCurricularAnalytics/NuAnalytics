@@ -73,6 +73,14 @@ pub mod codes {
     pub const SYNTAX_ERROR: &str = "42601";
 }
 
+/// `analysis_runs.variant` labels the tools write and default to.
+pub mod variants {
+    /// A run of the degree as written; the default everywhere a variant is optional.
+    pub const FULL: &str = "full";
+    /// A run of the degree with its alternatives trimmed to one entry path.
+    pub const TRIMMED: &str = "trimmed";
+}
+
 /// Supabase table name constants — use these instead of raw string literals.
 pub mod tables {
     /// IPEDS institution directory

@@ -115,7 +115,7 @@ pub struct ImportOptions {
 impl Default for ImportOptions {
     fn default() -> Self {
         Self {
-            variant: "full".to_string(),
+            variant: super::variants::FULL.to_string(),
             unitid: None,
             institution: None,
             cip_code: None,
@@ -560,7 +560,7 @@ pub fn build_import_plan(
 
     let degree = &program.degree;
     let variant = opts.variant.clone();
-    let is_full = variant.eq_ignore_ascii_case("full");
+    let is_full = variant.eq_ignore_ascii_case(super::variants::FULL);
 
     let inst_ref = institution_ref(resolved_unitid, degree.institution.as_deref());
     let program_key = program_key(degree, opts, resolved_unitid);
@@ -844,7 +844,7 @@ fn build_analysis_run(args: BuildRunArgs) -> Result<StoredAnalysisRun, DatabaseE
         program_key: program_key.to_string(),
         analyzed_document_hash,
         variant: variant.to_string(),
-        trimmed: !is_full && variant.eq_ignore_ascii_case("trimmed"),
+        trimmed: !is_full && variant.eq_ignore_ascii_case(super::variants::TRIMMED),
         analyzed_document,
         variations_run,
         sample_type,

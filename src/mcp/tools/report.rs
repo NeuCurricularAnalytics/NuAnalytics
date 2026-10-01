@@ -2,9 +2,11 @@
 //!
 //! Provides the `render_degree_report` MCP tool that produces the same
 //! artifacts as the CLI `degree analyze` command: the HTML report and
-//! optional per-plan CSVs, JSONL summary, and index CSV. The analysis is
-//! shared with `analyze_degree` through `crate::mcp::cache::cached_artifacts`;
-//! this tool feeds the resulting artifacts into [`DegreeReportGenerator`].
+//! optional per-plan CSVs, JSONL summary, and index CSV. A stored program's
+//! report is built from its stored run (`present`); any other degree is
+//! analyzed afresh, shared with `analyze_degree` through
+//! `crate::mcp::cache::cached_artifacts` ([`execute`]). Either way the result
+//! goes through [`DegreeReportGenerator`].
 //! `render_stored_report`'s response is built here too, from a stored run.
 //!
 //! Two output modes:
@@ -155,25 +157,13 @@ pub struct RenderDegreeReportResponse {
 // Execution
 // ============================================================================
 
-/// Execute the `render_degree_report` tool.
-///
-/// The argument count crosses clippy's default ceiling because every option
-/// the CLI exposes (`max_plans`, `include_courses`, disk-mode toggles, the
-/// inline-html override) must be reachable from the MCP handler. Grouping
-/// them into a struct would just move the same data without reducing the
-/// caller's burden.
+/// Execute the `render_degree_report` tool on a degree's text, analyzed afresh.
 #[must_use]
-#[allow(clippy::too_many_arguments)]
 pub fn execute(
     yaml_content: &str,
     max_plans: Option<usize>,
     include_courses: Option<&[String]>,
-    output_dir: Option<&str>,
-    write_plan_csvs: Option<bool>,
-    write_jsonl_summary: Option<bool>,
-    write_index_csv: Option<bool>,
-    return_html_inline: Option<bool>,
-    overwrite: bool,
+    out: &ReportOutput<'_>,
 ) -> RenderDegreeReportResponse {
     let artifacts = match crate::mcp::cache::cached_artifacts(
         yaml_content,
@@ -186,22 +176,13 @@ pub fn execute(
         Ok(a) => a,
         Err(e) => return error_response(&e),
     };
-    present(
-        &AnalysisView::fresh(&artifacts),
-        &ReportOutput {
-            output_dir,
-            write_plan_csvs,
-            write_jsonl_summary,
-            write_index_csv,
-            return_html_inline,
-            overwrite,
-        },
-    )
+    present(&AnalysisView::fresh(&artifacts), out)
 }
 
-/// Where `render_degree_report` puts what it renders.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ReportOutput<'a> {
+/// Where `render_degree_report` puts what it renders. The default returns the HTML inline
+/// and writes nothing.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ReportOutput<'a> {
     /// Directory to write the report and its companions into; `None` returns it inline.
     pub output_dir: Option<&'a str>,
     /// Write each selected plan's CSV (default: on in disk mode).
@@ -278,32 +259,15 @@ pub(crate) fn present_json(view: &AnalysisView<'_>, out: &ReportOutput<'_>) -> S
     crate::core::json::to_json_pretty(&present(view, out))
 }
 
-/// Execute and serialize as JSON.
+/// [`execute`], serialized as JSON.
 #[must_use]
-#[allow(clippy::too_many_arguments)]
 pub fn execute_json(
     yaml_content: &str,
     max_plans: Option<usize>,
     include_courses: Option<&[String]>,
-    output_dir: Option<&str>,
-    write_plan_csvs: Option<bool>,
-    write_jsonl_summary: Option<bool>,
-    write_index_csv: Option<bool>,
-    return_html_inline: Option<bool>,
-    overwrite: bool,
+    out: &ReportOutput<'_>,
 ) -> String {
-    let response = execute(
-        yaml_content,
-        max_plans,
-        include_courses,
-        output_dir,
-        write_plan_csvs,
-        write_jsonl_summary,
-        write_index_csv,
-        return_html_inline,
-        overwrite,
-    );
-    crate::core::json::to_json_pretty(&response)
+    crate::core::json::to_json_pretty(&execute(yaml_content, max_plans, include_courses, out))
 }
 
 // ============================================================================
@@ -382,13 +346,13 @@ struct WrittenPaths {
 
 /// The report page. For a stored run this is the page `db report` renders: the same
 /// template, fed the same school and equivalences (`build_report_inputs`).
-fn render_html(artifacts: &AnalysisView<'_>) -> Result<String, Box<dyn std::error::Error>> {
+fn render_html(view: &AnalysisView<'_>) -> Result<String, Box<dyn std::error::Error>> {
     let ctx = DegreeReportContext::new(
-        artifacts.school,
-        &artifacts.program.degree,
-        artifacts.stats,
-        artifacts.selected,
-        artifacts.equivalences,
+        view.school,
+        &view.program.degree,
+        view.stats,
+        view.selected,
+        view.equivalences,
     );
     DegreeReportGenerator::new().render(&ctx)
 }
@@ -406,7 +370,7 @@ struct Companions {
 fn write_artifacts_to_disk(
     output_dir: &str,
     html: &str,
-    artifacts: &AnalysisView<'_>,
+    view: &AnalysisView<'_>,
     companions: Companions,
     overwrite: bool,
     out: &mut WrittenPaths,
@@ -417,10 +381,10 @@ fn write_artifacts_to_disk(
         index: write_index,
     } = companions;
     let dir = PathBuf::from(output_dir);
-    let html_filename = format!("{}-analysis.html", artifacts.program.degree.degree_id());
+    let html_filename = crate::core::report::report_file_name(&view.program.degree.degree_id());
     let html_path = dir.join(&html_filename);
     // The report is the file that stands for the rest: refusing when it exists keeps a
-    // mistyped output_dir from replacing a previous run's artifacts.
+    // mistyped output_dir from replacing a previous run's view.
     crate::mcp::tools::shared::write_output(&html_path.to_string_lossy(), html, overwrite)
         .map_err(|refusal| refusal.message)?;
     out.report_html = Some(html_path.to_string_lossy().into_owned());
@@ -431,21 +395,16 @@ fn write_artifacts_to_disk(
             base_dir: plans_dir.to_string_lossy().into_owned(),
             create_dirs: true,
         };
-        let csvs = export_selected_plans(
-            artifacts.school,
-            &artifacts.program.degree,
-            artifacts.selected,
-            &cfg,
-        )?;
+        let csvs = export_selected_plans(view.school, &view.program.degree, view.selected, &cfg)?;
         out.plan_csvs = csvs;
     }
 
     if write_jsonl {
         let path = export_degree_summary_jsonl(
-            artifacts.school,
-            &artifacts.program.degree,
-            artifacts.stats,
-            artifacts.selected,
+            view.school,
+            &view.program.degree,
+            view.stats,
+            view.selected,
             &dir,
         )?;
         out.jsonl_summary = Some(path.to_string_lossy().into_owned());
@@ -453,10 +412,10 @@ fn write_artifacts_to_disk(
 
     if write_index {
         let path = export_index_csv(
-            artifacts.school,
-            &artifacts.program.degree,
-            artifacts.stats,
-            artifacts.selected,
+            view.school,
+            &view.program.degree,
+            view.stats,
+            view.selected,
             &dir,
         )?;
         out.index_csv = Some(path.to_string_lossy().into_owned());
@@ -528,17 +487,7 @@ courses:
 
     #[test]
     fn test_inline_mode_returns_html_body() {
-        let response = execute(
-            TEST_YAML,
-            Some(10),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            false,
-        );
+        let response = execute(TEST_YAML, Some(10), None, &ReportOutput::default());
         assert!(response.success, "error: {:?}", response.error);
         let html = response
             .html_content
@@ -558,12 +507,7 @@ courses:
             "not: valid: yaml: {{",
             Some(10),
             None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            false,
+            &ReportOutput::default(),
         );
         assert!(!response.success);
         assert!(response.error.is_some());
@@ -586,12 +530,10 @@ courses:
             TEST_YAML,
             Some(10),
             None,
-            Some(&dir_str),
-            None,
-            None,
-            None,
-            None,
-            false,
+            &ReportOutput {
+                output_dir: Some(&dir_str),
+                ..Default::default()
+            },
         );
         assert!(response.success, "error: {:?}", response.error);
         // Disk-mode default: HTML written, not echoed back inline.
@@ -629,12 +571,14 @@ courses:
             TEST_YAML,
             Some(10),
             None,
-            Some(&dir_str),
-            Some(false),
-            Some(false),
-            Some(false),
-            Some(true),
-            false,
+            &ReportOutput {
+                output_dir: Some(&dir_str),
+                write_plan_csvs: Some(false),
+                write_jsonl_summary: Some(false),
+                write_index_csv: Some(false),
+                return_html_inline: Some(true),
+                ..Default::default()
+            },
         );
         assert!(response.success);
         assert!(
@@ -651,17 +595,7 @@ courses:
 
     #[test]
     fn test_execute_json_serializes_response_with_expected_keys() {
-        let json = execute_json(
-            TEST_YAML,
-            Some(10),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            false,
-        );
+        let json = execute_json(TEST_YAML, Some(10), None, &ReportOutput::default());
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["success"].as_bool(), Some(true));
         assert!(parsed["html_content"].is_string());
@@ -688,12 +622,10 @@ courses:
             TEST_YAML,
             Some(10),
             None,
-            Some(file_path.to_str().unwrap()),
-            None,
-            None,
-            None,
-            None,
-            false,
+            &ReportOutput {
+                output_dir: Some(file_path.to_str().unwrap()),
+                ..Default::default()
+            },
         );
         assert!(!response.success);
         let err = response.error.expect("error must be populated");
@@ -719,12 +651,14 @@ courses:
             TEST_YAML,
             Some(10),
             None,
-            Some(&dir_str),
-            Some(false),
-            Some(false),
-            Some(false),
-            Some(false),
-            false,
+            &ReportOutput {
+                output_dir: Some(&dir_str),
+                write_plan_csvs: Some(false),
+                write_jsonl_summary: Some(false),
+                write_index_csv: Some(false),
+                return_html_inline: Some(false),
+                ..Default::default()
+            },
         );
         assert!(response.success, "error: {:?}", response.error);
         assert!(
@@ -752,12 +686,14 @@ courses:
                 TEST_YAML,
                 Some(10),
                 None,
-                Some(&dir_str),
-                Some(false),
-                Some(false),
-                Some(false),
-                None,
-                overwrite,
+                &ReportOutput {
+                    output_dir: Some(&dir_str),
+                    write_plan_csvs: Some(false),
+                    write_jsonl_summary: Some(false),
+                    write_index_csv: Some(false),
+                    overwrite,
+                    ..Default::default()
+                },
             )
         };
         let first = run(false);
@@ -795,7 +731,6 @@ courses:
                 variations_run: Some(12),
                 max_plans: Some(1000),
                 random_seed: Some("42".into()),
-                sampling_strategy: Some("shuffled".into()),
             },
             html: "<!DOCTYPE html><p>ʻāina</p>".into(),
         }

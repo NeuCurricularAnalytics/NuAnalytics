@@ -162,6 +162,41 @@ struct KeyRow {
 /// reliable "there are more than this" rather than a guess.
 const AMBIGUITY_PROBE: usize = 50;
 
+/// The programs a reference names, tried the way a person means one: an exact
+/// `program_key`, then an exact `degree_id`, then programs whose name contains it.
+///
+/// The first tier that matches wins, so a key or id is never read as a name pattern, where
+/// it would match nothing. `scope` narrows every tier (to one school, say) and `limit` caps
+/// each select.
+///
+/// # Errors
+/// The backend's error.
+pub async fn find_programs<T: serde::de::DeserializeOwned>(
+    client: &DbClient,
+    cols: &str,
+    scope: impl Fn() -> QueryFilters,
+    reference: &str,
+    limit: usize,
+) -> crate::core::database::DatabaseResult<Vec<T>> {
+    for column in ["program_key", "degree_id"] {
+        let filters = scope().eq(column, Some(reference));
+        let rows: Vec<T> = parse_json_array(
+            &client
+                .select(tables::PROGRAMS, cols, &filters, Some(limit))
+                .await?,
+        );
+        if !rows.is_empty() {
+            return Ok(rows);
+        }
+    }
+    let filters = scope().ilike("name", Some(reference));
+    Ok(parse_json_array(
+        &client
+            .select(tables::PROGRAMS, cols, &filters, Some(limit))
+            .await?,
+    ))
+}
+
 /// Resolve `degree` to a `program_key`.
 ///
 /// Tries `program_key` first because it is unique. A `degree_id` can match several

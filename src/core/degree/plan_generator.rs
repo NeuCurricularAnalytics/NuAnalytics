@@ -184,13 +184,21 @@ pub enum SamplingStrategy {
     Stratified,
 }
 
+impl SamplingStrategy {
+    /// The strategy's name, as configuration, options and reports spell it.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Sequential => "sequential",
+            Self::Shuffled => "shuffled",
+            Self::Stratified => "stratified",
+        }
+    }
+}
+
 impl std::fmt::Display for SamplingStrategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Sequential => write!(f, "sequential"),
-            Self::Shuffled => write!(f, "shuffled"),
-            Self::Stratified => write!(f, "stratified"),
-        }
+        f.write_str(self.as_str())
     }
 }
 

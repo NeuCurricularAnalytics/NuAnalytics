@@ -10,8 +10,8 @@ codebase — run `/init` if you want that.
 
 Default features: `log-info`, `log-debug`, `verbose`, `file-logging`, `database`, `mcp`.
 
-    cargo test --all-features                       # 1340 tests, clean
-    cargo test --no-default-features --features database   # 1092 — the CLI's feature set
+    cargo test --all-features                       # 1517 tests, clean
+    cargo test --no-default-features --features database   # 1277 — the CLI's feature set
     cargo build --features database
 
 **Three feature sets are tested in CI, and the middle one is load-bearing.** The query

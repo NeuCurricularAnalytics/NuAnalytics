@@ -11,12 +11,12 @@
 //! # Why only `earliest_term` is baselined
 //!
 //! Plan enumeration is seeded (`core::degree::analysis::analyze` passes its seed to the
-//! generator), so a run is reproducible — `analyze::tests::test_build_artifacts_is_reproducible_for_identical_inputs`
-//! pins that directly, cache-free. But with `random_seed: None` the seed is derived from
-//! the degree via `DefaultHasher` (`default_seed_for_program`), whose output std does not
-//! guarantee stable across toolchains. A
-//! different seed enumerates a different sample of the plan space, which moves
-//! `plans_containing`, `avg_term` and `term_distribution`.
+//! generator), so a run is reproducible —
+//! `analyze::tests::test_build_artifacts_is_reproducible_for_identical_inputs` pins that
+//! directly, cache-free. But with `random_seed: None` the seed is derived from the degree
+//! via `DefaultHasher` (`default_seed_for_program`), whose output std does not guarantee
+//! stable across toolchains. A different seed enumerates a different sample of the plan
+//! space, which moves `plans_containing`, `avg_term` and `term_distribution`.
 //!
 //! `earliest_term` survives that: the generator always enumerates the extreme plans
 //! first, so the minimum is observed whatever the seed. It is therefore the one figure

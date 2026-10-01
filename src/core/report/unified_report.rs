@@ -210,12 +210,15 @@ pub fn export_degree_report_json(
 /// the layout [`export_degree_report_json`] writes.
 ///
 /// # Errors
-/// Returns an error if the directory cannot be created or the file written.
+/// Returns an error, naming the path, if the directory cannot be created or the file
+/// written.
 pub fn write_degree_report(value: &Value, path: &Path) -> Result<(), Box<dyn Error>> {
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-        std::fs::create_dir_all(dir)?;
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("cannot create directory {}: {e}", dir.display()))?;
     }
-    std::fs::write(path, report_value_to_pretty(value)?)?;
+    std::fs::write(path, report_value_to_pretty(value)?)
+        .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     Ok(())
 }
 
@@ -495,6 +498,31 @@ mod tests {
             conversion_warnings: Vec::new(),
             corrections_applied: Vec::new(),
         }
+    }
+
+    /// Missing directories are created, the layout is the report's (`degree` first), and a
+    /// path that cannot be written is named in the error.
+    #[test]
+    fn test_write_degree_report_creates_directories_and_names_a_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a/b/report.json");
+        let value = build_degree_report(
+            &sample_program(),
+            &aggregator_with_two_plans(),
+            &no_plans(),
+            "shuffled",
+            &run_parameters(),
+        )
+        .unwrap();
+        write_degree_report(&value, &path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("{\n  \"degree\""), "{text}");
+
+        let blocked = path.join("under-a-file.json");
+        let err = write_degree_report(&value, &blocked)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("report.json"), "{err}");
     }
 
     #[test]

@@ -102,6 +102,30 @@ pub fn fresh_metrics(yaml: &str, max_plans: Option<usize>) -> serde_json::Value 
     })
 }
 
+/// Refuse `max_plans` where no entry would be enumerated with it.
+///
+/// That is `metrics` "stored" or "none", or `metrics` omitted with a stored program among
+/// the sources, since that one is read from its stored run. `None` when the request is
+/// coherent.
+#[must_use]
+pub fn refuse_fresh_settings(
+    max_plans: Option<usize>,
+    mode: Option<CompareMetrics>,
+    degrees: &[LoadedDegree],
+) -> Option<String> {
+    max_plans?;
+    let message = match mode {
+        Some(CompareMetrics::Fresh) => return None,
+        Some(other) => format!(
+            "max_plans shapes a fresh run, and metrics=\"{}\" enumerates nothing. Pass metrics=\"fresh\" or drop max_plans.",
+            other.name()
+        ),
+        None if degrees.iter().any(|d| d.program_key.is_some()) => "max_plans shapes a fresh run, and a stored program among the sources is read from its stored run. Pass metrics=\"fresh\" to enumerate every degree afresh.".to_string(),
+        None => return None,
+    };
+    Some(crate::mcp::tools::shared::bad_arguments(message))
+}
+
 impl CompareMetrics {
     /// The name the request and the response use.
     const fn name(self) -> &'static str {
@@ -328,6 +352,32 @@ courses:
         assert_eq!(out["degrees"][0]["metrics"]["run_key"], "run-prog:1");
         assert_eq!(out["degrees"][1]["metrics_from"], "fresh");
         assert_eq!(out["degrees"][1]["metrics"]["plans_analyzed"], 1);
+    }
+
+    /// `max_plans` is taken only where some entry is enumerated with it.
+    #[test]
+    fn max_plans_is_refused_where_nothing_is_enumerated_with_it() {
+        let yaml = "degree: {id: t}";
+        let stored = || vec![loaded(yaml, Some("prog:1")), loaded(yaml, None)];
+        let fresh_only = || vec![loaded(yaml, None)];
+        let cases = [
+            (Some(5), None, stored(), true),
+            (Some(5), Some(CompareMetrics::Stored), fresh_only(), true),
+            (Some(5), Some(CompareMetrics::None), fresh_only(), true),
+            (Some(5), Some(CompareMetrics::Fresh), stored(), false),
+            (Some(5), None, fresh_only(), false),
+            (None, None, stored(), false),
+        ];
+        for (max_plans, mode, degrees, refused) in cases {
+            let out = refuse_fresh_settings(max_plans, mode, &degrees);
+            assert_eq!(out.is_some(), refused, "{max_plans:?} {mode:?}: {out:?}");
+            if let Some(out) = out {
+                assert!(
+                    out.contains("bad_arguments") && out.contains("metrics=\\\"fresh\\\""),
+                    "{out}"
+                );
+            }
+        }
     }
 
     #[test]

@@ -19,7 +19,7 @@ use crate::core::models::{Degree, Plan, School, DAG};
 use std::error::Error;
 use std::path::Path;
 
-pub use degree_report::{DegreeReportContext, DegreeReportGenerator};
+pub use degree_report::{report_file_name, DegreeReportContext, DegreeReportGenerator};
 pub use formats::{HtmlReporter, MarkdownReporter, PdfReporter, ReportFormat};
 pub use plan_export::{
     append_degree_summary_jsonl, export_degree_summary_jsonl, export_index_csv, export_plan_csv,

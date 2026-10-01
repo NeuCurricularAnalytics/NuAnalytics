@@ -169,7 +169,7 @@ pub fn yaml_cache() -> std::sync::MutexGuard<'static, YamlCache> {
 // Artifact cache
 // ============================================================================
 
-/// Composite key — the inputs that uniquely determine an [`DegreeAnalysis`].
+/// Composite key — the inputs that uniquely determine a [`DegreeAnalysis`].
 ///
 /// `include_courses` is canonicalised (sorted) before hashing so different
 /// orderings of the same set hit the same cache entry.

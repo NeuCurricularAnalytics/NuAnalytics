@@ -64,8 +64,9 @@ pub use yaml_parser::{
 
 // JSON input/output (unified format) and ai-landscape conversion
 pub use json_parser::{
-    load_degree_from_json, parse_degree_auto, parse_degree_json, parse_degree_json_with_warnings,
-    save_degree_to_json, serialize_degree_json, to_unified_value, unified_value_to_string,
+    from_unified_value, load_degree_from_json, parse_degree_auto, parse_degree_json,
+    parse_degree_json_with_warnings, save_degree_to_json, serialize_degree_json, to_unified_value,
+    unified_value_to_string,
 };
 pub use landscape_convert::{
     convert_landscape, convert_landscape_str, extract_cluster_programs, ConversionResult,

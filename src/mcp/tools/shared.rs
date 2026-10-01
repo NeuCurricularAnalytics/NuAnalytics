@@ -121,14 +121,44 @@ pub enum DegreeSource {
     Reference(String),
 }
 
+/// What a `degree` reference names, decided by its prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferenceKind<'a> {
+    /// `cache:<hash>`, an earlier call's handle (the whole reference).
+    Cache(&'a str),
+    /// `sample:<key>`, a bundled sample (the key).
+    Sample(&'a str),
+    /// Anything else: a stored program's `program_key`, or a `degree_id` naming one.
+    Stored(&'a str),
+}
+
+impl<'a> ReferenceKind<'a> {
+    /// Classify `reference`, ignoring surrounding whitespace.
+    #[must_use]
+    pub fn of(reference: &'a str) -> Self {
+        let reference = reference.trim();
+        if reference.starts_with(crate::mcp::cache::YAML_CACHE_PREFIX) {
+            Self::Cache(reference)
+        } else if let Some(key) = reference.strip_prefix(crate::mcp::tools::samples::SAMPLE_PREFIX)
+        {
+            Self::Sample(key)
+        } else {
+            Self::Stored(reference)
+        }
+    }
+}
+
 impl DegreeSourceArgs {
     /// The one source given.
     ///
     /// # Errors
-    /// A JSON error string when none or more than one was given, or when `content` is an
-    /// `@`-path reference rather than a degree.
+    /// A JSON error string when none or more than one was given, when `degree` is blank,
+    /// or when `content` is an `@`-path reference rather than a degree.
     pub fn into_source(self) -> Result<DegreeSource, String> {
         match (self.degree, self.content, self.path) {
+            (Some(d), None, None) if d.trim().is_empty() => Err(bad_arguments(
+                "degree is blank; give a sample:, cache: or stored program reference",
+            )),
             (Some(d), None, None) => Ok(DegreeSource::Reference(d)),
             (None, Some(c), None) => {
                 // A leading `@` is never valid YAML or JSON (it is a reserved YAML
@@ -150,21 +180,32 @@ impl DegreeSourceArgs {
             )),
         }
     }
-}
 
-impl DegreeSourceArgs {
-    /// The stored program named, when the source is one: `degree` alone, and neither a
-    /// `cache:` handle nor a `sample:` key.
+    /// The stored program named, when the source is one: a non-blank `degree` alone that
+    /// is neither a `cache:` handle nor a `sample:` key.
     #[must_use]
     pub fn stored_reference(&self) -> Option<&str> {
         match (&self.degree, &self.content, &self.path) {
-            (Some(d), None, None) => {
-                let d = d.trim();
-                let other = d.starts_with(crate::mcp::cache::YAML_CACHE_PREFIX)
-                    || d.starts_with(crate::mcp::tools::samples::SAMPLE_PREFIX);
-                (!other).then_some(d)
-            }
+            (Some(d), None, None) => match ReferenceKind::of(d) {
+                ReferenceKind::Stored(r) if !r.is_empty() => Some(r),
+                _ => None,
+            },
             _ => None,
+        }
+    }
+
+    /// What kind of source this is, for a message: "a sample", "inline content", ….
+    #[must_use]
+    pub fn describe(&self) -> &'static str {
+        match (&self.degree, &self.content, &self.path) {
+            (Some(d), None, None) => match ReferenceKind::of(d) {
+                ReferenceKind::Cache(_) => "a cache: handle",
+                ReferenceKind::Sample(_) => "a sample",
+                ReferenceKind::Stored(_) => "a stored program",
+            },
+            (None, Some(_), None) => "inline content",
+            (None, None, Some(_)) => "a file",
+            _ => "this source",
         }
     }
 }
@@ -320,6 +361,51 @@ pub fn format_yaml_context(yaml: &str, line: usize, column: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// The source kind decides whether a stored run is read; every shape of source is
+    /// classified once, here.
+    #[test]
+    fn stored_reference_names_only_a_non_blank_stored_program() {
+        let args =
+            |degree: Option<&str>, content: Option<&str>, path: Option<&str>| DegreeSourceArgs {
+                degree: degree.map(str::to_string),
+                content: content.map(str::to_string),
+                path: path.map(str::to_string),
+            };
+        let cases = [
+            (args(Some("prog:1|x"), None, None), Some("prog:1|x")),
+            (args(Some("  prog:1|x "), None, None), Some("prog:1|x")),
+            (args(Some("degree-id"), None, None), Some("degree-id")),
+            (args(Some("sample:csu"), None, None), None),
+            (args(Some(" cache:00ff"), None, None), None),
+            (args(Some("   "), None, None), None),
+            (args(None, Some("degree: {}"), None), None),
+            (args(None, None, Some("a.yaml")), None),
+            (args(Some("prog:1"), Some("degree: {}"), None), None),
+        ];
+        for (source, want) in &cases {
+            assert_eq!(source.stored_reference(), *want, "{source:?}");
+        }
+        assert_eq!(
+            ReferenceKind::of(" sample:csu "),
+            ReferenceKind::Sample("csu")
+        );
+        assert_eq!(
+            ReferenceKind::of("cache:00ff"),
+            ReferenceKind::Cache("cache:00ff")
+        );
+        assert_eq!(
+            ReferenceKind::of(" prog:1 "),
+            ReferenceKind::Stored("prog:1")
+        );
+        assert!(
+            args(Some("   "), None, None)
+                .into_source()
+                .unwrap_err()
+                .contains("blank"),
+            "a blank degree is refused, not sent to the database"
+        );
+    }
+
     use super::*;
 
     fn args(degree: Option<&str>, content: Option<&str>, path: Option<&str>) -> DegreeSourceArgs {

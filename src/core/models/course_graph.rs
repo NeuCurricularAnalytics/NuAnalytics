@@ -312,6 +312,20 @@ pub struct CourseGraphResult {
     pub missing_courses: Vec<String>,
 }
 
+impl CourseGraphResult {
+    /// The graph with its cycles broken, and the `(course, prerequisite)` edges removed to
+    /// break them — none, and the graph untouched, when it had no cycles.
+    #[must_use]
+    pub fn into_acyclic(mut self) -> (CourseGraph, Vec<(String, String)>) {
+        let removed = if self.cycles.is_empty() {
+            Vec::new()
+        } else {
+            self.graph.break_cycles(&self.cycles)
+        };
+        (self.graph, removed)
+    }
+}
+
 /// A graph of courses and their prerequisite relationships
 #[derive(Debug, Clone, Default)]
 pub struct CourseGraph {

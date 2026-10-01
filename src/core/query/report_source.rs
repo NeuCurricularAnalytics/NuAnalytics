@@ -24,7 +24,8 @@ use serde::Deserialize;
 
 use super::degrees::resolve_program_key;
 use crate::core::database::{tables, DbClient, QueryFilters};
-use crate::core::degree::{parse_degree_auto, PlanScore, PlanVariant, ScoredPlan, SelectedPlans};
+use crate::core::degree::plan_selector::PlanCategory;
+use crate::core::degree::{from_unified_value, PlanScore, PlanVariant, ScoredPlan, SelectedPlans};
 use crate::core::json::parse_json_array;
 use crate::core::report::inputs::build_report_inputs;
 use crate::core::report::report_stats::ReportStats;
@@ -35,10 +36,11 @@ use crate::core::statistics::aggregator::{
 };
 use crate::core::DegreeProgram;
 
-/// Plan categories as written by the importer. Matched exactly, not fuzzily.
-const CAT_SHORTEST: &str = "Shortest Path";
-const CAT_LONGEST: &str = "Longest Path";
-const CAT_CALC_READY: &str = "Calculus-Ready Shortest";
+/// Plan categories as written by the importer — each category's display name. Matched
+/// exactly, not fuzzily.
+const CAT_SHORTEST: &str = PlanCategory::Shortest.display_name();
+const CAT_LONGEST: &str = PlanCategory::Longest.display_name();
+const CAT_CALC_READY: &str = PlanCategory::CalcReadyShortest.display_name();
 
 /// Cap on plan rows read for one run. A run stores a handful of curated plans, so this
 /// only bounds a pathological row set.
@@ -47,8 +49,8 @@ pub(crate) const MAX_PLAN_ROWS: usize = 500;
 /// Cap on per-course metric rows for one run.
 pub(crate) const MAX_COURSE_ROWS: usize = 5_000;
 
-/// Identity of the stored run a report was built from.
-#[derive(Debug, Clone)]
+/// Identity of the stored run a report was built from, as `analysis_runs` records it.
+#[derive(Debug, Clone, Deserialize)]
 pub struct StoredRun {
     /// Unique key of the analysis run.
     pub run_key: String,
@@ -64,8 +66,6 @@ pub struct StoredRun {
     pub max_plans: Option<i64>,
     /// The seed the run enumerated with, as stored (a `u64`'s digits).
     pub random_seed: Option<String>,
-    /// `sequential` | `shuffled` | `stratified`.
-    pub sampling_strategy: Option<String>,
 }
 
 /// Everything needed to render a report for one stored program.
@@ -140,14 +140,8 @@ pub struct RenderedReport {
 
 #[derive(Debug, Deserialize)]
 struct RunRow {
-    run_key: String,
-    variant: String,
-    created_at: Option<String>,
-    analyzer_version: Option<String>,
-    variations_run: Option<i64>,
-    max_plans: Option<i64>,
-    random_seed: Option<String>,
-    sampling_strategy: Option<String>,
+    #[serde(flatten)]
+    run: StoredRun,
     degree_metrics: Option<serde_json::Value>,
     /// The degree the run analyzed, when it is not the program's own document — a
     /// trimmed run's trimmed degree. `NULL` for full runs.
@@ -337,7 +331,7 @@ fn selected_plans_from_rows(rows: &[PlanRow], total_plans_seen: usize) -> Select
 
 /// Columns needed from `analysis_runs`.
 const RUN_COLS: &str = "run_key,variant,created_at,analyzer_version,variations_run,max_plans,\
-                        random_seed,sampling_strategy,degree_metrics,analyzed_document";
+                        random_seed,degree_metrics,analyzed_document";
 
 /// Load the newest stored run for `program_key`, optionally pinned to one `variant`.
 ///
@@ -389,24 +383,65 @@ async fn load_run(
     }
     .map_err(failed)?;
     let stats = load_stats(client, &run).await.map_err(failed)?;
-    let plans = load_plans(client, &run.run_key).await.map_err(failed)?;
+    let plans = load_plans(client, &run.run.run_key).await.map_err(failed)?;
 
-    let total_plans_seen = usize::try_from(run.variations_run.unwrap_or(0)).unwrap_or(0);
+    let total_plans_seen = usize::try_from(run.run.variations_run.unwrap_or(0)).unwrap_or(0);
     Ok(Some(StoredReport {
         program,
         stats,
         selected: selected_plans_from_rows(&plans, total_plans_seen),
-        run: StoredRun {
-            run_key: run.run_key,
-            variant: run.variant,
-            created_at: run.created_at,
-            analyzer_version: run.analyzer_version,
-            variations_run: run.variations_run,
-            max_plans: run.max_plans,
-            random_seed: run.random_seed,
-            sampling_strategy: run.sampling_strategy,
-        },
+        run: run.run,
     }))
+}
+
+/// Why a stored program's run could not be read from a reference to it.
+#[derive(Debug)]
+pub enum ReferenceError {
+    /// The reference named no program, or several, or resolving it failed: a finished JSON
+    /// payload for the caller to return as is.
+    Unresolved(String),
+    /// It named one program, whose run could not be loaded.
+    Load {
+        /// The program the reference resolved to.
+        program_key: String,
+        /// Why its run could not be loaded.
+        error: LoadError,
+    },
+}
+
+impl ReferenceError {
+    /// The JSON payload a caller returns: the resolution's own, or the load failure with
+    /// the program it was for.
+    #[must_use]
+    pub fn into_payload(self) -> String {
+        match self {
+            Self::Unresolved(payload) => payload,
+            Self::Load { program_key, error } => {
+                serde_json::json!({ "error": error.to_string(), "program_key": program_key })
+                    .to_string()
+            }
+        }
+    }
+}
+
+/// Resolve `degree` — a `program_key`, or a `degree_id` naming one program — and load its
+/// newest stored run, optionally pinned to one `variant`.
+///
+/// # Errors
+/// [`ReferenceError::Unresolved`] when the reference does not name exactly one program;
+/// [`ReferenceError::Load`] when that program's run cannot be loaded.
+pub async fn load_reference(
+    client: &Arc<DbClient>,
+    degree: &str,
+    variant: Option<&str>,
+) -> Result<(String, StoredReport), ReferenceError> {
+    let program_key = resolve_program_key(client, degree.trim())
+        .await
+        .map_err(ReferenceError::Unresolved)?;
+    match load(client, &program_key, variant).await {
+        Ok(report) => Ok((program_key, report)),
+        Err(error) => Err(ReferenceError::Load { program_key, error }),
+    }
 }
 
 /// Resolve `degree` — a `program_key`, or a `degree_id` naming one program — and render
@@ -421,14 +456,12 @@ pub async fn render_reference(
     degree: &str,
     variant: Option<&str>,
 ) -> Result<RenderedReport, String> {
-    let program_key = resolve_program_key(client, degree.trim()).await?;
-    let failed = |message: String| {
-        serde_json::json!({ "error": message, "program_key": program_key }).to_string()
-    };
-    let stored = load(client, &program_key, variant)
+    let (program_key, stored) = load_reference(client, degree, variant)
         .await
-        .map_err(|e| failed(e.to_string()))?;
-    let html = stored.render_html().map_err(failed)?;
+        .map_err(ReferenceError::into_payload)?;
+    let html = stored.render_html().map_err(|message| {
+        serde_json::json!({ "error": message, "program_key": program_key }).to_string()
+    })?;
     Ok(RenderedReport {
         degree_name: stored.program.degree.name.clone(),
         program_key,
@@ -446,26 +479,20 @@ async fn load_program(client: &Arc<DbClient>, program_key: &str) -> Result<Degre
     program_from_document(&document, program_key)
 }
 
-/// Parse a stored degree document.
-///
-/// A document is the lossless unified JSON from `to_unified_value`, so it round-trips
-/// through the same loader the importer uses. `serde_json::from_value` would not: the
-/// model carries `prerequisites_raw`, not `prerequisites`.
+/// Parse a stored degree document, naming the program when it does not parse.
 fn program_from_document(
     document: &serde_json::Value,
     program_key: &str,
 ) -> Result<DegreeProgram, String> {
-    let text = serde_json::to_string(document)
-        .map_err(|e| format!("could not serialize stored document: {e}"))?;
-    parse_degree_auto(&text)
-        .map(|(program, _warnings)| program)
+    from_unified_value(document)
         .map_err(|e| format!("stored document for `{program_key}` did not parse: {e}"))
 }
 
 /// Assemble the statistics the renderer reads.
-async fn load_stats(client: &Arc<DbClient>, run: &RunRow) -> Result<ReportStats, String> {
+async fn load_stats(client: &Arc<DbClient>, row: &RunRow) -> Result<ReportStats, String> {
+    let run = &row.run;
     let plan_count = usize::try_from(run.variations_run.unwrap_or(0)).unwrap_or(0);
-    let degree = run
+    let degree = row
         .degree_metrics
         .as_ref()
         .and_then(|m| degree_stats_from_json(m, plan_count))
@@ -514,6 +541,59 @@ async fn load_plans(client: &Arc<DbClient>, run_key: &str) -> Result<Vec<PlanRow
 
 #[cfg(test)]
 mod tests {
+    /// Every `RunRow` field is optional and `PostgREST` returns only the columns selected, so
+    /// a column dropped from `RUN_COLS` would read as absent without any error — a trimmed
+    /// run against the full document, or a stored run's cap and seed lost.
+    #[test]
+    fn run_cols_select_every_column_a_run_row_reads() {
+        let cols: std::collections::HashSet<&str> = RUN_COLS.split(',').map(str::trim).collect();
+        for column in [
+            "run_key",
+            "variant",
+            "created_at",
+            "analyzer_version",
+            "variations_run",
+            "max_plans",
+            "random_seed",
+            "degree_metrics",
+            "analyzed_document",
+        ] {
+            assert!(cols.contains(column), "RUN_COLS lacks {column}");
+        }
+    }
+
+    /// A row of the select's shape reads into the run and its own degree; a document that
+    /// is not a degree is refused naming the program.
+    #[test]
+    fn a_trimmed_run_reads_back_with_its_own_document() {
+        let row: RunRow = serde_json::from_value(json!({
+            "run_key": "run_1", "variant": "trimmed", "created_at": null,
+            "analyzer_version": "0.5.4", "variations_run": 12, "max_plans": 500,
+            "random_seed": "42", "degree_metrics": degree_metrics_fixture(),
+            "analyzed_document": {
+                "degree": {"name": "CS", "degree_type": "BS", "system_type": "semester",
+                           "institution": "T", "total_credits": 4},
+                "requirements": {"core": {"type": "all", "category": "major", "courses": ["CS101"]}},
+                "courses": {"CS101": {"name": "Intro", "prefix": "CS", "number": "101",
+                                      "credit_hours": 4.0}}
+            }
+        }))
+        .expect("the select's shape");
+        assert_eq!(
+            (
+                row.run.variant.as_str(),
+                row.run.max_plans,
+                row.run.random_seed.as_deref()
+            ),
+            ("trimmed", Some(500), Some("42"))
+        );
+        let program =
+            program_from_document(row.analyzed_document.as_ref().unwrap(), "prog:1").unwrap();
+        assert_eq!(program.courses.len(), 1);
+        let err = program_from_document(&json!({"not_a_degree": true}), "prog:1").unwrap_err();
+        assert!(err.contains("prog:1"), "{err}");
+    }
+
     use super::*;
     use serde_json::json;
 

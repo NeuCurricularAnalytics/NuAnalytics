@@ -5,14 +5,14 @@
 
 use std::collections::{HashMap, HashSet};
 
-/// A specific plan variant through a degree program
-///
 /// `requirement_choices` key listing the prerequisites that expansion added to a plan.
 pub const PREREQUISITES_KEY: &str = "_prerequisites";
 
 /// `requirement_choices` key listing a plan's free-elective filler (`ELEC001`, …).
 pub const ELECTIVE_PLACEHOLDERS_KEY: &str = "_elective_placeholders";
 
+/// A specific plan variant through a degree program
+///
 /// Represents one possible way to complete all degree requirements,
 /// with specific course selections for each variable requirement.
 #[derive(Debug, Clone, PartialEq)]

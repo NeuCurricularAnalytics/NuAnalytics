@@ -9,6 +9,7 @@
 //! (`render_degree_report`, `render_plan_graph`, `get_course_detail`) reuse one run.
 
 use crate::core::degree::analysis::{analyze, AnalysisConfig, DegreeAnalysis};
+use crate::core::degree::plan_selector::PlanCategory;
 use crate::core::degree::{
     is_placeholder_course, parse_degree_auto, DegreeParseError, SamplingStrategy,
 };
@@ -89,13 +90,12 @@ pub struct AnalyzeDegreeRequest {
     )]
     pub target_course: Option<String>,
 
-    /// Seed for the random-sample reservoir. When `None` the seed is
-    /// derived from the YAML body so a given `(yaml, max_plans,
-    /// include_courses)` tuple always returns the same Random Sample plan
-    /// — quote `seed_used` in reports to pin the run. Pass an explicit
-    /// `u64` to draw a different sample without changing the inputs.
+    /// Seed for plan sampling and the Random Sample plans. When `None` the seed is derived
+    /// from the degree itself, so the same degree, however its text is formatted, enumerates
+    /// the same plans — quote `seed_used` in reports to pin the run. Pass an explicit `u64`
+    /// to draw a different sample without changing the inputs.
     #[schemars(
-        description = "Seed for the random-sample reservoir. Defaults to a stable value derived from the YAML body, so identical inputs always return the same Random Sample plan. Pass an explicit u64 to draw a different sample."
+        description = "Seed for plan sampling and the Random Sample plans. Defaults to a stable value derived from the degree itself, so the same degree, however formatted, returns the same plans. Pass an explicit u64 to draw a different sample."
     )]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_u64")]
     pub random_seed: Option<u64>,
@@ -230,11 +230,12 @@ pub struct AnalysisResponse {
     pub plans_analyzed: usize,
     /// Whether the result was truncated (more plans exist)
     pub was_truncated: bool,
-    /// Total population size — the unique plans that exist for this YAML.
+    /// Total population size — the unique plans that exist for this degree.
     ///
-    /// When `is_full_population` is true, this equals `plans_analyzed`. When
-    /// false, this is an upper-bound estimate from the requirement-choice
-    /// product (real unique count after dedup may be lower).
+    /// When `is_full_population` is true, this equals `plans_analyzed`. When false, a fresh
+    /// run gives an upper-bound estimate from the requirement-choice product (the real
+    /// unique count after dedup may be lower); a stored run records no estimate, so it
+    /// gives `plans_analyzed`.
     pub population_size: usize,
     /// True when every unique plan was analyzed (no sampling, no truncation).
     /// Equivalent to `!was_truncated`; exposed so callers can frame results
@@ -251,9 +252,9 @@ pub struct AnalysisResponse {
     /// uniformly-sampled plans from 95,760 possible" is different from
     /// "median across all 30 plans".
     pub sampling_method: &'static str,
-    /// Seed used to drive the reservoir-sample RNG. When the request did
-    /// not supply `random_seed`, this is the default seed derived from
-    /// the YAML body — quote it in reports to make the run reproducible.
+    /// Seed the run enumerated with: the request's `random_seed`, or the default derived from
+    /// the degree. Quote it in reports to make a fresh run reproducible. For a stored run,
+    /// the seed it recorded, or 0 when it recorded none.
     pub seed_used: u64,
 
     /// Aggregate complexity statistics across all plans
@@ -457,9 +458,9 @@ fn parse_error_response(error: &str) -> AnalysisResponse {
 
 /// Free-form notes the analyze pass produced as side effects (duplicate
 /// calc-ready suppression, clock-truncation), and for a stored run which run it was.
-fn build_response_notes(artifacts: &AnalysisView<'_>) -> Vec<String> {
+fn build_response_notes(view: &AnalysisView<'_>) -> Vec<String> {
     let mut notes = Vec::new();
-    if let Run::Stored(run) = artifacts.run {
+    if let Run::Stored(run) = view.run {
         notes.push(format!(
             "Read from the stored `{}` run {} (analyzer {}); nothing was enumerated. \
              fresh=true enumerates the degree afresh instead.",
@@ -468,16 +469,16 @@ fn build_response_notes(artifacts: &AnalysisView<'_>) -> Vec<String> {
             run.analyzer_version.as_deref().unwrap_or("unrecorded"),
         ));
     }
-    if artifacts.selected.calc_ready_suppressed {
+    if view.selected.calc_ready_suppressed {
         notes.push(
             "calc-ready-shortest suppressed as structural duplicate of shortest-path".to_string(),
         );
     }
-    if artifacts.time_limit_reached() {
+    if view.time_limit_reached() {
         notes.push(format!(
             "plan-generation loop stopped early at {} plans after {} ms — analysis_timeout_seconds tripped",
-            artifacts.plans_analyzed(),
-            artifacts.time_elapsed_ms(),
+            view.plans_analyzed(),
+            view.time_elapsed_ms(),
         ));
     }
     notes
@@ -496,57 +497,65 @@ pub(crate) fn view_json(
     ))
 }
 
+/// One selected plan as the response lists it, with its non-empty terms.
+fn plan_summary_json(
+    category: PlanCategory,
+    plan: &crate::core::degree::ScoredPlan,
+) -> PlanSummaryJson {
+    PlanSummaryJson {
+        category: category.display_name().to_string(),
+        terms: plan.score.terms_required,
+        complexity: plan.score.total_complexity,
+        longest_delay: plan.score.longest_delay,
+        critical_path: plan.score.longest_delay_chain.clone(),
+        credits: plan.variant.total_credits,
+        course_count: plan.variant.courses.len(),
+        schedule: plan
+            .schedule
+            .terms
+            .iter()
+            .filter(|t| !t.courses.is_empty())
+            .map(|t| TermJson {
+                term: t.number,
+                courses: t.courses.clone(),
+                credits: t.total_credits,
+            })
+            .collect(),
+    }
+}
+
 /// Build the analysis response from an analysis, fresh or stored.
 fn build_response(
-    artifacts: &AnalysisView<'_>,
+    view: &AnalysisView<'_>,
     include_per_course_metrics: bool,
     include_placeholder_metrics: bool,
 ) -> AnalysisResponse {
-    let degree_stats = artifacts.stats.degree_stats();
+    let degree_stats = view.stats.degree_stats();
 
-    let selected_plans: Vec<PlanSummaryJson> = artifacts
+    let selected_plans: Vec<PlanSummaryJson> = view
         .selected
         .iter()
-        .map(|(cat, plan)| PlanSummaryJson {
-            category: cat.display_name().to_string(),
-            terms: plan.score.terms_required,
-            complexity: plan.score.total_complexity,
-            longest_delay: plan.score.longest_delay,
-            critical_path: plan.score.longest_delay_chain.clone(),
-            credits: plan.variant.total_credits,
-            course_count: plan.variant.courses.len(),
-            schedule: plan
-                .schedule
-                .terms
-                .iter()
-                .filter(|t| !t.courses.is_empty())
-                .map(|t| TermJson {
-                    term: t.number,
-                    courses: t.courses.clone(),
-                    credits: t.total_credits,
-                })
-                .collect(),
-        })
+        .map(|(category, plan)| plan_summary_json(category, plan))
         .collect();
 
     // Clock-truncated runs are by definition not the full population —
     // force `was_truncated=true` so the existing followup heuristics treat
     // them the same as cap-truncated runs (and `is_full_population=false`
     // for consistency).
-    let raw_full_population = artifacts.is_full_population();
-    let was_truncated = !raw_full_population || artifacts.time_limit_reached();
+    let raw_full_population = view.is_full_population();
+    let was_truncated = !raw_full_population || view.time_limit_reached();
     let is_full_population = !was_truncated;
-    let population_size = artifacts.population_size();
+    let population_size = view.population_size();
     let complexity_stats = metric_stats_json(&degree_stats.total_complexity);
     let tool_followups = build_analysis_followups(
-        artifacts,
+        view,
         &selected_plans,
         Some(&complexity_stats),
         was_truncated,
         is_full_population,
     );
     let per_course_metrics = if include_per_course_metrics {
-        build_per_course_metrics(artifacts, include_placeholder_metrics)
+        build_per_course_metrics(view, include_placeholder_metrics)
     } else {
         Vec::new()
     };
@@ -556,23 +565,23 @@ fn build_response(
     } else {
         "random_uniform"
     };
-    let notes = build_response_notes(artifacts);
+    let notes = build_response_notes(view);
 
     AnalysisResponse {
         success: true,
         error: None,
-        degree_name: Some(artifacts.program.degree.name.clone()),
-        institution: artifacts.program.degree.institution.clone(),
-        total_courses: artifacts.program.courses.len(),
-        total_requirements: artifacts.program.requirements.len(),
-        plans_analyzed: artifacts.plans_analyzed(),
+        degree_name: Some(view.program.degree.name.clone()),
+        institution: view.program.degree.institution.clone(),
+        total_courses: view.program.courses.len(),
+        total_requirements: view.program.requirements.len(),
+        plans_analyzed: view.plans_analyzed(),
         was_truncated,
         population_size,
         is_full_population,
         sampling_method,
-        seed_used: artifacts.seed_used(),
+        seed_used: view.seed_used(),
         // Widening the sample means enumerating again, which a stored run does not do.
-        recommended_max_plans: artifacts
+        recommended_max_plans: view
             .fresh_run()
             .and_then(|fresh| recommend_max_plans(fresh, Some(&complexity_stats), was_truncated)),
         complexity: Some(complexity_stats),
@@ -581,11 +590,11 @@ fn build_response(
         avg_chain_length: Some(metric_stats_json(&degree_stats.avg_chain_length)),
         selected_plans,
         per_course_metrics,
-        target_course_stats: artifacts.target_course_stats().cloned(),
+        target_course_stats: view.target_course_stats().cloned(),
         tool_followups,
         notes,
-        time_limit_reached: artifacts.time_limit_reached(),
-        time_elapsed_ms: artifacts.time_elapsed_ms(),
+        time_limit_reached: view.time_limit_reached(),
+        time_elapsed_ms: view.time_elapsed_ms(),
     }
 }
 
@@ -599,39 +608,30 @@ fn build_response(
 /// entry then carries a `placeholder: true` field so callers can group them
 /// separately.
 fn build_per_course_metrics(
-    artifacts: &AnalysisView<'_>,
+    view: &AnalysisView<'_>,
     include_placeholders: bool,
 ) -> Vec<CourseMetricsJson> {
     // Already sorted: see `ReportStats::course_ids`.
-    artifacts
-        .stats
+    view.stats
         .course_ids()
         .into_iter()
         .filter(|id| include_placeholders || !is_placeholder_course(id))
         .filter_map(|id| {
             let placeholder = is_placeholder_course(&id);
-            artifacts
-                .stats
-                .course_stats(&id)
-                .map(|s| CourseMetricsJson {
-                    course_id: id,
-                    plan_count: s.plan_count,
-                    complexity: metric_stats_json(&s.complexity),
-                    centrality: metric_stats_json(&s.centrality),
-                    delay: metric_stats_json(&s.delay),
-                    blocking: metric_stats_json(&s.blocking),
-                    chain_length: metric_stats_json(&s.chain_length),
-                    placeholder,
-                })
+            view.stats.course_stats(&id).map(|s| CourseMetricsJson {
+                course_id: id,
+                plan_count: s.plan_count,
+                complexity: metric_stats_json(&s.complexity),
+                centrality: metric_stats_json(&s.centrality),
+                delay: metric_stats_json(&s.delay),
+                blocking: metric_stats_json(&s.blocking),
+                chain_length: metric_stats_json(&s.chain_length),
+                placeholder,
+            })
         })
         .collect()
 }
 
-/// Synthetic placeholder course IDs generated by the elective filler
-/// (`core::degree::placeholder::elective_placeholders`) and the free-elective backfill (`FE…`).
-/// They carry no prerequisites and a single flat credit count, so their
-/// per-course aggregator stats are always zeros — including them in the
-/// default summary inflates the zero-bias of every statistic.
 /// Coefficient-of-variation threshold below which the metrics are deemed
 /// stable enough that bumping `max_plans` won't change the conclusions.
 /// 10 % is a reasonable rule-of-thumb for plan-complexity distributions —
@@ -747,7 +747,7 @@ fn finalize_followups(
 ) -> Vec<ToolFollowup> {
     if let Some(shortest) = selected_plans
         .iter()
-        .find(|p| p.category == "Shortest Path")
+        .find(|p| p.category == PlanCategory::Shortest.display_name())
     {
         if shortest.critical_path.len() >= 6 {
             followups.push(ToolFollowup {
