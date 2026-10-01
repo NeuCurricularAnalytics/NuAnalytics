@@ -197,6 +197,11 @@ pub struct CourseNode {
     /// Outer Vec represents alternatives (any one path satisfies the requirement)
     /// Empty means no prerequisites
     pub prerequisite_paths: Vec<Vec<String>>,
+    /// The branches of each OR-group that has an alternative of more than one course — the
+    /// courses each alternative needs — keyed by the group id its edges carry. A group not
+    /// listed has only single-course alternatives, which its edges express completely; a
+    /// listed one is resolved per plan by branch, never by a single member.
+    pub or_branches: prerequisite_parser::OrBranches,
     /// Outgoing edges (courses that require this course)
     pub dependents: Vec<String>,
     /// Credit hours (copied from course for convenience)
@@ -215,6 +220,7 @@ impl CourseNode {
             has_course_data: course.is_some(),
             prerequisites: Vec::new(),
             prerequisite_paths: Vec::new(),
+            or_branches: BTreeMap::new(),
             dependents: Vec::new(),
             credits: course.map_or(0.0, |c| c.credit_hours),
             title: course.map_or_else(String::new, |c| c.name.clone()),
@@ -238,6 +244,13 @@ impl CourseNode {
             .filter(|e| e.prereq_type == PrerequisiteType::Required)
             .map(|e| e.prerequisite.as_str())
             .collect()
+    }
+
+    /// The branches of OR-group `group` — the courses each alternative needs — when one of
+    /// them needs more than one course; `None` when its alternatives are single courses.
+    #[must_use]
+    pub fn or_group_branches(&self, group: usize) -> Option<&[Vec<String>]> {
+        self.or_branches.get(&group).map(Vec::as_slice)
     }
 
     /// Get all optional prerequisites grouped by OR-group
@@ -401,6 +414,12 @@ impl CourseGraph {
                 // Remove the edge
                 if let Some(node) = self.nodes.get_mut(&course) {
                     node.prerequisites.retain(|e| e.prerequisite != prereq);
+                    // An alternative needing the removed prerequisite can no longer be
+                    // taken; a group left with none falls back to its remaining edges.
+                    for branches in node.or_branches.values_mut() {
+                        branches.retain(|b| !b.contains(&prereq));
+                    }
+                    node.or_branches.retain(|_, branches| !branches.is_empty());
                 }
                 // Also remove from reverse edges
                 if let Some(prereq_node) = self.nodes.get_mut(&prereq) {
@@ -753,6 +772,7 @@ impl CourseGraph {
         visiting.insert(course_key.to_string());
         let result = self.collect_min_chain_from_edges_with_exclusions(
             &prereq_edges,
+            &node.or_branches,
             preferred_subject,
             plan_courses,
             exclude_courses,
@@ -771,6 +791,7 @@ impl CourseGraph {
     fn collect_min_chain_from_edges_with_exclusions(
         &self,
         prereq_edges: &[&PrerequisiteEdge],
+        or_branches: &prerequisite_parser::OrBranches,
         preferred_subject: Option<&str>,
         plan_courses: &HashSet<String>,
         exclude_courses: &HashSet<String>,
@@ -800,8 +821,9 @@ impl CourseGraph {
                     result_chain.extend(chain);
                 }
                 PrerequisiteType::Optional => {
-                    // Optional prereqs - skip if cycle, try alternatives
-                    if let Some(group) = edge.or_group {
+                    // Optional prereqs - skip if cycle, try alternatives. A group with
+                    // multi-course branches is resolved by branch below, not by member.
+                    if let Some(group) = edge.or_group.filter(|g| !or_branches.contains_key(g)) {
                         if let Some(chain) = prereq_chain {
                             or_groups
                                 .entry(group)
@@ -814,9 +836,60 @@ impl CourseGraph {
             }
         }
 
-        // Select best option from each OR-group, preferring courses in plan
+        // Groups with multi-course branches: each branch whose every course has a chain is
+        // an option, carrying its courses and their chains. Only groups this course still
+        // has edges for — a cycle-broken edge takes its branches with it.
+        let mut branch_groups: BTreeMap<usize, Vec<BranchOption>> = BTreeMap::new();
+        for (group, branches) in or_branches {
+            if !prereq_edges.iter().any(|e| e.or_group == Some(*group)) {
+                continue;
+            }
+            let options = branch_groups.entry(*group).or_default();
+            for branch in branches {
+                let mut chain = Vec::new();
+                let complete = branch.iter().all(|course| {
+                    self.min_chain_recursive_with_exclusions(
+                        course,
+                        preferred_subject,
+                        plan_courses,
+                        exclude_courses,
+                        visiting,
+                    )
+                    .map(|c| chain.extend(c))
+                    .is_some()
+                });
+                if complete {
+                    options.push((branch.clone(), chain));
+                }
+            }
+        }
+
+        // Select best option from each OR-group, in group order, preferring courses in plan
         // and avoiding excluded courses
-        for (_group, options) in or_groups {
+        let groups: std::collections::BTreeSet<usize> = or_groups
+            .keys()
+            .chain(branch_groups.keys())
+            .copied()
+            .collect();
+        for group in groups {
+            if let Some(options) = branch_groups.remove(&group) {
+                if options.is_empty() {
+                    return None; // Every branch of this OR-group led to a cycle
+                }
+                if let Some((branch, chain)) = select_best_branch_with_exclusions(
+                    options,
+                    preferred_subject,
+                    plan_courses,
+                    exclude_courses,
+                ) {
+                    result_chain.extend(branch);
+                    result_chain.extend(chain);
+                }
+                continue;
+            }
+            let Some(options) = or_groups.remove(&group) else {
+                continue;
+            };
             if options.is_empty() {
                 return None; // All options in this OR-group led to cycles
             }
@@ -1259,11 +1332,13 @@ fn add_prerequisites(
     missing_courses: &mut HashSet<String>,
 ) {
     for (key, course) in &program.courses {
-        let (edges, dnf_paths) = parse_prerequisites(course, &program.courses, missing_courses);
+        let (edges, dnf_paths, branches) =
+            parse_prerequisites(course, &program.courses, missing_courses);
 
         if let Some(node) = graph.nodes.get_mut(key) {
             node.prerequisites = edges;
             node.prerequisite_paths = dnf_paths;
+            node.or_branches = branches;
         }
     }
 }
@@ -1364,15 +1439,21 @@ fn parse_prerequisites(
     course: &Course,
     courses: &HashMap<String, Course>,
     missing: &mut HashSet<String>,
-) -> (Vec<PrerequisiteEdge>, Vec<Vec<String>>) {
+) -> (
+    Vec<PrerequisiteEdge>,
+    Vec<Vec<String>>,
+    prerequisite_parser::OrBranches,
+) {
     let mut edges = Vec::new();
     let mut dnf_paths = Vec::new();
+    let mut branches = BTreeMap::new();
 
     if let Some(raw) = &course.prerequisites_raw {
         // Parse using shared parser module
-        let parsed = prerequisite_parser::parse_to_edges(raw);
+        let parsed = prerequisite_parser::parse_prerequisites(raw);
+        branches = parsed.branches;
 
-        for (prereq, is_optional, or_group) in parsed {
+        for (prereq, is_optional, or_group) in parsed.edges {
             // Track missing courses
             if !courses.contains_key(&prereq) {
                 missing.insert(prereq.clone());
@@ -1411,7 +1492,7 @@ fn parse_prerequisites(
         }
     }
 
-    (edges, dnf_paths)
+    (edges, dnf_paths, branches)
 }
 
 /// Extract the subject code from a course key (e.g., "CS165" -> "CS", "MATH156" -> "MATH")
@@ -1457,6 +1538,66 @@ fn select_best_prerequisite_option(
     };
 
     candidates.into_iter().min_by_key(|(_, chain)| chain.len())
+}
+
+/// One way to satisfy an OR-group by branch: the branch's courses, and the prerequisite
+/// chains they bring.
+type BranchOption = (Vec<String>, Vec<String>);
+
+/// Select the branch of an OR-group to satisfy it with — the branch counterpart of
+/// [`select_best_prerequisite_option_with_exclusions`], in the same order:
+/// 1. A branch the plan already completes (no new courses needed) — the smallest
+/// 2. Branches that avoid excluded courses
+/// 3. Fewest new courses: the branch's courses and their chains not already in the plan
+/// 4. Every course in the preferred subject
+/// 5. By name
+///
+/// So `(MATH124 & MATH126) | MATH127` adds `MATH127` to a plan with neither, and `MATH124`
+/// to one that already has `MATH126`.
+fn select_best_branch_with_exclusions(
+    options: Vec<BranchOption>,
+    preferred_subject: Option<&str>,
+    plan_courses: &HashSet<String>,
+    exclude_courses: &HashSet<String>,
+) -> Option<BranchOption> {
+    let (complete, incomplete): (Vec<_>, Vec<_>) = options
+        .into_iter()
+        .partition(|(branch, _)| branch.iter().all(|c| plan_courses.contains(c)));
+    if !complete.is_empty() {
+        return complete
+            .into_iter()
+            .min_by(|(a, _), (b, _)| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
+    }
+
+    let touches_excluded = |(branch, chain): &BranchOption| {
+        branch
+            .iter()
+            .chain(chain.iter())
+            .any(|c| exclude_courses.contains(c))
+    };
+    let (allowed, excluded): (Vec<_>, Vec<_>) =
+        incomplete.into_iter().partition(|o| !touches_excluded(o));
+    let candidates = if allowed.is_empty() {
+        excluded
+    } else {
+        allowed
+    };
+
+    let same_subject = |branch: &[String]| {
+        preferred_subject.is_some_and(|subject| {
+            branch
+                .iter()
+                .all(|c| extract_subject(c).is_some_and(|s| s.eq_ignore_ascii_case(subject)))
+        })
+    };
+    candidates.into_iter().min_by_key(|(branch, chain)| {
+        let new: HashSet<&String> = branch
+            .iter()
+            .chain(chain.iter())
+            .filter(|c| !plan_courses.contains(*c))
+            .collect();
+        (new.len(), !same_subject(branch), branch.clone())
+    })
 }
 
 /// Select the best prerequisite option from an OR group with plan context
@@ -2089,6 +2230,73 @@ mod tests {
     /// A degree parsed afresh for each graph: every `HashMap` gets its own hash keys, so
     /// building the graph many times in one process varies its iteration order the way
     /// separate processes do.
+    /// CSU's MATH156, `(MATH124 & MATH126) | MATH127`, with a course that uses MATH124.
+    const MATH156: &str = r#"degree: {id: t, institution: CSU, program: T, total_credits: 10, gpa_minimum: 2.0}
+requirements:
+  core: {name: Core, type: all, category: major, courses: [MATH156]}
+courses:
+  MATH124: {title: Log, prefix: MATH, number: "124", credits: 1}
+  MATH126: {title: Trig, prefix: MATH, number: "126", credits: 1}
+  MATH127: {title: Precalc, prefix: MATH, number: "127", credits: 4}
+  MATH156: {title: Comp Math I, prefix: MATH, number: "156", credits: 4, prerequisites_raw: "(MATH124 & MATH126) | MATH127"}
+  CS999: {title: Uses MATH124, prefix: CS, number: "999", credits: 3, prerequisites_raw: "MATH124"}
+"#;
+
+    fn chain_for(plan: &[&str], exclude: &[&str]) -> Vec<String> {
+        let graph = CourseGraph::from_degree_program(&fresh_program(MATH156)).graph;
+        let set = |xs: &[&str]| {
+            xs.iter()
+                .map(ToString::to_string)
+                .collect::<HashSet<String>>()
+        };
+        let mut chain = graph
+            .min_prerequisite_chain_with_exclusions("MATH156", &set(plan), &set(exclude))
+            .expect("a chain");
+        chain.sort();
+        chain
+    }
+
+    /// Expansion adds a whole branch — the one adding the fewest new courses — never one
+    /// member of the pooled group, which left plans satisfying neither branch.
+    #[test]
+    fn test_expansion_adds_the_branch_with_fewest_new_courses() {
+        assert_eq!(chain_for(&[], &[]), ["MATH127"]);
+        // Started: MATH126 is already there, so MATH124 completes that branch for one course.
+        assert_eq!(chain_for(&["MATH126"], &[]), ["MATH124", "MATH126"]);
+        // Complete: nothing new.
+        assert_eq!(
+            chain_for(&["MATH124", "MATH126"], &[]),
+            ["MATH124", "MATH126"]
+        );
+        // An excluded course rules its branch out.
+        assert_eq!(chain_for(&[], &["MATH127"]), ["MATH124", "MATH126"]);
+    }
+
+    /// Breaking a cycle through a branch drops that branch, so it is never offered.
+    #[test]
+    fn test_break_cycles_drops_the_branches_through_a_removed_edge() {
+        let yaml = r#"
+degree: {id: t, institution: T, program: T, total_credits: 9, gpa_minimum: 2.0}
+requirements:
+  core: {name: Core, type: all, courses: [AA101, BB101, CC101]}
+courses:
+  AA101: {title: A, prefix: AA, number: "101", credits: 3, prerequisites_raw: "(BB101 & CC101) | DD101"}
+  BB101: {title: B, prefix: BB, number: "101", credits: 3, prerequisites_raw: "AA101"}
+  CC101: {title: C, prefix: CC, number: "101", credits: 3}
+  DD101: {title: D, prefix: DD, number: "101", credits: 3}
+"#;
+        let mut result = CourseGraph::from_degree_program(&fresh_program(yaml));
+        assert_eq!(result.graph.get("AA101").unwrap().or_branches.len(), 1);
+        let removed = result.graph.break_cycles(&result.cycles);
+        let branches = &result.graph.get("AA101").unwrap().or_branches;
+        if removed.contains(&("AA101".to_string(), "BB101".to_string())) {
+            assert!(branches
+                .values()
+                .flatten()
+                .all(|b| !b.contains(&"BB101".to_string())));
+        }
+    }
+
     fn fresh_program(yaml: &str) -> crate::core::DegreeProgram {
         crate::core::degree::parse_degree_auto(yaml)
             .expect("parses")

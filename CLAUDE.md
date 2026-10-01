@@ -10,8 +10,8 @@ codebase — run `/init` if you want that.
 
 Default features: `log-info`, `log-debug`, `verbose`, `file-logging`, `database`, `mcp`.
 
-    cargo test --all-features                       # 1517 tests, clean
-    cargo test --no-default-features --features database   # 1277 — the CLI's feature set
+    cargo test --all-features                       # 1529 tests, clean
+    cargo test --no-default-features --features database   # 1289 — the CLI's feature set
     cargo build --features database
 
 **Three feature sets are tested in CI, and the middle one is load-bearing.** The query
@@ -101,8 +101,9 @@ two traps a self-hoster hits — seed tables are read-only through the API, and 
 `supabase/postgres` image, not a stock one — are in `docs/database/setup.md`.
 
 `docs/database-audit-todo.md` is the live backend work list, trimmed to what is left:
-re-import the corpus (it predates both the recovered degree fields and the OR-group
-tie-break fix), tidy the corpus repo, and why `db remetric` is deliberately not built.
+re-import the corpus (its runs predate OR-of-AND branch resolution — section 4 has the
+measurement), two loose ends of the corpus-repo tidy, and why `db remetric` is
+deliberately not built.
 It also records the settled decisions that are easy to re-litigate — notably that **writes
 stay open to any authenticated member**: ownership policies were implemented and reverted
 because they stop `db import --replace` overwriting another member's row. `created_by`
@@ -217,9 +218,13 @@ out. `docs/clean-up-analysis-todo.md` has what is left (steps 5 and 6) and one k
 deliberately not fixed in the merge: the scheduler never sees a degree's
 `strict_corequisites`.
 
-Two things in that document are load-bearing before touching metrics. The tie-break change
-in step 1 moved **307 of 1,088 degrees** (2.8% by ≥5%), so the stored corpus is a
-generation behind. And section 6 records, with measurements, why the OR-of-ANDs gap in the
-flat edge model should *not* be "fixed" casually: the real defect is 0.09% of
-course-instances, while the option-choice heuristic it would drag along is 15× more
-frequent and moves metrics far more.
+**An OR between AND groups is resolved per plan, by branch** (2026-10-01; section 6 of
+that document). `(MATH124 & MATH126) | MATH127` is not "any one of three": the parser
+records each such OR-group's branches (`CourseNode::or_branches`), the plan DAG draws every
+course of the branch the plan completes (`plan_dag::select_or_group_branch` — smallest,
+ties by in-plan references), and expansion adds a whole branch (fewest new courses). Only
+groups with a multi-course alternative take that path; the other 958 corpus degrees were
+byte-identical across the change, so keep it that way — a rule change for single-course
+OR-groups moves every degree. `parse_to_edges` also reads `|` as the loosest operator now;
+it did not, which is why a prerequisite stored as a tree analysed differently from the
+same prerequisite written with parentheses.

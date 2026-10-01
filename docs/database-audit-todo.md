@@ -104,6 +104,69 @@ numbers, so results stay comparable:
 | database-only programs | `degree analyze --from-db` | blocked |
 | history | appends a run | would patch in place |
 
+## 4. Stored runs against the current analyzer — measured 2026-10-01, parser fixed the same day
+
+61 programs (every 18th by `program_key`), each re-analysed with the current analyzer at its
+stored settings: 10,000-plan cap, shuffled, duplicates skipped, the stored seed. All 1,088
+latest full runs share those settings (0.5.4, imported 2026-09-29).
+
+| | programs |
+|---|---|
+| seed derived from the degree = stored seed | 61 / 61 |
+| plan count identical | 61 / 61 |
+| every figure bit-identical | 49 / 61 |
+| means identical, quartiles differ | 6 / 61 |
+| means differ | 6 / 61 |
+
+**The stored runs were right.** The analyzer of the day, run on the corpus files the runs
+came from (`full_degree/v2/degree/`), reproduced the stored means of all 12 that moved, and
+so did the analyzer that produced them (`3f10dbc`, rebuilt from git).
+
+- **Quartiles only:** the quantile reservoir was unseeded until 2026-09-30, so a stored
+  quartile for a population over 10,000 is one random draw — five runs of `3f10dbc` gave
+  four or five different quartiles and one mean. The current analyzer gives one value.
+  Neither is wrong; a re-import pins them.
+- **Means:** the *stored documents* did not analyse as the files did.
+  `programs.document` carries prerequisites as a structured tree, which reads back with
+  precedence-only parentheses (`A & B | C`), and `parse_to_edges` read `|` as binding
+  tighter than `&`. 79 stored documents (140 courses) parsed differently from their
+  files, so they were misread whenever re-analysed — `degree analyze --from-db`,
+  `fresh=true`, `compare_degrees(metrics="fresh")`, or a degree exported from the
+  database. BYU moved 21% (complexity 135.9 → 164.8). Reading a stored run was never
+  affected.
+
+**Fixed 2026-10-01**, together with OR-of-AND branch resolution
+(`clean-up-analysis-todo.md` section 6). Re-measured over all 1,088:
+
+| stored document vs the corpus file it came from | programs |
+|---|---|
+| prerequisites parse differently | 79 → **0** |
+| analysis identical (figures, plan count, selected plans) | **1,075** |
+| analysis differs, for an older reason below | 13 |
+
+The 13 are representational differences the parser fix does not touch; the old and new
+analyzers agree on every one of them:
+
+- **12 — the seed.** The default seed hashes the canonical JSON, and a corpus string with
+  redundant nesting (Oklahoma's `(CS2413 & CS2813) & MATH3333`) keeps a nested `and` that
+  the stored tree flattened. Same prerequisites, different seed. Six reach the same plans
+  and agree to 15 significant digits, apart from the Random Sample; six are sampled at the
+  cap and draw a different sample.
+- **1 — Northeastern AI.** Its file gives 67 courses `prerequisites: ""`; the stored
+  document omits the field. The resolver orders a choice pool "no prerequisites first" by
+  `prerequisites_raw.is_some()` (`requirement_resolver.rs:512`), which counts the empty
+  string as a prerequisite, so the enumeration order and a capped sample differ. It is the
+  only corpus file with a blank prerequisite string.
+
+Both matter only when a stored program is re-run fresh, and fixing either would move
+stored figures, so neither is fixed yet.
+
+**What is left: re-import.** The stored runs now trail the analyzer for the 96 full programs
+whose report changed (91 with moved figures — `clean-up-analysis-todo.md` section 6 has the
+table). Trimmed variants were not measured; the same re-import redoes them. Re-analyse
+`full_degree/v2/degree/` and `trimmed_degree/`, then `db import --replace`. Runs append,
+so `db prune` afterwards if the history is not wanted.
+
 ---
 
 ## What this audit did *not* check

@@ -116,6 +116,19 @@ with the target course's statistics under `analysis.target_course_stats`. It was
 
 ### Fixed
 
+- **An OR between groups of courses is resolved by the branch a plan takes.** CSU's
+  MATH156 needs `(MATH124 & MATH126) | MATH127`; the analysis read that as "any one of the
+  three", so a plan taking the two-course branch was credited one prerequisite, and
+  prerequisite expansion could add MATH124 alone and call MATH156 satisfied (CSU's Longest
+  Path did). Each plan now gets every course of the branch it completes, and expansion adds
+  a whole branch, the one needing the fewest new courses. 91 of the 1,088 corpus degrees
+  move (median complexity +0.4%, 24 by 5% or more); 992 reports are byte-identical,
+  including all 958 degrees without such an OR.
+- **`A & B | C` was read as `A & (B | C)`.** The analysis's prerequisite parser gave `|`
+  the tighter binding — the opposite of every other reader — which mattered for any
+  prerequisite stored as a structured tree: those read back without the parentheses
+  precedence implies. A stored program re-analysed (`degree analyze --from-db`,
+  `fresh=true`) therefore disagreed with the file it came from, BYU by 21%.
 - **Fresh analysis is reproducible.** The same degree gave different named plans between
   runs in 21 of 60 sampled corpus degrees, and different random samples in 55; CSU's CLI
   aggregates moved about one run in 20. The causes were hash-order tie-breaks: the order of

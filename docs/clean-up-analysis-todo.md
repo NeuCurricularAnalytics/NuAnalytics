@@ -202,67 +202,61 @@ across toolchains, so the other figures could still move on a compiler upgrade.
   and most of `degrees` now live in `src/core/query/`, with the shared JSON helpers in
   `src/core/json.rs`. `compare_degrees`' fresh metrics call the `analyze_degree` tool,
   which now runs the shared pipeline.
-- **The flat edge model cannot represent OR-of-ANDs — but it is a much smaller problem
-  than it first looks, and "fix" it carelessly and you move every metric you own.**
+- **OR-of-ANDs are resolved by branch — DONE 2026-10-01.** Three defects, fixed together
+  because each hid the others:
 
-  `parse_to_edges` gives a required set plus flat OR-groups, so
-  `(A & B & C) | (A & B & D) | (A & C)` collapses to one group `{A, B, C, D}` and
-  `build_plan_dag` emits **one** edge where two courses are genuinely required.
-  `parse_to_dnf` models it correctly.
+  1. **`parse_to_edges` read `|` as binding tighter than `&`.** It split on `&` first, so
+     `CS312 & MATH215 & STAT121 | CS312 & STAT121` meant "CS312, MATH215 and STAT121
+     required, plus STAT121 or CS312". Every other reader — `parse_to_ast`,
+     `parse_to_dnf`, `PrereqExpr::to_expression_string` — has `&` tighter, and
+     `to_expression_string` omits the parentheses precedence implies, so a prerequisite
+     stored as a tree (`programs.document`, many corpus files) read back wrong while the
+     same prerequisite written with parentheses read right. Measured in
+     `database-audit-todo.md` section 4.
+  2. **The flat edge model pooled an OR-of-ANDs into one group.**
+     `(MATH124 & MATH126) | MATH127` (CSU MATH156) became "any one of the three": a plan
+     taking the two-course branch got one edge, and expansion added *one* pooled member —
+     the cheapest — leaving plans that satisfied neither branch (CSU's Longest Path had
+     MATH156 with MATH126 alone). An earlier sample put the size defect at 0.09% of
+     course-instances; it is larger than that once the precedence bug stops masking it.
+  3. **A nested AND's OR-group ids were offset but the counter never advanced,** so in
+     `X & (A & B | C) & (D | E)` the two groups shared an id. No corpus expression has the
+     shape, but the structured form of one would.
 
-  **An earlier version of this note claimed "the drawn graph is right and the metrics DAG
-  is wrong". That was wrong on both halves and is retracted.** The drawn graph
-  (`curriculum_graph::select_best_prereq_path`) is also a heuristic, and errs the other
-  way: it takes the **first** fully-satisfied DNF path rather than the smallest, so with
-  `CS312 + MATH215 + STAT121` in the plan it draws three prerequisite edges for BYU's
-  CS470 when `CS312 & STAT121` satisfies it with two. When no path is satisfied at all it
-  falls back to the "longest partial match" and draws edges for a requirement the plan
-  does not meet. Neither model is the reference; they are two different guesses.
+  **Now:** `parse_prerequisites` returns the flat edges plus, for each OR-group with a
+  multi-course alternative, its branches (the group's DNF), stored as
+  `CourseNode::or_branches`. Groups whose alternatives are all single courses — and every
+  degree without one — take exactly the old code path. For the others, per plan:
 
-  **Measured over 30 degrees × up to 120 plans (66,200 course-instances):**
+  - the plan DAG draws every course of one branch the plan completes: a forced
+    (`--include`) course's branch, else the smallest, else the most referenced
+    (`select_or_group_branch`);
+  - expansion adds a whole branch: one the plan completes, else the one adding the fewest
+    new courses, then same subject, then name — the single-course rule's order, so
+    MATH156 gets MATH127 alone, or MATH124 when the plan already has MATH126;
+  - redundancy pruning and the `--include` exclusion set reason by branch too.
 
-  | flat vs DNF-minimal, per course-instance | count | share |
-  |---|---|---|
-  | identical edge set | 65,244 | 98.55% |
-  | same size, *different course chosen* | 897 | 1.36% |
-  | different size (the real defect) | 59 | **0.09%** |
+  **Measured over the whole corpus** (all 1,088 analysed corpus files, 10,000-plan cap,
+  stored seeds, old vs new analyzer):
 
-  Total edges barely move: 63,058 → 63,147 (+0.14%). **The size defect is 0.09% of
-  course-instances.** What actually drives metric change is the 1.36% where the two models
-  pick a *different member of the same group* — a modelling preference with no right
-  answer, and 15× more frequent.
+  | | programs |
+  |---|---|
+  | no multi-course OR-group — full report JSON byte-identical | **958 / 958** |
+  | with one | 130 |
+  | … report changed | 96 |
+  | … complexity mean moved | 91: median +0.38%, 55 up and 36 down, −17.2% to +22.7%; 24 by ≥5% |
+  | … delay mean / credits mean moved | 27 / 23 |
+  | plan counts changed | 0 |
 
-  **That distinction decides whether a fix is safe.** Two candidate replacements, measured
-  against current output on the same 30 degrees:
+  Up is a plan now credited every course of the branch it takes (College of Charleston's
+  CSCI221 needs a lecture and its lab); down is a course no longer forced by the
+  precedence bug (USF's PHYS303 forced CS110). CSU's plans no longer contain an
+  OR-of-AND course without a complete branch (2 of 30 before, 0 after).
 
-  | model | degrees unchanged | worst move |
-  |---|---|---|
-  | DNF-minimal, lexicographic tiebreak | 21/30 | UW Tacoma **−20.1%** complexity, delay 10→8 |
-  | DNF-minimal, keeping the existing reference preference | **28/30** | +1.0% and +0.4%, both upward |
-
-  The naive version rewrites metrics for nine of thirty degrees, almost entirely for
-  reasons unrelated to the defect. The hybrid — take the smallest satisfied conjunction,
-  break ties with the same `in_plan_references` preference `select_or_group_option`
-  already uses — leaves 28 of 30 untouched and moves the other two *up* slightly, which is
-  the expected direction for removing an under-constraint.
-
-  **Recommendation: do not touch this as part of the analysis merge.** It is pre-existing,
-  it is in the stored corpus, and step 1 neither caused nor worsened it. If it is ever
-  done, do it as the hybrid, in its own commit, with the corpus regenerated and the
-  `target_course_population` baselines re-recorded — and keep the size rule and any change
-  to the choice rule in separate commits so each effect stays visible.
-
-- **`parse_to_edges` can merge two independent OR-groups into one id.** In the nested-AND
-  branch (`src/core/prerequisite_parser.rs`, the `contains_at_level(unwrapped, '&')` arm)
-  the recursion's group ids are offset by `or_group_counter` but the counter is never
-  advanced past them, so a later group can reuse an id. `((A|B) & C) & (D|E)` puts all four
-  of A, B, D, E in group 0; with one edge emitted per group that is one prerequisite where
-  two are required. A scan for *this specific shape* found 0 occurrences in 31,601
-  expressions — but that scan looked for a group id reappearing after another intervened,
-  which missed the OR-of-ANDs case above entirely. Treat the 0 as "this exact signature",
-  not "the flat model is fine"; the entry above is the measurement that matters. Fix it when that file is next opened
-  (step 6) — advance the counter by the number of groups the recursion produced, not by
-  one — and re-run the scan to confirm it stays at zero.
+  **Still flat:** the audit's structured chains (`structured_prerequisite_chain`) and the
+  drawn curriculum graph (`curriculum_graph::select_best_prereq_path`, which takes the
+  *first* satisfied DNF path rather than the smallest). Neither feeds a metric; aligning
+  the drawing with `select_or_group_branch` is the obvious follow-up.
 
 ## 7. Decisions
 

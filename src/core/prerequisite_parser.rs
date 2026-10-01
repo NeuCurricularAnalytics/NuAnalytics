@@ -22,7 +22,7 @@
 //! - `CS101[B] & CS102[C]` - With grade requirements (stripped)
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 /// AND/OR tree form of a prerequisite expression.
 ///
@@ -264,11 +264,31 @@ pub fn parse_to_dnf(raw: &str) -> Vec<Vec<String>> {
     parse_dnf_recursive(&cleaned)
 }
 
+/// The branches of OR-groups that have an alternative of more than one course: per group
+/// id, the courses each alternative needs.
+pub type OrBranches = BTreeMap<usize, Vec<Vec<String>>>;
+
+/// A prerequisite expression as the course graph stores it: flat edges, plus the branches
+/// of each OR-group that has an alternative of more than one course.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ParsedPrerequisites {
+    /// `(course, is_optional, or_group)`, as [`parse_to_edges`] returns them.
+    pub edges: Vec<(String, bool, Option<usize>)>,
+    /// For each OR-group that has an alternative of two or more courses, its alternatives
+    /// as the courses each needs (the group's DNF), keyed by group id. A group not listed
+    /// has only single-course alternatives, which its edges express completely.
+    pub branches: OrBranches,
+}
+
 /// Parse a prerequisite expression into a flat list of edges for graph traversal
 ///
 /// Returns tuples of (`course_key`, `is_optional`, `or_group`).
 /// - `is_optional`: true if part of an OR group
 /// - `or_group`: `Some(id)` if optional, where same id = alternatives
+///
+/// An OR-group's edges list every course any of its alternatives mentions, so
+/// `(A & B) | C` is one group of three; [`parse_prerequisites`] also says which courses
+/// go together.
 ///
 /// # Arguments
 /// * `raw` - The raw prerequisite expression string
@@ -277,11 +297,30 @@ pub fn parse_to_dnf(raw: &str) -> Vec<Vec<String>> {
 /// A vector of (`course`, `is_optional`, `or_group`) tuples
 #[must_use]
 pub fn parse_to_edges(raw: &str) -> Vec<(String, bool, Option<usize>)> {
-    let mut result = Vec::new();
+    parse_prerequisites(raw).edges
+}
+
+/// Parse a prerequisite expression into its flat edges and the branches of each OR-group
+/// whose alternatives are not all single courses.
+///
+/// `(MATH124 & MATH126) | MATH127` is one OR-group of three edges whose branches are
+/// `[MATH124, MATH126]` and `[MATH127]`: the edges alone would read as "any one of the
+/// three".
+#[must_use]
+pub fn parse_prerequisites(raw: &str) -> ParsedPrerequisites {
+    let mut result = ParsedPrerequisites::default();
     let mut or_group_counter = 0;
 
     let cleaned = remove_grade_requirements(raw);
-    let and_parts = split_at_level(&cleaned, '&');
+    // `|` binds loosest, as in `parse_to_ast`: an expression with a top-level `|` is one OR
+    // group however its options are written. Splitting on `&` first read `A & B | C` as
+    // `A & (B | C)` — which is exactly how a structured prerequisite reads back, since
+    // `PrereqExpr::to_expression_string` leaves out the parentheses precedence implies.
+    let and_parts = if contains_at_level(&cleaned, '|') {
+        vec![cleaned]
+    } else {
+        split_at_level(&cleaned, '&')
+    };
 
     for part in and_parts {
         let trimmed = part.trim();
@@ -294,6 +333,9 @@ pub fn parse_to_edges(raw: &str) -> Vec<(String, bool, Option<usize>)> {
             let or_parts = split_at_level(trimmed, '|');
             let current_group = or_group_counter;
             or_group_counter += 1;
+            if let Some(branches) = or_group_branches(trimmed) {
+                result.branches.insert(current_group, branches);
+            }
 
             for or_part in or_parts {
                 let or_trimmed = or_part.trim();
@@ -306,12 +348,12 @@ pub fn parse_to_edges(raw: &str) -> Vec<(String, bool, Option<usize>)> {
                 if contains_at_level(unwrapped, '&') || contains_at_level(unwrapped, '|') {
                     // Complex nested - extract all courses
                     for course in extract_all_courses(unwrapped) {
-                        result.push((course, true, Some(current_group)));
+                        result.edges.push((course, true, Some(current_group)));
                     }
                 } else {
                     let course = clean_course_key(unwrapped);
                     if !course.is_empty() {
-                        result.push((course, true, Some(current_group)));
+                        result.edges.push((course, true, Some(current_group)));
                     }
                 }
             }
@@ -320,24 +362,65 @@ pub fn parse_to_edges(raw: &str) -> Vec<(String, bool, Option<usize>)> {
             let unwrapped = unwrap_parens(trimmed);
 
             if contains_at_level(unwrapped, '&') {
-                for (course, is_opt, group) in parse_to_edges(unwrapped) {
-                    result.push((course, is_opt, group.map(|g| g + or_group_counter)));
+                // A nested AND keeps its own OR-groups, numbered after the ones so far — and
+                // the counter moves past them, or the next group here would reuse an id and
+                // merge two requirements into one.
+                let nested = parse_prerequisites(unwrapped);
+                let nested_groups = nested
+                    .edges
+                    .iter()
+                    .filter_map(|&(_, _, group)| group)
+                    .max()
+                    .map_or(0, |last| last + 1);
+                for (course, is_opt, group) in nested.edges {
+                    result
+                        .edges
+                        .push((course, is_opt, group.map(|g| g + or_group_counter)));
                 }
+                for (group, branches) in nested.branches {
+                    result.branches.insert(group + or_group_counter, branches);
+                }
+                or_group_counter += nested_groups;
             } else if contains_at_level(unwrapped, '|') {
-                for (course, _, _) in parse_to_edges(unwrapped) {
-                    result.push((course, true, Some(or_group_counter)));
+                for (course, _, _) in parse_prerequisites(unwrapped).edges {
+                    result.edges.push((course, true, Some(or_group_counter)));
+                }
+                if let Some(branches) = or_group_branches(unwrapped) {
+                    result.branches.insert(or_group_counter, branches);
                 }
                 or_group_counter += 1;
             } else {
                 let course = clean_course_key(unwrapped);
                 if !course.is_empty() {
-                    result.push((course, false, None));
+                    result.edges.push((course, false, None));
                 }
             }
         }
     }
 
     result
+}
+
+/// The alternatives of the OR expression `expr`, as the courses each one needs, when one
+/// of them needs more than one course. `None` when every alternative is a single course,
+/// and when the expression has too many to enumerate, in which case the flat edges stand.
+fn or_group_branches(expr: &str) -> Option<Vec<Vec<String>>> {
+    let paths = parse_dnf_recursive(expr);
+    if paths.len() >= MAX_DNF_PATHS {
+        return None;
+    }
+    let mut branches: Vec<Vec<String>> = paths
+        .into_iter()
+        .map(|mut path| {
+            path.sort();
+            path.dedup();
+            path
+        })
+        .filter(|path| !path.is_empty())
+        .collect();
+    branches.sort();
+    branches.dedup();
+    branches.iter().any(|b| b.len() > 1).then_some(branches)
 }
 
 /// Extract only strict (required) prerequisites from an expression
@@ -775,6 +858,161 @@ mod tests {
         assert!(result.contains("B"));
         assert!(!result.contains("C"));
         assert!(!result.contains("D"));
+    }
+
+    /// Edges with group ids replaced by their membership, so two parses that differ only
+    /// in how they numbered their groups compare equal.
+    fn edge_shape(raw: &str) -> (Vec<String>, Vec<Vec<String>>) {
+        let edges = parse_to_edges(raw);
+        let mut required: Vec<String> = edges
+            .iter()
+            .filter(|(_, optional, _)| !optional)
+            .map(|(c, _, _)| c.clone())
+            .collect();
+        required.sort();
+        let mut groups: std::collections::BTreeMap<usize, std::collections::BTreeSet<String>> =
+            std::collections::BTreeMap::new();
+        for (course, _, group) in &edges {
+            if let Some(g) = group {
+                groups.entry(*g).or_default().insert(course.clone());
+            }
+        }
+        let mut groups: Vec<Vec<String>> = groups
+            .into_values()
+            .map(|g| g.into_iter().collect())
+            .collect();
+        groups.sort();
+        (required, groups)
+    }
+
+    fn strings(xs: &[&str]) -> Vec<String> {
+        xs.iter().map(ToString::to_string).collect()
+    }
+
+    /// An expression, the courses it requires, and its OR-groups' members.
+    type EdgeCase<'a> = (&'a str, &'a [&'a str], &'a [&'a [&'a str]]);
+
+    /// `&` binds tighter than `|`: an OR at the top is one group of alternatives, never a
+    /// required course plus a smaller group.
+    #[test]
+    fn test_parse_to_edges_reads_or_as_the_loosest_operator() {
+        let cases: &[EdgeCase<'_>] = &[
+            // BYU CS470 as its stored structured form reads back.
+            (
+                "CS312 & MATH215 & STAT121 | CS312 & STAT121",
+                &[],
+                &[&["CS312", "MATH215", "STAT121"]],
+            ),
+            ("AA | BB & CC", &[], &[&["AA", "BB", "CC"]]),
+            ("AA & BB | CC", &[], &[&["AA", "BB", "CC"]]),
+            ("AA & BB", &["AA", "BB"], &[]),
+            ("AA & (BB | CC)", &["AA"], &[&["BB", "CC"]]),
+            // Johns Hopkins EN601475: the second group's last option is an AND of ORs.
+            (
+                "(X1 | X2) & (Y1 | Y2 | (Z1 | Z2) & (W1 | W2))",
+                &[],
+                &[&["W1", "W2", "Y1", "Y2", "Z1", "Z2"], &["X1", "X2"]],
+            ),
+        ];
+        for (raw, required, groups) in cases {
+            let want = (
+                strings(required),
+                groups.iter().map(|g| strings(g)).collect::<Vec<_>>(),
+            );
+            assert_eq!(edge_shape(raw), want, "{raw}");
+        }
+        assert!(extract_strict_prerequisites("AA & BB | CC").is_empty());
+    }
+
+    /// Two OR-groups either side of a nested AND keep separate ids. The nested group's
+    /// ids were offset but the counter never moved past them, so `(DD | EE)` reused one and
+    /// two requirements became a single edge.
+    #[test]
+    fn test_parse_to_edges_keeps_groups_after_a_nested_and_apart() {
+        let (required, groups) = edge_shape("XX & (AA & BB | CC) & (DD | EE)");
+        assert_eq!(required, ["XX"]);
+        assert_eq!(
+            groups,
+            [strings(&["AA", "BB", "CC"]), strings(&["DD", "EE"])]
+        );
+        let (_, groups) = edge_shape("(PP & (QQ | RR)) & (SS | TT)");
+        assert_eq!(groups, [strings(&["QQ", "RR"]), strings(&["SS", "TT"])]);
+    }
+
+    /// A prerequisite read back from its structured form — `programs.document`, unified
+    /// JSON — gives the edges the string it came from gave. It did not: the structured form
+    /// reads back without the parentheses precedence implies, and the edges were parsed
+    /// with the precedence reversed.
+    #[test]
+    fn test_parse_to_edges_reads_a_structured_prerequisite_as_its_source() {
+        for raw in [
+            "((CS312 & MATH215 & STAT121) | (CS312 & MATH215 & STAT201) | (CS312 & STAT121))",
+            "(CS312 | (CS312 & MATH213 & MATH215))",
+            "(STAT121 | (STAT121 & CS111) | STAT201)",
+            "((MATH112 & STAT121) | (MATH113 & STAT121) | (MATH112 & STAT201))",
+            "(AS110202 | AS110211) & (EN553211 | EN553311 | ((EN553420 | EN553421) & (EN553430 | EN553431)))",
+            "CS101 & (CS102 | CS103) & (MATH1 | (MATH2 & MATH3))",
+            "AA | BB | CC",
+            "AA & BB & CC",
+        ] {
+            let round_trip = parse_to_ast(raw).unwrap().to_expression_string();
+            assert_eq!(edge_shape(&round_trip), edge_shape(raw), "{raw} read back as {round_trip}");
+        }
+    }
+
+    /// An OR-group records its branches only when one needs more than one course, under the
+    /// group id its edges carry — including a group numbered after a nested AND.
+    #[test]
+    fn test_parse_prerequisites_records_the_branches_of_or_of_and_groups() {
+        let branches = |raw: &str| parse_prerequisites(raw).branches;
+        let group = |pairs: &[(usize, &[&[&str]])]| -> BTreeMap<usize, Vec<Vec<String>>> {
+            pairs
+                .iter()
+                .map(|(g, bs)| (*g, bs.iter().map(|b| strings(b)).collect()))
+                .collect()
+        };
+        // CSU MATH156, as written and as its stored form reads back.
+        for raw in [
+            "(MATH124[B-] & MATH126[B-]) | MATH127[B-]",
+            "MATH124 & MATH126 | MATH127",
+        ] {
+            assert_eq!(
+                branches(raw),
+                group(&[(0, &[&["MATH124", "MATH126"], &["MATH127"]])]),
+                "{raw}"
+            );
+        }
+        // CSU CS445: the first OR-group has a two-course branch, the second does not.
+        let cs445 = "(CS165[C]) & (CS345[C] | (DSCI445[C] & DSCI235[C])) & (DSCI369[C] | MATH229[C] | MATH369[C])";
+        let parsed = parse_prerequisites(cs445);
+        let id = parsed
+            .edges
+            .iter()
+            .find(|(c, _, _)| c == "CS345")
+            .and_then(|(_, _, g)| *g)
+            .unwrap();
+        assert_eq!(
+            parsed.branches,
+            group(&[(id, &[&["CS345"], &["DSCI235", "DSCI445"]])])
+        );
+        // Single-course alternatives only: the edges say everything.
+        for raw in [
+            "AA | BB",
+            "AA & (BB | CC)",
+            "(AA | BB) & (CC | DD)",
+            "AA & BB",
+        ] {
+            assert!(branches(raw).is_empty(), "{raw}");
+        }
+        // After a nested AND, the next group's branches carry its own id.
+        let parsed = parse_prerequisites("XX & (AA | BB) & ((CC & DD) | EE)");
+        let ee = parsed
+            .edges
+            .iter()
+            .find(|(c, _, _)| c == "EE")
+            .and_then(|(_, _, g)| *g)
+            .unwrap();
+        assert_eq!(parsed.branches, group(&[(ee, &[&["CC", "DD"], &["EE"]])]));
     }
 
     #[test]

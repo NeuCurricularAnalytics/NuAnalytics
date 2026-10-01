@@ -392,7 +392,11 @@ fn calc_ready_plans_is_empty_when_no_course_id_matches_the_calculus_list() {
     assert_eq!(stats.all_plans.plans_containing, 30);
     // 4 -> 3 when the OR-group DAG defect was fixed: ICS311 had been carrying every
     // in-plan option of an OR-group as a prerequisite instead of one.
-    assert_eq!(stats.all_plans.earliest_term, Some(3));
+    // 3 -> 4 when OR-of-AND groups were resolved by branch (2026-10-01): ICS311 needs
+    // `ICS211 & (ICS241 | ECE362) & (MATH216 | MATH242 | MATH252A)` or
+    // `MATH301 & MATH372`. Read with `|` binding tighter than `&` and pooled into one
+    // group, it had two prerequisite edges; the branch a plan takes has three.
+    assert_eq!(stats.all_plans.earliest_term, Some(4));
     assert_eq!(
         stats.calc_ready_plans.plans_containing, 0,
         "UHM numbers calculus MATH241/242, which the default calculus_courses list omits"

@@ -581,8 +581,9 @@ fn find_excluded_prereq_paths(node: &CourseNode, graph: &CourseGraph) -> HashSet
 
     // For each OR-group, identify the shorter path and exclude courses from longer paths
     for (group_id, edges) in or_groups {
-        // Skip non-OR-groups (required prereqs)
-        if group_id.is_none() || edges.len() <= 1 {
+        // Skip non-OR-groups (required prereqs), and groups with multi-course branches,
+        // which are compared branch by branch below.
+        if group_id.is_none_or(|g| node.or_branches.contains_key(&g)) || edges.len() <= 1 {
             continue;
         }
 
@@ -608,6 +609,27 @@ fn find_excluded_prereq_paths(node: &CourseNode, graph: &CourseGraph) -> HashSet
                     .filter(|c| !shortest_chain.contains(*c))
                     .cloned(),
             );
+        }
+    }
+
+    // A group with multi-course branches: each branch costs its courses and everything they
+    // need; keep the cheapest and exclude what only the others need.
+    for branches in node.or_branches.values().filter(|b| b.len() > 1) {
+        let costs: Vec<HashSet<String>> = branches
+            .iter()
+            .map(|branch| {
+                let mut cost: HashSet<String> = branch.iter().cloned().collect();
+                for course in branch {
+                    cost.extend(collect_all_prereqs(course, graph, &mut HashSet::new()));
+                }
+                cost
+            })
+            .collect();
+        let Some(cheapest) = costs.iter().min_by_key(|cost| cost.len()) else {
+            continue;
+        };
+        for cost in costs.iter().filter(|cost| *cost != cheapest) {
+            excluded.extend(cost.iter().filter(|c| !cheapest.contains(*c)).cloned());
         }
     }
 
@@ -666,6 +688,11 @@ fn course_requires_excluded(
             continue;
         }
 
+        // Groups with multi-course branches are checked by branch below.
+        if group_id.is_some_and(|g| node.or_branches.contains_key(&g)) {
+            continue;
+        }
+
         // For OR-groups, check if ALL options are problematic
         // (excluded directly, or their prereqs are exclusively excluded)
         let all_problematic = edges.iter().all(|edge| {
@@ -691,7 +718,20 @@ fn course_requires_excluded(
         }
     }
 
-    false
+    // A multi-course group is blocked when every branch needs an excluded course.
+    let problematic = |course: &String| {
+        (exclude_set.contains(course) && !include_set.contains(course.as_str()))
+            || prereq_chain_requires_excluded(
+                course,
+                exclude_set,
+                include_set,
+                graph,
+                &mut HashSet::new(),
+            )
+    };
+    node.or_branches
+        .values()
+        .any(|branches| !branches.is_empty() && branches.iter().all(|b| b.iter().any(problematic)))
 }
 
 /// Recursively check if a course's prerequisite chain requires excluded courses
@@ -730,8 +770,9 @@ fn prereq_chain_requires_excluded(
     let or_groups = group_prereqs_by_or_group(&node.prerequisites);
 
     // Check if any OR-group has all options leading to excluded courses
-    for (_group_id, edges) in or_groups {
-        if edges.is_empty() {
+    for (group_id, edges) in or_groups {
+        // Groups with multi-course branches are checked by branch below.
+        if edges.is_empty() || group_id.is_some_and(|g| node.or_branches.contains_key(&g)) {
             continue;
         }
 
@@ -750,7 +791,15 @@ fn prereq_chain_requires_excluded(
         }
     }
 
-    false
+    // A multi-course group leads to excluded courses when every branch has one that does.
+    node.or_branches.values().any(|branches| {
+        !branches.is_empty()
+            && branches.iter().all(|branch| {
+                branch.iter().any(|course| {
+                    prereq_chain_requires_excluded(course, exclude_set, include_set, graph, visited)
+                })
+            })
+    })
 }
 
 /// Group prerequisite edges by their OR-group
@@ -851,7 +900,8 @@ fn expand_courses_with_prerequisites(
     // `protected_courses` additionally pins user --include courses.
     let original_courses: HashSet<&str> = courses.iter().map(String::as_str).collect();
     let expanded_clone = expanded.clone();
-    let redundant = find_redundant_prerequisites(&expanded_clone, graph, equivalences);
+    let redundant =
+        find_redundant_prerequisites(&expanded_clone, graph, equivalences, protected_courses);
     for course in redundant {
         if !protected_courses.contains(&course) && !original_courses.contains(course.as_str()) {
             expanded.remove(&course);
@@ -875,24 +925,66 @@ fn find_redundant_prerequisites(
     courses: &HashSet<String>,
     graph: &CourseGraph,
     equivalences: &HashMap<String, HashSet<String>>,
+    include_courses: &HashSet<String>,
 ) -> Vec<String> {
-    let usage = prerequisite_usage(courses, graph);
+    let usage = prerequisite_usage(courses, graph, include_courses);
     let mut redundant = redundant_by_equivalence(courses, equivalences, &usage);
-    redundant.extend(redundant_or_options(courses, graph, &usage));
+    redundant.extend(redundant_or_options(
+        courses,
+        graph,
+        &usage,
+        include_courses,
+    ));
     redundant
+}
+
+/// The branch of each multi-course OR-group of `node` that the plan's DAG will draw — the
+/// one `plan_dag::select_or_group_branch` picks — keyed by group, for the groups the plan
+/// completes a branch of.
+fn chosen_branches<'g>(
+    course_key: &str,
+    node: &'g CourseNode,
+    courses: &HashSet<String>,
+    graph: &CourseGraph,
+    include_courses: &HashSet<String>,
+) -> Vec<(usize, &'g [String])> {
+    let plan: HashSet<&str> = courses.iter().map(String::as_str).collect();
+    node.or_branches
+        .iter()
+        .filter_map(|(group, branches)| {
+            crate::core::degree::plan_dag::select_or_group_branch(
+                branches,
+                &plan,
+                include_courses,
+                graph,
+                course_key,
+            )
+            .map(|branch| (*group, branch))
+        })
+        .collect()
 }
 
 /// Which plan courses actually depend on each prerequisite.
 ///
 /// A required prerequisite in the plan is always used. An OR-group's option counts as used
 /// only when it is the group's one option in the plan; with several in the plan, none is
-/// counted here, and [`redundant_or_options`] decides between them.
+/// counted here, and [`redundant_or_options`] decides between them. A multi-course group's
+/// courses count as used when they make up the branch the plan's DAG draws.
 fn prerequisite_usage(
     courses: &HashSet<String>,
     graph: &CourseGraph,
+    include_courses: &HashSet<String>,
 ) -> HashMap<String, Vec<String>> {
     let mut usage: HashMap<String, Vec<String>> = HashMap::new();
     for (course_key, node) in courses.iter().filter_map(|c| Some((c, graph.get(c)?))) {
+        for (_, branch) in chosen_branches(course_key, node, courses, graph, include_courses) {
+            for prereq in branch {
+                usage
+                    .entry(prereq.clone())
+                    .or_default()
+                    .push(course_key.clone());
+            }
+        }
         let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
         for edge in &node.prerequisites {
             if edge.prereq_type == PrerequisiteType::Required {
@@ -902,7 +994,8 @@ fn prerequisite_usage(
                         .or_default()
                         .push(course_key.clone());
                 }
-            } else if let Some(group) = edge.or_group {
+            } else if let Some(group) = edge.or_group.filter(|g| !node.or_branches.contains_key(g))
+            {
                 or_groups.entry(group).or_default().push(&edge.prerequisite);
             }
         }
@@ -941,19 +1034,33 @@ fn redundant_by_equivalence(
 }
 
 /// Options of an OR-group with several options in the plan that nothing depends on,
-/// when another of those options is depended on more.
+/// when another of those options is depended on more. For a multi-course group, the
+/// courses of the other complete branches that nothing depends on.
 fn redundant_or_options(
     courses: &HashSet<String>,
     graph: &CourseGraph,
     usage: &HashMap<String, Vec<String>>,
+    include_courses: &HashSet<String>,
 ) -> Vec<String> {
     let uses = |c: &str| usage.get(c).map_or(0, Vec::len);
     let mut redundant = Vec::new();
-    for node in courses.iter().filter_map(|c| graph.get(c)) {
+    for (course_key, node) in courses.iter().filter_map(|c| Some((c, graph.get(c)?))) {
+        for (group, chosen) in chosen_branches(course_key, node, courses, graph, include_courses) {
+            let others = node.or_branches[&group]
+                .iter()
+                .filter(|b| b.as_slice() != chosen && b.iter().all(|c| courses.contains(c)));
+            for course in others.flatten() {
+                if !chosen.contains(course) && uses(course) == 0 {
+                    redundant.push(course.clone());
+                }
+            }
+        }
         let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
         for edge in &node.prerequisites {
             if let (Some(group), PrerequisiteType::Optional) = (edge.or_group, &edge.prereq_type) {
-                or_groups.entry(group).or_default().push(&edge.prerequisite);
+                if !node.or_branches.contains_key(&group) {
+                    or_groups.entry(group).or_default().push(&edge.prerequisite);
+                }
             }
         }
         for options in or_groups.into_values() {
@@ -1080,6 +1187,91 @@ fn refit_electives(
 
 #[cfg(test)]
 mod tests {
+    /// CSU's MATH156, `(MATH124 & MATH126) | MATH127`, with a course that uses MATH124.
+    const MATH156: &str = r#"degree: {id: t, institution: CSU, program: T, total_credits: 10, gpa_minimum: 2.0}
+requirements:
+  core: {name: Core, type: all, category: major, courses: [MATH156]}
+courses:
+  MATH124: {title: Log, prefix: MATH, number: "124", credits: 1}
+  MATH126: {title: Trig, prefix: MATH, number: "126", credits: 1}
+  MATH127: {title: Precalc, prefix: MATH, number: "127", credits: 4}
+  MATH156: {title: Comp Math I, prefix: MATH, number: "156", credits: 4, prerequisites_raw: "(MATH124 & MATH126) | MATH127"}
+  CS999: {title: Uses MATH124, prefix: CS, number: "999", credits: 3, prerequisites_raw: "MATH124"}
+"#;
+
+    fn math156_graph() -> CourseGraph {
+        let (program, _) = crate::core::degree::parse_degree_auto(MATH156).expect("parses");
+        CourseGraph::from_degree_program(&program).graph
+    }
+
+    fn set(xs: &[&str]) -> HashSet<String> {
+        xs.iter().map(ToString::to_string).collect()
+    }
+
+    /// With both branches in the plan the smaller is drawn, so the other branch's courses
+    /// are redundant — unless something else in the plan needs them.
+    #[test]
+    fn test_redundancy_prunes_the_branch_the_dag_does_not_draw() {
+        let graph = math156_graph();
+        let none = HashMap::new();
+        let mut redundant = find_redundant_prerequisites(
+            &set(&["MATH124", "MATH126", "MATH127", "MATH156"]),
+            &graph,
+            &none,
+            &HashSet::new(),
+        );
+        redundant.sort();
+        assert_eq!(redundant, ["MATH124", "MATH126"]);
+
+        let mut redundant = find_redundant_prerequisites(
+            &set(&["MATH124", "MATH126", "MATH127", "MATH156", "CS999"]),
+            &graph,
+            &none,
+            &HashSet::new(),
+        );
+        redundant.sort();
+        assert_eq!(redundant, ["MATH126"], "CS999 needs MATH124");
+    }
+
+    /// `--include MATH156` keeps the cheaper branch whole: the other branch's courses are
+    /// excluded, and so is CS999, which requires one of them (the existing "pathway" rule)
+    /// — never MATH127's partner in its own branch, as excluding by member did.
+    #[test]
+    fn test_the_exclude_set_keeps_whole_branches() {
+        let graph = math156_graph();
+        let excluded = build_exclude_set(&["MATH156".to_string()], &graph);
+        let mut excluded: Vec<&String> = excluded.iter().collect();
+        excluded.sort();
+        assert_eq!(excluded, ["CS999", "MATH124", "MATH126"]);
+    }
+
+    /// A plan that would have to take an excluded course on every branch requires it.
+    #[test]
+    fn test_a_course_requires_excluded_only_when_every_branch_does() {
+        let graph = math156_graph();
+        let node = graph.get("MATH156").unwrap();
+        let no_includes = HashSet::new();
+        let excluded = |xs: &[&str]| xs.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert!(!course_requires_excluded(
+            node,
+            &excluded(&["MATH124"]),
+            &no_includes,
+            &graph
+        ));
+        assert!(!course_requires_excluded(
+            node,
+            &excluded(&["MATH127"]),
+            &no_includes,
+            &graph
+        ));
+        assert!(course_requires_excluded(
+            node,
+            &excluded(&["MATH124", "MATH127"]),
+            &no_includes,
+            &graph
+        ));
+    }
+
     fn config(max_plans: usize) -> AnalysisConfig<'static> {
         AnalysisConfig {
             max_plans,

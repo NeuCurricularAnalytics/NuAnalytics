@@ -15,9 +15,13 @@ use crate::core::models::DAG;
 
 /// Build the DAG induced by `courses`, keeping only edges between courses in the plan.
 ///
-/// **An OR-group contributes at most one edge** — one when any of its options is in the
-/// plan, none otherwise — chosen by `select_or_group_option`. An `Optional` edge carrying
-/// no group id is dropped: there is nothing to choose between.
+/// **An OR-group contributes the edges of one alternative.** For single-course
+/// alternatives that is at most one edge — one when any option is in the plan, none
+/// otherwise — chosen by `select_or_group_option`. A group with a multi-course alternative
+/// (`(MATH124 & MATH126) | MATH127`) contributes every course of the one branch the plan
+/// completes, chosen by `select_or_group_branch`; drawing one edge into a two-course
+/// branch under-counted it. An `Optional` edge carrying no group id is dropped: there is
+/// nothing to choose between.
 ///
 /// Corequisites contribute nothing: they are taken alongside, not before, so they impose
 /// no ordering. A required prerequisite missing from the plan is matched through
@@ -62,8 +66,15 @@ pub fn build_plan_dag(
         // makes the stored ordering vary between runs.
         let or_groups: BTreeMap<usize, Vec<&str>> =
             node.optional_prerequisite_groups().into_iter().collect();
-        for options in or_groups.values() {
-            if let Some(chosen) =
+        for (group, options) in &or_groups {
+            let branch = node.or_group_branches(*group).and_then(|branches| {
+                select_or_group_branch(branches, &plan, include_courses, graph, course_key)
+            });
+            if let Some(branch) = branch {
+                for prereq in branch {
+                    dag.add_prerequisite(course_key.clone(), prereq);
+                }
+            } else if let Some(chosen) =
                 select_or_group_option(options, &plan, include_courses, graph, course_key)
             {
                 dag.add_prerequisite(course_key.clone(), chosen);
@@ -121,6 +132,43 @@ fn select_or_group_option<'a>(
             )
         })
         .copied()
+}
+
+/// Choose the branch that satisfies an OR-group with a multi-course alternative, for this
+/// plan: one the plan completes — every course of it in the plan — or `None` when it
+/// completes none, and the caller falls back to the single-course rule.
+///
+/// Among complete branches: one holding a course the caller forced into the plan, then the
+/// smallest, then the one the rest of the plan references most, then by name — so a plan
+/// that has both `MATH124 & MATH126` and `MATH127` is credited the one course, and the
+/// answer cannot vary between runs.
+pub(crate) fn select_or_group_branch<'b>(
+    branches: &'b [Vec<String>],
+    plan: &HashSet<&str>,
+    include_courses: &HashSet<String>,
+    graph: &CourseGraph,
+    course_key: &str,
+) -> Option<&'b [String]> {
+    let complete: Vec<&'b Vec<String>> = branches
+        .iter()
+        .filter(|branch| branch.iter().all(|c| plan.contains(c.as_str())))
+        .collect();
+    let pinned: Vec<&'b Vec<String>> = complete
+        .iter()
+        .copied()
+        .filter(|branch| branch.iter().any(|c| include_courses.contains(c)))
+        .collect();
+    let candidates = if pinned.is_empty() { complete } else { pinned };
+    candidates
+        .into_iter()
+        .min_by_key(|branch| {
+            let references: usize = branch
+                .iter()
+                .map(|c| in_plan_references(graph, c, plan, course_key))
+                .sum();
+            (branch.len(), std::cmp::Reverse(references), *branch)
+        })
+        .map(Vec::as_slice)
 }
 
 /// How many courses in the plan, other than `excluding`, list `course` as a prerequisite
@@ -196,6 +244,7 @@ mod tests {
                 })
                 .collect(),
             prerequisite_paths: Vec::new(),
+            or_branches: BTreeMap::new(),
             dependents: Vec::new(),
             credits: 3.0,
             title: String::new(),
@@ -223,6 +272,58 @@ mod tests {
             .get(course)
             .map(|v| v.iter().map(String::as_str).collect())
             .unwrap_or_default()
+    }
+
+    /// CSU's MATH156: `(MATH124 & MATH126) | MATH127`, built as the analysis builds it.
+    fn math156_graph() -> CourseGraph {
+        let yaml = r#"degree: {id: t, institution: CSU, program: T, total_credits: 10, gpa_minimum: 2.0}
+requirements:
+  core: {name: Core, type: all, category: major, courses: [MATH156]}
+courses:
+  MATH124: {title: Log, prefix: MATH, number: "124", credits: 1}
+  MATH126: {title: Trig, prefix: MATH, number: "126", credits: 1}
+  MATH127: {title: Precalc, prefix: MATH, number: "127", credits: 4}
+  MATH156: {title: Comp Math I, prefix: MATH, number: "156", credits: 4, prerequisites_raw: "(MATH124 & MATH126) | MATH127"}
+  CS999: {title: Uses MATH124, prefix: CS, number: "999", credits: 3, prerequisites_raw: "MATH124"}
+"#;
+        let (program, _) = crate::core::degree::parse_degree_auto(yaml).expect("parses");
+        CourseGraph::from_degree_program(&program).graph
+    }
+
+    fn math156_deps(courses: &[&str], include: &[&str]) -> Vec<String> {
+        let include: HashSet<String> = include.iter().map(ToString::to_string).collect();
+        let dag = build_plan_dag(&plan(courses), &math156_graph(), &HashMap::new(), &include);
+        deps(&dag, "MATH156")
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// A plan that takes the two-course branch gets an edge from each of its courses. One
+    /// edge from one of them, as a single-member OR-group gives, under-counted it.
+    #[test]
+    fn a_plan_completing_a_multi_course_branch_gets_every_course_of_it() {
+        assert_eq!(
+            math156_deps(&["MATH124", "MATH126", "MATH156"], &[]),
+            ["MATH124", "MATH126"]
+        );
+        assert_eq!(math156_deps(&["MATH127", "MATH156"], &[]), ["MATH127"]);
+    }
+
+    /// With both branches complete, the smaller is drawn — unless a forced course pins the
+    /// other.
+    #[test]
+    fn the_smallest_complete_branch_is_drawn_unless_one_is_pinned() {
+        let all = ["MATH124", "MATH126", "MATH127", "MATH156"];
+        assert_eq!(math156_deps(&all, &[]), ["MATH127"]);
+        assert_eq!(math156_deps(&all, &["MATH124"]), ["MATH124", "MATH126"]);
+    }
+
+    /// A plan completing no branch falls back to the single-course rule: one edge from the
+    /// member it has.
+    #[test]
+    fn a_plan_completing_no_branch_falls_back_to_one_member() {
+        assert_eq!(math156_deps(&["MATH126", "MATH156"], &[]), ["MATH126"]);
     }
 
     #[test]
