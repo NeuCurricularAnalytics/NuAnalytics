@@ -1,133 +1,96 @@
 # Degree Command
 
-The `degree` command validates and analyzes degree program definitions from YAML files. It can validate structure, analyze prerequisite graphs, and generate comprehensive plan analysis reports with curriculum metrics.
-
-## Overview
-
-The `degree` command provides several modes of operation:
-
-- **Analysis** (default): Generate all possible degree plans, compute curriculum metrics, and produce HTML reports with statistics
-- **Validation**: Check course data, prerequisite structures, and requirement definitions
-- **Audit**: Run validation plus identify hidden requirements and prerequisite chain issues
-- **Graph Display**: Print the course prerequisite graph structure
-
-## Quick Start
-
-The `degree` command is a subcommand dispatcher. Each action is its own
-subcommand:
+`nuanalytics degree` works with degree programs: the requirements, the courses and their
+prerequisites, written in YAML or the unified JSON format. It validates and audits them,
+analyzes every plan a student could take through them, and converts and trims them.
 
 ```bash
-# Run full degree analysis
-nuanalytics degree analyze samples/degrees/csu-cs-bscs-general.yaml
-
-# Validate a degree program
-nuanalytics degree validate samples/degrees/csu-cs-bscs-general.yaml
-
-# Run an audit report
-nuanalytics degree audit samples/degrees/csu-cs-bscs-general.yaml
-
-# Print the prerequisite graph
-nuanalytics degree print-graph samples/degrees/csu-cs-bscs-general.yaml
-
-# Trim alternatives down to a single shared shortest path
-nuanalytics degree trim samples/degrees/csu-cs-bscs-general.yaml
-
-# Convert ai-landscape program JSON to the unified degree JSON
-nuanalytics degree convert program.json -o converted/
-
-# Emit the unified-degree JSON Schema
+nuanalytics degree validate    degree.yaml     # is it well-formed?
+nuanalytics degree audit       degree.yaml     # validation plus curriculum warnings
+nuanalytics degree analyze     degree.yaml     # plans, metrics, report
+nuanalytics degree print-graph degree.yaml     # the prerequisite graph as text
+nuanalytics degree trim        degree.yaml     # one walkable path per course
+nuanalytics degree convert     program.json    # scraped program JSON → unified JSON
 nuanalytics degree schema -o degree.schema.json
 ```
 
-> **Input formats:** every subcommand accepts both YAML and the unified
-> JSON degree format, and auto-detects which on load (content starting
-> with `{` or `[` is parsed as JSON, otherwise YAML). Raw ai-landscape
-> program JSON is detected and converted automatically. See
-> [Input File Format](#input-file-format).
+Every subcommand reads YAML or unified JSON and detects which on load (content starting
+with `{` or `[` is JSON). Raw ai-landscape program JSON is detected and converted too.
 
-> **Migration note:** prior versions exposed these as flags
-> (`degree --validate`, `degree --analyze`, etc.). Every flag has moved
-> to a subcommand of the same name. There is no implicit default action;
-> pick one explicitly.
-
-## Commands and Options
-
-### Full Analysis (`analyze`)
+## Analyze (`analyze`)
 
 ```bash
 nuanalytics degree analyze path/to/degree.yaml
 ```
 
-This generates:
-- All possible degree plans (respecting course choices and requirements)
-- Curriculum metrics (complexity, blocking factor, delay factor, centrality)
-- HTML report with box plots and statistics
-- CSV exports of selected plans (shortest, longest, random samples)
+`analyze` enumerates the degree's plans — each a set of courses that satisfies every
+requirement — and for each plan:
 
-**Analysis Options:**
+1. adds the prerequisites the plan's courses need and do not already have (the shortest
+   chain, preferring courses already in the plan);
+2. schedules the plan into terms;
+3. computes each course's delay, blocking, complexity, centrality and chain length.
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--max-plans <N>` | Maximum plans to generate (safety cap) | 1000 |
-| `--sample-plans <N>` | Number of random plans to export | 5 |
-| `--calc-strategy <S>` | Aggregation strategy: `median` or `mean` | median |
-| `--sampling-strategy <S>` | Plan enumeration: `sequential`, `shuffled`, or `stratified` | shuffled |
-| `--full-run` | Generate all combinations without deduplication | false |
-| `--no-csv` | Skip CSV plan export | false |
-| `--no-report` | Skip HTML report generation | false |
-| `--report-dir <DIR>` | Override reports output directory | from config |
-| `--metrics-dir <DIR>` | Override metrics output directory | from config |
-| `--include <COURSES>` | Courses to always include in all plans (comma-separated) | none |
-| `-j, --jobs <N>` | Files to analyze concurrently when multiple are given, each in its own process (see [Parallel analysis](#parallel-analysis)) | 8 |
-| `--school <NAME>` | Treat all inputs as programs of one school and also emit a combined `<school>_school_report.json` rollup | none |
-| `--from-db <NAME>` | Analyze a stored program fetched from the database instead of a file (see [Analyze a stored program](#analyze-a-stored-program---from-db)). Mutually exclusive with positional `FILES` | none |
+It then reports statistics across the plans, picks out the shortest and longest plans, a
+"calc-ready" plan where one applies, and random samples, and writes an HTML report and
+metrics files.
 
-`FILES` is optional when `--from-db` is given; otherwise at least one file is required.
+**Which plans.** A degree with no more distinct plans than `--max-plans` is enumerated in
+full. One with more is sampled: under the default `shuffled` strategy, a random sample of
+`--max-plans` plans. The sample is seeded from the degree itself, so the same degree and
+settings give the same plans and figures every run. A plan with the same set of courses
+as one already analyzed is skipped unless `--full-run` is given.
 
-**Examples:**
+**How prerequisites are read.** In `A & B | C`, `&` binds tighter, so it means
+"A and B, or C". When an OR offers a group of courses — `(MATH124 & MATH126) | MATH127` —
+a plan satisfies it with a whole branch: the plan's graph draws every course of the
+branch the plan completes, and prerequisite expansion adds the branch needing the fewest
+new courses, never one course of a group. An equivalence group in a requirement
+(`{MATH156, MATH160}`) lets one member stand in for another as a prerequisite, but a
+course never stands in for its own prerequisite: where a requirement offers
+`{CS2800, CS4820}` and CS4820 requires CS2800, a plan taking CS4820 still gets CS2800.
 
-```bash
-# Analyze with more samples
-nuanalytics degree analyze --sample-plans 20 degree.yaml
+| Option | Meaning | Default |
+|---|---|---|
+| `--max-plans <N>` | The most plans to analyze; above it, a seeded sample | 1000 (config) |
+| `--sample-plans <N>` | Random plans to select and export in full | 5 (config) |
+| `--calc-strategy <S>` | Summarize across plans by `median` or `mean` | `median` |
+| `--sampling-strategy <S>` | `shuffled`, or `sequential` (favours the options listed first). `stratified` is accepted but behaves as `shuffled` | `shuffled` |
+| `--full-run` | Analyze plans with identical course sets too | off |
+| `--include <COURSES>` | Courses every plan must contain (comma-separated) | none |
+| `--target-course <COURSE>` | Report where one course lands across the plans, as JSON on stdout | none |
+| `--metrics-out <PATH>` | With `--target-course`, also write the report JSON here | none |
+| `--no-report` | Skip the HTML report | off |
+| `--no-csv` | Skip the metrics files: plan CSVs, summary, index row **and** the report JSON | off |
+| `--report-dir <DIR>`, `--metrics-dir <DIR>` | Output directories | from config |
+| `-j, --jobs <N>` | Degrees analyzed at once when several files are given | 8 |
+| `--school <NAME>` | Also write a combined `<school>_school_report.json` across the files | none |
+| `--from-db <NAME>` | Analyze a stored program instead of a file | none |
 
-# Use mean instead of median for aggregation
-nuanalytics degree analyze --calc-strategy mean degree.yaml
+`FILES` may be omitted only with `--from-db`.
 
-# Generate up to 5000 plans
-nuanalytics degree analyze --max-plans 5000 degree.yaml
+### Include courses
 
-# Skip report generation, only export CSVs
-nuanalytics degree analyze --no-report degree.yaml
-
-# Use stratified sampling for better coverage
-nuanalytics degree analyze --sampling-strategy stratified degree.yaml
-
-# Always include specific courses in all plans
-nuanalytics degree analyze --include "CS3500,MATH2331" degree.yaml
-```
-
-### Include Courses
-
-The `--include` option allows you to specify courses that must be included in every generated plan. This is useful when:
-
-- A student has already taken certain courses and you want to analyze plans including those courses
-- You want to see how including a specific elective affects the shortest path
-- You want to reduce the number of plan combinations by locking in certain choices
-
-When an included course satisfies a requirement (e.g., it's one option in a picklist), that requirement is locked to include that course, and other options are not considered. This reduces the total number of possible plans.
+`--include` pins courses into every plan, including the shortest. It answers "what if a
+student has already taken these", or narrows the plan space to one choice. A requirement
+that an included course satisfies is locked to it:
 
 ```bash
-# Example: Include two specific courses
-nuanalytics degree analyze --include "CS3500,STAT301" samples/degrees/csu-cs-bscs-general.yaml
-
-# The output will show:
+nuanalytics -v degree analyze --include "CS370,STAT301" samples/degrees/csu-cs-bscs-general.yaml
 # Plan Generation:
-#   Included courses: CS3500, STAT301
-#   Estimated total plans: 174579816600  (reduced from ~350 billion)
-#   Variable requirements: 6  (reduced from 7)
+#   Included courses: CS370, STAT301
+#   Estimated total plans: 1400            (28,154,110,320 without them)
+#   Variable requirements: 5               (7 without them)
 ```
 
-`degree trim` reuses the same flag — see the **Trim** section below for trim-specific semantics.
+Prerequisite expansion also avoids alternatives to an included course, so the plan does
+not take a second course for a slot the included one already fills. `degree trim` takes
+`--include` too, with its own meaning — see [Trim](#trim-trim).
+
+### Target course
+
+`--target-course CSE475` reports which term the course lands in across the analyzed
+plans, as JSON on stdout, instead of writing reports. It always runs in one process.
 
 ### Parallel Analysis
 
@@ -162,7 +125,9 @@ in-process pool deliberately imposes no ulimit or timeout.
 [Database Setup](database/setup.md)) instead of a local file. The stored
 program's lossless `document` is parsed back into a degree and analyzed with
 exactly the same options as the file-based path. This is single-program only —
-no worker pool, so `-j/--jobs` doesn't apply.
+no worker pool, so `-j/--jobs` doesn't apply. Asking `degree analyze` for a stored program
+always enumerates it afresh; the MCP tools instead read the program's stored run unless
+passed `fresh=true` (see [docs/mcp.md](mcp.md#stored-or-fresh)).
 
 `<NAME>` is resolved through a ladder; the first tier that matches wins:
 
@@ -191,49 +156,120 @@ On a single match the loaded-program banner is printed before analysis:
 `--from-db` requires a configured, logged-in database session
 (`nuanalytics db login`). It is mutually exclusive with positional `FILES`.
 
-### Validation (`validate`)
+### Output
+
+The default console output is a short summary:
+
+```
+Degree Analysis Complete
+========================
+Degree: BS Bachelor of Science in Computer Science - Computer Science Concentration
+Plans analyzed: 200
+
+Degree Statistics (across all plans):
+  Complexity: median 219.0, range 168.0-441.0
+  Longest Delay: median 6.0, range 5.0-10.0
+```
+
+With `-v` it also shows loading, cycle breaking, plan generation, the selected plans and
+a check of the shortest plan:
+
+```
+✓ Loaded degree: BS Bachelor of Science in Computer Science - Computer Science Concentration
+  Courses: 145
+  Requirements: 21
+⚠ Detected 1 circular prerequisite(s), breaking cycles...
+  Removed edge: CS163 → CS152
+
+Plan Generation:
+  Estimated total plans: 28154110320
+  Variable requirements: 7
+  ⚠ Will cap at 200 plans (use --max-plans to adjust)
+
+Selected Plans:
+  Shortest: 8 terms
+  Longest: 10 terms
+  Calc-Ready: N/A
+  Random Samples: 5
+```
+
+Files written, for a degree whose id is `csu-cs-bscs-general`:
+
+| Where | File |
+|---|---|
+| metrics directory | `csu-cs-bscs-general_report.json` — the full analysis: degree, statistics, selected plans |
+| | `csu-cs-bscs-general_summary.jsonl` — one summary line |
+| | `index.csv` — one row per degree, for a batch |
+| | `plans/csu-cs-bscs-general/shortest.csv`, `longest.csv`, `random-sample-N.csv` |
+| reports directory | `csu-cs-bscs-general-analysis.html` |
+
+The HTML report has the degree's statistics with box plots for each metric, and each
+selected plan's term-by-term schedule and curriculum graph.
+
+## Validate (`validate`)
 
 ```bash
 nuanalytics degree validate path/to/degree.yaml
 ```
 
-Validates:
-- YAML syntax and structure
-- Course reference validity (courses mentioned in prerequisites exist)
-- Circular prerequisite detection
-- Requirement structure validation
-- Cross-listing bidirectionality
+Checks that the file parses, that every course a requirement or prerequisite names
+exists, that requirements are well-formed for their type, that prerequisites form no
+cycle, and that cross-listings are two-way. Errors make it fail; warnings — unreferenced
+courses, courses required only through a prerequisite chain, electives whose
+prerequisite is itself only optional, credit totals that cannot add up — do not:
+
+```
+✓ Degree program is valid
+
+Warnings (246):
+
+  Unreferenced Courses:
+    - Course 'CS155' is defined but never referenced in requirements
+
+  Hidden Requirements (Implicitly Required):
+    - Course 'MATH125' is implicitly required: MATH160 -> MATH126 -> MATH125
+```
 
 A pattern that matches no listed course is an error. For a pool the degree does not
 enumerate — a gen-ed `select` over `"HUM:100+"` or `"*:100+"` — pass
-`--allow-unmatched-patterns` to report it as a warning instead:
+`--allow-unmatched-patterns` to report it as a warning instead.
 
-```bash
-nuanalytics degree validate --allow-unmatched-patterns path/to/degree.yaml
-```
+[docs/mcp.md](mcp.md#validation-reference) lists every error and warning type.
 
-### Audit (`audit`)
+## Audit (`audit`)
 
 ```bash
 nuanalytics degree audit path/to/degree.yaml
 ```
 
-Includes validation plus:
-- Identification of upper-level courses without prerequisites
-- Analysis of prerequisite chain depth
-- Hidden requirements detection (courses required by prerequisites but not in requirements)
-- Subject-area filtering for degree-relevant courses
+Validation, plus two curriculum checks: upper-level courses that declare no
+prerequisites, and major courses whose prerequisite chain is at least
+`prerequisite_chain_threshold` long (default 4; set it with
+`nuanalytics config set prerequisite_chain_threshold 5`). The report ends with a summary:
 
-### Print Graph (`print-graph`)
+```
+Audit Summary
+-------------
+  ⚠ Validation warnings: 246
+  ⚠ Upper-level courses without prerequisites: 9
+  ⚠ Courses with deep chains (≥4): 26
+```
+
+## Print the graph (`print-graph`)
 
 ```bash
 nuanalytics degree print-graph path/to/degree.yaml
 ```
 
-Displays the prerequisite graph showing:
-- All courses in the degree
-- Prerequisite relationships (AND/OR)
-- Expanded prerequisite options
+Prints any prerequisite cycles, the entry and terminal course counts, and each course's
+prerequisites (`co:` marks corequisites):
+
+```
+Prerequisite Map (course → prerequisites):
+------------------------------------------
+  BZ120 → (none)
+  BZ350 → BZ110 | BZ120 | LIFE102 + co: STAT301, STAT307, STAT315
+```
 
 ### Trim (`trim`)
 
@@ -361,268 +397,78 @@ nuanalytics degree convert program.json --pretty -o program.unified.json
 
 ### Schema (`schema`)
 
-Print the JSON Schema for the unified degree format — useful for validating
-unified JSON files in other tools or pipelines. This is the same
-`degree.schema.json` the MCP server serves via `get_degree_json_schema`.
+Prints the JSON Schema of the unified degree format, for validating unified JSON in other
+tools — the same schema the MCP server returns from
+`get_reference(topic="degree-json-schema")`.
 
 ```bash
-# Print to stdout
-nuanalytics degree schema
-
-# Write to a file
+nuanalytics degree schema                       # to stdout
 nuanalytics degree schema -o degree.schema.json
 ```
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-o, --out <PATH>` | Write the schema to this file instead of stdout | stdout |
+## The degree format
 
-## Analysis Output
-
-### Console Output
-
-```
-Starting degree analysis...
-Loading degree program from: samples/degrees/csu-cs-bscs-general.yaml
-✓ Loaded degree: BS Bachelor of Science in Computer Science
-  Courses: 145
-  Requirements: 15
-
-Plan Generation:
-  Estimated total plans: 72576
-  Variable requirements: 4
-  ⚠ Will cap at 1000 plans (use --max-plans to adjust)
-
-Processing plans...
-✓ Processed 1000 plans
-
-Selected Plans:
-  Shortest: 8 terms
-  Longest: 10 terms
-  Calc-Ready: 6 terms
-  Random Samples: 5
-
-Plan Validation (Shortest Path):
-  Courses: 38
-  Credits: 120.0
-  Placeholders: 12
-  ⚠ Warnings: 8
-
-✓ Plan is valid
-
-✓ Analysis complete. Reports saved to: .debug/reports/
-```
-
-### Generated Files
-
-The analysis generates several output files:
-
-**Reports Directory** (default: `.debug/reports/`):
-- `degree_name.html` - Interactive HTML report with box plots and statistics
-- `index.csv` - Summary of all analyzed plans
-
-**Metrics Directory** (default: `.debug/metrics/`):
-- `plans/degree_name/shortest.csv` - Shortest path plan with metrics
-- `plans/degree_name/longest.csv` - Longest path plan with metrics
-- `plans/degree_name/calc_ready.csv` - Calc-ready plan (if applicable)
-- `plans/degree_name/random_N.csv` - Random sample plans
-- `summary.jsonl` - JSON Lines file with summary statistics
-
-### HTML Report Contents
-
-The HTML report includes:
-- Degree overview (name, credits, course count)
-- Plan statistics (shortest/longest/median term counts)
-- Box plots for curriculum metrics:
-  - Complexity scores
-  - Blocking factors
-  - Delay factors
-  - Centrality measures
-- Course-level breakdowns by category
-- Validation warnings and suggestions
-
-## Configuration
-
-Analysis behavior can be configured via the config file or command-line options:
-
-```bash
-# View current settings
-nuanalytics config get
-
-# Set default max plans
-nuanalytics config set degree_analysis.max_plans 5000
-
-# Set default sampling strategy
-nuanalytics config set degree_analysis.sampling_strategy stratified
-
-# Set default sample count
-nuanalytics config set degree_analysis.sample_plan_count 10
-
-# Set output directories
-nuanalytics config set reports_dir "./reports"
-nuanalytics config set metrics_dir "./metrics"
-```
-
-**Configuration Options:**
-
-| Key | Description | Default |
-|-----|-------------|---------|
-| `degree_analysis.max_plans` | Maximum plans to generate | 1000 |
-| `degree_analysis.sample_plan_count` | Random plans to export | 5 |
-| `degree_analysis.sampling_strategy` | Enumeration strategy | shuffled |
-| `degree_analysis.ignore_duplicates` | Skip duplicate plan combinations | true |
-| `reports_dir` | HTML reports output directory | .debug/reports |
-| `metrics_dir` | CSV/metrics output directory | .debug/metrics |
-
-## Input File Format
-
-Degree programs are defined in YAML files with three main sections:
-
-> **Unified JSON.** The same three-section model can also be expressed as
-> *unified JSON* — the degree model serialized directly to JSON, with
-> prerequisites written as a symmetric tagged structure
-> (`{"and"|"or": [...]}`, a bare string being a single prerequisite) and an
-> optional `tags` array on degrees, requirements, and courses. Every
-> subcommand auto-detects YAML vs. JSON on load, and `degree schema` emits
-> the JSON Schema for the format. The sections below describe the YAML form;
-> the JSON form mirrors it field-for-field.
-
-### Degree Metadata
+The full reference is `src/assets/Degree-schema.yaml`, which the MCP server serves as
+`get_reference(topic="degree-yaml")`; the files in [samples/degrees/](../samples/degrees/)
+are complete real examples. In outline:
 
 ```yaml
 degree:
-  name: "Bachelor of Science in Computer Science"
-  abbreviation: "BS CS"
-  institution: "University Name"
-  department: "Khoury College of Computer Sciences"
-  credits_required: 128
+  id: example-bs-cs-2024
+  institution: Example University
+  program: B.S. Computer Science
   catalog_year: "2024-2025"
-```
+  total_credits: 120
+  gpa_minimum: 2.0
+  major_subjects: [CS, MATH]          # what `trim` protects, and what counts as major
 
-### Course Definitions
-
-```yaml
-courses:
-  CS101:
-    name: "Introduction to Computer Science"
-    credits: 4
-    prerequisites_raw: ""
-
-  CS220:
-    name: "Data Structures"
-    credits: 4
-    prerequisites_raw: "CS101[C]"
-
-  CS320:
-    name: "Algorithms"
-    credits: 4
-    prerequisites_raw: "(CS220[C] & CS165[C]) & (MATH155[C] | MATH156[C])"
-```
-
-**Course Fields:**
-
-- `name` - Full course name
-- `credits` - Number of credit hours
-- `prerequisites_raw` - Prerequisite expression (see syntax below)
-- `corequisites_raw` (optional) - Corequisite expression
-- `strict_corequisites_raw` (optional) - Must be taken in same term
-
-### Prerequisite Expression Syntax
-
-Prerequisites use a logical expression syntax:
-
-- `&` - AND operator (all courses required)
-- `|` - OR operator (choose one)
-- `()` - Grouping for precedence
-- `[C]` - Grade requirement suffix (e.g., "C" grade or better)
-
-**Examples:**
-
-```yaml
-# Single prerequisite
-prerequisites_raw: "CS101[C]"
-
-# Multiple prerequisites (AND)
-prerequisites_raw: "CS101[C] & MATH156[C]"
-
-# Alternative prerequisites (OR)
-prerequisites_raw: "MATH124[C] | MATH127[C]"
-
-# Complex expression
-prerequisites_raw: "(CS220[C] & CS165[C]) & (MATH155[C] | MATH156[C] | MATH160[C])"
-```
-
-The expression `(CS220 & CS165) & (MATH155 | MATH156 | MATH160)` means:
-- BOTH CS220 AND CS165 are required
-- AND one of MATH155, MATH156, or MATH160
-
-### Requirements Section
-
-Requirements define what courses students must complete. They support categories for proper gen-ed tracking.
-
-```yaml
 requirements:
-  # Major core courses (enumerable in plan generation)
-  core_cs:
-    name: "Computer Science Core"
-    type: all
+  intro:
+    name: Introductory CS
+    type: all                          # every listed course
     category: major
-    courses:
-      - CS101
-      - CS220
-      - CS320
-
-  # Supporting courses (math, science requirements)
-  math_foundation:
-    name: "Mathematics Foundation"
-    type: all
-    category: supporting
-    courses:
-      - "{MATH156, MATH160}"  # Choose one calculus
-      - MATH200
-
-  # Gen-ed requirements (may be satisfied by major courses)
-  gen_ed_quantitative:
-    name: "Quantitative Reasoning (FQ)"
-    type: select
-    category: gen_ed
-    from:
-      courses: [MATH156, MATH160, CS101]
-    count: 1
-
-  # Electives with credit-based selection
+    courses: [CS1100, CS2100, "{MATH1341, MATH1241}"]
   cs_electives:
-    name: "CS Electives"
-    type: select
-    category: elective
+    name: Upper-division CS electives
+    type: select                       # `count` courses, or `credits`, from a pool
+    category: major
+    count: 3
     from:
-      pattern: "CS4*"
-    credits: 12
+      pattern: "CS:3000+"
+      exclude: [CS5000]
+
+courses:
+  CS2100:
+    title: Data Structures
+    prefix: CS
+    number: "2100"
+    credits: 4
+    prerequisites_raw: "CS1100[C] & (MATH1341 | MATH1241)"
 ```
 
-**Requirement Categories:**
+**Requirement types:** `all` (every course), `select` (`count` courses or `credits` from a
+`from` pool of listed `courses`, a `pattern`, several `include` patterns, minus
+`exclude`), and `one_of` (exactly one of several `options`, each with its own
+requirements). **Categories:** `major`, `supporting`, `gen_ed`, `elective`.
 
-| Category | Description | Gen-Ed Tracking |
-|----------|-------------|-----------------|
-| `major` | Core major courses | Courses may satisfy gen-ed |
-| `supporting` | Math, science, supporting courses | Courses may satisfy gen-ed |
-| `gen_ed` | General education requirements | Reduced by major/supporting |
-| `elective` | Free or restricted electives | Added after gen-ed |
+**Inside a course list:**
 
-**Requirement Types:**
+| Written | Means |
+|---|---|
+| `CS101` | that course |
+| `[CHEM111, CHEM112]` | a bundle — all of them, together |
+| `{MATH156, MATH160}` | equivalents — any one |
+| `{[CHEM111, CHEM112], CHEM107}` | a choice of groups — the bundle, or CHEM107. Supported in `all` lists, and expanded on load into the `one_of` it means, so the file re-serializes in that form |
+| `CS:300+`, `MATH:300-499`, `*:100+` | a pattern, in a `select` pool |
 
-| Type | Description |
-|------|-------------|
-| `all` | All listed courses required |
-| `select` | Choose courses by `count` or `credits` |
-| `one_of` | Choose one option from `options` list |
+**Prerequisite expressions** (`prerequisites_raw`) use `&` (and), `|` (or), parentheses,
+and a `[GRADE]` suffix for a minimum grade (`ICS111[B]`). `&` binds tighter than `|`. In
+unified JSON the same expression is a tree: `{"and": [...]}` / `{"or": [...]}`, a bare
+string being one course.
 
-**Course Syntax in Requirements:**
-
-- `CS101` - Single course
-- `[CS101, CS102, CS103]` - Bundle (all required together)
-- `{CS101, CS102}` - Equivalents (choose one)
-- `CS4*` - Pattern matching (all 400-level CS courses)
+**Course fields** beyond the four above include `corequisites`, `strict_corequisites`
+(same term), `cross_listed_as`, `typically_offered`, `gen_ed_attributes` and
+`grade_minimum`.
 
 ### Free Electives That Fill to the Total (`fills_to_total`)
 
@@ -696,349 +542,30 @@ The credit marker is read *after* the number, never by searching for the last `S
 prefixes end in one (`NS` for natural sciences, `PSS`, `GES`), and `NS04` is a 3-credit
 placeholder numbered 4, not "`S`, then 4 credits".
 
-Before 2026-09-28 there was no 1-credit form, so a remainder of one was written as the
-2-credit `S`. A block stating 10 credits counted as 11, and 3,116 of the corpus's 13,872
-curated plans landed one credit over their total. The encoding now lives in one place,
-`core::degree::placeholder`; it had previously been re-implemented seven times, and the MCP
-copy had drifted to different names (`ELEC_01`) and a different remainder rule.
-
-### Gen-Ed Attributes
-
-Courses can have gen-ed attributes that satisfy university requirements:
-
-```yaml
-courses:
-  CS1800:
-    name: "Discrete Structures"
-    credits: 4
-    gen_ed_attributes: ["FQ", "ND"]  # Formal/Quant, Natural/Designed
-
-  MATH241:
-    name: "Calculus I"
-    credits: 4
-    gen_ed_attributes: ["FQ"]
-```
-
-When major courses have gen-ed attributes, they automatically satisfy corresponding gen-ed requirements, reducing duplicate course counting.
-
-### Example Degree File
-
-```yaml
-degree:
-  name: "Bachelor of Science in Computer Science"
-  abbreviation: "BS CS"
-  institution: "Northeastern University"
-  credits_required: 128
-  catalog_year: "2024-2025"
-
-courses:
-  CS101:
-    name: "Fundamentals of Computer Science"
-    credits: 4
-    prerequisites_raw: ""
-
-  MATH156:
-    name: "Calculus for Scientists/Engineers I"
-    credits: 4
-    prerequisites_raw: ""
-
-  CS220:
-    name: "Discrete Structures"
-    credits: 4
-    prerequisites_raw: "CS101[C]"
-
-  CS320:
-    name: "Introduction to Algorithms"
-    credits: 4
-    prerequisites_raw: "CS220[C] & MATH156[C]"
-
-requirements:
-  core:
-    name: "CS Core"
-    required_courses:
-      - CS101
-      - CS220
-      - CS320
-    min_credits: 12
-```
-
-## Validation Output
-
-Basic validation displays any errors or warnings:
-
-```
-=== Validation Report ===
-
-✓ No circular dependencies detected
-✓ All course references are valid
-✓ All requirements reference existing courses
-
-Validation: PASSED
-```
-
-If issues are found:
-
-```
-=== Validation Report ===
-
-✗ Error: Circular dependency detected: CS101 → CS220 → CS101
-✗ Warning: Course CS999 referenced in requirements does not exist
-✗ Warning: Course CS320 has prerequisite CS999 which doesn't exist
-
-Validation: FAILED (2 errors, 1 warning)
-```
-
-## Audit Output
-
-The audit report provides detailed analysis:
-
-```
-=== Degree Audit Report ===
-
-Degree: Bachelor of Science in Computer Science
-Institution: Northeastern University
-Catalog Year: 2024-2025
-Total Courses: 45
-Total Credits Required: 128
-
-=== Validation Results ===
-✓ No circular dependencies detected
-✓ All course references valid
-
-=== Upper-Level Courses Without Prerequisites ===
-
-The following courses are 300-level or above but have no prerequisites:
-  • CS350 - Introduction to Databases
-  • CS425 - Software Engineering
-  • MATH350 - Abstract Algebra
-
-=== Courses with Deep Prerequisite Chains ===
-
-Courses requiring multiple prerequisite chains (threshold: 3+):
-
-  CS425 - Software Engineering (3 chains)
-    Chain 1: CS220 → CS101
-    Chain 2: CS320 → CS220 → CS101 & CS320 → MATH156
-    Chain 3: CS165 → CS162 → CS150B
-
-  CS460 - Database Systems (2 chains)
-    Chain 1: CS320 → CS220 → CS101
-    Chain 2: CS320 → MATH156
-
-=== Summary ===
-  Total courses analyzed: 45
-  Courses in requirements: 38
-  Upper-level without prereqs: 3
-  Courses with complex chains: 2
-```
-
-### Audit Configuration
-
-The audit behavior can be configured:
-
-```bash
-# Set the prerequisite chain threshold (default: 3)
-nuanalytics config set prerequisite_chain_threshold 4
-
-# View current threshold
-nuanalytics config get prerequisite_chain_threshold
-```
-
-## Graph Output
-
-The `--print-graph` option displays prerequisite relationships:
-
-```
-=== Course Prerequisite Graph ===
-
-CS101 → (no prerequisites)
-
-CS220 → CS101
-
-CS320 → CS220 & (MATH155 | MATH156 | MATH160)
-
-CS425 → CS320 & CS345 & STAT302A
-  Expanded paths:
-    - CS320 → CS220 → CS101
-    - CS320 → (MATH155 | MATH156 | MATH160)
-    - CS345 → CS220 → CS101
-    - STAT302A → MATH156
-
-MATH156 → MATH127 | (MATH124 & MATH126)
-  Expanded paths:
-    Option 1: MATH127
-    Option 2: MATH124 & MATH126
-```
-
-## Command Examples
-
-### Basic Validation
-
-```bash
-# Validate a degree file
-nuanalytics degree validate degrees/cs_2024.yaml
-
-# Validate with verbose output
-nuanalytics --verbose degree validate degrees/cs_2024.yaml
-```
-
-### Comprehensive Analysis
-
-```bash
-# Full audit report
-nuanalytics degree audit degrees/cs_2024.yaml
-
-# Audit with custom threshold for prerequisite chains
-nuanalytics config set prerequisite_chain_threshold 5
-nuanalytics degree audit degrees/cs_2024.yaml
-```
-
-### Graph Visualization
-
-```bash
-# View prerequisite structure
-nuanalytics degree print-graph degrees/cs_2024.yaml
-```
-
-### Batch Analysis
-
-```bash
-# Validate multiple degree files
-nuanalytics degree validate degrees/*.yaml
-
-# Audit all degree files in directory
-for file in degrees/*.yaml; do
-  echo "Auditing $file"
-  nuanalytics degree audit "$file"
-done
-```
-
-### With Logging
-
-```bash
-# Enable debug logging
-nuanalytics --debug degree audit degrees/cs_2024.yaml
-
-# Log to file
-nuanalytics --log-file degree_audit.log degree audit degrees/cs_2024.yaml
-```
-
-## Workflow: Creating a New Degree Program
-
-1. **Create YAML file** with degree metadata, courses, and requirements
-
-2. **Validate structure**:
-   ```bash
-   nuanalytics degree validate my_degree.yaml
-   ```
-
-3. **Review validation results** and fix any errors
-
-4. **Run comprehensive audit**:
-   ```bash
-   nuanalytics degree audit my_degree.yaml
-   ```
-
-5. **Analyze audit findings**:
-   - Review upper-level courses without prerequisites (might need to add prereqs)
-   - Check courses with deep prerequisite chains (might indicate curriculum bottlenecks)
-   - Verify subject area filtering is capturing relevant courses
-
-6. **Visualize structure**:
-   ```bash
-   nuanalytics degree print-graph my_degree.yaml
-   ```
-
-7. **Iterate**: Refine the degree structure based on findings and rerun audit
-
-8. *(Optional)* **Produce a single-path view** for visualization or
-   downstream tools that don't reason about alternatives:
-   ```bash
-   nuanalytics degree trim my_degree.yaml
-   ```
-   See the **Trim** section above for `--keep-all` / `--include` /
-   directory-output semantics.
-
-## Troubleshooting
-
-### YAML Syntax Errors
-
-```
-Error: Failed to parse YAML: invalid type at line 45
-```
-
-**Solution**: Use a YAML validator to check syntax. Common issues:
-- Incorrect indentation (use spaces, not tabs)
-- Missing colons after keys
-- Unquoted strings with special characters
-
-### Invalid Course References
-
-```
-Error: Course CS999 referenced in CS425 prerequisites does not exist
-```
-
-**Solution**: Ensure all courses referenced in prerequisites are defined in the `courses` section.
-
-### Circular Dependencies
-
-```
-Error: Circular dependency detected: CS101 → CS220 → CS330 → CS101
-```
-
-**Solution**: Review and break the circular prerequisite chain. A course cannot (directly or indirectly) require itself.
-
-### Missing Prerequisites
-
-```
-Warning: CS425 (400-level) has no prerequisites
-```
-
-**Solution**: Consider if this upper-level course should have prerequisites. If intentional, this is just a warning.
+### Gen-ed attributes
+
+A course's `gen_ed_attributes` (`["AUCC-1A", "GT-CO2"]`) name the general-education
+requirements it satisfies, so a major course that also counts for gen-ed is not counted
+twice.
 
 ## Configuration
 
-Audit behavior is controlled by configuration settings:
+`[degree_analysis]` and `[audit]` in the configuration set the defaults these commands
+use; see [docs/config.md](config.md).
 
-```bash
-# View current settings
-nuanalytics config get
+## Troubleshooting
 
-# Set prerequisite chain threshold (default: 3)
-nuanalytics config set prerequisite_chain_threshold 4
+- **A parse error.** The message names the line. In YAML, check indentation (spaces, not
+  tabs) and quote strings that contain `:`, `{` or `[`.
+- **A course does not exist.** Every course a requirement or prerequisite names must be
+  under `courses:`. `validate` names each one.
+- **A prerequisite cycle.** `validate` reports it as an error. `analyze` breaks it to
+  proceed and says which edge it removed (`-v`).
+- **Every plan is huge.** Narrow the plan space with `--include`, or raise `--max-plans`
+  and accept a sample.
 
-# Reset to defaults
-nuanalytics config reset
-```
+## See also
 
-Available configuration options:
-- `prerequisite_chain_threshold` - Minimum chain depth to report in audit (default: 3)
-
-## Advanced Features
-
-### Subject Area Filtering
-
-The audit automatically filters courses to those relevant to the degree's primary subject area:
-- Determined from courses listed in requirements
-- Falls back to all courses if subject cannot be determined
-- Ensures audit focuses on degree-relevant courses
-
-### Prerequisite Chain Analysis
-
-The audit computes prerequisite chains using:
-- **Shortest path** when OR alternatives exist
-- **Same-subject preference** when choosing between alternatives
-- **Chain merging** to eliminate redundant prerequisites
-- **Proper ordering** to show dependency direction
-
-Example: For `CS320` with prerequisites `(CS220 & CS165) & (MATH155 | MATH156)`:
-- Chooses shortest path among OR alternatives
-- Prefers same subject code (CS over CIS if both options exist)
-- Merges overlapping chains
-- Orders from foundation courses to advanced courses
-
-## See Also
-
-- [Config Command](config.md) - Manage configuration settings
-- [Planner Command](planner.md) - Analyze curriculum metrics
-- [Development Guide](../Development.md) - Contributing to NuAnalytics
+- [MCP server](mcp.md) — the same operations as tools for a model
+- [Config command](config.md)
+- [Planner command](planner.md) — analyzing a fixed curriculum CSV

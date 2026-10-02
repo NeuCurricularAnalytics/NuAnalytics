@@ -1,213 +1,145 @@
 # IPEDS Data — What to Download and How to Import
 
-IPEDS (Integrated Postsecondary Education Data System) is the U.S. Department of
-Education's primary database of college and university information. NuAnalytics imports
-three annual survey files to support institutional and demographic analysis.
+IPEDS (the Integrated Postsecondary Education Data System) is the U.S. Department of
+Education's database of colleges and universities. NuAnalytics imports two of its annual
+survey files, which back the institution lookups and the completion demographics.
 
----
+## What is imported
 
-## What data we use
+| Survey | File | Tables | Content |
+|---|---|---|---|
+| **HD** — institutional characteristics | `HD{year}.zip` | `institutions` | Name, location, control, level, size, locale, Carnegie classification, HBCU and tribal status |
+| **C_A** — completions by award level | `C{year}_A.zip` | `completions`, `institution_completion_totals` | Every completion row, and per-institution totals, in one pass |
 
-Only two IPEDS survey files are needed — the completions file (`C_A`) is used in a
-single pass to populate two tables:
+The two tables behave differently across years:
 
-| Survey | Tables | Content |
-|--------|--------|---------|
-| **HD** — Institutional Characteristics Directory | `institutions` | Name, location, Carnegie classification, control type, HBCU status |
-| **C** — Completions by Award Level | `completions` + `institution_completion_totals` | Every completion row (all CIPs, both majors), and per-institution totals |
+- **`institutions` has no year.** It holds one row per institution, and the last HD file
+  imported wins. Import years oldest first; importing an HD file older than what is stored
+  is refused unless you pass `--force`, because it would overwrite current values with
+  stale ones.
+- **`completions` is keyed by year.** Each year's rows sit beside the others, so years can
+  be imported in any order and re-imported without touching another year.
 
-The **Fall Enrollment (EF)** survey is not needed. Using completions-as-denominator
-gives a more meaningful representation metric:
+Every completions row is stored: all CIP codes, both major numbers, every award level —
+about 300,000–314,000 rows per year. Nothing is filtered on import; choosing computing
+programs (CIP family `11`, plus `30.7001` Data Science and `30.7099` Multi/Interdisciplinary
+Studies, Other) is a query-time decision. That table size is also why a `PGRST_DB_MAX_ROWS`
+cap matters — see `db doctor`'s row-limit check.
 
-> *"Is the demographic profile of CS graduates proportional to the demographic
-> profile of ALL graduates at this institution?"*
+`institution_completion_totals` holds each institution's totals per award level and year,
+summed over every CIP code except 99 (IPEDS's grand-total row, which is the sum of the
+others) and over both major numbers. The built-in demographics queries sum `completions`
+directly; the table is for SQL (`query_sql`, `db query --sql`) that wants whole-school
+totals. For first majors only, or a subset of CIP codes, sum `completions` instead.
 
-### CS filter (for `completions` table)
+The fall enrollment survey (EF) is not used. Each demographic baseline is the completions
+of all graduates at the same institutions, which answers the question that matters here:
+is the profile of computing graduates in proportion to the profile of all graduates?
 
-Computing-relevant CIP code families:
-- `11.*` — Computer and Information Sciences and Support Services (CS, IS, cybersecurity, etc.)
-- `30.7001` — Data Science (interdisciplinary)
-- `30.7099` — Multi/Interdisciplinary Studies, Other (related computing programs)
+## What is stored now
 
-### Institution totals (for `institution_completion_totals` table)
-
-Every CIP code except 99, both majors, one row per institution, award level and year.
-CIP 99 is IPEDS's grand-total row — the sum of the others — and is left out of every sum;
-it is still stored in `completions`. No query reads this table: the demographics queries
-compute each baseline from `completions` directly (see
-[database-audit-todo.md](../database-audit-todo.md) for why).
-
----
-
-## Current data availability
-
-| Survey | Latest year | Notes |
-|--------|------------|-------|
-| **HD** (institutions) | **2024** | HD2024 available |
-| **C** (completions) | **2024** | C2024_A available |
-
-Both files are from the same year — no mixed-year import needed.
-
----
+The four years 2022–2025, checked on 2026-10-01 against the files from NCES: every year's
+completions row count and all 21 count columns, summed over every row, equal the file.
+2022 and 2023 hold the revised releases (see below). Every `institution_completion_totals`
+row equals its detail rows on all 21 columns. `institutions` holds the 2025 directory.
 
 ## Where to download
 
-All files are available from the **IPEDS Data Center**:
-
-**Main download page:**
-> <https://nces.ed.gov/ipeds/use-the-data>
-
-**Direct links — 2024:**
-
-| File | Description | Direct link |
-|------|-------------|------------|
-| `HD2024.zip` | Institutional Characteristics | <https://nces.ed.gov/ipeds/datacenter/data/HD2024.zip> |
-| `C2024_A.zip` | Completions by Award Level | <https://nces.ed.gov/ipeds/datacenter/data/C2024_A.zip> |
-
-> **Note:** The NCES website sometimes requires accepting a data use agreement before
-> downloading. If the direct links above do not work, navigate to the Data Center page
-> and download from there.
-
-**Browse all available files:**
-> <https://nces.ed.gov/ipeds/datacenter/DataFiles.aspx>
-
----
-
-## File contents
-
-### HD — Institutional Characteristics
-
-- **Rows**: ~6,500 (one per institution)
-- **Key columns**: `UNITID`, `INSTNM`, `CITY`, `STABBR`, `CONTROL`, `ICLEVEL`, `C18BASIC` / `C21BASIC` (Carnegie), `HBCU`, `TRIBAL`
-- **Note**: The Carnegie classification column name changes by survey cycle:
-  `C15BASIC` (2015), `C18BASIC` (2018), `C21BASIC` (2021). NuAnalytics tries all
-  variants automatically.
-
-### C_A — Completions by Award Level
-
-- **Rows**: ~200,000+ (one per institution × CIP code × award level × major number)
-- **Key columns**: `UNITID`, `CIPCODE`, `AWLEVEL`, `CTOTALT`, `CTOTALM`, `CTOTALW`, plus one column per race/gender combination
-- **Award levels**: 5 (bachelor's), 7 (master's), 9 (doctoral), others included
-- **Stored**: every row — all CIP codes and both major numbers, ~313,000 per year for
-  recent files. Nothing is filtered on import. CS (`11.*`) is roughly 15,000 of those, so
-  a CS-only query is a small slice of a large table; size queries for the table, not the
-  slice. This is what makes a `PGRST_DB_MAX_ROWS` cap bite — see `db doctor`'s row-limit
-  check.
-
-**CIP code format in the file**: Dot notation — e.g. `11.0101`. NuAnalytics stores
-them in the same format in the database.
-
-### EF — Fall Enrollment
-
-- **Rows**: ~50,000+ (multiple rows per institution for different student levels)
-- **Key column for filtering**: `EFALEVEL = 1` selects the all-students aggregate row (avoids double-counting breakdowns)
-- **Key columns**: `UNITID`, `EFTOTAT`, `EFTOTAM`, `EFTOTAW`, plus race/gender breakdowns
-
----
-
-## Import workflow
-
-### 1. Sign in (required for write access)
+From the IPEDS Data Center, <https://nces.ed.gov/ipeds/use-the-data> (every file:
+<https://nces.ed.gov/ipeds/datacenter/DataFiles.aspx>). Past years download directly:
 
 ```sh
-nuanalytics db login
-```
-
-Verify you have read-write access:
-```sh
-nuanalytics db status
-# Auth: read-write  (signed in as you@northeastern.edu)
-```
-
-### 2. Create a directory and download the files
-
-```sh
-mkdir -p ~/ipeds
-cd ~/ipeds
-
+mkdir -p ~/ipeds && cd ~/ipeds
 curl -L -O https://nces.ed.gov/ipeds/datacenter/data/HD2024.zip
 curl -L -O https://nces.ed.gov/ipeds/datacenter/data/C2024_A.zip
 ```
 
-**The direct URL does not work for the most recent release.** `HD2025.zip` returns 404
-this way even with browser headers and a referer, while `HD2024.zip` succeeds by exactly
-the same method. The current year has to come through the Data Center UI at
-<https://nces.ed.gov/ipeds/use-the-data>; save the files to `~/ipeds/` from the browser.
-Earlier years download fine with `curl`.
+**The newest release does not download this way.** `HD2025.zip` returned 404 to `curl`
+even with browser headers and a referer, while `HD2024.zip` succeeded the same way. Save
+the current year's files from the Data Center in a browser.
 
-Two things not to be surprised by once the files are on disk:
+## Things the files do that the importer handles
 
-- **Casing is inconsistent between years.** `hd2022.csv` and `hd2025.csv` ship lowercase;
-  `HD2023.csv` and `HD2024.csv` ship uppercase. `--dir` auto-detection is
-  case-insensitive, so either works.
-- **Some years are CP1252, not UTF-8.** `HD2022.zip` contains an `é` (byte `0xE9`) in a
-  trustee name. The importer decodes UTF-8 first and falls back to CP1252, reporting
-  which file needed the fallback; no `iconv` pre-pass is required.
+- **Revised releases.** `C2022_A.zip` and `C2023_A.zip` each contain the provisional file
+  and a revised one (`c2022_a_rv.csv`, `C2023_a_RV.csv`), which corrects totals and adds
+  and retracts rows. The importer reads the revised file whenever an archive has one.
+- **Padded headers.** The 2022 completions header ends `CNRALW` followed by two spaces.
+  Headers are trimmed before they are matched; before that fix, every 2022 row was stored
+  with no count of nonresident-alien women (re-imported 2026-10-01).
+- **Inconsistent case.** `hd2022.csv` and `hd2025.csv` are lowercase, `HD2023.csv` and
+  `HD2024.csv` uppercase. `--dir` matches either.
+- **Encoding.** Some years are CP1252, not UTF-8 (`HD2022` has an `é` as byte `0xE9`). The
+  importer tries UTF-8, falls back to CP1252, and says which file needed it.
+- **Carnegie vintages.** An HD file can carry several Carnegie classification columns
+  (`C21BASIC`, `C18BASIC`, `C15BASIC`, …). The importer takes the newest.
 
-### 3. Import
+## Importing
+
+Sign in first; importing writes to the database.
 
 ```sh
-nuanalytics db ipeds-import \
-  --year 2024 \
+nuanalytics db login --email you@example.org      # or `db login` for OAuth
+nuanalytics db status                             # ping: ✓ authenticated read succeeded
+```
+
+Then import a year, naming the files or a directory to search:
+
+```sh
+nuanalytics db ipeds-import --year 2024 \
   --institutions ~/ipeds/HD2024.zip \
   --completions  ~/ipeds/C2024_A.zip
+
+nuanalytics db ipeds-import --year 2024 --dir ~/ipeds/     # finds HD2024.* and C2024_A.*
 ```
 
-Or use `--dir` for auto-detection (looks for `HD2024.*` and `C2024_A.*`):
+Either file can be imported alone. Re-importing a year upserts in place.
+
+The output looks like this:
+
+```
+Importing institutions from /home/you/ipeds/HD2024.zip ...
+  ✓ 6072 read, 6072 upserted, 0 skipped
+Importing completions from /home/you/ipeds/C2024_A.zip ...
+  (all CIP codes stored; query with CIP filter for CS vs all-programs)
+  ✓ 307707 rows read, 307707 with a usable UNITID, 307707 upserted, 0 skipped
+```
+
+## Verifying an import
 
 ```sh
-nuanalytics db ipeds-import --year 2024 --dir ~/ipeds/
+nuanalytics db validate ~/ipeds/C2024_A.zip --year 2024
+nuanalytics db validate ~/ipeds/HD2025.zip  --year 2025
 ```
 
-### 4. Expected output
+For completions it compares the row count for the year exactly and every column on a
+sample of 150 institutions. For HD it compares every column of every institution and
+checks which Carnegie vintage the stored values came from.
 
-```
-Importing institutions from /home/.../HD2024.zip ...
-  ✓ 6072 read, 6072 upserted, 0 skipped
-Importing completions from /home/.../C2024_A.zip ...
-  (all completions → `completions` table; per-institution totals → `institution_completion_totals`)
-  ✓ 313566 rows read, 313566 with a usable UNITID, 313566 upserted, 0 skipped
-```
+Two limits to know:
 
-The completions import populates two tables in one pass — no second file needed.
-
----
-
-## Re-importing (updating existing data)
-
-All imports use upsert — re-running with newer data updates rows in place. The database
-stores the year on each row so multiple years coexist cleanly.
-
----
+- **It parses the file with the importer's own code**, so it cannot catch a parsing
+  defect — both sides share it. The padded 2022 header passed validation for exactly this
+  reason. Comparing per-column sums over every row, computed from the CSV independently,
+  is what found it.
+- **HD only validates against the newest year.** `institutions` holds the latest
+  directory, so validating an older HD file reports mismatches in names, locales and sizes
+  that are expected, not faults.
 
 ## CIP code seed data
 
-The `cip_codes` lookup table maps 6-digit CIP codes to human-readable titles. It must
-be populated **before** importing completions data (the completions table has a foreign
-key reference to it).
+The `cip_codes` table maps the 2,173 six-digit codes of the CIP 2020 taxonomy to their
+titles. It is one of the seed files `db bootstrap` applies when a backend is set up (see
+[setup.md](setup.md)); the file is `docs/database/cip-seed.sql`, generated from the NCES
+2010→2020 crosswalk (<https://nces.ed.gov/ipeds/cipcode/Files/Crosswalk2010to2020.csv>),
+which includes the computing codes new in 2020 such as `11.0902` Cloud Computing and
+`30.7001` Data Science, General. Nothing enforces it as a foreign key; completions with a
+code missing from it still import.
 
-Run the SQL seed file in the Supabase **SQL Editor** (same place you ran the schema):
+## Data use
 
-```
-docs/database/cip-seed.sql
-```
-
-This contains all 2,173 6-digit CIP codes from the **CIP 2020 taxonomy** as a single
-`INSERT ... ON CONFLICT DO UPDATE` statement. Paste it into the SQL Editor and run.
-
-The file was generated from the NCES 2010→2020 crosswalk, which contains all current
-2020 codes and titles including 12 new computing codes that didn't exist in 2010
-(e.g. `11.0902` Cloud Computing, `11.0105` Human-Centered Technology Design,
-`30.7001` Data Science, General):
-> <https://nces.ed.gov/ipeds/cipcode/Files/Crosswalk2010to2020.csv>
-
----
-
-## Data use agreement
-
-IPEDS data is publicly available at no cost. By downloading, you agree to the
-[IPEDS Data Use Agreement](https://nces.ed.gov/ipeds/datacenter/InstitutionByName.aspx),
-which requires proper citation in any publications:
+IPEDS data is free and public. Cite it in publications as the
+[IPEDS Data Use Agreement](https://nces.ed.gov/ipeds/datacenter/InstitutionByName.aspx)
+asks:
 
 > U.S. Department of Education, National Center for Education Statistics, Integrated
 > Postsecondary Education Data System (IPEDS), [Survey Component], [Year].

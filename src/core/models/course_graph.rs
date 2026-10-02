@@ -82,8 +82,7 @@ pub struct PrerequisiteEdge {
     pub or_group: Option<usize>,
 }
 
-/// Type alias for OR-groups mapping: group ID → list of (course key, chain)
-/// OR-groups by id, **ordered**: each group's choice feeds the next (a course picked for one
+/// OR-groups by id — each a list of (course key, chain) — **ordered**: each group's choice feeds the next (a course picked for one
 /// group counts as already required for the rest), so a hash-ordered walk resolved the same
 /// prerequisites differently from one process to the next.
 type OrGroupsMap = BTreeMap<usize, Vec<(String, PrerequisiteChain)>>;
@@ -200,7 +199,8 @@ pub struct CourseNode {
     /// The branches of each OR-group that has an alternative of more than one course — the
     /// courses each alternative needs — keyed by the group id its edges carry. A group not
     /// listed has only single-course alternatives, which its edges express completely; a
-    /// listed one is resolved per plan by branch, never by a single member.
+    /// listed one is resolved per plan by branch; a plan that completes no branch falls
+    /// back to one member (`plan_dag::build_plan_dag`).
     pub or_branches: prerequisite_parser::OrBranches,
     /// Outgoing edges (courses that require this course)
     pub dependents: Vec<String>,
@@ -1553,7 +1553,7 @@ type BranchOption = (Vec<String>, Vec<String>);
 /// 5. By name
 ///
 /// So `(MATH124 & MATH126) | MATH127` adds `MATH127` to a plan with neither, and `MATH124`
-/// to one that already has `MATH126`.
+/// to one that already has `MATH126` — one new course either way, so the name decides.
 fn select_best_branch_with_exclusions(
     options: Vec<BranchOption>,
     preferred_subject: Option<&str>,
@@ -2227,9 +2227,6 @@ mod tests {
         assert!(chain.contains(&"MATH100".to_string()) || chain.contains(&"CS100".to_string()));
     }
 
-    /// A degree parsed afresh for each graph: every `HashMap` gets its own hash keys, so
-    /// building the graph many times in one process varies its iteration order the way
-    /// separate processes do.
     /// CSU's MATH156, `(MATH124 & MATH126) | MATH127`, with a course that uses MATH124.
     const MATH156: &str = r#"degree: {id: t, institution: CSU, program: T, total_credits: 10, gpa_minimum: 2.0}
 requirements:
@@ -2261,7 +2258,7 @@ courses:
     #[test]
     fn test_expansion_adds_the_branch_with_fewest_new_courses() {
         assert_eq!(chain_for(&[], &[]), ["MATH127"]);
-        // Started: MATH126 is already there, so MATH124 completes that branch for one course.
+        // MATH126 is already there: either branch adds one course, and the name decides.
         assert_eq!(chain_for(&["MATH126"], &[]), ["MATH124", "MATH126"]);
         // Complete: nothing new.
         assert_eq!(
@@ -2288,15 +2285,29 @@ courses:
         let mut result = CourseGraph::from_degree_program(&fresh_program(yaml));
         assert_eq!(result.graph.get("AA101").unwrap().or_branches.len(), 1);
         let removed = result.graph.break_cycles(&result.cycles);
+        assert!(
+            removed.contains(&("AA101".to_string(), "BB101".to_string())),
+            "{removed:?}"
+        );
         let branches = &result.graph.get("AA101").unwrap().or_branches;
-        if removed.contains(&("AA101".to_string(), "BB101".to_string())) {
-            assert!(branches
-                .values()
-                .flatten()
-                .all(|b| !b.contains(&"BB101".to_string())));
-        }
+        assert_eq!(
+            branches.values().flatten().collect::<Vec<_>>(),
+            [&vec!["DD101".to_string()]],
+            "the branch through the removed edge is gone; the other stands"
+        );
+        assert_eq!(
+            result.graph.min_prerequisite_chain_with_exclusions(
+                "AA101",
+                &HashSet::new(),
+                &HashSet::new()
+            ),
+            Some(vec!["DD101".to_string()])
+        );
     }
 
+    /// A degree parsed afresh for each graph: every `HashMap` gets its own hash keys, so
+    /// building the graph many times in one process varies its iteration order the way
+    /// separate processes do.
     fn fresh_program(yaml: &str) -> crate::core::DegreeProgram {
         crate::core::degree::parse_degree_auto(yaml)
             .expect("parses")

@@ -15,6 +15,11 @@ Copied verbatim from the `WebScrappedCombinedDataMetrics` corpus, `full_degree/d
 with `nuanalytics degree validate`; 1,088 degrees / 617 institutions). Filenames are the
 upstream slugs, so each file is traceable back to that corpus and to its `degree.id`.
 
+The corpus's current tree is `full_degree_v2/degree/`. Each fixture is identical to its
+file there apart from the `fills_to_total` flags the corpus gained on 2026-09-28, after
+the fixtures were copied (checked 2026-10-01). The flag changes only how a fill-to-total
+block is sized, not which plans are enumerated.
+
 The tests previously read these from `/tmp/first_sem_unified/` and
 `/tmp/asu_unified.json/` via absolute `include_str!` paths. Those fixtures were never
 committed and `/tmp` has since been cleared, so the test target stopped compiling. The
@@ -58,7 +63,7 @@ nothing real to vendor.
 
 Recopy from the corpus and keep the slug name:
 
-    cp ../WebScrappedCombinedDataMetrics/full_degree/degree/<slug>.unified.json \
+    cp ../WebScrappedCombinedDataMetrics/full_degree_v2/degree/<slug>.unified.json \
        tests/assets/degrees/
 
 If the upstream build changed, `earliest_term_matches_recorded_baseline` in
@@ -105,8 +110,7 @@ fixtures were vendored.
 | Bellevue | `AI240` | not_calc_ready=4 | x |
 
 The `reasonable_true` / `reasonable_false` / `calc_ready` / `not_calc_ready` grouping was
-dropped rather than carried forward. No parameter of `analyze::execute_json` corresponds
-to it, the generating commit (`f2a5f30`) recorded no definition for it, and the paired
+dropped rather than carried forward. No analysis option corresponds to it, the generating commit (`f2a5f30`) recorded no definition for it, and the paired
 rows above issued byte-identical calls while carrying different expectations — so at most
 one row of each conflicting pair could ever have held. `ASU DAT402` (baseline 7) is a
 20th case, added from `asu_target_course.rs`, which used a separate `/tmp` fixture.

@@ -1,6 +1,6 @@
 # Sample Outputs
 
-The following are sample outputs for the degree analysis. For the the MCP Generated, we used the following prompt:
+Sample `degree analyze` reports. `csu-cs-analysis-mcp-generated.html` was produced by Claude through the MCP server, from this prompt (quoted as sent):
 
 ```text
 Using  nuanalytics - evaluate Colorado State University - Fort Collins, Computer Science concentration in Computer Science / General - degree. The evaluation should do teh following:
@@ -15,4 +15,4 @@ You will want to be careful on the preqs with the yaml
 Here is the requirements https://catalog.colostate.edu/general-catalog/colleges/natural-sciences/computer-science/computer-science-major/computer-science-concentration/#requirementstext
 ```
 
-The others are base don the yaml file in the [../../degrees](../../degrees/) directory.
+The others are `degree analyze` reports for the degree files in [../../degrees](../../degrees/).

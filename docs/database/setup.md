@@ -21,7 +21,7 @@ There are **two separate credentials** you will deal with:
 | Credential | What it is | Where it lives | Used for |
 |-----------|-----------|---------------|---------|
 | **Anon key** (JWT) | Public project key, starts with `eyJ...` | Config file | All requests — identifies the project to Supabase |
-| **User session token** | Your personal OAuth JWT after signing in | `auth.json` (auto-managed) | Write requests — lets RLS see you as `authenticated` |
+| **User session token** | Your JWT after `db login` (OAuth or password) | `auth.json` (auto-managed) | Every read and write — lets RLS see you as `authenticated` |
 
 The anon key is set once per environment and stays in config.
 The session token is managed automatically by `nuanalytics db login` / `logout`.
@@ -59,9 +59,11 @@ are `API_EXTERNAL_URL` and `ANON_KEY` in the stack's `.env`. Then pick up at Ste
 
 ### Row cap — the one that returns wrong answers instead of errors
 
-`PGRST_DB_MAX_ROWS` defaults to **1000** upstream, while the MCP completions tools request
-up to 5,000 rows. PostgREST truncates to the cap with an HTTP 200 and no indication, so
-totals and representation ratios come out confidently short rather than failing.
+`PGRST_DB_MAX_ROWS` defaults to **1000** upstream. PostgREST truncates a larger select to
+the cap with an HTTP 200 and no indication, so the answer comes out confidently short
+rather than failing. Today that affects the large plain selects — a stored report's
+course metrics, for one. The demographics and catalog queries return a single `jsonb`
+value and are not affected.
 
 **Leave it unset, or set it to at least 10000.** `nuanalytics db doctor` checks for this
 explicitly — see the **row limit** check.
@@ -138,8 +140,6 @@ nuanalytics config set database.endpoint https://abcdefgh.supabase.co
 # Set the anon key
 nuanalytics config set database.anon_key eyJhbGc...
 
-# Enable database integration
-nuanalytics config set database.enabled true
 ```
 
 For **debug builds** (run from source with `cargo run`), the config file is
@@ -147,10 +147,10 @@ For **debug builds** (run from source with `cargo run`), the config file is
 `~/.config/nuanalytics/config.toml`. Run the commands above in the appropriate
 environment.
 
-Verify the config was written:
+Verify it (this also names the file the endpoint came from):
 
 ```sh
-nuanalytics config get database
+nuanalytics db status
 ```
 
 ---
@@ -281,14 +281,7 @@ podman exec supabase-db psql -U postgres -d postgres -tAc \
 
 ## Step 5 — Row-Level Security
 
-RLS policies are included in `schema.sql` — no separate step needed for fresh installs.
-
-**Existing database (set up before this was added):** Run
-`docs/database/historical/rls-patch.sql` in the SQL Editor to add the missing policies
-without touching any data. Fresh installs must not run it — see
-`docs/database/historical/Readme.md`.
-
-To verify policies are in place:
+The policies are part of the schema files, so there is nothing to apply. To check them:
 
 ```sql
 SELECT tablename, policyname, cmd
@@ -372,8 +365,8 @@ which of the 20 tables are missing, which is faster than reading SQL errors.
 
 ## Step 7 — Enable an OAuth provider (optional)
 
-IPEDS data import requires an authenticated session. There are two ways to get one, and
-neither stores a password locally:
+Every database command needs an authenticated session. There are two ways to get one,
+and neither stores a password locally:
 
 | | Setup needed | Use when |
 |---|---|---|
@@ -447,8 +440,7 @@ setup instructions.
 
 ## Step 8 — Sign in
 
-Signing in is required for any **write** operation (IPEDS import, storing degrees).
-Read access (MCP query tools) works without signing in.
+Every database command and tool needs a signed-in session, reads included.
 
 ```sh
 nuanalytics db login                          # OAuth, opens browser with GitHub (default)
@@ -456,10 +448,10 @@ nuanalytics db login --provider google        # OAuth with another enabled provi
 nuanalytics db login --email you@example.edu  # password, prompted — needs no OAuth provider
 ```
 
-**OAuth.** NuAnalytics opens your Windows browser (on WSL/Windows: via
-`powershell.exe Start-Process`). After you approve access on GitHub/Google, the browser
+**OAuth.** NuAnalytics opens your browser — under WSL, the Windows browser, through
+`powershell.exe Start-Process`. After you approve access with the provider, the browser
 redirects to a temporary local server and the terminal shows
-`✓ Signed in as you@email.com`. The session is saved automatically.
+`✓ Signed in as you@example.edu`. The session is saved automatically.
 
 **Password.** `--email` prompts for the password and does not echo it. Pass only the
 address — never the password, which would land in your shell history and be visible in
@@ -474,10 +466,10 @@ to anything downstream which one you used. A refusal quotes the backend's own wo
   The account must already exist on the backend — `--email` never creates one.
 ```
 
-Verify read-write access:
+Verify it:
 ```sh
 nuanalytics db status
-# Auth: read-write  (signed in as you@northeastern.edu)
+# ping:          ✓ authenticated read succeeded
 ```
 
 Check who is signed in:
@@ -495,7 +487,7 @@ nuanalytics db logout
 ## Stored programs (normalized)
 
 `docs/database/programs-schema.sql` (+ `docs/database/program-lookup-seed.sql`,
-applied in [Step 4b](#step-4b--seed-the-lookup-and-cip-tables)) add a
+applied in [Step 4b](#step-4b--the-five-files-if-you-are-applying-them-by-hand)) add a
 normalized, **queryable** projection of imported degree programs alongside the
 lossless source document. Eight tables:
 
@@ -554,7 +546,7 @@ Overwriting an existing program requires `--replace` (unverified) or `--force`
 The full flag set (`--variant`, `--unitid`, `--institution`, `--cip`,
 `--catalog`, `--degree-id`, `--force`, `--replace`, `--skip-existing`,
 `--dry-run`, `-j/--jobs`) is available via `nuanalytics db import --help`; the
-[MCP `import_degree` tool](../mcp.md#import_degree) exposes the same options.
+[MCP `import_degree` tool](../mcp.md#tools-that-write) takes the same options.
 
 ---
 
@@ -564,9 +556,9 @@ The full flag set (`--variant`, `--unitid`, `--institution`, `--cip`,
 |-----------|-------------|---------|
 | `database.endpoint` | Supabase project URL | `https://abcdefgh.supabase.co` |
 | `database.anon_key` | Anon (public) API key | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` |
-| `database.enabled` | Enable database integration | `true` |
+| `database.enabled` | Turn every database feature off (`false`); set in the file, not with `config set` | `true` |
 
-Config files:
+See [docs/config.md](../config.md) for the rest. Config files:
 - **Debug builds**: `~/.config/nuanalytics/dconfig.toml`
 - **Release builds**: `~/.config/nuanalytics/config.toml`
 - **Auth session (release)**: `~/.config/nuanalytics/auth.json` — auto-managed, do not edit
@@ -595,7 +587,7 @@ be denied.
 
 | Problem | Solution |
 |---------|----------|
-| `Database not configured` | Set `endpoint`, `anon_key`, and `enabled = true` — see Step 3 |
+| `Database not configured` | Set `endpoint` and `anon_key` — see Step 3 |
 | `401 Invalid API key` | Using the wrong key format — must be the JWT anon key (`eyJhbGc...`), not the publishable key (`sb_publishable_...`). Find it under **Project Settings → API → Project API keys → anon / public** |
 | `404` when opening the login URL | OAuth provider not enabled — complete Step 7, or sign in with `db login --email <addr>`, which needs no provider |
 | `refused the sign-in: Invalid login credentials` | The address or password is wrong, or the account has no password because it was created through OAuth. `--email` never creates an account |
@@ -608,13 +600,7 @@ be denied.
 | `access_denied` from OAuth | Either the GitHub app denied access or the signup was blocked — check the full callback URL for `error_description` |
 | `Login failed: Cannot create auth client` | Check that `database.endpoint` is the correct Supabase project URL |
 | Write fails: `requires authentication` | Not signed in — run `nuanalytics db login` first |
-| `Failed to ping: 404` | The `institutions` table doesn't exist — run `schema.sql` in Step 4 |
-| Import fails: `PGRST102 All object keys must match` | Upgrade to latest build — older versions stripped nulls inconsistently |
-| Import fails: `23502 null value in column "id"` | Upgrade to latest build — `id` field now skips serialization when null |
-| Import fails: `23503 Key not present in cip_codes` | Run `cip-seed.sql` first (Step 4b), then re-import |
-| Import fails: `23503 Key not present in institutions` | Some IPEDS survey UNITIDs don't appear in HD — run `schema.sql` fresh (no FK constraints) |
-| Import fails: `21000 ON CONFLICT affects row twice` | Upgrade to latest build — the completions ON CONFLICT target now includes `major_num`, so a CIP appearing at both `MAJORNUM=1` and `2` is two rows rather than a conflict. Nothing is filtered out: the table holds every row of the file, ~313,000 per year |
-| Upsert fails with `42501 permission denied` | RLS INSERT policy is missing — see Step 5 |
-| `db doctor`: `PGRST_DB_MAX_ROWS is capping responses` | Self-hosted only. Upstream defaults the cap to 1000 while the MCP tools request 5,000, so large queries truncate silently with HTTP 200 and analytics come out wrong. Leave `PGRST_DB_MAX_ROWS` unset, or set it to at least 10000 |
-| Completions totals look too low but nothing errored | Run `nuanalytics db doctor` and read the **row limit** check — a row cap produces short answers, not failures |
+| Upsert fails with `42501 permission denied` | The table has no write policy. The seed tables are read-only by design (see below); for a data table, re-apply the schema |
+| `db doctor`: `PGRST_DB_MAX_ROWS is capping responses` | Self-hosted only. Upstream defaults the cap to 1000, so a large select truncates silently with HTTP 200. Leave `PGRST_DB_MAX_ROWS` unset, or set it to at least 10000 |
+| A stored report looks short but nothing errored | Run `nuanalytics db doctor` and read the **row limit** check — a row cap produces short answers, not failures |
 | Timed out waiting for browser callback | OAuth flow didn't complete in 2 minutes — run `db login` again |

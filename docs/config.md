@@ -1,27 +1,47 @@
 # Config Command
 
-The `config` command manages NuAnalytics configuration settings. Configuration is loaded from multiple sources with a clear precedence hierarchy.
+`nuanalytics config` reads and changes NuAnalytics settings. Settings come from several
+places; this page says which wins, what each setting does, and the surprises.
 
-## Configuration Hierarchy
+## Where settings come from
 
-NuAnalytics uses a three-tier configuration system with the following precedence (highest to lowest):
+First match wins:
 
-1. **Command-line arguments** - Override any config value for a single run
-2. **Local config** (`nuanalytics.toml` in current directory) - Project-specific settings
-3. **Home config** (`~/.config/nuanalytics/config.toml`) - User-wide defaults
-4. **Built-in defaults** - Fallback values
+1. **Command-line flags**, for one run (`--log-level debug`, `--metrics-dir ./out`).
+2. **The project file**, `nuanalytics.toml` in the current directory.
+3. **The user file**: `~/.config/nuanalytics/config.toml` on Linux,
+   `~/Library/Application Support/nuanalytics/config.toml` on macOS,
+   `%APPDATA%\nuanalytics\config.toml` on Windows. Debug builds read `dconfig.toml` in the
+   same directory instead.
+4. **Built-in defaults**, compiled into the binary.
 
-This allows you to:
-- Set user-wide defaults in your home config
-- Override those with project-specific settings via local `nuanalytics.toml`
-- Further override for a single run via CLI flags
+A key a file mentions overrides the tiers below it, whatever its value — writing
+`max_plans = 1000` or `verbose = false` in a project file takes effect even though both
+equal a default. The one exception: **a blank string counts as not set**, so a blank
+`endpoint` in one file never erases a working endpoint from another. To override a lower
+tier, write a value; to say nothing, leave the key out or blank.
 
-### Local Configuration File
+Surprises:
 
-Create a `nuanalytics.toml` file in your project directory to set project-specific settings:
+- **`config set` writes the user file, never the project file.** With a project file that
+  sets the same key, `config set` succeeds and the project file still wins. Edit
+  `nuanalytics.toml` directly to change a project setting.
+- **Known defect: `config set` and `config unset` save every setting in effect, not just
+  the one named.** They write the merged configuration — project-file values and any
+  override flags included — into the user file. Run them from a directory with no
+  `nuanalytics.toml` and without override flags, or the project's settings become your
+  user defaults.
+- **The user file is created on first run**, and keys added in a newer version are filled
+  in from the defaults and saved back. It is written with default permissions (typically
+  0644); the sign-in session file is written 0600.
+
+`nuanalytics db status` names the file that supplied the database endpoint, which is the
+quickest way to see which tier is in effect.
+
+A project file:
 
 ```toml
-# nuanalytics.toml - Local project configuration
+# nuanalytics.toml
 [paths]
 metrics_dir = "./metrics"
 reports_dir = "./reports"
@@ -30,353 +50,135 @@ reports_dir = "./reports"
 level = "debug"
 
 [degree_analysis]
-max_plans = 500
-sampling_strategy = "stratified"
+max_plans = 10000
 ```
-
-The local config only overrides values that are explicitly set - empty or default values are ignored, allowing the home config to provide fallback values.
-
-## Overview
-
-The `config` command allows you to:
-
-- **View** current configuration values
-- **Set** configuration values that persist across runs
-- **Unset** configuration values to reset them to defaults
-- **Reset** all configuration to defaults
 
 ## Subcommands
 
-### `config get [KEY]`
+### `config` / `config get [KEY]`
 
-Display configuration values.
-
-**Usage:**
+With no key, prints every setting. With a key, prints that value.
 
 ```bash
-# Display all configuration
-nuanalytics config get
-
-# Display a specific configuration value
+nuanalytics config
 nuanalytics config get level
-nuanalytics config get file
-nuanalytics config get metrics_dir
-```
-
-**Example Output:**
-
-```
-=== Configuration ===
-
-[logging]
-  level = "warn"
-  file = ""
-  verbose = false
-
-[database]
-  endpoint = ""
-  anon_key = ""
-  enabled = false
-  auth_file = "~/.config/nuanalytics/auth.json"
-
-[paths]
-  metrics_dir = "metrics"
-  reports_dir = "reports"
+nuanalytics config get degree_analysis.max_plans
 ```
 
 ### `config set <KEY> <VALUE>`
 
-Set a configuration value that persists in the config file.
-
-**Usage:**
+Writes a value to the user file.
 
 ```bash
 nuanalytics config set level debug
 nuanalytics config set metrics_dir /path/to/metrics
-nuanalytics config set database.anon_key eyJhbGc...
+nuanalytics config set database.endpoint https://nu.example.org
 ```
-
-**Supported Configuration Keys:**
-
-- `level` - Set logging verbosity (error, warn, info, debug)
-- `verbose` - Enable verbose output (true/false)
-- `file` - Path to log file
-- `metrics_dir` - Default output directory for CSV metrics files
-- `reports_dir` - Default output directory for report files (HTML, PDF, Markdown)
-- `database.endpoint` - Supabase project URL (e.g. `https://abcdefgh.supabase.co`)
-- `database.anon_key` - Supabase anonymous (public) key, JWT format starting with `eyJhbGc...` (legacy alias: `database.token`)
-- `database.enabled` - Whether to enable database tools (true/false)
-- `database.auth_file` - Path to the auth session file populated by `nuanalytics db login`
-
-> Setting `endpoint` and `anon_key` enables the database tools but
-> does not authorise access on its own. After configuring, run
-> `nuanalytics db login` once to save your OAuth session; the client
-> refreshes the JWT automatically near expiry.
 
 ### `config unset <KEY>`
 
-Reset a configuration value to its default.
-
-**Usage:**
-
-```bash
-nuanalytics config unset level
-nuanalytics config unset database.anon_key
-```
+Resets one value to its default, in the user file.
 
 ### `config reset`
 
-Reset all configuration values to their defaults. Requires confirmation.
+Resets every value to its default, after asking for confirmation.
 
-**Usage:**
+## Keys
+
+Keys are accepted bare (`level`) or with their section (`logging.level`).
+
+| Key | Section | Meaning |
+|---|---|---|
+| `level` | `logging` | Log level: `error`, `warn`, `info` or `debug`. |
+| `file` | `logging` | Log file path. `$NU_ANALYTICS` expands to the configuration directory. |
+| `verbose` | `logging` | Extra detail on stdout (`true`/`false`). |
+| `endpoint` | `database` | The backend's URL — a Supabase cloud project or a self-hosted stack. |
+| `anon_key` | `database` | The backend's anonymous key (alias: `token`). It identifies the project; it does not grant access. |
+| `auth_file` | `database` | Where `db login` saves the session. Supports `$NU_ANALYTICS`. |
+| `management_key` | `database` | A Supabase Personal Access Token, used only by `db exec-sql` and plain `db bootstrap` on Supabase cloud. |
+| `project_ref` | `database` | The Supabase cloud project reference those two commands use. Leave blank for a self-hosted backend. |
+| `metrics_dir` | `paths` | Where `planner` and `degree analyze` write metrics. |
+| `reports_dir` | `paths` | Where reports are written. |
+| `prerequisite_chain_threshold` | `audit` | `degree audit` flags prerequisite chains at least this long. Default 4. |
+| `calc_strategy` | `degree_analysis` | How a degree's figures are summarised across plans: `median` (default) or `mean`. |
+| `max_plans` | `degree_analysis` | The most plans `degree analyze` analyzes. A degree with more is sampled: under `shuffled`, a random sample of this size, seeded so the same degree gives the same sample. Default 1000. |
+| `sample_plan_count` | `degree_analysis` | How many random plans to export in full (term schedules and CSVs). Statistics use every analyzed plan regardless. Default 5. |
+| `ignore_duplicates` | `degree_analysis` | Skip a plan whose set of courses equals one already analyzed. Default `true`. |
+| `sampling_strategy` | `degree_analysis` | Plan order before sampling: `shuffled` (default) or `sequential`, which favours the first options listed. `stratified` is accepted but not implemented; it behaves as `shuffled`. |
+
+`project_ref` is never derived from `endpoint`: a custom-domain cloud project has no
+`.supabase.co` in its URL, and a self-hosted host would give a meaningless value.
+
+The files also accept `[database] enabled = false`, which turns every database feature
+off; it has no `config set` key.
+
+## Command-line overrides
+
+These flags apply to one run and are never saved:
+
+| Flag | Overrides |
+|---|---|
+| `--log-level <LEVEL>`, `--config-level <LEVEL>` | `logging.level` |
+| `-v`, `--verbose`; `--config-verbose <true\|false>` | `logging.verbose` |
+| `--debug` | debug logging plus runtime debug output |
+| `--log-file <PATH>`, `--config-log-file <PATH>` | `logging.file` |
+| `--db-endpoint <URL>`, `--config-db-endpoint <URL>` | `database.endpoint` |
+| `--db-anon-key <KEY>`, `--config-db-anon-key <KEY>` | `database.anon_key` |
+| `--metrics-dir <DIR>` | `paths.metrics_dir` |
+| `--reports-dir <DIR>` | `paths.reports_dir` |
+
+They are global, so they go before the subcommand:
 
 ```bash
-nuanalytics config reset
+nuanalytics --log-level debug planner input.csv
+nuanalytics --db-endpoint http://localhost:8000 db status
 ```
 
-This command will prompt you to confirm before resetting all settings.
+## The built-in defaults
 
-## Configuration Priority
+Two default files are compiled in: `src/assets/DefaultCLIConfigRelease.toml` for release
+builds and `DefaultCLIConfigDebug.toml` for debug builds. They differ only in where output
+goes and how chatty they are:
 
-When NuAnalytics runs, configuration is applied in this order (highest priority first):
+| | release | debug |
+|---|---|---|
+| `logging.level` | `warn` | `debug` |
+| `logging.file` | `$NU_ANALYTICS/nuanalytics.log` | `.debug/nuanalytics.debug.log` |
+| `logging.verbose` | `false` | `true` |
+| `database.auth_file` | `$NU_ANALYTICS/auth.json` | `.debug/dauth.json` |
+| `paths.metrics_dir` | `./metrics` | `.debug/metrics` |
+| `paths.reports_dir` | `./reports` | `.debug/reports` |
+| `degree_analysis.sample_plan_count` | 5 | 3 |
 
-1. **CLI Flags** - Runtime flags like `--log-level` (most specific, highest priority)
-2. **Local Config** - `nuanalytics.toml` in the current directory (project-specific)
-3. **Home Config** - `~/.config/nuanalytics/config.toml` (user defaults)
-4. **Built-in Defaults** - Compiled-in defaults (lowest priority)
+**Both ship `endpoint` and `anon_key` blank, and must.** The repository is public, and a
+non-blank default would be worse than leaked: an empty endpoint or anon key in a user's
+file is refilled from the defaults and saved, so a default value would silently re-point a
+self-hosted user at that backend. With them blank, the database commands report
+`Database not configured. Set endpoint and anon_key in [database] config.` until you set
+them. Every other feature works with no backend.
 
-### Example: Priority in Action
+## Common tasks
+
+Point at a backend and sign in:
 
 ```bash
-# Set logging level in config file
-nuanalytics config set level warn
+nuanalytics config set database.endpoint https://nu.example.org
+nuanalytics config set database.anon_key <anon key>
+nuanalytics db login --email you@example.org      # or `db login` for OAuth
+nuanalytics db status
+```
 
-# Override at runtime (takes precedence over config file)
-nuanalytics planner input.csv --log-level debug
+See [Database setup](database/setup.md) for standing up the backend itself.
 
-# Override and persist in config file
+Log to a file while investigating a problem:
+
+```bash
+nuanalytics config set file ~/logs/nuanalytics.log
 nuanalytics config set level debug
 ```
 
-## Runtime config Flags
-
-In addition to `config` subcommands, you can control config at runtime:
-
-- `--log-level <LEVEL>` - Set runtime log level without saving to config (error, warn, info, debug)
-- `--verbose` / `-v` - Enable verbose output for current run
-- `--debug` - Enable debug-level logging and runtime debug mode
-- `--log-file <PATH>` - Write logs to a file for current run
-- `--config-level <LEVEL>` - Set logging level and save to config file
-- `--config-verbose` - Set verbose flag and save to config file
-- `--config-log-file <PATH>` - Set log file path and save to config file
-- `--metrics-dir <DIR>` - Override metrics output directory for this run
-- `--reports-dir <DIR>` - Override reports output directory for this run
-- `--db-anon-key <KEY>` - Override database anon key at runtime (short form)
-- `--db-endpoint <URL>` - Override database endpoint at runtime (short form)
-- `--config-db-anon-key <KEY>` - Set database anon key and save to config file
-- `--config-db-endpoint <URL>` - Set database endpoint and save to config file
-
-
-### Examples:
+Analyze more plans per degree:
 
 ```bash
-# Runtime logging (doesn't modify config)
-nuanalytics planner input.csv --log-level debug
-
-# Persistent logging (saves to config)
-nuanalytics config set level debug
-
-# Both: Set config AND use different level for this run
-nuanalytics --log-level info planner input.csv   # Uses info just this time
-
-# Enable debug mode (both logging and runtime)
-nuanalytics -debug planner input.csv -
-```
-
-## Configuration File Locations
-
-Configuration is loaded from these locations:
-
-### Home Configuration (user defaults)
-- **Linux**: `~/.config/nuanalytics/config.toml` (or `dconfig.toml` in debug builds)
-- **macOS**: `~/Library/Application Support/nuanalytics/config.toml`
-- **Windows**: `%APPDATA%\nuanalytics\config.toml`
-
-### Local Configuration (project-specific)
-- **All platforms**: `nuanalytics.toml` in the current working directory
-
-To view your home config file path:
-
-```bash
-nuanalytics config get
-# The file location is displayed in the output
-```
-
-## Default Configuration
-
-NuAnalytics embeds two default config files in the binary — one for
-release builds, one for debug — and falls back to them when neither the
-home nor the local config file overrides a given key. The defaults
-below are the actual contents of `src/assets/DefaultCLIConfigRelease.toml`
-and `DefaultCLIConfigDebug.toml`.
-
-**Release Mode** (used by the installed `nuanalytics` binary):
-```toml
-[logging]
-level = "warn"
-file = "$NU_ANALYTICS/nuanalytics.log"
-verbose = false
-
-[database]
-endpoint = "https://your-project.supabase.co"
-anon_key = "eyJhbGciOiJIUzI1NiI..."   # JWT-format anon key — see below
-enabled = true
-auth_file = "$NU_ANALYTICS/auth.json"
-management_key = ""                    # set this only if you run `db exec-sql`
-project_ref = ""                       # Supabase-cloud project ref; blank = self-hosted
-
-[paths]
-metrics_dir = "./metrics"
-reports_dir = "./reports"
-
-[audit]
-prerequisite_chain_threshold = 4
-
-[degree_analysis]
-calc_strategy = "median"
-sample_plan_count = 5
-max_plans = 1000
-ignore_duplicates = true
-sampling_strategy = "shuffled"
-```
-
-**Debug Mode** (used by `cargo run` and other debug builds — output goes
-under `.debug/` to avoid mixing with release output):
-```toml
-[logging]
-level = "debug"
-file = ".debug/nuanalytics.debug.log"
-verbose = true
-
-[database]
-endpoint = "https://your-project.supabase.co"
-anon_key = "eyJhbGciOiJIUzI1NiI..."
-enabled = true
-auth_file = ".debug/dauth.json"        # separate from any active release session
-management_key = ""
-project_ref = ""
-
-[paths]
-metrics_dir = ".debug/metrics"
-reports_dir = ".debug/reports"
-
-[audit]
-prerequisite_chain_threshold = 4
-
-[degree_analysis]
-calc_strategy = "median"
-sample_plan_count = 3                  # smaller for faster debug iteration
-max_plans = 1000
-ignore_duplicates = true
-sampling_strategy = "shuffled"
-```
-
-> The shipped `anon_key` and `endpoint` point at the project's shared
-> development database. They identify the project but do not grant access
-> — you still need `nuanalytics db login` to obtain a user JWT before any
-> database tool will work (see [Database setup](database/setup.md) for
-> the full flow). `project_ref` is the Supabase-cloud project reference used by
-> `db exec-sql` only; it is **not** derived from `endpoint`, because a custom-domain
-> cloud project has no `.supabase.co` in its URL and a self-hosted host would yield a
-> meaningless value. Leave it blank for a self-hosted deployment — that backend has no
-> Management API, so apply SQL directly instead.
->
-> `management_key` is a separate Supabase Personal Access
-> Token used by `db exec-sql` for DDL; generate one at
-> <https://app.supabase.com/account/tokens> only if you need it.
-
-## Audit Configuration
-
-The `[audit]` section controls the `degree audit` command:
-
-| Key | Description | Default |
-|-----|-------------|---------|
-| `prerequisite_chain_threshold` | Minimum chain depth to flag as "deep". Courses whose longest prereq chain is at least this many steps long are highlighted in audit reports. | 4 |
-
-## Degree Analysis Configuration
-
-The `[degree_analysis]` section controls the `degree analyze` command:
-
-| Key | Description | Default (release) |
-|-----|-------------|-------------------|
-| `calc_strategy` | Aggregate metric strategy across generated plans: `"median"` or `"mean"`. Median is more robust to outlier plans. | `"median"` |
-| `max_plans` | Hard cap on plan generation. Programs with many electives explode combinatorially; this stops runaway generation. | 1000 |
-| `sample_plan_count` | How many random plans to export in full (term schedules + CSVs). Does not affect aggregate stats — those use every analysed plan. | 5 (release) / 3 (debug) |
-| `sampling_strategy` | Plan enumeration order before sampling: `"sequential"`, `"shuffled"`, or `"stratified"`. | `"shuffled"` |
-| `ignore_duplicates` | Skip plans that are permutations of the same course set. Strongly recommended — reduces noise. | true |
-
-**Sampling Strategies:**
-
-- `sequential` - Enumerate plans in natural order (may bias statistics toward early options)
-- `shuffled` - Randomize order before sampling (recommended for unbiased stats)
-- `stratified` - Ensure coverage across elective option space
-
-**Examples:**
-
-```bash
-# Set maximum plans to generate
-nuanalytics config set degree_analysis.max_plans 5000
-
-# Use mean instead of median for aggregate metrics
-nuanalytics config set degree_analysis.calc_strategy mean
-
-# Use stratified sampling for better coverage
-nuanalytics config set degree_analysis.sampling_strategy stratified
-
-# Export more random samples
-nuanalytics config set degree_analysis.sample_plan_count 20
-
-# Disable deduplication for full enumeration
-nuanalytics config set degree_analysis.ignore_duplicates false
-```
-
-## Common Workflows
-
-### Set Up Logging to File
-
-```bash
-nuanalytics config set file ~/.logs/nuanalytics.log
-nuanalytics config set level debug
-```
-
-### Configure Default Output Directories
-
-```bash
-# Set metrics output directory
-nuanalytics config set metrics_dir /home/user/analysis/metrics
-
-# Set reports output directory
-nuanalytics config set reports_dir /home/user/analysis/reports
-```
-
-### Set Database Credentials
-
-```bash
-nuanalytics config set database.endpoint https://abcdefgh.supabase.co
-nuanalytics config set database.anon_key eyJhbGc...
-nuanalytics config set database.enabled true
-
-# Then obtain a user session (saved to auth_file):
-nuanalytics db login
-```
-
-### Debug a Problem
-
-```bash
-# Enable debug logging for investigation
-nuanalytics config set level debug
-nuanalytics planner input.csv
-
-# View the output
-cat ~/.logs/nuanalytics.log
+nuanalytics config set degree_analysis.max_plans 10000
 ```

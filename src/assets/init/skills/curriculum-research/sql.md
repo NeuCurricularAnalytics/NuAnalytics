@@ -42,8 +42,8 @@ join. `get_reference(topic="database", table="analysis_runs")` shows one table i
 
 - **`completions` holds CIP `99` grand-total rows.** Filter them out of every sum:
   `cip_code <> '99'`.
-- **Sum `completions` rather than trusting `institution_completion_totals`.** The
-  reference says why.
+- **`institution_completion_totals` is whole-school totals** — every CIP but `99`, both
+  major numbers. For first majors only, or a CIP subset, sum `completions` instead.
 
 ## Worked queries (in `queries/`)
 

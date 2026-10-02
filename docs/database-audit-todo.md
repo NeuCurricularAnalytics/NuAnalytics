@@ -170,27 +170,34 @@ fix, and the rest predate it. The corpus repo's README ("Generations") has the b
 the archive of the previous `v2/`. Runs append, so `analysis_runs` keeps the earlier
 generations; `db prune` removes them if the history is not wanted.
 
-**Open: two Northeastern degrees lost plans before the OR-of-AND fix.** The BA in CS
-(Boston) analyses 9,364 distinct plans where the 09-28 build (`3f10dbc`) gave 9,978 on every
-run, and the BS in CS concentration 9,099 where it gave 9,985. The analyzer just before the
-fix (`0e44789`) already gives the new counts, so the change is in `f055948..0e44789`: the
-pipeline merge or the reproducibility fixes, both meant to leave the CLI's plans alone. No
-other corpus degree's plan count moved.
+**Two Northeastern degrees lost plans — found and fixed 2026-10-01.** The BA in CS (Boston)
+analysed 9,364 plans where the 09-28 build gave 9,978, and the BS concentration 9,099 where
+it gave 9,985. The pipeline merge's equivalence builder reads nested options to any depth,
+so it newly saw their `{CS2800, CS4820}` slot; since CS4820 requires CS2800, a plan taking
+CS4820 resolved that prerequisite to CS4820 itself, drew a self-loop and was discarded. The
+same defect had long cost Miami's BS 17% of its plans and Duke 4.4%. Fixed, and the four
+degrees re-imported; `clean-up-analysis-todo.md` section 6 has the detail.
 
 ---
 
 ## What this audit did *not* check
 
-- **Completions for 2022–2024.** Only the 2025 source files are available locally, so the
-  earlier years were checked for row counts only, never column values.
-- **`institution_completion_totals` (77,422 rows).** Recomputed against `completions` on
-  2026-09-29: every row is exactly **twice** the real total. Ingest summed the CIP 99
-  grand-total row beside the detail rows it totals. Ingest now leaves CIP 99 out
-  (`counts_toward_institution_totals`), but the live table keeps the doubled figures
-  until IPEDS is re-ingested. Nothing reads the table any more — the demographics queries
-  sum `completions` directly, which is why their answers are right — so either re-ingest or
-  drop it; it is kept for now only because doctor's 20-table check, bootstrap and setup all
-  list it.
+- ~~**Completions for 2022–2024.**~~ **Checked 2026-10-01** against files downloaded from
+  NCES: every year's row count and all 21 count columns, summed over every row, equal the
+  file. 2022 and 2023 hold the revised releases (every row the revision changed carries the
+  revised value). The check found one defect: the 2022 header pads `CNRALW` with spaces,
+  so every 2022 row stored NULL nonresident-alien women. Headers are now trimmed and 2022
+  re-imported. `db validate` passed throughout, because it parses with the importer's own
+  code; the per-column sums, computed independently, are what caught it. HD files older
+  than 2025 cannot be validated against `institutions`, which holds only the newest
+  directory.
+- ~~**`institution_completion_totals` (77,422 rows).**~~ **Fixed 2026-10-01.** Recomputed
+  against `completions` on 2026-09-29, every row was exactly **twice** the real total:
+  ingest summed the CIP 99 grand-total row beside the detail rows it totals. Ingest has
+  left CIP 99 out since (`counts_toward_institution_totals`), and all four years were
+  re-ingested on 2026-10-01: every row now equals its detail rows on all 21 columns, with
+  no row missing or left over (19,281–19,447 per year). The demographics queries never read
+  it, but `query_sql` users do, so it is kept and correct.
 - **The `C2025_B` and `C2025_C` files.** Not imported and not examined.
 - **Policy state on the live database.** The policies were read from `schema.sql`, not
   from `pg_policies` — there is no SQL path from this client to confirm the live database

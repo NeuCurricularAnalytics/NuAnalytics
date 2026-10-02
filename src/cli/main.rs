@@ -103,7 +103,7 @@ fn main() {
 /// Run `degree analyze` on the files, or on a stored program with `--from-db`.
 ///
 /// Exactly one of the two must be given. The database path is single-program (no worker
-/// pool); the file path is unchanged.
+/// pool); the file path may fan out to worker processes (`--jobs`).
 fn dispatch_analyze(
     files: &[std::path::PathBuf],
     #[cfg(feature = "database")] from_db: Option<String>,

@@ -1,8 +1,9 @@
 # Analysis-pipeline clean-up — plan
 
-Status (2026-09-30): **the merge is done — one pipeline, `core::degree::analysis`, which
+Status (2026-10-01): **the merge is done — one pipeline, `core::degree::analysis`, which
 `degree analyze` and every MCP analysis tool call.** Steps 1–4 and 7 are done; what is left
-is in steps 5 and 6 (small, independent) and the out-of-scope notes in section 6.
+is in steps 5 and 6 (small, independent) and the out-of-scope notes in section 6. The
+corpus was re-imported on 2026-10-01 with everything below except where noted.
 
 Completed detail has been trimmed — `git log` has it. What is here is what is left,
 plus the evidence the remaining steps depend on.
@@ -126,7 +127,7 @@ Two consequences the remaining steps need to know about:
   Measured over all 1,088 degrees: **781 identical (71.8%), 307 moved**, median change
   among movers −0.52%, and **30 degrees (2.8%) moved ≥5%**; range −29.1% (Dakota State,
   delay 8→5) to +80% (a five-point certificate going to nine). Trimmed variant is the
-  same shape. Re-import is tracked in `database-audit-todo.md`.
+  same shape. The corpus has been re-imported since (latest 2026-10-01).
 - **`build_plan_dag` is the shared per-plan DAG.** Steps 3 and 4 should not move or
   duplicate it; it is already where it belongs.
 
@@ -144,6 +145,13 @@ three samples, a 180 s deadline; CLI: `Config`) and its own output layer
   pre-merge binary, selected plans included, and verbose stderr and metrics files
   identical with `--include` on all 13 fixtures (the exclusion path the golden capture
   does not exercise).
+- **What that proof missed.** It compared corpus *conversions*, not corpus analyses. The
+  core equivalence builder that replaced the CLI's (`report::inputs::build_equivalence_map`)
+  recurses through every level of nested options; the CLI's read only one level. That
+  changes the map for 7 corpus degrees, and the figures of 2: Northeastern's BA and BS
+  concentration, whose `{CS2800, CS4820}` slot sits deeper, lost 614 and 886 plans
+  because CS4820 then stood in for its own prerequisite. The recursion is kept — the
+  deeper groups are real — and the stand-in is fixed (section 6).
 - **Proof, MCP:** equals the CLI on 17/17 inputs (section 2); `tests/rs/one_pipeline.rs`.
 - **`--target-course` and `--metrics-out` no longer need `mcp`**, and use the CLI's
   configuration. `--metrics-out` now writes the CLI's report JSON with
@@ -257,6 +265,18 @@ across toolchains, so the other figures could still move on a compiler upgrade.
   drawn curriculum graph (`curriculum_graph::select_best_prereq_path`, which takes the
   *first* satisfied DNF path rather than the smallest). Neither feeds a metric; aligning
   the drawing with `select_or_group_branch` is the obvious follow-up.
+
+- **A course stood in for its own prerequisite — DONE 2026-10-01.** An equivalence group
+  `{X, Y}` lets an in-plan Y satisfy a prerequisite on X. When Y itself requires X
+  (Northeastern's `{CS2800, CS4820}`, Duke's `{COMPSCI310, COMPSCI510}`), a plan taking Y
+  resolved Y's prerequisite to Y: expansion never added X, the plan DAG drew a self-loop,
+  the plan's metrics failed, and the plan was silently discarded. Now the dependent course
+  is excluded from its own prerequisite's equivalents — in expansion and in
+  `plan_dag::equivalent_in_plan`, which the drawn graph shares — so X is added and the
+  plan kept. Whole corpus, 10,000-plan cap: **4 of 1,088 full degrees move, 1,084
+  byte-identical** — Miami BS 4,889 → 5,922 plans, Northeastern BS 9,099 → 9,985 and BA
+  9,364 → 9,978 (their 09-28 counts), Duke 9,554 → 9,995; complexity means +0.4% to
+  +1.0%. 15 corpus degrees have such a group; in the other 11 no plan takes Y without X.
 
 ## 7. Decisions
 

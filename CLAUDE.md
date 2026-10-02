@@ -10,8 +10,8 @@ codebase — run `/init` if you want that.
 
 Default features: `log-info`, `log-debug`, `verbose`, `file-logging`, `database`, `mcp`.
 
-    cargo test --all-features                       # 1529 tests, clean
-    cargo test --no-default-features --features database   # 1289 — the CLI's feature set
+    cargo test --all-features                       # 1535 tests, clean
+    cargo test --no-default-features --features database   # 1295 — the CLI's feature set
     cargo build --features database
 
 **Three feature sets are tested in CI, and the middle one is load-bearing.** The query
@@ -86,6 +86,11 @@ out; `max_plans = 1000` written explicitly was discarded for equalling the defau
 `verbose = false` could not turn off a `true` from a lower tier. Add a field and it is
 handled automatically — there is no per-field merge list any more.
 
+**Known defect: `config set` and `config unset` save the merged configuration**, project
+file and override flags included, into the user file (`commands::config` saves the
+in-memory `Config`). Run from a project directory, they copy its settings into the user's
+defaults. Not fixed; documented in `docs/config.md`.
+
 **An explicitly blank string is treated as absent and never overrides.** Blank means "not
 configured" everywhere in this tool, so a blank in one tier erasing a working value from
 another could only be a footgun. Writing a value is how you override a lower tier;
@@ -101,9 +106,7 @@ two traps a self-hoster hits — seed tables are read-only through the API, and 
 `supabase/postgres` image, not a stock one — are in `docs/database/setup.md`.
 
 `docs/database-audit-todo.md` is the live backend work list, trimmed to what is left:
-two Northeastern degrees whose plan count fell for an unidentified reason (section 4, beside
-the 2026-10-01 re-import), two loose ends of the corpus-repo tidy, and why `db remetric` is
-deliberately not built.
+two loose ends of the corpus-repo tidy, and why `db remetric` is deliberately not built. Section 4 records the 2026-10-01 measurement and re-import of the corpus.
 It also records the settled decisions that are easy to re-litigate — notably that **writes
 stay open to any authenticated member**: ownership policies were implemented and reverted
 because they stop `db import --replace` overwriting another member's row. `created_by`
@@ -149,6 +152,12 @@ formats. A check added to `diagnose` must also be added to the three `*_DEPENDEN
 or it silently disappears from the report when an earlier check fails —
 `every_early_exit_lists_the_same_checks_as_a_full_run` compares each early exit's check
 names with a full run's to catch exactly that.
+
+**`db validate` cannot see a parsing defect** — it parses the survey file with the
+importer's own code, so both sides share any mistake. The 2022 completions header pads
+`CNRALW` with spaces; untrimmed, the importer never found the column and every 2022 row
+stored NULL, and validation passed. Headers are trimmed now (`uppercase_headers`). To check
+an import independently, compare per-column sums computed from the CSV yourself.
 
 **The row-limit check is the one that catches wrong answers rather than errors.** A
 `PGRST_DB_MAX_ROWS` below 5,000 truncates a large `PostgREST` select — today the stored
@@ -211,8 +220,11 @@ and a missing run is `source_not_found`, never a silent fresh run.
 (including `--target-course` and `--from-db`) and every MCP analysis tool call it; each
 keeps only its defaults and its output layer. Where the two old copies differed, the CLI's
 behaviour was kept, because the stored corpus came from it — the CLI's output was
-byte-identical across the merge, and the MCP now equals the CLI at equal settings
-(`tests/rs/one_pipeline.rs`). Do not give either surface a pipeline step of its own; add
+byte-identical across the merge on every fixture and sample, and the MCP now equals the CLI
+at equal settings (`tests/rs/one_pipeline.rs`). The corpus was not analyzed in that gate,
+and the one change it missed — the core equivalence builder reads nested options to any
+depth, the CLI's read one level — moved two Northeastern degrees (clean-up doc, steps 2–4).
+Gate an analyzer change on the whole corpus, not only the fixtures. Do not give either surface a pipeline step of its own; add
 an `AnalysisConfig` option instead. `planner` is a different level of analysis and stays
 out. `docs/clean-up-analysis-todo.md` has what is left (steps 5 and 6) and one known gap
 deliberately not fixed in the merge: the scheduler never sees a degree's
@@ -228,3 +240,11 @@ byte-identical across the change, so keep it that way — a rule change for sing
 OR-groups moves every degree. `parse_to_edges` also reads `|` as the loosest operator now;
 it did not, which is why a prerequisite stored as a tree analysed differently from the
 same prerequisite written with parentheses.
+
+**A course never stands in for its own prerequisite.** An equivalence group `{X, Y}` lets an
+in-plan Y satisfy a prerequisite on X — unless Y is the course whose prerequisite it is.
+Both expansion and `plan_dag::equivalent_in_plan` (which the drawn graph shares) exclude
+the dependent; before that, a plan taking Y without X got a self-loop and was silently
+dropped (Miami's BS lost 17% of its plans). A plan whose metrics fail is skipped and not
+counted, so a defect that breaks plans shows up only as a lower `plans_analyzed` — compare
+plan counts when gating.

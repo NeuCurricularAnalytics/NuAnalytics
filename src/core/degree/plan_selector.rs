@@ -947,4 +947,38 @@ mod tests {
         assert!(selected.calc_ready_shortest.is_none());
         assert!(selected.shortest.is_some());
     }
+
+    #[test]
+    fn test_longest_delay_chain_breaks_a_tie_by_blocking_then_course_key() {
+        let school = create_test_school();
+        let selector = PlanSelector::new(&school, PlanSelectorConfig::default());
+        let tied = CourseMetrics {
+            delay: 3,
+            blocking: 2,
+            complexity: 5,
+            centrality: 0,
+            chain_length: 1,
+        };
+        let courses: Vec<String> = ["CS050", "CS100", "CS200", "CS300"]
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        // Fresh `HashMap`s iterate in different orders; the answer must not.
+        for _ in 0..32 {
+            let mut metrics: HashMap<String, CourseMetrics> = ["CS300", "CS200", "CS100"]
+                .into_iter()
+                .map(|c| (c.to_string(), tied.clone()))
+                .collect();
+            // Blocking decides before the key: CS050 sorts first but blocks less.
+            metrics.insert(
+                "CS050".to_string(),
+                CourseMetrics {
+                    blocking: 1,
+                    ..tied.clone()
+                },
+            );
+            let chain = selector.compute_longest_delay_chain(&courses, &metrics, 3, &DAG::new());
+            assert_eq!(chain, ["CS100"]);
+        }
+    }
 }

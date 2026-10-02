@@ -55,7 +55,8 @@ pub fn build_plan_dag(
         for prereq in node.required_prerequisites() {
             if plan.contains(prereq) {
                 dag.add_prerequisite(course_key.clone(), prereq);
-            } else if let Some(equiv) = equivalent_in_plan(prereq, equivalences, &plan) {
+            } else if let Some(equiv) = equivalent_in_plan(prereq, course_key, equivalences, &plan)
+            {
                 dag.add_prerequisite(course_key.clone(), equiv);
             }
         }
@@ -197,7 +198,13 @@ fn in_plan_references(
     })
 }
 
-/// Find an equivalent of `course` that is in the plan.
+/// Find an equivalent of `course` that is in the plan, other than `dependent`.
+///
+/// `dependent` is the course whose prerequisite `course` is, and it never counts: a course
+/// cannot satisfy its own prerequisite. Northeastern offers `{CS2800, CS4820}` as one slot
+/// while CS4820 requires CS2800, so a plan taking CS4820 resolved that prerequisite to
+/// CS4820 itself; the self-loop made the plan's metrics fail and the plan was discarded
+/// (614 of 9,978 plans for the BA, 1,033 of 5,922 for Miami's BS).
 ///
 /// `pub(crate)` for one other caller: `report::visualization::curriculum_graph`, which
 /// draws the graph. The picture and the metrics must resolve an equivalence to the same
@@ -210,12 +217,14 @@ fn in_plan_references(
 /// source of run-to-run variation.
 pub(crate) fn equivalent_in_plan<'a>(
     course: &str,
+    dependent: &str,
     equivalences: &HashMap<String, HashSet<String>>,
     plan: &HashSet<&'a str>,
 ) -> Option<&'a str> {
     equivalences.get(course).and_then(|equivs| {
         equivs
             .iter()
+            .filter(|eq| eq.as_str() != dependent)
             .filter_map(|eq| plan.get(eq.as_str()).copied())
             .min()
     })
@@ -513,6 +522,33 @@ courses:
         );
         let dag = build_plan_dag(&plan(&["MATH241", "CS201"]), &g, &equivs, &HashSet::new());
         assert_eq!(deps(&dag, "CS201"), ["MATH241"]);
+    }
+
+    #[test]
+    fn a_course_never_satisfies_its_own_prerequisite_through_an_equivalence() {
+        // Northeastern offers `{CS2800, CS4820}` as one slot, and CS4820 requires CS2800.
+        let g = graph_of(vec![
+            node("CS2800", vec![]),
+            node("CS4820", vec![("CS2800", PrerequisiteType::Required, None)]),
+            node("CS9000", vec![]),
+        ]);
+        let group: HashSet<String> = ["CS2800", "CS4820", "CS9000"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let equivs: HashMap<String, HashSet<String>> =
+            group.iter().map(|c| (c.clone(), group.clone())).collect();
+        let cases: [(&[&str], &[&str]); 3] = [
+            // The self-loop that made the plan's metrics fail.
+            (&["CS4820"], &[]),
+            // Excluded before the minimum is taken, so another equivalent still serves.
+            (&["CS4820", "CS9000"], &["CS9000"]),
+            (&["CS2800", "CS4820"], &["CS2800"]),
+        ];
+        for (courses, want) in cases {
+            let dag = build_plan_dag(&plan(courses), &g, &equivs, &HashSet::new());
+            assert_eq!(deps(&dag, "CS4820"), want, "{courses:?}");
+        }
     }
 
     #[test]

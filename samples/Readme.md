@@ -1,30 +1,26 @@
-# Sample Curriculumn Maps
+# Samples
 
-
-* plans/  - Plans hand built originally used for Curricular Analytics
-* correct/ - Outputted meteric versions of the plans in `plans/` for reference using https://curricularanalytics.org/ for the primary 'authority' on correct metrics
-
+| Directory | Contents |
+|---|---|
+| `plans/` | Curriculum CSVs in the Curricular Analytics format, hand-built for that tool — input for `nuanalytics planner`. |
+| `planner-output/correct/` | The same curricula with metrics from [curricularanalytics.org](https://curricularanalytics.org/), the reference the planner's metrics are checked against. |
+| `planner-output/reports/` | Example planner reports (HTML, Markdown, PDF). |
+| `degrees/` | Three complete degree programs (CSU, Northeastern, University of Hawaiʻi at Mānoa), each with its analysis report JSON — input for `nuanalytics degree`, and the `sample:` degrees the MCP server serves. |
+| `degree-output/` | Example `degree analyze` output: metrics, plan CSVs and HTML reports. |
+| `claude-project-reference/` | Reference files for a Claude project that authors degree files. |
 
 > [!WARNING]
-> These files are used in integration tests, so should remain in both directories.
-> * samples/plans/BSCS_Hawaii_Manoa.csv
-> * samples/plans/California_Berkely_V2.csv
-> * samples/plans/Colostate_CSDegree_2017_w_MATH.csv
-> * samples/plans/Colostate_CSDegree_2017.csv
-> * samples/plans/Colostate_CSDegree.csv
-> * samples/plans/Kennesaw_State_University_CS.csv
-> * samples/plans/Metropolitan_State_University_CS.csv
-> * samples/plans/Michigan_Ann_Arbor_CS.csv
-> * samples/plans/U_of_Colorado_Boulder_CS.csv
+> The integration tests read these files, so keep each curriculum in `plans/` and its
+> reference in `planner-output/correct/`:
 >
-> Followed with their matching 'correct' versions:
->
-> * samples/correct/BSCS_Hawaii_Manoa_w_metrics.csv
-> * samples/correct/California_Berkely_V2_w_metrics.csv
-> * samples/correct/Colostate_CSDegree_2017_w_MATH_w_metrics.csv
-> * samples/correct/Colostate_CSDegree_2017_w_metrics.csv
-> * samples/correct/Colostate_CSDegree_w_metrics.csv
-> * samples/correct/Kennesaw_State_University_CS_w_metrics.csv
-> * samples/correct/Metropolitan_State_University_CS_w_metrics.csv
-> * samples/correct/Michigan_Ann_Arbor_CS_w_metrics.csv
-> * samples/correct/U_of_Colorado_Boulder_CS_w_metrics.csv
+> | `plans/` | `planner-output/correct/` |
+> |---|---|
+> | `BSCS_Hawaii_Manoa.csv` | `BSCS_Hawaii_Manoa_w_metrics.csv` |
+> | `California_Berkely_V2.csv` | `California_Berkely_V2_w_metrics.csv` |
+> | `Colostate_CSDegree_2017_w_MATH.csv` | `Colostate_CSDegree_2017_w_MATH_w_metrics.csv` |
+> | `Colostate_CSDegree_2017.csv` | `Colostate_CSDegree_2017_w_metrics.csv` |
+> | `Colostate_CSDegree.csv` | `Colostate_CSDegree_w_metrics.csv` |
+> | `Kennesaw_State_University_CS.csv` | `Kennesaw_State_University_CS_w_metrics.csv` |
+> | `Metropolitan_State_University_CS.csv` | `Metropolitan_State_University_CS_w_metrics.csv` |
+> | `Michigan_Ann_Arbor_CS.csv` | `Michigan_Ann_Arbor_CS_w_metrics.csv` |
+> | `U_of_Colorado_Boulder_CS.csv` | `U_of_Colorado_Boulder_CS_w_metrics.csv` |

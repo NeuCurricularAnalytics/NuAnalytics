@@ -1,103 +1,31 @@
 # Planner Command
 
-The `planner` command analyzes computer science curricula, computing detailed metrics about course structure and dependencies. It is based on the work of Greg Heilman and [CurricularAnalytics.org](https://curricularanalytics.org/help/metrics). Current planner input matches the expected format from Curricular Analytics, though output files include additional computed metrics.
+`nuanalytics planner` analyzes a curriculum given as a Curricular Analytics CSV: it
+builds the prerequisite graph, computes each course's metrics, and writes the curriculum
+back out with the metrics added, plus a report with a term-by-term schedule. The metrics
+follow Greg Heileman's work and [CurricularAnalytics.org](https://curricularanalytics.org/help/metrics).
 
-## Overview
+For degree programs with choices — electives, alternatives, requirement blocks — use
+[`degree analyze`](degree.md) instead; the planner analyzes one fixed list of courses.
 
-The `planner` command:
-
-- Loads one or more curriculum CSV files
-- Builds a directed acyclic graph (DAG) of course dependencies
-- Computes curriculum metrics for each course
-- Exports results to CSV format with computed metrics
-
-## Basic Usage
-
-### Analyze a Single Curriculum
+## Usage
 
 ```bash
-nuanalytics planner path/to/curriculum.csv
+nuanalytics planner path/to/curriculum.csv                 # CSV metrics + HTML report
+nuanalytics planner a.csv b.csv c.csv                      # several curricula
+nuanalytics planner plans/*.csv                            # every file a glob matches
+nuanalytics planner input.csv -o result.csv                # one named output
+nuanalytics planner a.csv b.csv -o a_out.csv b_out.csv     # one output per input, in order
 ```
 
-This will:
-1. Parse the curriculum CSV
-2. Compute all metrics
-3. Export results — CSV metrics to `[paths] metrics_dir` and the report (HTML by default) to `[paths] reports_dir`, both configured under `[paths]` in the config file
+Without `-o`, each input `name.csv` writes `name_w_metrics.csv` to the metrics directory
+and `name_report.html` to the reports directory (`[paths]` in the configuration, or
+`--metrics-dir` and `--report-dir`). With `-o`, give one output per input; the extension
+chooses the output — `.csv` for metrics only, `.html`, `.md` or `.pdf` for a report only.
 
-### Analyze Multiple Curricula
+## Input format
 
-```bash
-nuanalytics planner curriculum1.csv curriculum2.csv curriculum3.csv
-```
-
-### Specify Output File(s)
-
-```bash
-# Single input, single output
-nuanalytics planner input.csv -o result.csv
-
-# Multiple inputs with corresponding outputs
-nuanalytics planner input1.csv input2.csv -o output1.csv output2.csv
-```
-
-When using `-o` or `--output`:
-- If you provide one input file, you can provide one output file
-- If you provide N input files, you must provide exactly N output files (1:1 mapping)
-- Output paths can be absolute or relative
-
-## Input File Format
-
-Curriculum CSV files have a specific structure with metadata and course data sections.
-
-### Metadata Section
-
-The file begins with curriculum metadata:
-
-```
-Curriculum,My_University_BS_CS,,,,,,,,,
-Institution,"University of My State",,,,,,,,,
-Degree Type,"BS",,,,,,,,,
-System Type,"semester",,,,,,,,,
-CIP,"11.0701",,,,,,,,,
-```
-
-**Metadata Fields:**
-
-- `Curriculum` - Name/identifier for the curriculum
-- `Institution` - University or institution name
-- `Degree Type` - Degree level (BS, BA, MS, etc.)
-- `Year` (optional) - Academic year of the curriculum
-- `System Type` - Academic system ("semester" or "quarter")
-- `CIP` - Classification of Instructional Programs code
-
-### Courses Section
-
-After metadata, the file contains course data:
-
-```
-Courses
-
-Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name
-1,"Introduction to CS","CS","110",,,,3,
-2,"Data Structures","CS","210","1",,,4,
-3,"Algorithms","CS","310","2",,,4,
-...
-```
-
-**Course Fields:**
-
-- `Course ID` - Unique numeric identifier for the course
-- `Course Name` - Full course name
-- `Prefix` - Department prefix (CS, MATH, PHYS, etc.)
-- `Number` - Course number
-- `Prerequisites` - Semicolon-separated list of prerequisite Course IDs
-- `Corequisites` - Semicolon-separated list of corequisite Course IDs
-- `Strict-Corequisites` - Corequisites that must be taken in the same term
-- `Credit Hours` - Number of credit hours
-- `Institution` - Optional institution override
-- `Canonical Name` - Optional standardized course name
-
-### Example Curriculum File
+A metadata block, a line reading `Courses`, then the course table:
 
 ```
 Curriculum,State_University_CS,,,,,,,,,
@@ -106,262 +34,123 @@ Degree Type,"BS",,,,,,,,,
 System Type,"semester",,,,,,,,,
 CIP,"11.0701",,,,,,,,,
 Courses
-
 Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name
-1,"Intro to Computer Science","CS","101",,,,3,
-2,"Discrete Math","MATH","150",,,,4,
-3,"Calculus I","MATH","160",,,,4,
-4,"Data Structures","CS","201","1;2",,,4,
-5,"Linear Algebra","MATH","250","3",,,4,
-6,"Algorithms","CS","301","4;5",,,4,
-7,"Database Systems","CS","350","4",,,4,
-8,"Systems Programming","CS","310","4",,,4,
-9,"Capstone Project","CS","490","6;7;8",,,3,
+1,"Intro to Computer Science","CS","101",,,,3,,
+2,"Discrete Math","MATH","150",,,,4,,
+3,"Calculus I","MATH","160",,,,4,,
+4,"Data Structures","CS","201","1;2",,,4,,
+5,"Linear Algebra","MATH","250","3",,,4,,
+6,"Algorithms","CS","301","4;5",,,4,,
+7,"Database Systems","CS","350","4",,,4,,
+8,"Systems Programming","CS","310","4",,,4,,
+9,"Capstone Project","CS","490","6;7;8",,,3,,
 ```
 
-## Output File Format
+**Do not put a blank line between `Courses` and the header row.** With one there, the
+planner currently reads no courses and still reports success, with a complexity of 0.
 
-The planner generates a CSV file with computed metrics for each course:
+Metadata rows:
 
-### Output Structure
+| Row | Meaning |
+|---|---|
+| `Curriculum` | The curriculum's name. |
+| `Institution` | The institution. |
+| `Degree Type` | BS, BA, MS, … |
+| `Year` | The catalog year (optional). |
+| `System Type` | `semester` or `quarter`. Quarter-system complexity is scaled by 2/3. |
+| `CIP` | The program's Classification of Instructional Programs code. |
+
+Course columns:
+
+| Column | Meaning |
+|---|---|
+| `Course ID` | A number unique within the file; the requisite columns refer to it. |
+| `Course Name`, `Prefix`, `Number` | The course. |
+| `Prerequisites` | Course IDs that must be passed first, separated by `;`. |
+| `Corequisites` | Course IDs to take before or alongside, separated by `;`. |
+| `Strict-Corequisites` | Course IDs that must be taken in the same term. |
+| `Credit Hours` | Credits. |
+| `Institution` | Optional; overrides the file's institution for this course. |
+| `Canonical Name` | Optional standardized name. |
+
+## Output
+
+The metrics CSV repeats the input with summary rows and five metric columns added. For
+the example above:
 
 ```
-Curriculum,State_University_CS,,,,,,,,,
-Institution,"State University",,,,,,,,,
-Degree Type,"BS",,,,,,,,,
-Year,"2023",,,,,,,,,
-System Type,"semester",,,,,,,,,
-CIP,"11.0701",,,,,,,,,
-Total Structural Complexity,47.5
-Longest Delay,6
-Highest Centrality Course,"Algorithms",0.45
+Curriculum,State_University_CS
+Institution,State University
+Degree Type,"BS"
+System Type,semester
+CIP,"11.0701"
+Total Structural Complexity,58.0
+Longest Delay,4,MATH150->CS201->CS310->CS490
+Highest Centrality Course,"CS201",24
 Courses
-
-Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality
-1,"Intro to CS","CS","101",,,,3,,"",0.7,3,1,0
-2,"Discrete Math","MATH","150",,,,4,,"",0.7,2,2,0
+Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name,Complexity,Blocking,Delay,Centrality,Chain Length
+1,Intro to Computer Science,"CS","101","","","",3,"State University","",9.0,5,4,0,1
+2,Discrete Math,"MATH","150","","","",4,"State University","",9.0,5,4,0,1
+4,Data Structures,"CS","201","1;2","","",4,"State University","",8.0,4,4,24,2
+9,Capstone Project,"CS","490","6;7;8","","",3,"State University","",4.0,0,4,0,4
 ...
 ```
 
-### Metrics Explained
+### The metrics
 
-Each course gets four computed metrics:
+- **Delay**: the number of courses on the longest prerequisite path through the course.
+  Every course here lies on a four-course path, so every delay is 4.
+- **Blocking**: the number of courses that cannot be taken until this one is passed —
+  all of them downstream, not just the courses that list it directly. Intro to Computer
+  Science blocks 5.
+- **Complexity**: delay plus blocking (scaled by 2/3 for a quarter system). Total
+  structural complexity is the sum over all courses.
+- **Centrality**: the total length of the paths from a course with no prerequisites to a
+  course nothing depends on that pass through this course. A course at either end of
+  every path it is on scores 0.
+- **Chain length**: the number of courses in the longest prerequisite chain ending at the
+  course, itself included — how deep into the program it sits.
 
-- **Complexity** - Measure of how complex the course makes the curriculum (0-20+)
-  - Based on course dependencies and position in dependency graph
-  - Higher values indicate courses with more downstream impact
-  - For quarter-based systems, automatically scaled by 2/3 to account for shorter terms
+`Longest Delay` names the longest path; `Highest Centrality Course` names the course with
+the highest centrality.
 
-- **Blocking** - Number of courses that have this course as a prerequisite
-  - Direct blocking count (not transitive)
-  - Shows how many other courses depend on this one
+## Reports
 
-- **Delay** - Longest path from this course to a course with no prerequisites
-  - Measured in terms (semesters or quarters)
-  - Shows how far into the curriculum this course is located
-
-- **Centrality** - Linear combination of all paths through this course
-  - Indicates how central the course is in the curriculum network
-  - Higher values mean the course is important to many other courses
-
-
-## Command Examples
-
-### Simple Analysis
+By default the planner writes both the metrics CSV and an HTML report. The HTML report
+has a term-by-term schedule with credit totals, a dependency graph with prerequisite and
+corequisite lines, colour-coded complexity, and the metrics table.
 
 ```bash
-# Analyze with default output location. Creates
-#   metrics_dir/my_curriculum_w_metrics.csv  +  reports_dir/my_curriculum_report.html
-# where metrics_dir / reports_dir come from the config's [paths] section.
-nuanalytics planner my_curriculum.csv
-```
-
-### Custom Output Location
-
-```bash
-# Save to specific file (extension chooses CSV vs HTML/MD/PDF)
-nuanalytics planner curriculum.csv -o analysis_results.csv
-
-# Save to specific directories using config
-nuanalytics config set metrics_dir /home/user/analysis/metrics
-nuanalytics config set reports_dir /home/user/analysis/reports
-nuanalytics planner curriculum.csv
-
-# Or override per-run
-nuanalytics planner curriculum.csv --metrics-dir ./out/metrics --report-dir ./out/reports
-```
-
-### Batch Processing
-
-```bash
-# Analyze three curricula at once, each with its own output file (must match count)
-nuanalytics planner cs_degree.csv math_degree.csv physics_degree.csv \
-  -o cs_metrics.csv math_metrics.csv physics_metrics.csv
-```
-
-more commonly
-
-```bash
-# Creates a file for every plan in glob expansion under the configured
-# metrics_dir / reports_dir.
-nuanalytics planner directory_with_plans/*.csv
-```
-
-## Report Generation
-
-In addition to CSV metrics, the planner can generate visual reports in HTML, PDF, or Markdown format.
-
-### Default Behavior
-
-By default, running `nuanalytics planner` generates **both**:
-- CSV metrics file in the metrics directory
-- HTML report in the reports directory
-
-```bash
-# Generates both CSV and HTML report
-nuanalytics planner curriculum.csv
-```
-
-### Report Formats
-
-#### HTML Report (default)
-
-```bash
-nuanalytics planner curriculum.csv --report-format html
-```
-
-HTML reports include:
-- Term-by-term course schedule with credit totals
-- Visual dependency graph with prerequisite/corequisite lines
-- Color-coded complexity badges
-- Detailed metrics table
-- Summary statistics
-
-#### PDF Report
-
-```bash
-nuanalytics planner curriculum.csv --report-format pdf
-```
-
-PDF reports are generated by converting HTML to PDF using headless Chrome/Chromium. Requires Chrome or Chromium to be installed.
-
-To specify a custom PDF converter:
-
-```bash
+nuanalytics planner curriculum.csv --report-format pdf     # PDF, via headless Chrome or Chromium
+nuanalytics planner curriculum.csv --report-format md      # Markdown
 nuanalytics planner curriculum.csv --report-format pdf --pdf-converter /path/to/chrome
+nuanalytics planner curriculum.csv --no-report             # metrics CSV only
+nuanalytics planner curriculum.csv --no-csv                # report only
 ```
 
-#### Markdown Report
+The schedule places corequisites in the same term, keeps prerequisites in earlier terms,
+starts long chains early, and balances credits against a target per term — 15 by
+default, or `--term-credits`:
 
 ```bash
-nuanalytics planner curriculum.csv --report-format md
-```
-
-Generates a text-based report suitable for documentation systems.
-
-### Output Control
-
-```bash
-# Generate only CSV (no report)
-nuanalytics planner curriculum.csv --no-report
-
-# Generate only report (no CSV)
-nuanalytics planner curriculum.csv --no-csv
-
-# Specify custom output directories
-nuanalytics planner curriculum.csv --metrics-dir ./metrics --report-dir ./reports
-
-# Specify exact output file (format inferred from extension)
-nuanalytics planner curriculum.csv -o curriculum_report.pdf
-```
-
-### Term Scheduling
-
-Reports include automatic term scheduling. Control credit targets per term:
-
-```bash
-# Default: 15 credits per semester
 nuanalytics planner curriculum.csv --term-credits 16
 ```
 
-The scheduler:
-1. Groups corequisites into the same term
-2. Respects prerequisite ordering
-3. Balances credit hours across terms
-4. Places chain-starting courses early
+## Logging
 
-### With Logging
+Logging flags are global, so they go before `planner`:
 
 ```bash
-# Enable debug logging to see detailed analysis progress
-nuanalytics planner curriculum.csv --debug
-
-# Log to a file for later review
-nuanalytics planner curriculum.csv --log-file analysis.log
+nuanalytics --debug planner curriculum.csv
+nuanalytics --log-file analysis.log planner curriculum.csv
 ```
-
-## Workflow: Analyzing a New Curriculum
-
-1. **Prepare your curriculum CSV** following the format described in "Input File Format"
-
-2. **Run the planner**:
-   ```bash
-   nuanalytics planner your_curriculum.csv -o your_curriculum_metrics.csv
-   ```
-
-3. **Review the output**:
-   ```bash
-   # Check the metrics
-   cat your_curriculum_metrics.csv
-   ```
-
-4. **Analyze the results**:
-   - Look for high complexity courses (might be bottlenecks)
-   - Check blocking counts (which courses gate access to others?)
-   - Review delay values (how is the curriculum sequenced?)
-   - Compare centrality scores (which are the key courses?)
-
-5. **Iterate**:
-   - Modify the curriculum structure in your CSV if desired
-   - Re-run the planner to see how metrics change
 
 ## Troubleshooting
 
-### File Not Found
-
-```
-Error: Failed to parse plan: No such file or directory
-```
-
-**Solution**: Verify the input file path is correct and the file exists.
-
-### Invalid CSV Format
-
-```
-Error: Failed to parse plan: Invalid CSV format
-```
-
-**Solution**:
-- Check that your CSV has the correct metadata section
-- Verify all required course columns are present
-- Ensure Course IDs are unique
-- Check that prerequisite references use valid Course IDs
-
-### Circular Dependencies
-
-```
-Error: Cycle detected in prerequisites
-```
-
-**Solution**: Verify your course prerequisites don't form a circular dependency. A course cannot (directly or indirectly) require itself as a prerequisite.
-
-### Output Permission Denied
-
-```
-Error: Failed to write output file: Permission denied
-```
-
-**Solution**: Verify you have write permission to the output directory:
-```bash
-chmod u+w /path/to/output/directory
-```
+- **`✗ Failed to load missing.csv: No such file or directory`** — the input path is
+  wrong.
+- **Every metric is 0 and no courses are listed** — check for a blank line between
+  `Courses` and the header row.
+- **A metric looks wrong** — check that each prerequisite refers to the right `Course ID`.
+  A prerequisite cycle (a course requiring itself, directly or through others) cannot be
+  measured.

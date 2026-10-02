@@ -56,9 +56,9 @@ pub struct AnalyzeDegreeRequest {
     /// Emit a `per_course_metrics` array alongside the degree-level
     /// statistics. Default false: it is one entry per course.
     ///
-    /// When true, the response gains one entry per course the aggregator
-    /// tracked (typically the union of courses that appeared in any of
-    /// the analyzed plans) with the standard 5-number summary for
+    /// When true, the response gains one entry per course the run has
+    /// statistics for (the courses that appeared in any analyzed plan)
+    /// with the standard 5-number summary for
     /// complexity, centrality, delay, and blocking.
     #[schemars(
         description = "Include per-course metric medians (complexity, centrality, delay, blocking) for every tracked course in the response. Default false. Adds ~50 entries for a typical CS degree."
@@ -269,8 +269,8 @@ pub struct AnalysisResponse {
     /// Selected special plans
     pub selected_plans: Vec<PlanSummaryJson>,
 
-    /// Per-course aggregate metrics, one entry per course the aggregator
-    /// tracked. Empty (and omitted from the JSON) unless the request set
+    /// Per-course aggregate metrics, one entry per course the run has
+    /// statistics for. Empty (and omitted from the JSON) unless the request set
     /// `include_per_course_metrics=true` — the array runs ~50 entries for a
     /// typical CS degree and most callers don't need it.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -598,9 +598,9 @@ fn build_response(
     }
 }
 
-/// Materialise every course the aggregator tracked into a sorted
-/// `Vec<CourseMetricsJson>`. Sorting by `course_id` makes the response
-/// deterministic across runs so diff-friendly snapshot tests are practical.
+/// Every course the view has statistics for — a fresh run's aggregator or a stored
+/// run's rows — in `course_id` order (`ReportStats::course_ids` sorts them), so the
+/// response is deterministic.
 ///
 /// By default elective placeholders (`ELEC_*`, `FE*`) are filtered out: they
 /// carry all-zero stats and drag down summary statistics for the real
@@ -1648,8 +1648,8 @@ courses:
         // determinism assertion tautological.
         //
         // max_plans is deliberately below the full plan population so the generator's
-        // shuffled-sampling path runs; that sampling is seeded from the YAML, which is
-        // the property under test.
+        // shuffled-sampling path runs; that sampling is seeded from the degree
+        // (`default_seed_for_program`), which is the property under test.
         let yaml = sample_with_large_plan_space();
         let runs: Vec<TargetCourseStats> = (0..3)
             .map(|_| {
@@ -1665,8 +1665,7 @@ courses:
             first.all_plans.plans_containing > 0,
             "CS165 must appear in the csu sample's plans"
         );
-        // Where a course lands within a plan is reproducible too, now that the
-        // prerequisite and OR-group choices no longer follow hash order.
+        // Where a course lands within a plan is reproducible too.
         let json = |t: &TargetCourseStats| serde_json::to_value(t).expect("serializes");
         for (i, run) in runs.iter().enumerate().skip(1) {
             assert_eq!(json(run), json(first), "run {i} differs from run 0");

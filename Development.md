@@ -1,396 +1,161 @@
 # Development Guide
 
-This guide provides information for developers working on NuAnalytics, including setup instructions, common development tasks, and contribution policies.
+How to build, test and change NuAnalytics from a checkout, and the conventions a change
+is expected to follow.
 
-## Getting Started
+## Setup
 
-### Prerequisites
-
-Ensure you have the following installed:
-
-- **Rust 1.70+** - [Install Rust](https://rustup.rs/)
-- **Git** - [Install Git](https://git-scm.com/)
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/NeuCurricularAnalytics/NuAnalytics.git
-   cd NuAnalytics
-   ```
-2. Set up pre-commit hooks:
-   ```bash
-   pip3 install pre-commit  # if not already installed
-   ```
-   Then run:
-   ```bash
-   pre-commit install
-   pre-commit install --hook-type commit-msg
-   ```
-
-### Developer Workflow
-
-For contributors and local development, prefer `cargo run` so code rebuilds automatically:
+You need a current stable Rust toolchain ([rustup](https://rustup.rs/)), Git, and
+[pre-commit](https://pre-commit.com/) (a Python tool). Python 3 runs the MCP test script,
+and Node runs the optional MCP Inspector.
 
 ```bash
-# Run the CLI
-cargo run  -- planner path/to/curriculum.csv
-
-# Run config commands
-cargo run  -- config get level
-cargo run  -- config set level debug
+git clone https://github.com/NeuCurricularAnalytics/NuAnalytics.git
+cd NuAnalytics
+pip3 install pre-commit
+pre-commit install
+pre-commit install --hook-type commit-msg
 ```
 
-If you want to install the CLI from Git for testing the installed binary:
+The hooks run `cargo fmt`, `cargo clippy` with warnings as errors, whitespace and
+end-of-file fixes, a YAML check, a large-file check, and a Conventional Commits check on
+the message. If a hook fails, fix what it reports (most fixes are automatic), stage the
+files again and commit again.
+
+## Building and running
 
 ```bash
-cargo install --git https://github.com/NeuCurricularAnalytics/NuAnalytics --bin nuanalytics
-nuanalytics --help
-```
-
-### Recommended Git Flow (for newer contributors)
-
-1. Fork the repository on GitHub
-2. Clone your fork locally:
-   ```bash
-   git clone https://github.com/<your-username>/NuAnalytics.git
-   cd NuAnalytics
-   ```
-3. Create a feature branch:
-   ```bash
-   git checkout -b feat/short-description
-   ```
-4. Make changes and run locally:
-   ```bash
-   cargo fmt --all
-   cargo clippy --all-targets -- -D warnings
-   cargo test
-   cargo run --package nu_analytics --bin nuanalytics -- planner ./samples/plans/* --report-format pdf
-   ```
-5. Commit with a conventional message:
-   ```bash
-   git add .
-   git commit -m "feat(cli): add new option"
-   ```
-6. Push and open a PR:
-   ```bash
-   git push origin feat/short-description
-   ```
-7. Address review feedback, ensure CI passes.
-
-   This ensures code quality checks run automatically before each commit. If you don't have pre-commit installed, you need to install it via pip or pip3 `pip install pre-commit`.
-
-## Common Development Actions
-
-### CLI Development
-
-The CLI is built with Rust using a modular architecture:
-- `src/cli/main.rs` - Entry point and startup logic
-- `src/cli/args.rs` - CLI argument definitions using clap (top-level commands + nested subcommands for `degree` and `db`)
-- `src/cli/commands/` - Command handlers (`config`, `init`, `planner`, `degree`, `db`, `mcp`)
-- `src/core/` - Core library functionality, including the trim transform (`src/core/degree/trim.rs`) and the Supabase client (`src/core/database/`)
-- `src/mcp/` - MCP server module (feature-gated)
-
-**Build the CLI in debug mode:**
-```bash
-cargo build
-```
-
-**Build the CLI for release:**
-```bash
-cargo build --release
-```
-
-### MCP Server Development
-
-MCP support is enabled by default. The server is organized as a separate module:
-
-```
-src/mcp/
-├── mod.rs              # Module exports
-├── server.rs           # MCP server handler — registers every tool via #[tool]
-├── schema_content.rs   # Embedded degree-schema documentation
-├── cache.rs            # YAML_CACHE + ARTIFACT_CACHE singletons
-└── tools/
-    ├── mod.rs                  # Tool re-exports
-    ├── shared.rs               # YamlSource, format_degree_parse_error, ToolFollowup, …
-    ├── schema.rs               # get_degree_schema
-    ├── validate.rs             # validate_degree
-    ├── audit.rs                # audit_degree
-    ├── analyze.rs              # analyze_degree
-    ├── trim.rs                 # trim_degree (v0.4.0)
-    ├── pipeline.rs             # degree_pipeline (validate+audit+analyze in one)
-    ├── report.rs               # generate_degree_report
-    ├── plan_graph.rs           # render_plan_graph
-    ├── course_detail.rs        # get_course_detail
-    ├── match_courses.rs        # find_courses_matching
-    ├── visualize.rs            # get_curriculum_visualization
-    ├── samples.rs              # list_sample_degrees
-    ├── cache.rs                # cache_yaml
-    └── *.rs                    # database-feature-gated: institutions, degrees, completions,
-                                #   cip_codes, lookup, scaffold (all require `db login`)
-```
-
-Database-backed tools (everything under `src/mcp/tools/*.rs` gated by
-`#[cfg(feature = "database")]`) require a valid user JWT — the server
-skips registering them at startup when `nuanalytics db login` hasn't
-been run.
-
-**Run the MCP server:**
-```bash
+cargo build                 # debug: target/debug/nuanalytics
+cargo build --release       # release: target/release/nuanalytics
+cargo run -- planner samples/plans/BSCS_Hawaii_Manoa.csv
+cargo run -- degree analyze samples/degrees/csu-cs-bscs-general.yaml
 cargo run -- mcp
 ```
 
-**Test MCP tools:**
-```bash
-# Run all MCP tests
-cargo test mcp::
+`cargo run` rebuilds when needed; run `target/debug/nuanalytics` directly to skip the
+check.
 
-# Run specific tool tests
-cargo test mcp::tools::schema
-cargo test mcp::tools::validate
+### Features
+
+The default features are `log-info`, `log-debug`, `verbose`, `file-logging`, `database`
+and `mcp`. `database` adds the Supabase client and the `db` commands; `mcp` adds the
+server. **CI tests three feature sets, and the middle one matters most:**
+
+```bash
+cargo test --all-features
+cargo test --no-default-features --features database   # the CLI without the MCP server
+cargo test --no-default-features
 ```
 
-**Integration test script:**
+The database queries live in `src/core/query/` so the CLI can use them without `mcp`. If
+code under `src/core/` ever imports `crate::mcp`, only the middle build fails.
+
+### Build memory
+
+A release build uses several gigabytes. On a machine already running editors and
+language servers, limit parallel jobs (`cargo build -j 4`) or run the build in its own
+memory-limited cgroup (`systemd-run --user --scope -p MemoryMax=8G -- cargo build`).
+
+## Testing
+
+- Unit tests sit in a `#[cfg(test)] mod tests` block in the file they test.
+- Integration tests are in `tests/rs/`, compiled as the one `integration` target through
+  `tests/integration.rs`. `tests/config_tests.rs` is a separate target for configuration.
+- `tests/assets/degrees/` holds 13 real degrees that the integration tests compile in with
+  `include_str!`, so a missing fixture is a build error. Its `Readme.md` says where each
+  came from.
+
 ```bash
-# Run MCP server integration tests
-python3 tests/scripts/test_mcp_server.py
-
-# Test with a specific YAML file
-python3 tests/scripts/test_mcp_server.py --yaml-file samples/degrees/my-degree.yaml
-
-# Verbose output
-python3 tests/scripts/test_mcp_server.py -v
+cargo test                          # everything, default features
+cargo test config                   # tests whose name contains "config"
+cargo test --lib                    # unit tests only
+cargo test --test integration       # the integration target only
 ```
 
-**Test with MCP Inspector:**
+`tests/scripts/test_mcp_server.py` drives a running MCP server over stdio; see
+[tests/scripts/README.md](tests/scripts/README.md) for its options. The
+[MCP Inspector](https://github.com/modelcontextprotocol/inspector) gives a web UI for
+calling tools by hand:
+
 ```bash
 npx @modelcontextprotocol/inspector cargo run -- mcp
 ```
 
-This opens a web UI where you can interactively test the tools.
-Note: The inspector may have issues with large YAML content - use the Python test script for those cases.
+## Code quality
 
-**Adding new MCP tools:**
+Cargo aliases, defined in `.cargo/config.toml`:
 
-1. Create a new file in `src/mcp/tools/` (e.g., `audit.rs`)
-2. Define request types with `schemars::JsonSchema` derive
-3. Implement an `execute()` function
-4. Add to `src/mcp/tools/mod.rs` exports
-5. Register in `src/mcp/server.rs` using the `#[tool]` macro
-6. Add unit tests
+| alias | runs |
+|---|---|
+| `cargo fmt-check` | `cargo fmt --all -- --check` |
+| `cargo lint` | `clippy` on all targets and features, warnings as errors |
+| `cargo lint-fix` | `clippy --fix` on all targets and features |
+| `cargo doc-private` | `cargo doc --no-deps --all-features` (output in `target/doc/nu_analytics/`) |
 
+CI runs clippy with warnings as errors, `cargo fmt --check`, `cargo doc`, and the three
+test builds above. `clippy.toml` requires a doc comment on every public item.
 
-#### Configuration Management
+## Layout
 
-Configuration is stored in:
-- Linux/macOS: `~/.config/nuanalytics/config.toml`
-- Windows: `%APPDATA%\nuanalytics\config.toml`
+- `src/cli/` — the command line: `main.rs` (startup), `args.rs` (clap definitions) and
+  `commands/` (one handler per command: `config`, `init`, `planner`, `degree`, `db`,
+  `mcp`).
+- `src/core/` — the library. `degree/analysis.rs` is the one degree-analysis pipeline,
+  shared by `degree analyze` and every MCP analysis tool; give it an `AnalysisConfig`
+  option rather than adding a step to either caller. `database/` is the Supabase client,
+  sign-in, and the IPEDS and degree importers; `query/` holds the database queries both
+  front ends use.
+- `src/mcp/` — the MCP server. `server.rs` registers the tools, parses their arguments
+  and calls one engine each; `tools/` holds a module per degree tool; `envelope.rs` turns
+  `{"error", "code"}` payloads into protocol errors.
 
-The configuration system supports:
-- Persistent settings via TOML file
-- CLI overrides (in-memory only, doesn't modify file)
-- Automatic merging of missing fields from defaults on upgrades
-- Variable expansion (`$NU_ANALYTICS` expands to config directory)
+### Adding an MCP tool
 
-**Configuration commands:**
-```bash
-cargo run -- config              # Display all config
-cargo run -- config get level    # Get specific value
-cargo run -- config set level info  # Set value (persists to file)
-cargo run -- config unset level  # Reset to default
-cargo run -- config reset        # Reset all (with confirmation)
-```
+1. Write the engine in `src/core/` if the tool needs logic the CLI could also use.
+2. Add the request type (deriving `schemars::JsonSchema`) and a module under
+   `src/mcp/tools/` if needed.
+3. Register it in `src/mcp/server.rs` with `#[tool]`, and add it to `CAPABILITIES` —
+   a test fails if `CAPABILITIES` and the router disagree.
+4. If it writes to the database, serve it only under `--allow-writes`.
+5. Test it. The skills that `nuanalytics init` ships are also tested against the server:
+   any tool or argument a skill names must exist.
 
-**CLI overrides (in-memory only):**
-```bash
-cargo run -- --db-token <TOKEN> --plans-dir ./my-plans config
-cargo run -- --config-level debug config get level  # Shows "debug"
-```
+## Configuration while developing
 
-You can control logging with either the explicit `--log-level` or shorthand flags:
-
-```bash
-# Shorthand flags
-cargo run -- -v          # enable verbose
-cargo run -- --debug     # enable debug-level + runtime debug
-
-# Explicit level (overrides config)
-cargo run -- --log-level warn
-cargo run -- --log-level debug
-
-# Falls back to config.logging.level if --log-level not provided
-cargo run -- config set level info  # Set in config
-cargo run -- config                 # Will use info level from config
-```
-
-Tip: For quick CLI testing, prefer `cargo run` so it rebuilds as needed and runs in one step. If you want to skip rebuild when code hasn’t changed, run the compiled binary directly:
+A debug build keeps its sign-in session in `.debug/dauth.json` in the working directory;
+a release build keeps it in `$NU_ANALYTICS/auth.json`, where `$NU_ANALYTICS` is the
+configuration directory (`~/.config/nuanalytics` on Linux and macOS,
+`%APPDATA%\nuanalytics` on Windows). Global flags override configuration for one run
+without writing it:
 
 ```bash
-target/nuanalytics --log-level info
+cargo run -- --log-level debug degree validate samples/degrees/csu-cs-bscs-general.yaml
+cargo run -- -v degree analyze samples/degrees/csu-cs-bscs-general.yaml   # verbose
+cargo run -- --debug config                      # debug logging and runtime debug output
+cargo run -- --db-endpoint http://localhost:8000 db status
 ```
 
-**Run CLI tests:**
-```bash
-cargo test
-```
+See [docs/config.md](docs/config.md) for every setting.
 
-Feature defaults: During development, debug logging is enabled by default for the CLI.
+## Commits and pull requests
 
-### Documentation
-
-**Generate Rust documentation (including private items):**
-```bash
-cargo doc-private
-```
-
-Generated docs are available in `target/doc/nu_analytics/index.html`.
-
-## Code Quality
-
-### Linting & Formatting
-
-**Check formatting without changes:**
-```bash
-cargo fmt-check
-```
-
-**Apply clippy fixes automatically:**
-```bash
-cargo lint-fix
-```
-
-**Run full linting (warnings as errors):**
-```bash
-cargo lint
-```
-
-**Format all code:**
-```bash
-cargo fmt --all
-```
-
-
-### Pre-commit Hooks
-
-Pre-commit hooks run automatically before commits and enforce:
-
-- **Rust formatting** - `cargo fmt`
-- **Rust linting** - `cargo clippy` (deny warnings)
-- **File cleanup** - Trailing whitespace, EOF fixes
-- **YAML validation** - `.pre-commit-config.yaml`, etc.
-- **Commit message format** - Conventional commits
-
-If a hook fails, fix the issues and try committing again. Most hooks can auto-fix issues:
-```bash
-# Retry after auto-fixes
-git add .
-git commit -m "your message"
-```
-
-## Testing & Committing Policies
-
-### Testing Requirements
-
-All code changes must include appropriate tests:
-
-- **Unit tests**: Add inline tests in modules (`#[cfg(test)]`)
-- **Integration tests**: Add to `tests/` directory
-- **Documentation tests**: Add examples in doc comments
-
-**Test organization:**
-- `tests/integration.rs` - High-level integration tests
-- `tests/rs/` - Rust-specific test modules
-- Inline `#[cfg(test)]` modules in source files for unit tests
-
-**Before committing**, ensure all tests pass:
-
-```bash
-cargo test
-```
-
-**Run specific tests:**
-```bash
-cargo test config         # Tests matching "config"
-cargo test --lib          # Only library tests
-cargo test --test integration  # Only integration tests
-```
-
-**CI/CD will enforce**: All tests must pass before PRs can be merged.
-
-### Commit Message Format
-
-Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
+`<type>(<scope>): <subject>`, with an optional body and footer. Types are `feat`, `fix`,
+`docs`, `style`, `refactor`, `perf`, `test` and `chore`; the scope is optional — `cli`,
+`mcp`, `db`, `degree`, `tests`, or none for a cross-cutting change.
 
 ```
-<type>(<scope>): <subject>
-
-<body>
-
-<footer>
+feat(degree): read {[A, B], C} as a choice of course groups
+fix(db): trim padded IPEDS headers
+docs: correct the metric definitions in the README
 ```
 
-**Types:**
-- `feat` - A new feature
-- `fix` - A bug fix
-- `docs` - Documentation changes
-- `style` - Code style changes (formatting, etc.)
-- `refactor` - Code refactoring without feature changes
-- `perf` - Performance improvements
-- `test` - Adding or updating tests
-- `chore` - Build, tooling, or dependency updates
-
-**Examples:**
-```
-feat(wasm): add greet function to WASM bindings
-fix(cli): handle missing config file gracefully
-docs: update installation instructions
-chore: upgrade dependencies
-test(rs): add smoke tests for get_version
-```
-
-**Scope options:**
-- `cli` - CLI changes
-- `tests` - Test infrastructure
-- No scope for general/cross-cutting changes
-
-### Pull Request Process
-
-1. **Create a feature branch**: `git checkout -b feat/your-feature`
-2. **Make changes**: Edit files, add tests, update docs as needed
-3. **Run linting**: `cargo fmt && cargo fix-all` to auto-fix issues
-4. **Run tests**: `cargo test` to ensure everything passes
-5. **Commit**: Use conventional commit messages
-6. **Push**: `git push origin feat/your-feature`
-7. **Create PR**: Describe your changes and link any issues
-8. **Wait for CI**: GitHub Actions will run tests and lint checks
-9. **Address feedback**: Fix any issues raised in review
+For a pull request: branch from `main` (`git checkout -b feat/short-description`), make
+the change with its tests and documentation, run `cargo fmt`, `cargo lint` and the three
+test builds, push, and open the PR. CI must pass before it is merged.
 
 ## Troubleshooting
 
-### Pre-commit hook failures
-
-If a pre-commit hook fails:
-
-1. Read the error message carefully
-2. Run the linter locally to see detailed output: `cargo clippy --workspace --all-targets -- -D warnings`
-3. Use `cargo fix-all` to auto-fix what you can
-4. Manually fix remaining issues
-5. Re-stage files: `git add .`
-6. Retry commit: `git commit -m "message"`
-
-### Build issues
-
-If a build fails:
-
-1. Clean build artifacts: `cargo clean`
-2. Rebuild: `cargo build --release`
-3. Check for compilation errors in the output
-
-
-
-## Additional Resources
-
-- [Rust Book](https://doc.rust-lang.org/book/)
-- [Conventional Commits](https://www.conventionalcommits.org/)
-- [Pre-commit Documentation](https://pre-commit.com/)
+- **A pre-commit hook fails:** run the failing tool yourself for the full output
+  (`cargo lint`), apply `cargo lint-fix`, fix the rest by hand, stage and commit again.
+- **A build fails oddly after switching branches:** `cargo clean`, then build again.

@@ -3,10 +3,11 @@
 //! The HTML report is normally produced at the end of an analysis run, from objects that
 //! only exist in memory. Everything it actually reads, though, has been persisted: the
 //! reduced statistics in `analysis_runs.degree_metrics` and `analysis_course_metrics`,
-//! the curated plans in `analysis_plans`, and the canonical degree in
-//! `programs.document`. Loading those is both faster than re-running the analysis (no
-//! plan enumeration) and reproducible, which a fresh run is not — the sampled plans a
-//! run selects vary between invocations.
+//! the curated plans in `analysis_plans`, and the degree the run analyzed —
+//! `analysis_runs.analyzed_document` when the run stored one (a trimmed run), otherwise
+//! `programs.document`. Loading those is faster than re-running the analysis (no plan
+//! enumeration) and fixed: a fresh run matches a stored one only at the same seed,
+//! settings and analyzer version.
 //!
 //! What cannot be rebuilt is the [`MetricsAggregator`](crate::core::statistics::aggregator::MetricsAggregator)
 //! itself: its Welford accumulators and quantile reservoirs hold every per-plan
@@ -71,7 +72,8 @@ pub struct StoredRun {
 /// Everything needed to render a report for one stored program.
 #[derive(Debug)]
 pub struct StoredReport {
-    /// Canonical degree, parsed back from `programs.document`.
+    /// The degree the run analyzed: `analysis_runs.analyzed_document` when stored (a
+    /// trimmed run), otherwise `programs.document`.
     pub program: DegreeProgram,
     /// Reduced statistics the renderer consumes.
     pub stats: ReportStats,
@@ -541,9 +543,10 @@ async fn load_plans(client: &Arc<DbClient>, run_key: &str) -> Result<Vec<PlanRow
 
 #[cfg(test)]
 mod tests {
-    /// Every `RunRow` field is optional and `PostgREST` returns only the columns selected, so
-    /// a column dropped from `RUN_COLS` would read as absent without any error — a trimmed
-    /// run against the full document, or a stored run's cap and seed lost.
+    /// `RunRow`'s optional fields read as absent when missing, and `PostgREST` returns only
+    /// the columns selected, so a column dropped from `RUN_COLS` would read as absent without
+    /// any error — a trimmed run against the full document, or a stored run's cap and seed
+    /// lost.
     #[test]
     fn run_cols_select_every_column_a_run_row_reads() {
         let cols: std::collections::HashSet<&str> = RUN_COLS.split(',').map(str::trim).collect();

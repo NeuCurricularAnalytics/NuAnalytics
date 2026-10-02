@@ -177,15 +177,17 @@ impl DegreeAnalysis {
         self.gen_config.max_plans
     }
 
-    /// True when every distinct plan was analyzed — the cap was not hit, or was hit but
-    /// the population did not exceed it.
+    /// True when every distinct plan was analyzed: the time limit did not stop the run,
+    /// and the cap was either not hit or hit by a population no larger than it.
     #[must_use]
     pub const fn is_full_population(&self) -> bool {
-        !(self.plans_processed >= self.max_plans() && self.stats.total_possible > self.max_plans())
+        !(self.time_limit_reached
+            || (self.plans_processed >= self.max_plans()
+                && self.stats.total_possible > self.max_plans()))
     }
 
     /// The processed count when the run covered everything, otherwise the estimate of
-    /// all distinct plans.
+    /// all distinct plans (an upper bound — it counts combinations, not distinct plans).
     #[must_use]
     pub const fn population_size(&self) -> usize {
         if self.is_full_population() {
@@ -739,19 +741,34 @@ fn course_requires_excluded(
 /// Returns true if ALL prerequisite options for ANY OR-group lead to excluded courses.
 /// This handles transitive exclusions where a course's prerequisites eventually
 /// require an excluded course with no valid alternatives.
+///
+/// `path` holds the courses on the prerequisite path being walked, to stop a cycle. It is
+/// a path, not a memo: a course is removed once its answer is known, because a course two
+/// branches share must count against both. As a memo, `(A & B) | (A & C)` with `A`
+/// excluded read as open — the second branch found `A` already visited.
 fn prereq_chain_requires_excluded(
     course: &str,
     exclude_set: &[String],
     include_set: &HashSet<&str>,
     graph: &CourseGraph,
-    visited: &mut HashSet<String>,
+    path: &mut HashSet<String>,
 ) -> bool {
-    // Avoid infinite loops
-    if visited.contains(course) {
+    if !path.insert(course.to_string()) {
         return false;
     }
-    visited.insert(course.to_string());
+    let requires = chain_requires_excluded(course, exclude_set, include_set, graph, path);
+    path.remove(course);
+    requires
+}
 
+/// [`prereq_chain_requires_excluded`] for a course not already on the path.
+fn chain_requires_excluded(
+    course: &str,
+    exclude_set: &[String],
+    include_set: &HashSet<&str>,
+    graph: &CourseGraph,
+    path: &mut HashSet<String>,
+) -> bool {
     // If included, it's fine
     if include_set.contains(course) {
         return false;
@@ -782,7 +799,7 @@ fn prereq_chain_requires_excluded(
                 exclude_set,
                 include_set,
                 graph,
-                visited,
+                path,
             )
         });
 
@@ -796,7 +813,7 @@ fn prereq_chain_requires_excluded(
         !branches.is_empty()
             && branches.iter().all(|branch| {
                 branch.iter().any(|course| {
-                    prereq_chain_requires_excluded(course, exclude_set, include_set, graph, visited)
+                    prereq_chain_requires_excluded(course, exclude_set, include_set, graph, path)
                 })
             })
     })
@@ -824,12 +841,12 @@ fn group_prereqs_by_or_group(
 /// complete and can be properly scheduled.
 ///
 /// Uses a two-phase approach:
-/// 1. First pass: Sort courses by prerequisite depth (deepest first) so courses
-///    that need prerequisites are processed after their potential prereqs are known
-/// 2. Second pass: Remove redundant prerequisites where an alternative already exists
-///
-/// This prevents adding MATH117 for STAT301 when MATH127 (needed by MATH156)
-/// would also satisfy STAT301's prerequisite.
+/// 1. Expand each course's minimum chain, preferring courses already in the plan. The
+///    list is sorted deepest-first but consumed with `pop`, so the shallowest course is
+///    expanded first.
+/// 2. Remove redundant prerequisites: an alternative a later-expanded course made
+///    unnecessary. This is what drops MATH117, added for STAT301, once MATH156 has
+///    brought in MATH127, which satisfies STAT301 too.
 ///
 /// Uses the equivalence map to check if a prerequisite is satisfied by an
 /// equivalent course already in the plan.
@@ -843,9 +860,9 @@ fn expand_courses_with_prerequisites(
     exclude_from_prereqs: &HashSet<String>,
     protected_courses: &HashSet<String>,
 ) -> Vec<String> {
-    // Phase 1: Sort courses by prerequisite depth (deepest chains first)
-    // This ensures courses like MATH156 (which needs MATH127) are processed
-    // before courses like STAT301 (which can use MATH127 as an alternative)
+    // Phase 1: sorted deepest-first and consumed with `pop`, so the shallowest course is
+    // expanded first. The order is baselined by the stored corpus; Phase 2 removes an
+    // alternative that a later-expanded course makes redundant.
     let mut sorted_courses: Vec<(String, usize)> = courses
         .iter()
         .map(|c| {
@@ -872,10 +889,14 @@ fn expand_courses_with_prerequisites(
                     continue;
                 }
 
-                // Check if this prerequisite is satisfied by an equivalent course
-                let has_equivalent = equivalences
-                    .get(&prereq)
-                    .is_some_and(|equivs| equivs.iter().any(|e| expanded.contains(e)));
+                // Satisfied by an equivalent already in the plan — never by the course
+                // itself, which cannot be its own prerequisite (see
+                // `plan_dag::equivalent_in_plan`).
+                let has_equivalent = equivalences.get(&prereq).is_some_and(|equivs| {
+                    equivs
+                        .iter()
+                        .any(|e| *e != course_key && expanded.contains(e))
+                });
 
                 if !has_equivalent && !expanded.contains(&prereq) {
                     expanded.insert(prereq.clone());
@@ -1337,6 +1358,72 @@ courses:
     }
 
     use super::*;
+
+    #[test]
+    fn test_branches_sharing_an_excluded_course_all_require_it() {
+        let yaml = r#"
+degree: {id: t, institution: T, program: T, total_credits: 12, gpa_minimum: 2.0}
+requirements:
+  core: {name: Core, type: all, category: major, courses: [CS200]}
+courses:
+  MATH101: {title: A, prefix: MATH, number: "101", credits: 3}
+  MATH102: {title: B, prefix: MATH, number: "102", credits: 3}
+  MATH103: {title: C, prefix: MATH, number: "103", credits: 3}
+  CS200: {title: D, prefix: CS, number: "200", credits: 3, prerequisites_raw: "(MATH101 & MATH102) | (MATH101 & MATH103)"}
+"#;
+        let (program, _) = crate::core::degree::parse_degree_auto(yaml).expect("parses");
+        let graph = CourseGraph::from_degree_program(&program).graph;
+        let none = HashSet::new();
+        let cases: [(&[&str], bool); 3] = [
+            // On both branches: as a memo, the second branch found it visited and read open.
+            (&["MATH101"], true),
+            (&["MATH102"], false),
+            (&["MATH102", "MATH103"], true),
+        ];
+        for (excluded, want) in cases {
+            let excluded: Vec<String> = excluded.iter().map(ToString::to_string).collect();
+            let got = prereq_chain_requires_excluded(
+                "CS200",
+                &excluded,
+                &none,
+                &graph,
+                &mut HashSet::new(),
+            );
+            assert_eq!(got, want, "{excluded:?}");
+        }
+    }
+
+    #[test]
+    fn test_expand_never_lets_a_course_satisfy_its_own_prerequisite() {
+        // `{CS2800, CS4820}` is one slot and CS4820 requires CS2800. A plan taking CS4820
+        // still needs CS2800; counting CS4820 as its own prerequisite's equivalent left
+        // CS2800 out, and the plan's metrics then failed on the self-loop.
+        let yaml = r#"
+degree: {id: t, institution: T, program: T, total_credits: 8, gpa_minimum: 2.0}
+requirements:
+  slot: {name: Slot, type: all, category: major, courses: ["{CS2800, CS4820}"]}
+courses:
+  CS2800: {title: Logic, prefix: CS, number: "2800", credits: 4}
+  CS4820: {title: Reasoning, prefix: CS, number: "4820", credits: 4, prerequisites_raw: "CS2800"}
+"#;
+        let (program, _) = crate::core::degree::parse_degree_auto(yaml).expect("parse degree");
+        let graph = CourseGraph::from_degree_program(&program).graph;
+        let equivalences =
+            crate::core::report::inputs::build_equivalence_map(&program.requirements);
+        assert!(
+            equivalences["CS4820"].contains("CS2800"),
+            "the slot is an equivalence"
+        );
+        let none = HashSet::new();
+        let expanded = expand_courses_with_prerequisites(
+            &["CS4820".to_string()],
+            &graph,
+            &equivalences,
+            &none,
+            &none,
+        );
+        assert!(expanded.contains(&"CS2800".to_string()), "{expanded:?}");
+    }
 
     /// Regression: a required course that is ALSO an OR-prerequisite alternative
     /// for another course must survive Phase-2 redundancy pruning in

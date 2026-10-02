@@ -1,7 +1,14 @@
 # Degree Analysis Implementation Plan
 
 **Created**: 2026-02-09
-**Status**: In Progress
+**Status**: Implemented. Kept as the original design record; it is not maintained.
+
+> What this plan describes now lives in `src/core/degree/analysis.rs` — the one analysis
+> pipeline that `degree analyze` and the MCP tools share — and is documented in
+> [degree.md](degree.md#analyze-analyze). Details below have since changed: the command is
+> `degree analyze`, not `degree <file>`; a degree with more plans than `--max-plans` is
+> sampled with a seed derived from the degree, so runs repeat; and an OR between groups of
+> courses is resolved by branch. Where this document and those disagree, they win.
 **Goal**: Generate all valid degree plans, compute metrics across plans, and produce comprehensive HTML reports with statistical summaries.
 
 ## Overview

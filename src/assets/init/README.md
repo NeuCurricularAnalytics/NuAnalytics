@@ -45,8 +45,9 @@ server, but Claude Code honours project settings only in a trusted folder. Accep
 trust prompt the first time you open the project.
 
 The server's tools validate, audit, analyze and render degrees; read the stored programs
-and their analysis; and query IPEDS completion data. The database tools need a
-`[database]` section in the config (`nuanalytics config`); the rest work without one.
+and their analysis; and query IPEDS completion data. The database tools need a backend
+configured (`database.endpoint` and `database.anon_key`) and a signed-in session
+(`nuanalytics db login`); the rest work without one.
 
 Five skills load on their own when a request matches:
 

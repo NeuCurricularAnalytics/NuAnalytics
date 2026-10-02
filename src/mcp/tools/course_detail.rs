@@ -6,9 +6,9 @@
 //! requirements that reference it, and (optionally) the analysis-derived
 //! statistics + term placement in each curated selected plan.
 //!
-//! Static data is cheap (just parse + walk the course graph). Analysis data
-//! requires `build_artifacts`, so we run it only when `include_analysis` is
-//! true (default).
+//! Static data is cheap (just parse + walk the course graph). Analysis data comes
+//! from a stored program's stored run, or from `build_artifacts` otherwise, so it is
+//! read only when `include_analysis` is true (default).
 
 use crate::core::degree::audit::extract_course_level;
 use crate::core::degree::{parse_degree_auto, DegreeParseError};

@@ -116,6 +116,26 @@ with the target course's statistics under `analysis.target_course_stats`. It was
 
 ### Fixed
 
+- **A course no longer stands in for its own prerequisite, which silently discarded
+  plans.** Northeastern offers `{CS2800, CS4820}` as one slot, and CS4820 requires CS2800.
+  A plan taking CS4820 resolved that prerequisite through the equivalence to CS4820
+  itself, so expansion never added CS2800, the plan's graph had a self-loop, and the plan
+  was dropped without a word. Four corpus degrees lost plans this way — Miami's BS 17%
+  (4,889 analyzed of 5,922), Northeastern's BS concentration 8.9% and BA 6.2%, Duke 4.4%.
+  Now the plan gets CS2800 and is kept. The other 1,084 full degrees are byte-identical.
+- **IPEDS 2022 completions had no count of nonresident-alien women.** The 2022 files pad
+  the header `CNRALW` with two trailing spaces and the importer matched names exactly, so
+  the column was never found and all 301,055 rows stored NULL (271,668 completions).
+  Headers are now trimmed. `db validate` could not catch it: it parses the file with the
+  importer's own code. The 2022 completions have been re-imported; all four stored years
+  now equal their files in every row count and column sum.
+- **A run stopped by the time limit reported itself as the full population.**
+  `render_degree_report` said `is_full_population: true` for an MCP run its 180-second
+  limit cut short; `analyze_degree` corrected it locally but still reported the plans
+  analyzed as the population size. Both now report a clock-stopped run as a sample.
+- **`--include`'s exclusion check read a course two branches share as open.** In
+  `(A & B) | (A & C)` with A excluded, the second branch found A already visited and
+  counted as satisfiable. Only runs with `--include` are affected.
 - **An OR between groups of courses is resolved by the branch a plan takes.** CSU's
   MATH156 needs `(MATH124 & MATH126) | MATH127`; the analysis read that as "any one of the
   three", so a plan taking the two-course branch was credited one prerequisite, and
@@ -156,10 +176,12 @@ with the target course's statistics under `analysis.target_course_stats`. It was
   bypassed by another spelling of the path.
 - A prerequisite cycle broken for analysis was drawn again in the report's graph.
 - Course keys containing `_` lost their prerequisites in the report's course list.
-- The degree-format reference no longer teaches `"{[A, B], [C, D]}"`, which no tool
-  parses, and its quickstart keys no longer look like elective placeholders.
+- The degree-format reference's quickstart keys no longer look like elective placeholders.
 - `institution_completion_totals` ingest no longer adds IPEDS's CIP `99` grand-total rows
-  to the totals.
+  to the totals, which doubled every row. The stored 2022–2025 totals have been rebuilt
+  and now equal the detail rows they sum, so the table can be queried directly again; the
+  database reference and the `curriculum-research` skill no longer tell models to avoid
+  it.
 
 ## [0.5.1] — 2026-06-10
 

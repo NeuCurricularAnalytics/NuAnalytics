@@ -453,6 +453,7 @@ fn build_edges_from_courses(
             let dnf_paths = parse_to_dnf(&prereq_raw);
             let selected = select_best_prereq_path(
                 &dnf_paths,
+                course_key,
                 plan_courses,
                 equivalences,
                 term_of,
@@ -501,6 +502,7 @@ fn build_edges_from_courses(
 /// Nothing here influences *placement* — the caller derives terms from the schedule.
 fn select_best_prereq_path<'a>(
     dnf_paths: &'a [Vec<String>],
+    dependent: &str,
     plan_courses: &HashSet<&str>,
     equivalences: &HashMap<String, HashSet<String>>,
     term_of: &HashMap<String, usize>,
@@ -519,7 +521,7 @@ fn select_best_prereq_path<'a>(
         // alone (`an_or_group_does_not_fall_back_to_the_equivalence_table`). Here every
         // member of the chosen DNF path is resolved, OR-alternatives included, so the
         // picture can draw an equivalence the metrics did not.
-        crate::core::degree::plan_dag::equivalent_in_plan(p, equivalences, plan_courses)
+        crate::core::degree::plan_dag::equivalent_in_plan(p, dependent, equivalences, plan_courses)
             .map(str::to_string)
     };
 
@@ -665,7 +667,14 @@ mod tests {
                     .collect::<HashSet<_>>(),
             );
             assert_eq!(
-                select_best_prereq_path(&dnf, &plan, &equivalences, &HashMap::new(), None),
+                select_best_prereq_path(
+                    &dnf,
+                    "DEPENDENT",
+                    &plan,
+                    &equivalences,
+                    &HashMap::new(),
+                    None
+                ),
                 vec!["MATH152".to_string()],
                 "the lexicographic minimum, not whichever the hash order yielded"
             );
@@ -933,7 +942,14 @@ mod tests {
             vec!["CS101".to_string()],
         ];
         let plan: HashSet<&str> = ["CS101", "CS102"].iter().copied().collect();
-        let result = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &HashMap::new(), None);
+        let result = select_best_prereq_path(
+            &dnf,
+            "DEPENDENT",
+            &plan,
+            &HashMap::new(),
+            &HashMap::new(),
+            None,
+        );
         // First path is fully satisfied
         assert_eq!(result.len(), 2);
     }
@@ -947,7 +963,14 @@ mod tests {
         // Only CS101 in plan — partial match for first path (1 of 2)
         // CS103 not in plan — 0 of 1 for second path
         let plan: HashSet<&str> = std::iter::once("CS101").collect();
-        let result = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &HashMap::new(), None);
+        let result = select_best_prereq_path(
+            &dnf,
+            "DEPENDENT",
+            &plan,
+            &HashMap::new(),
+            &HashMap::new(),
+            None,
+        );
         assert_eq!(result, vec!["CS101"]);
     }
 
@@ -959,7 +982,8 @@ mod tests {
         let mut s = HashSet::new();
         s.insert("CS101ALT".to_string());
         equivs.insert("CS101".to_string(), s);
-        let result = select_best_prereq_path(&dnf, &plan, &equivs, &HashMap::new(), None);
+        let result =
+            select_best_prereq_path(&dnf, "DEPENDENT", &plan, &equivs, &HashMap::new(), None);
         assert_eq!(result, vec!["CS101ALT"]);
     }
 
@@ -1086,7 +1110,8 @@ mod tests {
         let dnf = vec![vec!["CS314".to_string()], vec!["CS370".to_string()]];
         let plan: HashSet<&str> = ["CS314", "CS370", "CS430"].into_iter().collect();
         let term_of = terms(&[("CS370", 4), ("CS314", 5), ("CS430", 5)]);
-        let picked = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &term_of, Some(5));
+        let picked =
+            select_best_prereq_path(&dnf, "DEPENDENT", &plan, &HashMap::new(), &term_of, Some(5));
         assert_eq!(picked, ["CS370"], "chose an option not scheduled before");
     }
 
@@ -1096,7 +1121,8 @@ mod tests {
         let dnf = vec![vec!["CS314".to_string()], vec!["CS370".to_string()]];
         let plan: HashSet<&str> = ["CS314", "CS370", "CS430"].into_iter().collect();
         let term_of = terms(&[("CS314", 3), ("CS370", 4), ("CS430", 5)]);
-        let picked = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &term_of, Some(5));
+        let picked =
+            select_best_prereq_path(&dnf, "DEPENDENT", &plan, &HashMap::new(), &term_of, Some(5));
         assert_eq!(picked, ["CS314"], "source order lost for no reason");
     }
 
@@ -1105,7 +1131,14 @@ mod tests {
         // Callers without a schedule (`spec_from_components`) must be unaffected.
         let dnf = vec![vec!["CS314".to_string()], vec!["CS370".to_string()]];
         let plan: HashSet<&str> = ["CS314", "CS370"].into_iter().collect();
-        let picked = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &HashMap::new(), None);
+        let picked = select_best_prereq_path(
+            &dnf,
+            "DEPENDENT",
+            &plan,
+            &HashMap::new(),
+            &HashMap::new(),
+            None,
+        );
         assert_eq!(picked, ["CS314"]);
     }
 
@@ -1116,7 +1149,8 @@ mod tests {
         let dnf = vec![vec!["CS314".to_string()], vec!["CS370".to_string()]];
         let plan: HashSet<&str> = ["CS314", "CS370", "CS430"].into_iter().collect();
         let term_of = terms(&[("CS314", 5), ("CS370", 6), ("CS430", 5)]);
-        let picked = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &term_of, Some(5));
+        let picked =
+            select_best_prereq_path(&dnf, "DEPENDENT", &plan, &HashMap::new(), &term_of, Some(5));
         assert_eq!(picked, ["CS314"]);
     }
 
@@ -1130,7 +1164,8 @@ mod tests {
         ];
         let plan: HashSet<&str> = ["A", "B", "C", "D"].into_iter().collect();
         let term_of = terms(&[("A", 5), ("B", 1), ("C", 2), ("D", 5)]);
-        let picked = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &term_of, Some(5));
+        let picked =
+            select_best_prereq_path(&dnf, "DEPENDENT", &plan, &HashMap::new(), &term_of, Some(5));
         assert_eq!(picked, ["C"], "a late member did not disqualify its path");
     }
 
@@ -1139,7 +1174,8 @@ mod tests {
         let dnf = vec![vec!["X".to_string(), "Y".to_string()]];
         let plan: HashSet<&str> = ["Y", "Z"].into_iter().collect();
         let term_of = terms(&[("Y", 1), ("Z", 4)]);
-        let picked = select_best_prereq_path(&dnf, &plan, &HashMap::new(), &term_of, Some(4));
+        let picked =
+            select_best_prereq_path(&dnf, "DEPENDENT", &plan, &HashMap::new(), &term_of, Some(4));
         assert_eq!(picked, ["Y"]);
     }
 
@@ -1168,5 +1204,37 @@ mod tests {
         assert_eq!(index.get("B"), Some(&1));
         assert_eq!(index.get("C"), Some(&2));
         assert_eq!(index.get("NOPE"), None);
+    }
+
+    #[test]
+    fn a_course_is_never_drawn_as_its_own_prerequisite_through_an_equivalence() {
+        // Northeastern's `{CS2800, CS4820}` slot, where CS4820 requires CS2800.
+        use crate::core::models::Course;
+        type Case<'a> = (&'a [&'a str], &'a [(&'a str, &'a str)]);
+        let mut school = School::new("T".to_string());
+        let mut cs4820 = Course::new("Reasoning".into(), "CS".into(), "4820".into(), 4.0);
+        cs4820.prerequisites_raw = Some("CS2800".to_string());
+        school.add_course(Course::new("Logic".into(), "CS".into(), "2800".into(), 4.0));
+        school.add_course(cs4820);
+        let slot: HashSet<String> = ["CS2800", "CS4820"].into_iter().map(String::from).collect();
+        let equivalences: HashMap<String, HashSet<String>> =
+            slot.iter().map(|c| (c.clone(), slot.clone())).collect();
+        let cases: [Case; 2] = [
+            (&["CS4820"], &[]),
+            (&["CS2800", "CS4820"], &[("CS2800", "CS4820")]),
+        ];
+        for (courses, want) in cases {
+            let plan: HashSet<&str> = courses.iter().copied().collect();
+            let edges: Vec<(String, String)> =
+                build_edges_from_courses(&school, &equivalences, &plan, &HashMap::new())
+                    .into_iter()
+                    .map(|e| (e.from, e.to))
+                    .collect();
+            let want: Vec<(String, String)> = want
+                .iter()
+                .map(|(f, t)| ((*f).to_string(), (*t).to_string()))
+                .collect();
+            assert_eq!(edges, want, "{courses:?}");
+        }
     }
 }

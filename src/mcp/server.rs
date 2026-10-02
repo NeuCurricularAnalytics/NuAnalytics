@@ -826,8 +826,8 @@ fn refuse_fresh_run_settings(reference: &str, generation: &[(&str, bool)]) -> Re
         return Ok(());
     }
     Err(shared::bad_arguments(format_args!(
-        "{} shape a fresh run, and `{reference}` is a stored program, read from its stored run. \
-         Pass fresh=true to enumerate it afresh with them.",
+        "fresh-run settings ({}) do not apply: `{reference}` is a stored program, read from its \
+         stored run. Pass fresh=true to enumerate it afresh with them.",
         given.join(", ")
     )))
 }

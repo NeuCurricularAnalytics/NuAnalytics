@@ -384,7 +384,7 @@ fn write_artifacts_to_disk(
     let html_filename = crate::core::report::report_file_name(&view.program.degree.degree_id());
     let html_path = dir.join(&html_filename);
     // The report is the file that stands for the rest: refusing when it exists keeps a
-    // mistyped output_dir from replacing a previous run's view.
+    // mistyped output_dir from replacing a previous run's artifacts.
     crate::mcp::tools::shared::write_output(&html_path.to_string_lossy(), html, overwrite)
         .map_err(|refusal| refusal.message)?;
     out.report_html = Some(html_path.to_string_lossy().into_owned());

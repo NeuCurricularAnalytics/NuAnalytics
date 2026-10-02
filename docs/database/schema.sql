@@ -131,8 +131,9 @@ CREATE TABLE completions (
 -- every CIP code except 99, IPEDS's grand-total row, which is itself the sum of the
 -- others. Written in the same single pass as the completions table.
 --
--- No nuanalytics query reads it: the demographics queries sum the detail rows of
--- `completions` directly. See docs/database-audit-todo.md for its status.
+-- The demographics queries sum the detail rows of `completions` directly; this table is
+-- for SQL (`query_sql`, `db query --sql`) that wants whole-school totals. It covers both
+-- major numbers. Rebuilt for 2022-2025 on 2026-10-01 and checked equal to the detail rows.
 --
 -- award_level is IPEDS AWLEVEL. A NULL bucket would hold rows whose AWLEVEL did not
 -- parse; none are expected, since IPEDS uses no sentinel in that column.

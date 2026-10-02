@@ -76,10 +76,6 @@ pub fn is_relevant_cip(code: &str) -> bool {
     normalized.starts_with("11") || normalized == "307099" || normalized == "307001"
 }
 
-/// Read a file, automatically extracting from a `.zip` archive if needed.
-///
-/// Returns the CSV content as a `String`. For zip files, the first `.csv` entry
-/// in the archive is extracted.
 /// Explain why importing `importing` would discard newer data, or `None` if it is safe.
 ///
 /// The `institutions` table holds one row per institution, not one per year, and the
@@ -148,6 +144,10 @@ fn pick_csv_entry<R: std::io::Read + std::io::Seek>(
         .map(|(i, _)| *i)
 }
 
+/// Read a survey file as text, extracting it from a `.zip` archive if needed.
+///
+/// From an archive, reads the CSV [`pick_csv_entry`] chooses — the revised release when
+/// there is one. Decodes UTF-8, falling back to CP1252 (see [`decode_ipeds_bytes`]).
 pub(crate) fn read_file_or_zip(path: &Path) -> DatabaseResult<String> {
     let bytes = std::fs::read(path)
         .map_err(|e| DatabaseError::IngestError(format!("Cannot read {}: {e}", path.display())))?;
@@ -391,9 +391,13 @@ fn require_col(
     })
 }
 
-/// Uppercase all CSV headers once, for reuse across all [`find_col`] calls.
+/// Trim and uppercase all CSV headers once, for reuse across all [`find_col`] calls.
+///
+/// Trimmed because IPEDS pads some: the last column of `c2022_a.csv` and
+/// `c2022_a_rv.csv` is `CNRALW` followed by two spaces, which an exact match never found,
+/// so every 2022 completion was stored with no count of nonresident women.
 pub(crate) fn uppercase_headers(record: &csv::StringRecord) -> Vec<String> {
-    record.iter().map(str::to_uppercase).collect()
+    record.iter().map(|h| h.trim().to_uppercase()).collect()
 }
 
 /// Open a CSV reader from file content.
@@ -1139,6 +1143,18 @@ mod tests {
         let record = StringRecord::from(vec!["unitid", "InstnM", "CITY"]);
         let upper = uppercase_headers(&record);
         assert_eq!(upper, vec!["UNITID", "INSTNM", "CITY"]);
+    }
+
+    #[test]
+    fn test_uppercase_headers_trims_padding() {
+        // The real C2022_A header ends in `CNRALW  `; untrimmed, the column was never found.
+        let record = csv::StringRecord::from(vec!["UNITID", " cipcode", "CNRALW  "]);
+        let headers = uppercase_headers(&record);
+        assert_eq!(headers, vec!["UNITID", "CIPCODE", "CNRALW"]);
+        assert_eq!(
+            DemoCols::for_completions(&headers).nonresident_alien_women,
+            Some(2)
+        );
     }
 
     #[test]

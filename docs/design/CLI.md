@@ -193,136 +193,38 @@ would answer for the one school under a heading that said otherwise.
 
 ### `degree` subcommands
 * `degree validate    <FILES>...`         — structural validation (schema, prereq cycles, cross-listings)
-* `degree audit       <FILES>...`         — validation + missing prereqs + deep-chain detection
+* `degree audit       <FILES>...`         — validation + upper-level courses without prerequisites + deep chains
 * `degree print-graph <FILES>...`         — print the prerequisite graph as an association list
-* `degree analyze     <FILES>...`         — full plan enumeration, metrics, HTML report, CSV exports
-* `degree trim        <FILE> [-o <PATH>]` — collapse alternatives to one walkable path per course;
-  `-o` accepts a file or a directory (auto-creates `<stem>_trimmed.<ext>` for batches)
+* `degree analyze     <FILES>...`         — plan enumeration, metrics, HTML report, metrics files;
+  `--from-db <NAME>` analyzes a stored program instead, `-j` runs a worker pool
+* `degree trim        <FILES>... [-o <PATH>]` — collapse alternatives to one walkable path per course;
+  `-o` is a file (one input) or a directory (`<stem>_trimmed.<ext>` per input)
+* `degree convert     <FILES>... [-o <PATH>]` — scraped ai-landscape program JSON → unified JSON
+* `degree schema      [-o <PATH>]`        — the unified degree JSON Schema
 
-> **Breaking change (v0.4.0):** `degree` was previously a flat command with
-> action flags (`degree --validate`, `degree --analyze`, …). It is now a
-> subcommand dispatcher; the flag form no longer works.
+[docs/degree.md](../degree.md) documents each.
 
+### Future additions
+* school — schools and the programs within them, with degrees attached to programs
+* stats — built-in queries across the stored schools and programs
 
-### Future Additions
-* school - handles schools and programs within schools - degrees are attached to those programs
-* stats  - handles some built in queries and stats requests across the various schools and programs stored in db
-
-
+`db query schools|degrees|metrics` covers part of both today.
 
 ## Config
 
-The `config` command manages persistent settings stored in
-`~/.config/nuanalytics/config.toml` (Linux/macOS) or
-`%APPDATA%\nuanalytics\config.toml` (Windows). Any common command-line
-argument can be persisted to config to ensure it's always included in a
-run. Also holds options such as:
-- Supabase project credentials (`endpoint` + `anon_key`) for database tools
-- Default paths and directories
-- Logging preferences
-- Other program-wide settings
-
-Settings can be used by the CLI or other means to access the system (e.g., MCP server).
-
-### Config Subcommands
-
-#### `config` (no args)
-Prints the entire current configuration in a readable format.
+`nuanalytics config` reads and changes settings: the database endpoint and anon key,
+output directories, logging, and the degree-analysis defaults. Settings resolve, first
+match winning, from command-line flags, the project's `nuanalytics.toml`, the user's
+`config.toml` (`dconfig.toml` for debug builds), and the compiled-in defaults. There are
+no environment variables.
 
 ```bash
-$ nuanalytics config
-# Output:
-# [logging]
-# level = "warn"
-# file = null
-# verbose = false
-#
-# [database]
-# endpoint = "https://abcd.supabase.co"
-# anon_key = "eyJhbGc..."
+nuanalytics config                     # every setting
+nuanalytics config get level           # one setting
+nuanalytics config set level debug     # write it to the user file
+nuanalytics config unset level         # back to the default
+nuanalytics config reset               # everything back, after confirmation
 ```
 
-#### `config <key>`
-Prints the value of a single configuration key.
-
-```bash
-$ nuanalytics config log-level
-warn
-
-$ nuanalytics config database.anon_key
-(prints value or "not set")
-```
-
-#### `config set <key> <value>`
-Sets a configuration key to a new value and persists it to disk.
-
-```bash
-$ nuanalytics config set log-level debug
-✓ Updated log-level to "debug"
-
-$ nuanalytics config set database.anon_key "eyJhbGc..."
-✓ Updated database.anon_key
-
-$ nuanalytics config set verbose true
-✓ Updated verbose to true
-```
-
-#### `config unset <key>`
-Removes a configuration key (resets to default).
-
-```bash
-$ nuanalytics config unset log-file
-✓ Removed log-file (will use default)
-```
-
-#### `config reset`
-Resets all configuration to defaults.
-
-```bash
-$ nuanalytics config reset
-⚠ This will erase all custom settings. Continue? (y/n)
-y
-✓ Configuration reset to defaults
-```
-
-### Configuration File
-
-Location: `~/.config/nuanalytics/config.toml` (Linux/macOS) or
-`%APPDATA%\nuanalytics\config.toml` (Windows). Debug builds use
-`~/.config/nuanalytics/dconfig.toml` instead so dev and release configs
-don't collide.
-
-Example structure:
-```toml
-[logging]
-level = "warn"
-file = ""
-verbose = false
-
-[database]
-endpoint = "https://abcdefgh.supabase.co"
-anon_key = "eyJhbGc..."
-enabled = true
-# `auth_file` defaults to ~/.config/nuanalytics/auth.json (release)
-# or .debug/dauth.json (debug). Set explicitly to override.
-
-[paths]
-metrics_dir = "./metrics"
-reports_dir = "./reports"
-
-[degree_analysis]
-max_plans = 1000
-sample_plans = 5
-```
-
-> Setting `endpoint` and `anon_key` enables the database tools but does
-> not authorise access on its own. Run `nuanalytics db login` once to
-> obtain a user session; the client refreshes the JWT automatically
-> when it's near expiry.
-
-### CLI Flag Precedence
-
-1. Command-line flags (highest priority)
-2. Environment variables (e.g., `NU_LOG_LEVEL`)
-3. Config file values
-4. Built-in defaults (lowest priority)
+[docs/config.md](../config.md) has every key, the override flags, and the surprises — among
+them that `config set` writes the user file, never the project file.

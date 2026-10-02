@@ -2,27 +2,22 @@
 
 This roadmap organizes planned features by functional area. Items marked with ✅ are implemented, 🚧 are in progress, and 📋 are planned.
 
-## Current Status (v0.2.0)
+## Current status (v0.5.4)
 
-### Core Functionality ✅
-- **CSV Plan Analysis**: Parse CSV curriculum files and compute metrics (delay, blocking, complexity, centrality)
-- **YAML Degree Programs**: Load and validate comprehensive degree definitions with requirements
-- **Prerequisite Parsing**: Parse complex AND/OR prerequisite expressions and build course graphs
-- **Validation Framework**: Detect circular dependencies, missing courses, invalid patterns
-- **Report Generation**: HTML (interactive), Markdown (text), PDF (via Chrome/Chromium)
-- **Term Scheduling**: Automatic course scheduling respecting prerequisites and credit limits
-- **Configuration System**: Persistent TOML config with CLI overrides
-- **Audit Reports**: Identify missing prerequisites and deep prerequisite chains
-- **MCP Server** (feature-gated): AI model integration for degree validation via `nuanalytics mcp`
+### Implemented ✅
+- **Curriculum CSV analysis** (`planner`): delay, blocking, complexity, centrality and chain length per course; term scheduling; HTML, Markdown and PDF reports.
+- **Degree programs** (`degree`): YAML and unified JSON; validation and audit; plan enumeration with statistics across plans; shortest, longest, calc-ready and sampled plans; `--include`; trim, convert and the JSON Schema.
+- **Database**: a Supabase backend, cloud or self-hosted — IPEDS institutions and completions (2022–2025), stored degree programs with their analysis runs, the `db` commands, and `db doctor` and `db validate` for checking a deployment and its data.
+- **MCP server**: degree, stored-program and IPEDS tools, read-only SQL, and five Claude Code skills shipped by `nuanalytics init`.
 
 ---
 
-## Phase 1: Plan Generation from Degrees 🚧
+## Phase 1: Plan Generation from Degrees ✅ (mostly)
 
 **Goal**: Generate valid course plans from YAML degree definitions that satisfy all requirements.
 
 ### 1.1 Plan Extraction Engine
-- **Status**: 📋 Not Started
+- **Status**: ✅ Implemented (`degree analyze`; constraints such as subject distribution are only partly enforced)
 - **Description**: Core algorithm to generate valid plans from degree requirements
 - **Tasks**:
   - Implement requirement satisfaction algorithm (all/select/one_of types)
@@ -34,7 +29,7 @@ This roadmap organizes planned features by functional area. Items marked with �
 - **Output**: `Plan` objects compatible with existing metrics computation
 
 ### 1.2 Plan Options and Filtering
-- **Status**: 📋 Not Started
+- **Status**: 🚧 Partial — `--require` shipped as `--include`; `--include-plans`, `--exclude` and `--match` are not started
 - **Description**: Generate multiple plan variations and filter by constraints
 - **Tasks**:
   
@@ -63,7 +58,7 @@ This roadmap organizes planned features by functional area. Items marked with �
   - Respect requirement boundaries (electives, not required courses)
 
 ### 1.3 Plan Optimization Strategies
-- **Status**: 📋 Not Started
+- **Status**: 🚧 Partial — shortest, longest and calc-ready are selected from the analyzed plans; balanced, frontloaded and flexible are not started
 - **Description**: Generate plans optimized for different student goals
 - **Strategies**:
   - **Shortest Path**: Minimum courses to graduate (maximize AP/transfer credit)
@@ -74,7 +69,7 @@ This roadmap organizes planned features by functional area. Items marked with �
 - **CLI Syntax**: `--strategy shortest|calc-ready|balanced|frontloaded|flexible`
 
 ### 1.4 Plan Validation and Metrics
-- **Status**: 📋 Not Started
+- **Status**: ✅ Implemented (per-plan metrics and validation; degree comparison through the MCP `compare_degrees` tool)
 - **Description**: Validate generated plans and compute curriculum metrics
 - **Features**:
   - Verify all degree requirements satisfied
@@ -85,12 +80,12 @@ This roadmap organizes planned features by functional area. Items marked with �
 
 ---
 
-## Phase 2: Database Integration 🚧
+## Phase 2: Database Integration ✅ (mostly)
 
 **Goal**: Store and query curriculum data across institutions with version tracking.
 
 ### 2.1 Database Schema and Backend
-- **Status**: 📋 Not Started
+- **Status**: ✅ Implemented — Supabase (PostgreSQL behind PostgREST), cloud or self-hosted; every deployment is a fresh install, so there is no migration system yet
 - **Backend Options**: SQLite (local), PostgreSQL (production), Firebase (cloud sync)
 - **Schema Design**:
   - **Institutions**: Name, IPEDS ID, type, location, calendar system
@@ -101,7 +96,7 @@ This roadmap organizes planned features by functional area. Items marked with �
 - **Migration System**: Version database schema, handle upgrades gracefully
 
 ### 2.2 IPEDS Integration
-- **Status**: 📋 Not Started
+- **Status**: ✅ Implemented for institutions (HD) and completions (C_A) — `db ipeds-import`, `db validate`; graduation rates and faculty data are not imported
 - **Description**: Integrate U.S. Department of Education IPEDS data
 - **Data Included**:
   - Institution profiles (name, location, type, enrollment)
@@ -115,7 +110,7 @@ This roadmap organizes planned features by functional area. Items marked with �
 - **Storage**: Download and cache IPEDS CSV files locally, import into database
 
 ### 2.3 Data Management Commands
-- **Status**: 📋 Not Started
+- **Status**: 🚧 Partial — `db import` (files or directories, institution resolution by UNITID then name and CIP) and `db prune` exist; plan import and course editing do not. Writes are open to every signed-in member by design: per-institution ownership was implemented and reverted, because it stopped `db import --replace` from updating another member's row
 - **CLI Commands**:
   
   **Add/Update/Delete**
@@ -139,7 +134,7 @@ This roadmap organizes planned features by functional area. Items marked with �
   - Admin role for cross-institution operations
 
 ### 2.4 Search and Query Interface
-- **Status**: 📋 Not Started
+- **Status**: 🚧 Partial — `db query schools|degrees|metrics|demographics|cip|lookup` and `db query --sql`; course and prerequisite search are not started
 - **Description**: Search across institutions, degrees, courses, and prerequisites
 - **Query Examples**:
   ```bash
@@ -161,7 +156,7 @@ This roadmap organizes planned features by functional area. Items marked with �
 - **Output Formats**: Table, JSON, CSV for scripting and analysis
 
 ### 2.5 Comparative Analytics
-- **Status**: 📋 Not Started
+- **Status**: 🚧 Partial — the MCP `compare_degrees` tool compares degrees on stored or fresh metrics; there is no CLI command, and nothing tracks a curriculum across catalog years
 - **Description**: Compare curricula across institutions
 - **Features**:
   - Compare complexity metrics across similar programs
@@ -173,7 +168,7 @@ This roadmap organizes planned features by functional area. Items marked with �
 
 ---
 
-## Phase 3: MCP Server Integration 🚧
+## Phase 3: MCP Server Integration ✅
 
 **Goal**: Expose NuAnalytics capabilities via Model Context Protocol for AI agent integration.
 
@@ -275,7 +270,7 @@ This roadmap organizes planned features by functional area. Items marked with �
   - Side-by-side plan comparison view
 
 ### 5.2 Graph Visualization
-- **Status**: 🚧 In Progress (basic Mermaid diagrams exist)
+- **Status**: 🚧 In Progress (reports and `render_plan_graph` draw each selected plan's curriculum graph)
 - **Enhancements**:
   - Interactive graph with zoom and pan
   - Color-code nodes by complexity level
@@ -403,10 +398,10 @@ This roadmap organizes planned features by functional area. Items marked with �
 ### Code Quality
 - ✅ Linting with Clippy (configured to deny perf/correctness)
 - ✅ Pre-commit hooks (formatting, linting, commit messages)
-- ✅ Comprehensive test suite (77 tests passing)
-- 📋 Increase test coverage to 90%+ (currently ~70%)
+- ✅ Test suite of about 1,500 tests, run in CI on three feature sets
+- 📋 Measure and raise test coverage
 - 📋 Add property-based testing for complex algorithms
-- 📋 Performance benchmarks for large curricula (100+ courses)
+- 🚧 Performance benchmarks (`benches/render_perf` covers report rendering; plan enumeration has none)
 
 ### Documentation
 - ✅ Command documentation (config.md, planner.md, degree.md)
@@ -420,7 +415,7 @@ This roadmap organizes planned features by functional area. Items marked with �
 - 📋 Support older CSV formats from CurricularAnalytics.org
 - 📋 Export to CurricularAnalytics.org JSON format
 - 📋 Import from Banner, PeopleSoft, other SIS systems
-- 📋 Standardize on YAML schema version (currently v5.1, v5.2 exists)
+- ✅ One degree schema version (v5.2, `src/assets/Degree-schema.yaml`)
 
 ---
 
@@ -433,4 +428,4 @@ This roadmap is a living document. If you're interested in contributing to any o
 3. Propose new features by opening an issue with the `enhancement` label
 4. Discuss major architectural changes before implementing
 
-**Priority guidance**: Features in Phase 1-2 align with core project goals and will be reviewed fastest. 
+**Priority guidance**: the open items in Phases 1–2 align with the project's core goals and will be reviewed fastest. 

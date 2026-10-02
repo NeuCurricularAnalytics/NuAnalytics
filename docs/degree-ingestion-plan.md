@@ -1,9 +1,12 @@
 # Degree YAML Ingestion Implementation Plan
 
-> **Status:** the "future database storage" this plan anticipates is now
-> implemented — degrees import into the normalized program tables via the CLI
-> `db import` command and the `import_degree` MCP tool. See
-> [Database Setup → Stored programs (normalized)](database/setup.md#stored-programs-normalized).
+> **Status:** implemented, and kept as the original design record; it is not maintained.
+> The "future database storage" it anticipates exists too — degrees import into the
+> normalized program tables through `db import` and the `import_degree` MCP tool (see
+> [Database Setup → Stored programs (normalized)](database/setup.md#stored-programs-normalized)).
+> File names below are from the plan: the degree code now lives under
+> `src/core/degree/`, and the current format is documented in
+> [degree.md](degree.md#the-degree-format).
 
 ## Overview
 

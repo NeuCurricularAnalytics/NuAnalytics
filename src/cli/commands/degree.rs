@@ -517,8 +517,8 @@ const WORKER_ENV: &str = "NU_ANALYZE_WORKER";
 
 /// Run `degree analyze`. A multi-file batch is processed as a pool of isolated
 /// worker processes (`--jobs`, default 8) so one pathological degree can't take
-/// down the whole run; single-file, `--school`, `-j 1`, and worker-mode
-/// invocations run in-process.
+/// down the whole run; single-file, `--school`, `--target-course`, `-j 1`, and
+/// worker-mode invocations run in-process.
 pub fn run_analyze(files: &[PathBuf], options: &AnalyzeOptions, config: &Config) {
     let in_worker = std::env::var_os(WORKER_ENV).is_some();
     // A `--target-course` query answers on stdout, which a worker's is not connected to.
@@ -894,8 +894,8 @@ fn analyze_child_flags(o: &AnalyzeOptions) -> Vec<String> {
     a
 }
 
-/// Run `degree analyze` in-process (single file, school mode, `-j 1`, or as a
-/// spawned worker). Without `--school`, each file is analyzed independently;
+/// Run `degree analyze` in-process (single file, school mode, `--target-course`,
+/// `-j 1`, or as a spawned worker). Without `--school`, each file is analyzed independently;
 /// with `--school`, a combined `<school>_school_report.json` is also written.
 fn run_analyze_inprocess(files: &[PathBuf], options: &AnalyzeOptions, config: &Config) {
     let Some(school_name) = options.school.clone() else {

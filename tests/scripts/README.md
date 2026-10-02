@@ -1,74 +1,33 @@
 # Test Scripts
 
-This directory contains integration test scripts for NuAnalytics.
+## MCP server test
 
-## MCP Server Test
+`test_mcp_server.py` drives the MCP server over stdio as a client would, and checks:
 
-`test_mcp_server.py` - Tests the MCP server implementation by simulating a full client session.
+1. the initialize handshake;
+2. the tools served, against the expected set — and `import_degree` only under
+   `--allow-writes`;
+3. `get_reference`, `validate_degree` and `audit_degree`, with the degree inline and as a
+   `sample:` reference;
+4. failures: an unknown source and an unknown argument come back as `isError` envelopes;
+5. with `--with-db`, the database tools against the configured backend — including that a
+   stored program is read from its stored run, that fresh-run settings on one are refused
+   without `fresh=true`, and that `query_sql` refuses a write.
 
-### Prerequisites
-
-- Python 3.7+
-- NuAnalytics built (MCP is enabled by default):
-  ```bash
-  cargo build
-  ```
-
-### Usage
+It needs Python 3.7+ and a build with the `mcp` feature (the default).
 
 ```bash
-# Run with built-in test YAML
-python3 tests/scripts/test_mcp_server.py
-
-# Run with a custom YAML file
-python3 tests/scripts/test_mcp_server.py --yaml-file samples/degrees/my-degree.yaml
-
-# Verbose output (show full responses)
-python3 tests/scripts/test_mcp_server.py -v
+python3 tests/scripts/test_mcp_server.py                          # cargo run, built-in degree
+python3 tests/scripts/test_mcp_server.py --binary target/release/nuanalytics
+python3 tests/scripts/test_mcp_server.py --yaml-file samples/degrees/neu-khoury-bscs-boston.yaml
+python3 tests/scripts/test_mcp_server.py --with-db                # needs `db login` first
+python3 tests/scripts/test_mcp_server.py -v                       # print full responses
 ```
 
-### What It Tests
+It exits 0 when every check passes and 1 otherwise.
 
-1. **Initialize Handshake** - Verifies MCP protocol initialization
-2. **List Tools** - Confirms `get_degree_schema` and `validate_degree` are registered
-3. **Get Schema** - Calls `get_degree_schema` and verifies response
-4. **Validate Degree** - Calls `validate_degree` with test YAML and shows results
-
-### Example Output
-
-```
-============================================================
-  Test 4: Call validate_degree
-============================================================
-
-✓ PASS: validate_degree
-       Valid: True, Errors: 0, Warnings: 0
-       Degree: Bachelor of Science in Computer Science (Boston)
-       Courses: 25
-       Requirements: 7
-
-============================================================
-  Summary
-============================================================
-
-✓ All tests passed!
-```
-
-### Exit Codes
-
-- `0` - All tests passed
-- `1` - One or more tests failed
-
-### Troubleshooting
-
-**Server won't start:**
-- Ensure you've built the project: `cargo build`
-- Check that no other process is using stdin/stdout
-
-**Tests fail with timeout:**
-- The server may be slow to start on first run (compilation)
-- Try running `cargo build` first
-
-**YAML validation errors:**
-- Check that your YAML follows the schema (run `get_degree_schema` for docs)
-- Ensure courses have required fields: `title`, `prefix`, `number`, `credits`
+**If the server does not start,** build first (`cargo build`) or pass `--binary`; the
+first `cargo run` compiles and can time out. **If validation fails on your own file,**
+check it against the degree format (`get_reference(topic="degree-yaml")`, or
+[docs/degree.md](../../docs/degree.md#the-degree-format)): courses need `title`, `prefix`
+(or `subject`), `number` and `credits`.
