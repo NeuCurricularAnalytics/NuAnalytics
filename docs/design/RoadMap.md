@@ -2,7 +2,7 @@
 
 This roadmap organizes planned features by functional area. Items marked with ✅ are implemented, 🚧 are in progress, and 📋 are planned.
 
-## Current status (v0.5.4)
+## Current status (v0.6.0)
 
 ### Implemented ✅
 - **Curriculum CSV analysis** (`planner`): delay, blocking, complexity, centrality and chain length per course; term scheduling; HTML, Markdown and PDF reports.

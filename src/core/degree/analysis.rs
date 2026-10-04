@@ -26,7 +26,7 @@ use crate::core::degree::{
 };
 use crate::core::metrics::compute_all_metrics;
 use crate::core::models::course_graph::{CourseNode, PrerequisiteEdge, PrerequisiteType};
-use crate::core::models::{CourseGraph, DegreeProgram, School};
+use crate::core::models::{CourseGraph, DegreeProgram, School, DAG};
 use crate::core::report::inputs::{build_equivalence_map, build_school_from_program};
 use crate::core::report::report_stats::ReportStats;
 use crate::core::report::term_scheduler::{
@@ -365,42 +365,7 @@ fn run_plans(
             seen_fingerprints.insert(fp);
         }
 
-        let mut expanded_courses = expand_courses_with_prerequisites(
-            &variant.courses,
-            ctx.graph,
-            ctx.equivalences,
-            ctx.exclude_from_prereqs,
-            &include_set,
-        );
-
-        // Size fill-to-total blocks to this plan. Done *before* the DAG and metrics so all
-        // three — metrics, credits and schedule — describe the same course list; doing it
-        // later would leave complexity counting placeholders the plan no longer contains.
-        let fill = resize_fill_blocks(ctx, &expanded_courses, &variant, &fill_ids);
-        if let Some(resize) = &fill {
-            expanded_courses.clone_from(&resize.courses);
-        }
-
-        // The final plan first — the `ELEC` filler re-fitted to the expanded course list —
-        // and only then its DAG and metrics. The other way round, metrics counted the
-        // generator's draft filler: a draft a credit short got an `ELEC` that prerequisite
-        // expansion then made unnecessary, so the scheduled plan lacked a placeholder that
-        // its complexity still included (Binghamton: 126 credits on target, complexity 331
-        // for a plan whose own courses sum to 330).
-        let expanded_variant = create_expanded_variant(
-            &variant,
-            &expanded_courses,
-            ctx.school,
-            ctx.gen_config.target_credits,
-            fill.as_ref(),
-        );
-
-        let plan_dag = crate::core::degree::build_plan_dag(
-            &expanded_variant.courses,
-            ctx.graph,
-            ctx.equivalences,
-            &include_set,
-        );
+        let (expanded_variant, plan_dag) = build_plan(ctx, &variant, &include_set, &fill_ids);
         let course_metrics = match compute_all_metrics(&plan_dag) {
             Ok(metrics) => metrics,
             Err(e) => {
@@ -429,6 +394,53 @@ fn run_plans(
         on_event(AnalysisEvent::Processed(outcome.plans_processed));
     }
     outcome
+}
+
+/// The plan as analyzed, and its DAG: the generator's `variant` with its missing
+/// prerequisites added, its fill-to-total blocks sized and its `ELEC` filler refitted.
+fn build_plan(
+    ctx: &LoopContext<'_>,
+    variant: &PlanVariant,
+    include_set: &HashSet<String>,
+    fill_ids: &[String],
+) -> (PlanVariant, DAG) {
+    let mut expanded_courses = expand_courses_with_prerequisites(
+        &variant.courses,
+        ctx.graph,
+        ctx.equivalences,
+        ctx.exclude_from_prereqs,
+        include_set,
+    );
+
+    // Size fill-to-total blocks to this plan. Done *before* the DAG and metrics so all
+    // three — metrics, credits and schedule — describe the same course list; doing it
+    // later would leave complexity counting placeholders the plan no longer contains.
+    let fill = resize_fill_blocks(ctx, &expanded_courses, variant, fill_ids);
+    if let Some(resize) = &fill {
+        expanded_courses.clone_from(&resize.courses);
+    }
+
+    // The final plan first — the `ELEC` filler re-fitted to the expanded course list —
+    // and only then its DAG and metrics. The other way round, metrics counted the
+    // generator's draft filler: a draft a credit short got an `ELEC` that prerequisite
+    // expansion then made unnecessary, so the scheduled plan lacked a placeholder that
+    // its complexity still included (Binghamton: 126 credits on target, complexity 331
+    // for a plan whose own courses sum to 330).
+    let expanded_variant = create_expanded_variant(
+        variant,
+        &expanded_courses,
+        ctx.school,
+        ctx.gen_config.target_credits,
+        fill.as_ref(),
+    );
+
+    let plan_dag = crate::core::degree::build_plan_dag(
+        &expanded_variant.courses,
+        ctx.graph,
+        ctx.equivalences,
+        include_set,
+    );
+    (expanded_variant, plan_dag)
 }
 
 /// Shrink a plan's fill-to-total blocks so it reaches the degree's credit target and no
@@ -593,7 +605,9 @@ fn find_excluded_prereq_paths(node: &CourseNode, graph: &CourseGraph) -> HashSet
         let option_chains: Vec<(String, HashSet<String>)> = edges
             .iter()
             .map(|edge| {
-                let chain = collect_all_prereqs(&edge.prerequisite, graph, &mut HashSet::new());
+                let chain = graph
+                    .prerequisite_chain(&edge.prerequisite, true)
+                    .unwrap_or_default();
                 (edge.prerequisite.clone(), chain)
             })
             .collect();
@@ -622,7 +636,7 @@ fn find_excluded_prereq_paths(node: &CourseNode, graph: &CourseGraph) -> HashSet
             .map(|branch| {
                 let mut cost: HashSet<String> = branch.iter().cloned().collect();
                 for course in branch {
-                    cost.extend(collect_all_prereqs(course, graph, &mut HashSet::new()));
+                    cost.extend(graph.prerequisite_chain(course, true).unwrap_or_default());
                 }
                 cost
             })
@@ -636,31 +650,6 @@ fn find_excluded_prereq_paths(node: &CourseNode, graph: &CourseGraph) -> HashSet
     }
 
     excluded
-}
-
-/// Collect all prerequisites transitively for a course
-fn collect_all_prereqs(
-    course: &str,
-    graph: &CourseGraph,
-    visited: &mut HashSet<String>,
-) -> HashSet<String> {
-    let mut prereqs = HashSet::new();
-
-    if visited.contains(course) {
-        return prereqs;
-    }
-    visited.insert(course.to_string());
-
-    let Some(node) = graph.get(course) else {
-        return prereqs;
-    };
-
-    for edge in &node.prerequisites {
-        prereqs.insert(edge.prerequisite.clone());
-        prereqs.extend(collect_all_prereqs(&edge.prerequisite, graph, visited));
-    }
-
-    prereqs
 }
 
 /// Check if a course requires an excluded course (no valid alternative)
@@ -969,6 +958,10 @@ fn chosen_branches<'g>(
     graph: &CourseGraph,
     include_courses: &HashSet<String>,
 ) -> Vec<(usize, &'g [String])> {
+    // Most nodes have no multi-course group; skip building the plan set for them.
+    if node.or_branches.is_empty() {
+        return Vec::new();
+    }
     let plan: HashSet<&str> = courses.iter().map(String::as_str).collect();
     node.or_branches
         .iter()
@@ -983,6 +976,14 @@ fn chosen_branches<'g>(
             .map(|branch| (*group, branch))
         })
         .collect()
+}
+
+/// A node's OR-groups whose alternatives are single courses, by group id. Groups with a
+/// multi-course alternative are left to [`chosen_branches`].
+fn single_course_or_groups(node: &CourseNode) -> HashMap<usize, Vec<&str>> {
+    let mut groups = node.optional_prerequisite_groups();
+    groups.retain(|group, _| !node.or_branches.contains_key(group));
+    groups
 }
 
 /// Which plan courses actually depend on each prerequisite.
@@ -1006,21 +1007,17 @@ fn prerequisite_usage(
                     .push(course_key.clone());
             }
         }
-        let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
         for edge in &node.prerequisites {
-            if edge.prereq_type == PrerequisiteType::Required {
-                if courses.contains(&edge.prerequisite) {
-                    usage
-                        .entry(edge.prerequisite.clone())
-                        .or_default()
-                        .push(course_key.clone());
-                }
-            } else if let Some(group) = edge.or_group.filter(|g| !node.or_branches.contains_key(g))
+            if edge.prereq_type == PrerequisiteType::Required
+                && courses.contains(&edge.prerequisite)
             {
-                or_groups.entry(group).or_default().push(&edge.prerequisite);
+                usage
+                    .entry(edge.prerequisite.clone())
+                    .or_default()
+                    .push(course_key.clone());
             }
         }
-        for options in or_groups.into_values() {
+        for options in single_course_or_groups(node).into_values() {
             let mut in_plan = options.into_iter().filter(|opt| courses.contains(*opt));
             if let (Some(only), None) = (in_plan.next(), in_plan.next()) {
                 usage
@@ -1076,15 +1073,7 @@ fn redundant_or_options(
                 }
             }
         }
-        let mut or_groups: HashMap<usize, Vec<&str>> = HashMap::new();
-        for edge in &node.prerequisites {
-            if let (Some(group), PrerequisiteType::Optional) = (edge.or_group, &edge.prereq_type) {
-                if !node.or_branches.contains_key(&group) {
-                    or_groups.entry(group).or_default().push(&edge.prerequisite);
-                }
-            }
-        }
-        for options in or_groups.into_values() {
+        for options in single_course_or_groups(node).into_values() {
             let in_plan: Vec<&str> = options
                 .into_iter()
                 .filter(|opt| courses.contains(*opt))
@@ -1208,22 +1197,7 @@ fn refit_electives(
 
 #[cfg(test)]
 mod tests {
-    /// CSU's MATH156, `(MATH124 & MATH126) | MATH127`, with a course that uses MATH124.
-    const MATH156: &str = r#"degree: {id: t, institution: CSU, program: T, total_credits: 10, gpa_minimum: 2.0}
-requirements:
-  core: {name: Core, type: all, category: major, courses: [MATH156]}
-courses:
-  MATH124: {title: Log, prefix: MATH, number: "124", credits: 1}
-  MATH126: {title: Trig, prefix: MATH, number: "126", credits: 1}
-  MATH127: {title: Precalc, prefix: MATH, number: "127", credits: 4}
-  MATH156: {title: Comp Math I, prefix: MATH, number: "156", credits: 4, prerequisites_raw: "(MATH124 & MATH126) | MATH127"}
-  CS999: {title: Uses MATH124, prefix: CS, number: "999", credits: 3, prerequisites_raw: "MATH124"}
-"#;
-
-    fn math156_graph() -> CourseGraph {
-        let (program, _) = crate::core::degree::parse_degree_auto(MATH156).expect("parses");
-        CourseGraph::from_degree_program(&program).graph
-    }
+    use crate::core::degree::test_degrees::math156_graph;
 
     fn set(xs: &[&str]) -> HashSet<String> {
         xs.iter().map(ToString::to_string).collect()
@@ -1338,6 +1312,8 @@ courses:
             assert_eq!(processed, run.plans_processed, "{limit:?}");
             assert_eq!(run.plans_processed > 0, expect_plans, "{limit:?}");
             assert_eq!(run.time_limit_reached, !expect_plans, "{limit:?}");
+            // The clock, like the cap, makes a run a sample.
+            assert_eq!(run.is_full_population(), expect_plans, "{limit:?}");
         }
     }
 

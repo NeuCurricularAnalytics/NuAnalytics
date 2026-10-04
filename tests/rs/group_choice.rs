@@ -56,7 +56,9 @@ fn plan_course_sets(text: &str) -> BTreeSet<Vec<String>> {
             let mut courses: Vec<String> = v
                 .courses
                 .into_iter()
-                .filter(|c| !c.starts_with("ELEC"))
+                .filter(|c| {
+                    !c.starts_with(nu_analytics::core::degree::placeholder::ELECTIVE_PREFIX)
+                })
                 .collect();
             courses.sort();
             courses

@@ -41,7 +41,7 @@ fn main() {
     // Handle subcommands
     match args.command {
         Command::Config { subcommand } => {
-            commands::config::run(subcommand, &mut config, &defaults);
+            commands::config::run(subcommand, &config, &defaults);
         }
         Command::Planner {
             input_files,
@@ -160,6 +160,7 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
             report_dir,
             metrics_dir,
             no_csv,
+            no_metrics,
             no_report,
             include,
             jobs,
@@ -176,6 +177,7 @@ fn run_degree(subcommand: DegreeSubcommand, config: &Config, verbose: bool) {
                 report_dir: report_dir.or_else(|| dir_override(&config.paths.reports_dir)),
                 metrics_dir: metrics_dir.or_else(|| dir_override(&config.paths.metrics_dir)),
                 no_csv,
+                no_metrics,
                 no_report,
                 verbose,
                 include_courses: include,

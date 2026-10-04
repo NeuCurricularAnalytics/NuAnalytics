@@ -10,8 +10,8 @@ codebase — run `/init` if you want that.
 
 Default features: `log-info`, `log-debug`, `verbose`, `file-logging`, `database`, `mcp`.
 
-    cargo test --all-features                       # 1535 tests, clean
-    cargo test --no-default-features --features database   # 1295 — the CLI's feature set
+    cargo test --all-features                       # 1544 tests, clean
+    cargo test --no-default-features --features database   # 1304 — the CLI's feature set
     cargo build --features database
 
 **Three feature sets are tested in CI, and the middle one is load-bearing.** The query
@@ -86,10 +86,10 @@ out; `max_plans = 1000` written explicitly was discarded for equalling the defau
 `verbose = false` could not turn off a `true` from a lower tier. Add a field and it is
 handled automatically — there is no per-field merge list any more.
 
-**Known defect: `config set` and `config unset` save the merged configuration**, project
-file and override flags included, into the user file (`commands::config` saves the
-in-memory `Config`). Run from a project directory, they copy its settings into the user's
-defaults. Not fixed; documented in `docs/config.md`.
+**`config set` and `config unset` write the user file read on its own**
+(`Config::load_user_file` + `save_to`), never the merged `Config` — saving the merged view
+copied a project's `nuanalytics.toml` and any override flags into the user's defaults
+(fixed in 0.6.0). Anything that persists configuration must do the same.
 
 **An explicitly blank string is treated as absent and never overrides.** Blank means "not
 configured" everywhere in this tool, so a blank in one tier erasing a working value from

@@ -46,8 +46,9 @@ Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisit
 9,"Capstone Project","CS","490","6;7;8",,,3,,
 ```
 
-**Do not put a blank line between `Courses` and the header row.** With one there, the
-planner currently reads no courses and still reports success, with a complexity of 0.
+Blank lines between `Courses` and the header row are skipped; the header is the first
+non-blank line after `Courses`. A file from which no course can be read is an error, never
+an empty analysis.
 
 Metadata rows:
 
@@ -149,8 +150,9 @@ nuanalytics --log-file analysis.log planner curriculum.csv
 
 - **`✗ Failed to load missing.csv: No such file or directory`** — the input path is
   wrong.
-- **Every metric is 0 and no courses are listed** — check for a blank line between
-  `Courses` and the header row.
+- **`no courses could be read after the 'Courses' row`** — the line after `Courses` (and
+  any blank lines) must be the column header, and each course line must have a `Course ID`,
+  `Prefix` and `Number`.
 - **A metric looks wrong** — check that each prerequisite refers to the right `Course ID`.
   A prerequisite cycle (a course requiring itself, directly or through others) cannot be
   measured.

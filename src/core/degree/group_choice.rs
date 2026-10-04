@@ -135,66 +135,53 @@ fn has_expandable_choice(req: &Requirement) -> bool {
     }
 }
 
-/// Every course list `req`'s choices expand to, in order; `None` when it has no choice, a
-/// malformed one, or more than [`MAX_COMBINATIONS`].
-fn combinations(req: &Requirement) -> Option<Vec<Vec<String>>> {
+/// Every course list `req`'s choices expand to, in order, each with a name for the choices
+/// it makes (`"MATH141 + MATH142"`, joined by `"; "` across choices); `None` when it has no
+/// choice, a malformed one, or more than [`MAX_COMBINATIONS`].
+fn combinations(req: &Requirement) -> Option<Vec<(Vec<String>, String)>> {
     let courses = req.courses.as_ref()?;
-    let mut lists: Vec<Vec<String>> = vec![Vec::new()];
+    let mut combos: Vec<(Vec<String>, Vec<String>)> = vec![(Vec::new(), Vec::new())];
     let mut any_choice = false;
     for item in courses {
         match parse_group_choice(item) {
-            None => lists.iter_mut().for_each(|l| l.push(item.clone())),
+            None => combos
+                .iter_mut()
+                .for_each(|(list, _)| list.push(item.clone())),
             Some(Err(_)) => return None,
             Some(Ok(alternatives)) => {
                 any_choice = true;
-                if lists.len() * alternatives.len() > MAX_COMBINATIONS {
+                if combos.len() * alternatives.len() > MAX_COMBINATIONS {
                     return None;
                 }
-                lists = lists
+                combos = combos
                     .iter()
-                    .flat_map(|l| {
+                    .flat_map(|(list, names)| {
                         alternatives.iter().map(move |alt| {
-                            let mut next = l.clone();
+                            let mut next = list.clone();
                             next.extend(alt.iter().cloned());
-                            next
+                            let mut next_names = names.clone();
+                            next_names.push(alt.join(" + "));
+                            (next, next_names)
                         })
                     })
                     .collect();
             }
         }
     }
-    any_choice.then_some(lists)
-}
-
-/// The chosen courses of each combination, for option names: `"MATH141 + MATH142"`.
-fn combination_names(req: &Requirement) -> Vec<String> {
-    let mut names: Vec<Vec<String>> = vec![Vec::new()];
-    for item in req.courses.iter().flatten() {
-        if let Some(Ok(alternatives)) = parse_group_choice(item) {
-            names = names
-                .iter()
-                .flat_map(|n| {
-                    alternatives.iter().map(move |alt| {
-                        let mut next = n.clone();
-                        next.push(alt.join(" + "));
-                        next
-                    })
-                })
-                .collect();
-        }
-    }
-    names.into_iter().map(|n| n.join("; ")).collect()
+    any_choice.then(|| {
+        combos
+            .into_iter()
+            .map(|(list, names)| (list, names.join("; ")))
+            .collect()
+    })
 }
 
 /// A top-level `all` requirement's options, one per combination; `None` when it has none
 /// to expand.
 fn expand_all(req: &Requirement, key: &str) -> Option<Vec<RequirementOption>> {
-    let lists = combinations(req)?;
-    let names = combination_names(req);
     Some(
-        lists
+        combinations(req)?
             .into_iter()
-            .zip(names)
             .enumerate()
             .map(|(i, (courses, name))| RequirementOption {
                 id: format!("{key}__{}", i + 1),
@@ -266,11 +253,10 @@ fn option_combinations(option: &RequirementOption) -> Option<Vec<(Vec<Requiremen
         if combos.len() * lists.len() > MAX_COMBINATIONS {
             return None;
         }
-        let names = combination_names(nested);
         combos = combos
             .iter()
             .flat_map(|(reqs, labels)| {
-                lists.iter().zip(&names).map(move |(courses, name)| {
+                lists.iter().map(move |(courses, name)| {
                     let mut next_reqs = reqs.clone();
                     let mut chosen = nested.clone();
                     chosen.courses = Some(courses.clone());
@@ -441,6 +427,22 @@ courses:
                 strings(&["MATH141", "MATH142", "CHEM101"]),
                 strings(&["MATH155", "PHYS101"]),
                 strings(&["MATH155", "CHEM101"]),
+            ]
+        );
+        let names: Vec<&str> = p.requirements["core"]
+            .options
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|o| o.name.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "MATH141 + MATH142; PHYS101",
+                "MATH141 + MATH142; CHEM101",
+                "MATH155; PHYS101",
+                "MATH155; CHEM101"
             ]
         );
     }

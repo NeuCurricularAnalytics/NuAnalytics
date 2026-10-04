@@ -3,6 +3,7 @@
 use crate::args::ConfigSubcommand;
 use nu_analytics::config::Config;
 use std::io::{self, Write};
+use std::path::Path;
 
 /// Dispatch config subcommands
 ///
@@ -11,16 +12,49 @@ use std::io::{self, Write};
 ///
 /// # Arguments
 /// * `subcommand` - The config subcommand to execute (None displays all config)
-/// * `config` - The current configuration (may be modified by set/unset)
+/// * `config` - The configuration in effect, for display
 /// * `defaults` - Default configuration values for unset operations
-pub fn run(subcommand: Option<ConfigSubcommand>, config: &mut Config, defaults: &Config) {
+///
+/// `set` and `unset` change the user file only, read on its own: `config` is the merged
+/// view, project file and override flags included, and must never be what is saved.
+pub fn run(subcommand: Option<ConfigSubcommand>, config: &Config, defaults: &Config) {
+    let user_file = Config::get_config_file_path();
     match subcommand {
         None => handle_config_get(config, None),
         Some(ConfigSubcommand::Get { key }) => handle_config_get(config, key),
-        Some(ConfigSubcommand::Set { key, value }) => handle_config_set(config, &key, &value),
-        Some(ConfigSubcommand::Unset { key }) => handle_config_unset(config, defaults, &key),
+        Some(ConfigSubcommand::Set { key, value }) => {
+            exit_on_error(handle_config_set(&user_file, &key, &value));
+        }
+        Some(ConfigSubcommand::Unset { key }) => {
+            exit_on_error(handle_config_unset(&user_file, defaults, &key));
+        }
         Some(ConfigSubcommand::Reset) => handle_config_reset(),
     }
+}
+
+/// Print a handler's message, or its error and exit 1.
+fn exit_on_error(result: Result<String, String>) {
+    match result {
+        Ok(message) => println!("{message}"),
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// The note `set` and `unset` add when a project file is present: it outranks the user
+/// file for every key it sets, so the change may not be the one in effect here.
+fn project_file_note() -> String {
+    Config::get_local_config_file_path()
+        .filter(|p| p.exists())
+        .map(|p| {
+            format!(
+                "\n  note: {} takes precedence over the user file for any key it sets",
+                p.display()
+            )
+        })
+        .unwrap_or_default()
 }
 
 /// Handle the config get subcommand
@@ -45,50 +79,46 @@ pub fn handle_config_get(config: &Config, key: Option<String>) {
     }
 }
 
-/// Handle the config set subcommand
+/// Handle the config set subcommand: write one key to the user file at `user_file`.
 ///
-/// Sets a configuration value and persists it to disk. Validates the key and value
-/// format, exiting with error if invalid.
+/// Returns the confirmation to print, or why nothing was written: an unknown key, a
+/// value of the wrong type, a user file that does not parse, or a failed write.
 ///
-/// # Arguments
-/// * `config` - The configuration to modify
-/// * `key` - The configuration key to set
-/// * `value` - The value to set (as string, will be parsed appropriately)
-pub fn handle_config_set(config: &mut Config, key: &str, value: &str) {
-    if let Err(e) = config.set(key, value) {
-        eprintln!("{e}");
-        std::process::exit(1);
-    }
-
-    if let Err(e) = config.save() {
-        eprintln!("Failed to save config: {e}");
-        std::process::exit(1);
-    }
-
-    println!("✓ Set {key} = {value}");
+/// # Errors
+/// See above; the user file is left unchanged.
+pub fn handle_config_set(user_file: &Path, key: &str, value: &str) -> Result<String, String> {
+    edit_user_file(user_file, |user| user.set(key, value))?;
+    Ok(confirmation(&format!("Set {key} = {value}"), user_file))
 }
 
-/// Handle the config unset subcommand
+/// Handle the config unset subcommand: reset one key to its default in the user file.
 ///
-/// Resets a configuration value to its default and persists to disk. Exits with
-/// error if the key is invalid.
-///
-/// # Arguments
-/// * `config` - The configuration to modify
-/// * `defaults` - Default configuration values to reset to
-/// * `key` - The configuration key to reset
-pub fn handle_config_unset(config: &mut Config, defaults: &Config, key: &str) {
-    if let Err(e) = config.unset(key, defaults) {
-        eprintln!("{e}");
-        std::process::exit(1);
-    }
+/// # Errors
+/// As [`handle_config_set`]; the user file is left unchanged.
+pub fn handle_config_unset(
+    user_file: &Path,
+    defaults: &Config,
+    key: &str,
+) -> Result<String, String> {
+    edit_user_file(user_file, |user| user.unset(key, defaults))?;
+    Ok(confirmation(&format!("Reset {key} to default"), user_file))
+}
 
-    if let Err(e) = config.save() {
-        eprintln!("Failed to save config: {e}");
-        std::process::exit(1);
-    }
+/// Read the user file on its own, apply `change`, and save it — or, when `change` or the
+/// read fails, leave the file as it was.
+fn edit_user_file(
+    user_file: &Path,
+    change: impl FnOnce(&mut Config) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut user = Config::load_user_file(user_file)?;
+    change(&mut user)?;
+    user.save_to(user_file)
+        .map_err(|e| format!("Failed to save {}: {e}", user_file.display()))
+}
 
-    println!("✓ Reset {key} to default");
+/// `✓ <what> in <file>`, with the note about a project file that outranks it.
+fn confirmation(what: &str, user_file: &Path) -> String {
+    format!("✓ {what} in {}{}", user_file.display(), project_file_note())
 }
 
 /// Handle the config reset subcommand
@@ -128,6 +158,68 @@ pub fn handle_config_reset() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A user file in a temporary directory, never the developer's real one.
+    fn user_file(contents: Option<&str>) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("config.toml");
+        if let Some(text) = contents {
+            std::fs::write(&path, text).expect("write user file");
+        }
+        (dir, path)
+    }
+
+    #[test]
+    fn test_handle_config_set_changes_only_the_named_key_in_the_user_file() {
+        // The defect: `set` saved the merged configuration, so a project file's values and
+        // any override flags landed in the user's defaults. Now the user file is read on
+        // its own, and only the named key changes.
+        let (_dir, path) = user_file(Some("[logging]\nlevel = \"info\"\n"));
+        handle_config_set(&path, "max_plans", "2000").expect("sets");
+        let saved = Config::load_user_file(&path).expect("reloads");
+        assert_eq!(saved.degree_analysis.max_plans, 2000);
+        assert_eq!(saved.logging.level, "info", "an unrelated key is untouched");
+        assert_eq!(
+            saved.paths.reports_dir,
+            Config::from_defaults().paths.reports_dir
+        );
+
+        handle_config_unset(&path, &Config::from_defaults(), "max_plans").expect("unsets");
+        let saved = Config::load_user_file(&path).expect("reloads");
+        assert_eq!(
+            saved.degree_analysis.max_plans,
+            Config::from_defaults().degree_analysis.max_plans
+        );
+        assert_eq!(saved.logging.level, "info");
+    }
+
+    #[test]
+    fn test_handle_config_set_creates_a_missing_user_file_from_defaults() {
+        let (_dir, path) = user_file(None);
+        // `error` is neither build's default, so this passes only if the file was written.
+        let message = handle_config_set(&path, "level", "error").expect("sets");
+        assert!(path.exists(), "the user file is created");
+        assert!(message.contains(&path.display().to_string()), "{message}");
+        assert_eq!(
+            Config::load_user_file(&path).unwrap().logging.level,
+            "error"
+        );
+    }
+
+    #[test]
+    fn test_handle_config_set_writes_nothing_when_it_refuses() {
+        let (_dir, path) = user_file(Some("this is = = not toml"));
+        let err = handle_config_set(&path, "level", "debug").expect_err("refuses");
+        assert!(err.contains(&path.display().to_string()), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "this is = = not toml"
+        );
+
+        let (_dir, path) = user_file(None);
+        assert!(handle_config_set(&path, "no_such_key", "1").is_err());
+        assert!(!path.exists(), "a refused set writes nothing");
+    }
 
     /// Create a test config with known values
     fn test_config() -> Config {

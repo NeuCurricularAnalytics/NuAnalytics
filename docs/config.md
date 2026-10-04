@@ -26,11 +26,12 @@ Surprises:
 - **`config set` writes the user file, never the project file.** With a project file that
   sets the same key, `config set` succeeds and the project file still wins. Edit
   `nuanalytics.toml` directly to change a project setting.
-- **Known defect: `config set` and `config unset` save every setting in effect, not just
-  the one named.** They write the merged configuration — project-file values and any
-  override flags included — into the user file. Run them from a directory with no
-  `nuanalytics.toml` and without override flags, or the project's settings become your
-  user defaults.
+- **`config set` and `config unset` change one key and nothing else.** They read the user
+  file on its own — never the merged view, so neither a project file's values nor override
+  flags reach it — change the key, and save. The confirmation names the file written, and
+  adds a note when a `nuanalytics.toml` here outranks it. A user file that does not parse
+  is reported and left as it is. (Before 0.6.0 they saved the merged configuration, copying
+  a project's settings into the user's defaults.)
 - **The user file is created on first run**, and keys added in a newer version are filled
   in from the defaults and saved back. It is written with default permissions (typically
   0644); the sign-in session file is written 0600.
@@ -100,7 +101,7 @@ Keys are accepted bare (`level`) or with their section (`logging.level`).
 | `metrics_dir` | `paths` | Where `planner` and `degree analyze` write metrics. |
 | `reports_dir` | `paths` | Where reports are written. |
 | `prerequisite_chain_threshold` | `audit` | `degree audit` flags prerequisite chains at least this long. Default 4. |
-| `calc_strategy` | `degree_analysis` | How a degree's figures are summarised across plans: `median` (default) or `mean`. |
+| `calc_strategy` | `degree_analysis` | `median` (default) or `mean`, recorded in each run's parameters. Nothing else reads it yet: every report carries both the median and the mean. |
 | `max_plans` | `degree_analysis` | The most plans `degree analyze` analyzes. A degree with more is sampled: under `shuffled`, a random sample of this size, seeded so the same degree gives the same sample. Default 1000. |
 | `sample_plan_count` | `degree_analysis` | How many random plans to export in full (term schedules and CSVs). Statistics use every analyzed plan regardless. Default 5. |
 | `ignore_duplicates` | `degree_analysis` | Skip a plan whose set of courses equals one already analyzed. Default `true`. |

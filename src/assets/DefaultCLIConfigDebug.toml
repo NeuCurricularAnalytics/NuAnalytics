@@ -73,7 +73,7 @@ prerequisite_chain_threshold = 4
 # Degree analysis
 # ---------------------------------------------------------------------------
 [degree_analysis]
-# Aggregate metric strategy across generated plans: median | mean
+# Summary statistic recorded with each run (recorded only; reports carry both)
 calc_strategy = "median"
 
 # Plans to export in full. Smaller value speeds up debug iteration.

@@ -147,7 +147,8 @@ impl Default for AuditConfig {
 /// Degree analysis configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DegreeAnalysisConfig {
-    /// Calculation strategy for aggregate metrics ("median" or "mean")
+    /// The summary statistic recorded with each run ("median" or "mean"); recorded only —
+    /// reports carry both
     #[serde(default = "default_calc_strategy")]
     pub calc_strategy: String,
 
@@ -935,20 +936,59 @@ impl Config {
     /// - The config directory cannot be created
     /// - The file cannot be written (permissions, disk full, etc.)
     ///
+    /// Save only a configuration read from the user file alone
+    /// ([`load_user_file`](Self::load_user_file)), never the merged one from
+    /// [`load`](Self::load): that holds the project file's values, which saving would copy
+    /// into the user's defaults.
+    ///
     /// # Examples
     /// ```ignore
-    /// let mut config = Config::load()?;
+    /// let mut config = Config::load_user_file(&Config::get_config_file_path())?;
     /// config.logging.level = "debug".to_string();
     /// config.save()?;
     /// ```
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let config_file = Self::get_config_file_path();
-        if let Some(parent) = config_file.parent() {
+        self.save_to(&Self::get_config_file_path())
+    }
+
+    /// [`Self::save`] to an explicit path, creating its directory if needed.
+    ///
+    /// # Errors
+    /// As [`Self::save`].
+    pub fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
         let toml_str = toml::to_string_pretty(self)?;
-        fs::write(&config_file, toml_str)?;
+        fs::write(path, toml_str)?;
         Ok(())
+    }
+
+    /// The user's config file on its own, as `config set` and `config unset` change it.
+    ///
+    /// Not the configuration `main` builds — [`Self::load`], which merges in the project's
+    /// `nuanalytics.toml`, plus the override flags applied after it: saving that copied a
+    /// project's settings, and any flags passed, into the user's defaults. A missing file reads as the compiled-in
+    /// defaults, and saving creates it. A file that exists but does not parse is an error
+    /// naming it, rather than being silently replaced with defaults.
+    ///
+    /// # Errors
+    /// The file exists but cannot be read, or is not a valid configuration.
+    pub fn load_user_file(path: &Path) -> Result<Self, String> {
+        let defaults = Self::from_defaults();
+        if !path.exists() {
+            return Ok(defaults);
+        }
+        let content =
+            fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        let mut config = Self::from_toml(&content).map_err(|e| {
+            format!(
+                "{} is not a valid configuration file, so it was left unchanged: {e}",
+                path.display()
+            )
+        })?;
+        config.merge_defaults(&defaults);
+        Ok(config)
     }
 
     /// Strip an optional section prefix from a config key so both bare
@@ -1019,7 +1059,9 @@ impl Config {
     /// - `metrics_dir`: String (directory path for metrics CSV files)
     /// - `reports_dir`: String (directory path for report files)
     ///
-    /// Note: This method updates the in-memory config. Call [`save()`](Config::save) to persist changes.
+    /// Note: this updates the in-memory config. To persist, call [`save_to`](Config::save_to)
+    /// on a config read by [`load_user_file`](Config::load_user_file), never on the merged
+    /// one from [`load`](Config::load).
     ///
     /// # Arguments
     /// - `key`: The configuration key to set
@@ -1032,10 +1074,11 @@ impl Config {
     ///
     /// # Examples
     /// ```ignore
-    /// let mut config = Config::load()?;
+    /// let path = Config::get_config_file_path();
+    /// let mut config = Config::load_user_file(&path)?;
     /// config.set("level", "debug")?;
     /// config.set("verbose", "true")?;
-    /// config.save()?;
+    /// config.save_to(&path)?;
     /// ```
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
         let key = Self::normalize_key(key);
@@ -1111,7 +1154,9 @@ impl Config {
     /// The default value is taken from the provided defaults config (typically from
     /// [`from_defaults()`](Config::from_defaults)).
     ///
-    /// Note: This method updates the in-memory config. Call [`save()`](Config::save) to persist changes.
+    /// Note: this updates the in-memory config. To persist, call [`save_to`](Config::save_to)
+    /// on a config read by [`load_user_file`](Config::load_user_file), never on the merged
+    /// one from [`load`](Config::load).
     ///
     /// # Arguments
     /// - `key`: The configuration key to reset
@@ -1122,12 +1167,13 @@ impl Config {
     ///
     /// # Examples
     /// ```ignore
-    /// let mut config = Config::load()?;
+    /// let path = Config::get_config_file_path();
+    /// let mut config = Config::load_user_file(&path)?;
     /// let defaults = Config::from_defaults();
     ///
     /// config.set("level", "trace")?;
-    /// config.unset("level", &defaults)?;  // Resets to "info"
-    /// config.save()?;
+    /// config.unset("level", &defaults)?;  // Resets to the default
+    /// config.save_to(&path)?;
     /// ```
     pub fn unset(&mut self, key: &str, defaults: &Self) -> Result<(), String> {
         let key = Self::normalize_key(key);

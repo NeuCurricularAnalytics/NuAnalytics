@@ -152,7 +152,10 @@ pub(crate) fn read_file_or_zip(path: &Path) -> DatabaseResult<String> {
     let bytes = std::fs::read(path)
         .map_err(|e| DatabaseError::IngestError(format!("Cannot read {}: {e}", path.display())))?;
 
-    if path.extension().and_then(|e| e.to_str()) == Some("zip") {
+    if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+    {
         let cursor = Cursor::new(bytes);
         let mut archive = zip::ZipArchive::new(cursor)
             .map_err(|e| DatabaseError::IngestError(format!("Cannot open zip: {e}")))?;
@@ -896,6 +899,11 @@ mod tests {
 
         let read = read_file_or_zip(&path).expect("read zip");
         assert_eq!(read, csv_body);
+
+        // The extension is matched regardless of case: `.ZIP` was read as CSV.
+        let upper = dir.path().join("C2022_A.ZIP");
+        std::fs::copy(&path, &upper).expect("copy");
+        assert_eq!(read_file_or_zip(&upper).expect("read .ZIP"), csv_body);
     }
 
     #[test]

@@ -54,14 +54,15 @@ course never stands in for its own prerequisite: where a requirement offers
 |---|---|---|
 | `--max-plans <N>` | The most plans to analyze; above it, a seeded sample | 1000 (config) |
 | `--sample-plans <N>` | Random plans to select and export in full | 5 (config) |
-| `--calc-strategy <S>` | Summarize across plans by `median` or `mean` | `median` |
+| `--calc-strategy <S>` | `median` or `mean`, recorded in the run's parameters only — the statistics always include both | `median` |
 | `--sampling-strategy <S>` | `shuffled`, or `sequential` (favours the options listed first). `stratified` is accepted but behaves as `shuffled` | `shuffled` |
 | `--full-run` | Analyze plans with identical course sets too | off |
 | `--include <COURSES>` | Courses every plan must contain (comma-separated) | none |
 | `--target-course <COURSE>` | Report where one course lands across the plans, as JSON on stdout | none |
 | `--metrics-out <PATH>` | With `--target-course`, also write the report JSON here | none |
 | `--no-report` | Skip the HTML report | off |
-| `--no-csv` | Skip the metrics files: plan CSVs, summary, index row **and** the report JSON | off |
+| `--no-csv` | Skip the CSV files: plan CSVs and the `index.csv` row. The report JSON and summary are still written | off |
+| `--no-metrics` | Write no metrics files — no report JSON, summary, CSVs or `--school` roll-up. With `--no-report`, a run writes no output files (a worker pool still records failures in `failures.log`) | off |
 | `--report-dir <DIR>`, `--metrics-dir <DIR>` | Output directories | from config |
 | `-j, --jobs <N>` | Degrees analyzed at once when several files are given | 8 |
 | `--school <NAME>` | Also write a combined `<school>_school_report.json` across the files | none |

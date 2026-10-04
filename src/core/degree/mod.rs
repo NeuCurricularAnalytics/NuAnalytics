@@ -38,6 +38,8 @@ pub mod plan_selector;
 pub mod plan_validation;
 pub mod plan_variant;
 pub mod requirement_resolver;
+#[cfg(test)]
+pub(crate) mod test_degrees;
 pub mod trim;
 pub mod validation;
 pub mod yaml_parser;

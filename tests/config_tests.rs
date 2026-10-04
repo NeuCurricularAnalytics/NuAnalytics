@@ -480,3 +480,45 @@ fn test_normalize_key_management_key() {
         config.get("management_key")
     );
 }
+
+/// The defect `config set` had: run from a project directory, it saved the merged
+/// configuration, copying the project's settings into the user's defaults. Linux only:
+/// `XDG_CONFIG_HOME` is what keeps the test away from the real user file.
+#[cfg(target_os = "linux")]
+#[test]
+fn config_set_from_a_project_dir_writes_only_the_key_and_notes_the_project_file() {
+    use std::process::Command;
+    let home = TempDir::new().unwrap();
+    let project = TempDir::new().unwrap();
+    fs::write(
+        project.path().join("nuanalytics.toml"),
+        "[paths]\nreports_dir = \"project-reports\"\n",
+    )
+    .unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+        .current_dir(project.path())
+        .env("XDG_CONFIG_HOME", home.path())
+        .args(["config", "set", "max_plans", "2000"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("takes precedence"),
+        "the note about the project file"
+    );
+    let name = if cfg!(debug_assertions) {
+        "dconfig.toml"
+    } else {
+        "config.toml"
+    };
+    let user = fs::read_to_string(home.path().join("nuanalytics").join(name)).unwrap();
+    assert!(user.contains("max_plans = 2000"), "{user}");
+    assert!(
+        !user.contains("project-reports"),
+        "project setting copied: {user}"
+    );
+}

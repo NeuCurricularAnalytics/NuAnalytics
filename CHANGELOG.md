@@ -4,12 +4,15 @@ All notable changes to NuAnalytics are recorded here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the
 project uses semantic versioning.
 
-## [Unreleased]
+## [0.6.0] — 2026-10-03
 
 The MCP server is redesigned: fewer, broader tools; SQL access in layers; stored analysis
 reachable; skills rewritten. **Breaking for MCP clients**: tools and parameters are renamed
-or removed, as below. The CLI changes only in `degree analyze --metrics-out`'s file, below;
-the rest is additions.
+or removed, as below. The CLI breaks in two small places — `degree analyze --metrics-out`'s
+file and `--no-csv` — both below. **Analysis figures move** for degrees with an OR between
+groups of courses, or with a course that could stand in for its own prerequisite (Fixed,
+below); every other degree analyzes exactly as before, and the stored corpus has been
+re-imported to match.
 
 ### Breaking — MCP tools
 
@@ -56,6 +59,14 @@ The file is now the degree's report JSON — the `<degree>_report.json` a normal
 with the target course's statistics under `analysis.target_course_stats`. It was the MCP
 `analyze_degree` response. `--target-course`'s stdout is unchanged in shape.
 
+### Breaking — `degree analyze --no-csv`
+
+`--no-csv` now skips only the CSV files: the plan CSVs and the `index.csv` row. The report
+JSON — the file `db import` reads — and the summary JSONL are written regardless; before,
+`--no-csv` skipped them too. The new `--no-metrics` skips every metrics file, a
+`--school` roll-up included, so a run that writes no output files is
+`--no-metrics --no-report`.
+
 ### Added
 
 - **`"{[A, B], C}"` — a choice of course groups — in an `all` list.** Documented since
@@ -79,6 +90,10 @@ with the target course's statistics under `analysis.target_course_stats`. It was
 - `db doctor` checks that the two query functions are installed.
 
 ### Changed
+
+- **`--calc-strategy` / `calc_strategy` are described as what they are:** recorded in each
+  run's parameters, read by nothing else. Every report carries both the median and the
+  mean; the help text and docs had promised it chose between them.
 
 - **A stored program means its stored run** — breaking for MCP clients that pass a
   `program_key` to the analysis tools. `analyze_degree`, `render_degree_report`,
@@ -116,6 +131,22 @@ with the target course's statistics under `analysis.target_course_stats`. It was
 
 ### Fixed
 
+- **`config set` and `config unset` no longer copy a project's settings into the user's
+  defaults.** They saved the merged configuration — a project `nuanalytics.toml` and any
+  override flags included — to the user file. They now change the one key in the user file
+  read on its own, say which file they wrote (noting a project file that outranks it), and
+  leave a user file that does not parse untouched.
+- **`planner` read no courses when a blank line followed `Courses`**, and reported success
+  with a complexity of 0. The header is now the first non-blank line after `Courses`, and
+  a file from which no course can be read is an error.
+- **`degree print-graph` showed a cycle's first course twice** (`CS152 → CS152 → CS163 →
+  CS152`).
+- **A stored run that failed to load lost the database error's kind,** so the MCP tools
+  answered `tool_error` where they should have said `unreachable`, `not_authenticated` or
+  whatever failed.
+- **A blank `degree` with a `variant`** was told "a stored program is always analyzed
+  afresh"; it is refused as blank.
+- **IPEDS archives named `.ZIP`** were read as CSV.
 - **A course no longer stands in for its own prerequisite, which silently discarded
   plans.** Northeastern offers `{CS2800, CS4820}` as one slot, and CS4820 requires CS2800.
   A plan taking CS4820 resolved that prerequisite through the equivalence to CS4820

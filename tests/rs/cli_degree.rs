@@ -443,49 +443,109 @@ fn test_degree_analyze_command() {
     }
 }
 
-/// Test analyze with --no-report and --no-csv flags
-#[test]
-fn test_degree_analyze_no_output_flags() {
+/// Run `degree analyze` on the Northeastern sample with `flags`, into fresh report and
+/// metrics directories, and list what each directory received.
+fn analyze_files_written(flags: &[&str]) -> (Vec<String>, Vec<String>) {
     use tempfile::TempDir;
 
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let report_dir = temp_dir.path().join("reports");
     let metrics_dir = temp_dir.path().join("metrics");
-
     let output = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            "degree",
-            "analyze",
-            "--no-report",
-            "--no-csv",
-            "--max-plans",
-            "10",
-            "--report-dir",
-            report_dir.to_str().unwrap(),
-            "--metrics-dir",
-            metrics_dir.to_str().unwrap(),
-            "samples/degrees/neu-khoury-bscs-boston.yaml",
-        ])
+        .args(["run", "--", "degree", "analyze", "--max-plans", "10"])
+        .args(flags)
+        .args(["--report-dir", report_dir.to_str().unwrap()])
+        .args(["--metrics-dir", metrics_dir.to_str().unwrap()])
+        .arg("samples/degrees/neu-khoury-bscs-boston.yaml")
         .output()
         .expect("Failed to execute command");
+    assert!(output.status.success(), "{flags:?} should succeed");
+    let list = |dir: &std::path::Path| -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .map(|d| {
+                d.filter_map(Result::ok)
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
+    };
+    (list(&report_dir), list(&metrics_dir))
+}
 
-    // Should succeed even without generating files
+/// `--no-metrics --no-report` writes no files at all.
+#[test]
+fn test_degree_analyze_no_output_flags() {
+    let (reports, metrics) = analyze_files_written(&["--no-report", "--no-metrics"]);
+    assert!(reports.is_empty(), "no HTML report: {reports:?}");
+    assert!(metrics.is_empty(), "no metrics files: {metrics:?}");
+}
+
+/// Every metrics file a default run writes: plan CSVs, the index row, the summary and the
+/// report JSON.
+#[test]
+fn test_degree_analyze_default_writes_every_metrics_file() {
+    let (_, metrics) = analyze_files_written(&["--no-report"]);
+    for want in ["plans", "index.csv"] {
+        assert!(metrics.iter().any(|f| f == want), "{want}: {metrics:?}");
+    }
+    for suffix in ["_report.json", "_summary.jsonl"] {
+        assert!(
+            metrics.iter().any(|f| f.ends_with(suffix)),
+            "{suffix}: {metrics:?}"
+        );
+    }
+}
+
+/// `--no-metrics --no-report` writes nothing in a worker pool or in school mode either: the
+/// pool's `index.csv` header and the school roll-up honour it.
+#[test]
+fn test_degree_analyze_no_metrics_batch_writes_nothing() {
+    for mode in [&["-j", "2"][..], &["--school", "Test U"][..]] {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for id in ["alpha", "beta"] {
+            write_min_degree(&dir.path().join(format!("{id}.unified.json")), id);
+        }
+        let out = dir.path().join("metrics");
+        let output = Command::new(env!("CARGO_BIN_EXE_nuanalytics"))
+            .args(["degree", "analyze"])
+            .arg(dir.path().join("alpha.unified.json"))
+            .arg(dir.path().join("beta.unified.json"))
+            .args(mode)
+            .args(["--no-report", "--no-metrics", "--metrics-dir"])
+            .arg(&out)
+            .output()
+            .expect("run analyze");
+        assert!(
+            output.status.success(),
+            "{mode:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let written: Vec<std::ffi::OsString> = std::fs::read_dir(&out)
+            .map(|d| d.filter_map(Result::ok).map(|e| e.file_name()).collect())
+            .unwrap_or_default();
+        assert!(written.is_empty(), "{mode:?} wrote {written:?}");
+    }
+}
+
+/// `--no-csv` skips the CSV files only: the report JSON `db import` reads, and the
+/// summary, are still written.
+#[test]
+fn test_degree_analyze_no_csv_keeps_the_report_json() {
+    let (_, metrics) = analyze_files_written(&["--no-report", "--no-csv"]);
     assert!(
-        output.status.success(),
-        "Command should succeed with --no-report --no-csv"
+        metrics.iter().any(|f| f.ends_with("_report.json")),
+        "report JSON written: {metrics:?}"
     );
-
-    // Report directory should not exist or be empty
-    let report_exists =
-        report_dir.exists() && std::fs::read_dir(&report_dir).is_ok_and(|mut d| d.next().is_some());
-    assert!(!report_exists, "Should not have generated HTML report");
-
-    // Metrics directory should not exist or be empty
-    let metrics_exists = metrics_dir.exists()
-        && std::fs::read_dir(&metrics_dir).is_ok_and(|mut d| d.next().is_some());
-    assert!(!metrics_exists, "Should not have generated CSV files");
+    assert!(
+        metrics.iter().any(|f| f.ends_with("_summary.jsonl")),
+        "summary written: {metrics:?}"
+    );
+    assert!(
+        !metrics.iter().any(|f| f == "index.csv" || f == "plans"),
+        "no CSV output: {metrics:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------

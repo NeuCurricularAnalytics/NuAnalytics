@@ -1841,7 +1841,8 @@ fn print_blocked_guidance(result: &ImportResult) {
 /// failure. Importing 1,088 trimmed reports read as `0 created, 371 skipped` with `717
 /// needs-confirmation` while every one of the 1,088 runs landed correctly.
 fn print_import_summary(tally: &ImportTally, total: usize, dry: &str, variant: &str) {
-    let programs_untouched = !variant.eq_ignore_ascii_case("full");
+    let programs_untouched =
+        !variant.eq_ignore_ascii_case(nu_analytics::core::database::variants::FULL);
     if programs_untouched {
         println!(
             "✓ attached {total} analysis run(s) as variant `{variant}`{dry}\n               the counters below are for the program projection, which `--variant` \

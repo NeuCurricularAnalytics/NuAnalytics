@@ -619,6 +619,7 @@ impl NuAnalyticsMcpServer {
         run: &shared::StoredRunArgs,
         generation: &[(&str, bool)],
     ) -> Result<Option<(StoredAnalysis, SourceInfo)>, String> {
+        source.check()?;
         let Some(reference) = source.stored_reference() else {
             return match &run.variant {
                 Some(_) => Err(shared::bad_arguments(format_args!(
@@ -1729,6 +1730,17 @@ mod tests {
                 let out: serde_json::Value = serde_json::from_str(&call(args(extra))).unwrap();
                 assert_eq!(out["code"], "bad_arguments", "{tool}: {out}");
             }
+
+            // A blank degree is refused as blank, not described as a stored program.
+            let blank: serde_json::Value = serde_json::from_str(&call(args(
+                serde_json::json!({"degree": "  ", "variant": "full"}),
+            )))
+            .unwrap();
+            let message = blank["error"].as_str().unwrap_or_default();
+            assert!(
+                message.contains("blank") && !message.contains("stored program's run"),
+                "{tool}: {blank}"
+            );
         }
 
         // target_course is never stored, so it too needs fresh=true.
@@ -1821,6 +1833,22 @@ mod tests {
         assert_ne!(failed["code"], "source_not_found");
         assert_eq!(failed["program_key"], "prog:1");
         assert_eq!(failed["error"], "timed out");
+        assert!(
+            failed.get("kind").is_none(),
+            "a code nothing established: {failed}"
+        );
+
+        // A backend failure keeps its kind, which the envelope makes the error code
+        // (`envelope::tests` pins that step).
+        let unreachable = json(stored_load_refusal(load(LoadError::Backend {
+            op: "reading the stored runs of prog:1".to_string(),
+            error: crate::core::database::DatabaseError::ConnectionError("timed out".to_string()),
+        })));
+        assert_eq!(unreachable["kind"], "unreachable", "{unreachable}");
+        assert_eq!(unreachable["program_key"], "prog:1");
+        assert!(unreachable["error"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("reading the stored runs of prog:1: ")));
 
         let unresolved = r#"{"error":"no stored program","code":"source_not_found"}"#;
         assert_eq!(

@@ -127,17 +127,27 @@ pub fn parse_curriculum_csv<P: AsRef<Path>>(path: P) -> Result<School, Box<dyn E
     let mut school = create_school_from_metadata(&metadata);
 
     // Find and validate courses section
-    let (courses_start, headers) = find_courses_section(&lines)?;
+    let (first_course_line, headers) = find_courses_section(&lines)?;
 
     // First pass: Load all courses and build mappings
     let mut ctx = CourseParseContext::new();
-    first_pass_load_courses(&lines, courses_start, &headers, &mut ctx);
+    first_pass_load_courses(&lines, first_course_line, &headers, &mut ctx);
+    // A curriculum with no courses is never what the file meant: a malformed header row
+    // fails every course line, and each failure is skipped, so without this the planner
+    // reported success with a complexity of 0.
+    if ctx.course_ids_in_order.is_empty() {
+        return Err(
+            "no courses could be read after the 'Courses' row — check that the next \
+                    non-blank line is the column header (Course ID, Course Name, Prefix, …)"
+                .into(),
+        );
+    }
 
     // Second pass: Compute final storage keys
     let storage_keys = ctx.compute_storage_keys()?;
 
     // Third pass: Add prerequisites and corequisites
-    third_pass_add_dependencies(&lines, courses_start, &headers, &mut ctx, &storage_keys);
+    third_pass_add_dependencies(&lines, first_course_line, &headers, &mut ctx, &storage_keys);
 
     // Build the final school structure
     finalize_school(&mut school, ctx, &storage_keys, &metadata.name)?;
@@ -160,36 +170,38 @@ fn create_school_from_metadata(metadata: &CurriculumMetadata) -> School {
 
 /// Finds the courses section and extracts headers
 ///
+/// The header is the first non-blank line after the `Courses` row: a blank line between
+/// them is common — empty in hand-written files, `,,,,` in spreadsheet exports — and
+/// reading it as the header made every course line fail.
+///
 /// # Returns
-/// Tuple of (start index, headers vector)
+/// Tuple of (index of the first line after the header, headers vector)
 ///
 /// # Errors
 /// Returns error if courses section is not found or has no header
 fn find_courses_section(lines: &[&str]) -> Result<(usize, Vec<String>), Box<dyn Error>> {
-    let courses_start = lines
+    let courses_row = lines
         .iter()
         .position(|line| line.to_lowercase().contains("courses"))
         .ok_or("No 'Courses' section found in CSV")?;
 
-    if courses_start + 1 >= lines.len() {
-        return Err("No course header found".into());
-    }
+    let header_row = (courses_row + 1..lines.len())
+        .find(|&i| !is_blank_row(lines[i]))
+        .ok_or("No course header found")?;
+    let headers = parse_csv_line(lines[header_row]);
 
-    let header_line = lines[courses_start + 1];
-    let headers = parse_csv_line(header_line);
-
-    Ok((courses_start, headers))
+    Ok((header_row + 1, headers))
 }
 
 /// First pass: Load all courses and build ID-to-key mappings
 fn first_pass_load_courses(
     lines: &[&str],
-    courses_start: usize,
+    first_course_line: usize,
     headers: &[String],
     ctx: &mut CourseParseContext,
 ) {
-    for line in lines.iter().skip(courses_start + 2) {
-        if line.trim().is_empty() {
+    for line in lines.iter().skip(first_course_line) {
+        if is_blank_row(line) {
             continue;
         }
 
@@ -204,13 +216,13 @@ fn first_pass_load_courses(
 /// Third pass: Add prerequisites and corequisites using resolved storage keys
 fn third_pass_add_dependencies(
     lines: &[&str],
-    courses_start: usize,
+    first_course_line: usize,
     headers: &[String],
     ctx: &mut CourseParseContext,
     storage_keys: &HashMap<String, String>,
 ) {
-    for line in lines.iter().skip(courses_start + 2) {
-        if line.trim().is_empty() {
+    for line in lines.iter().skip(first_course_line) {
+        if is_blank_row(line) {
             continue;
         }
 
@@ -293,6 +305,12 @@ fn clean_field(field: &str) -> String {
     field
         .trim_matches(|c: char| c.is_whitespace() || c == '"' || c == '\u{feff}' || c == '\u{200b}')
         .to_string()
+}
+
+/// A line with no content: empty, or — as a spreadsheet exports an empty row — only
+/// separators and blank fields (`,,,,`).
+fn is_blank_row(line: &str) -> bool {
+    line.split(',').all(|field| clean_field(field).is_empty())
 }
 
 /// Parses curriculum metadata from the header section of the CSV
@@ -603,6 +621,44 @@ mod tests {
         let line = "1";
 
         assert_eq!(get_field(line, "Missing Header", &headers), None);
+    }
+
+    #[test]
+    fn test_parse_curriculum_csv_reads_the_header_after_blank_lines() {
+        let meta = "Curriculum,T,,,\nInstitution,T U,,,\nDegree Type,BS,,,\nSystem Type,semester,,,\nCIP,11.0701,,,\nCourses,,,,\n";
+        let header = "Course ID,Course Name,Prefix,Number,Prerequisites,Corequisites,Strict-Corequisites,Credit Hours,Institution,Canonical Name\n";
+        let rows = "1,Intro,CS,101,,,,3,,\n2,Next,CS,201,1,,,3,,\n";
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cases: [(&str, String, Result<usize, &str>); 6] = [
+            ("no blank line", format!("{meta}{header}{rows}"), Ok(2)),
+            // The planner doc's own example had this blank line; it used to read no courses.
+            ("blank lines", format!("{meta}\n\n{header}{rows}"), Ok(2)),
+            (
+                "spreadsheet blank row",
+                format!("{meta},,,,\n{header}{rows}"),
+                Ok(2),
+            ),
+            ("no header", format!("{meta}{rows}"), Err("no courses")),
+            (
+                "header but no rows",
+                format!("{meta}{header}"),
+                Err("no courses"),
+            ),
+            (
+                "nothing after Courses",
+                format!("{meta}\n\n"),
+                Err("No course header"),
+            ),
+        ];
+        for (name, text, want) in cases {
+            let path = dir.path().join("c.csv");
+            std::fs::write(&path, text).expect("write");
+            match (parse_curriculum_csv(&path), want) {
+                (Ok(school), Ok(n)) => assert_eq!(school.courses().len(), n, "{name}"),
+                (Err(e), Err(m)) => assert!(e.to_string().contains(m), "{name}: {e}"),
+                (got, _) => panic!("{name}: {:?}", got.map(|s| s.courses().len())),
+            }
+        }
     }
 
     #[test]

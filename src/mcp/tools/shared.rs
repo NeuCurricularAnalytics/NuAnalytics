@@ -148,6 +148,9 @@ impl<'a> ReferenceKind<'a> {
     }
 }
 
+/// The refusal for more than one of `degree`, `content` and `path`.
+const SEVERAL_SOURCES: &str = "Provide exactly one of: degree, content, or path (not several)";
+
 impl DegreeSourceArgs {
     /// The one source given.
     ///
@@ -155,28 +158,39 @@ impl DegreeSourceArgs {
     /// A JSON error string when none or more than one was given, when `degree` is blank,
     /// or when `content` is an `@`-path reference rather than a degree.
     pub fn into_source(self) -> Result<DegreeSource, String> {
+        self.check()?;
         match (self.degree, self.content, self.path) {
+            (Some(d), None, None) => Ok(DegreeSource::Reference(d)),
+            (None, Some(c), None) => Ok(DegreeSource::Content(c)),
+            (None, None, Some(p)) => Ok(DegreeSource::Path(p)),
+            _ => Err(bad_arguments(SEVERAL_SOURCES)),
+        }
+    }
+
+    /// Why these arguments name no usable source, without consuming them: the refusal
+    /// [`Self::into_source`] would give. Checked first wherever a source is examined
+    /// before it is resolved, so a blank `degree` is refused as blank rather than
+    /// described as a stored program.
+    ///
+    /// # Errors
+    /// As [`Self::into_source`].
+    pub fn check(&self) -> Result<(), String> {
+        match (&self.degree, &self.content, &self.path) {
             (Some(d), None, None) if d.trim().is_empty() => Err(bad_arguments(
                 "degree is blank; give a sample:, cache: or stored program reference",
             )),
-            (Some(d), None, None) => Ok(DegreeSource::Reference(d)),
-            (None, Some(c), None) => {
-                // A leading `@` is never valid YAML or JSON (it is a reserved YAML
-                // indicator) and almost always means an at-path reference. Refuse it by
-                // name rather than hand it to the parser.
-                if c.trim_start().starts_with('@') {
-                    return Err(bad_arguments(
-                        "content must be the degree itself, not a path reference (it starts with '@'). Use path for a file on the server, or degree for a sample:, cache: or stored reference.",
-                    ));
-                }
-                Ok(DegreeSource::Content(c))
-            }
-            (None, None, Some(p)) => Ok(DegreeSource::Path(p)),
+            // A leading `@` is never valid YAML or JSON (it is a reserved YAML indicator)
+            // and almost always means an at-path reference. Refuse it by name rather than
+            // hand it to the parser.
+            (None, Some(c), None) if c.trim_start().starts_with('@') => Err(bad_arguments(
+                "content must be the degree itself, not a path reference (it starts with '@'). Use path for a file on the server, or degree for a sample:, cache: or stored reference.",
+            )),
+            (Some(_), None, None) | (None, Some(_), None) | (None, None, Some(_)) => Ok(()),
             (None, None, None) => Err(bad_arguments(
                 "Must provide exactly one of: degree, content, or path",
             )),
             _ => Err(bad_arguments(
-                "Provide exactly one of: degree, content, or path (not several)",
+                SEVERAL_SOURCES,
             )),
         }
     }

@@ -538,13 +538,10 @@ fn build_response(
         .map(|(category, plan)| plan_summary_json(category, plan))
         .collect();
 
-    // Clock-truncated runs are by definition not the full population —
-    // force `was_truncated=true` so the existing followup heuristics treat
-    // them the same as cap-truncated runs (and `is_full_population=false`
-    // for consistency).
-    let raw_full_population = view.is_full_population();
-    let was_truncated = !raw_full_population || view.time_limit_reached();
-    let is_full_population = !was_truncated;
+    // A run the cap or the clock stopped is a sample: `is_full_population` says so for
+    // both, and the follow-up heuristics treat them alike.
+    let is_full_population = view.is_full_population();
+    let was_truncated = !is_full_population;
     let population_size = view.population_size();
     let complexity_stats = metric_stats_json(&degree_stats.total_complexity);
     let tool_followups = build_analysis_followups(

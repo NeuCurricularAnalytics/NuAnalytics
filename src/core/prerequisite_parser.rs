@@ -329,34 +329,8 @@ pub fn parse_prerequisites(raw: &str) -> ParsedPrerequisites {
         }
 
         if contains_at_level(trimmed, '|') {
-            // OR group
-            let or_parts = split_at_level(trimmed, '|');
-            let current_group = or_group_counter;
+            push_or_group(&mut result, trimmed, or_group_counter);
             or_group_counter += 1;
-            if let Some(branches) = or_group_branches(trimmed) {
-                result.branches.insert(current_group, branches);
-            }
-
-            for or_part in or_parts {
-                let or_trimmed = or_part.trim();
-                if or_trimmed.is_empty() {
-                    continue;
-                }
-
-                let unwrapped = unwrap_parens(or_trimmed);
-
-                if contains_at_level(unwrapped, '&') || contains_at_level(unwrapped, '|') {
-                    // Complex nested - extract all courses
-                    for course in extract_all_courses(unwrapped) {
-                        result.edges.push((course, true, Some(current_group)));
-                    }
-                } else {
-                    let course = clean_course_key(unwrapped);
-                    if !course.is_empty() {
-                        result.edges.push((course, true, Some(current_group)));
-                    }
-                }
-            }
         } else {
             // Required prerequisite
             let unwrapped = unwrap_parens(trimmed);
@@ -382,12 +356,7 @@ pub fn parse_prerequisites(raw: &str) -> ParsedPrerequisites {
                 }
                 or_group_counter += nested_groups;
             } else if contains_at_level(unwrapped, '|') {
-                for (course, _, _) in parse_prerequisites(unwrapped).edges {
-                    result.edges.push((course, true, Some(or_group_counter)));
-                }
-                if let Some(branches) = or_group_branches(unwrapped) {
-                    result.branches.insert(or_group_counter, branches);
-                }
+                push_or_group(&mut result, unwrapped, or_group_counter);
                 or_group_counter += 1;
             } else {
                 let course = clean_course_key(unwrapped);
@@ -399,6 +368,31 @@ pub fn parse_prerequisites(raw: &str) -> ParsedPrerequisites {
     }
 
     result
+}
+
+/// Add the OR expression `expr` as OR-group `group`: an optional edge for each course of
+/// each alternative (every course of a compound one), and the group's branches when an
+/// alternative needs more than one course.
+fn push_or_group(result: &mut ParsedPrerequisites, expr: &str, group: usize) {
+    if let Some(branches) = or_group_branches(expr) {
+        result.branches.insert(group, branches);
+    }
+    for or_part in split_at_level(expr, '|') {
+        let unwrapped = unwrap_parens(or_part.trim());
+        if unwrapped.is_empty() {
+            continue;
+        }
+        if contains_at_level(unwrapped, '&') || contains_at_level(unwrapped, '|') {
+            for course in extract_all_courses(unwrapped) {
+                result.edges.push((course, true, Some(group)));
+            }
+        } else {
+            let course = clean_course_key(unwrapped);
+            if !course.is_empty() {
+                result.edges.push((course, true, Some(group)));
+            }
+        }
+    }
 }
 
 /// The alternatives of the OR expression `expr`, as the courses each one needs, when one

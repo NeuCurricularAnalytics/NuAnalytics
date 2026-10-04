@@ -284,20 +284,7 @@ mod tests {
     }
 
     /// CSU's MATH156: `(MATH124 & MATH126) | MATH127`, built as the analysis builds it.
-    fn math156_graph() -> CourseGraph {
-        let yaml = r#"degree: {id: t, institution: CSU, program: T, total_credits: 10, gpa_minimum: 2.0}
-requirements:
-  core: {name: Core, type: all, category: major, courses: [MATH156]}
-courses:
-  MATH124: {title: Log, prefix: MATH, number: "124", credits: 1}
-  MATH126: {title: Trig, prefix: MATH, number: "126", credits: 1}
-  MATH127: {title: Precalc, prefix: MATH, number: "127", credits: 4}
-  MATH156: {title: Comp Math I, prefix: MATH, number: "156", credits: 4, prerequisites_raw: "(MATH124 & MATH126) | MATH127"}
-  CS999: {title: Uses MATH124, prefix: CS, number: "999", credits: 3, prerequisites_raw: "MATH124"}
-"#;
-        let (program, _) = crate::core::degree::parse_degree_auto(yaml).expect("parses");
-        CourseGraph::from_degree_program(&program).graph
-    }
+    use crate::core::degree::test_degrees::math156_graph;
 
     fn math156_deps(courses: &[&str], include: &[&str]) -> Vec<String> {
         let include: HashSet<String> = include.iter().map(ToString::to_string).collect();

@@ -803,20 +803,23 @@ impl CourseGraph {
         // later choices prefer.
         let mut or_groups: BTreeMap<usize, Vec<(String, Vec<String>)>> = BTreeMap::new();
 
-        // Process each edge by type
+        // Process each edge by type. A chain is computed only where it is used: not for a
+        // member of a multi-course group, whose branches are costed below.
         for edge in prereq_edges {
-            let prereq_chain = self.min_chain_recursive_with_exclusions(
-                &edge.prerequisite,
-                preferred_subject,
-                plan_courses,
-                exclude_courses,
-                visiting,
-            );
+            let chain_of = |visiting: &mut HashSet<String>| {
+                self.min_chain_recursive_with_exclusions(
+                    &edge.prerequisite,
+                    preferred_subject,
+                    plan_courses,
+                    exclude_courses,
+                    visiting,
+                )
+            };
 
             match edge.prereq_type {
                 PrerequisiteType::Required => {
                     // Required prereqs must succeed - if cycle, we fail
-                    let chain = prereq_chain?;
+                    let chain = chain_of(visiting)?;
                     result_chain.push(edge.prerequisite.clone());
                     result_chain.extend(chain);
                 }
@@ -824,7 +827,7 @@ impl CourseGraph {
                     // Optional prereqs - skip if cycle, try alternatives. A group with
                     // multi-course branches is resolved by branch below, not by member.
                     if let Some(group) = edge.or_group.filter(|g| !or_branches.contains_key(g)) {
-                        if let Some(chain) = prereq_chain {
+                        if let Some(chain) = chain_of(visiting) {
                             or_groups
                                 .entry(group)
                                 .or_default()
@@ -836,33 +839,14 @@ impl CourseGraph {
             }
         }
 
-        // Groups with multi-course branches: each branch whose every course has a chain is
-        // an option, carrying its courses and their chains. Only groups this course still
-        // has edges for — a cycle-broken edge takes its branches with it.
-        let mut branch_groups: BTreeMap<usize, Vec<BranchOption>> = BTreeMap::new();
-        for (group, branches) in or_branches {
-            if !prereq_edges.iter().any(|e| e.or_group == Some(*group)) {
-                continue;
-            }
-            let options = branch_groups.entry(*group).or_default();
-            for branch in branches {
-                let mut chain = Vec::new();
-                let complete = branch.iter().all(|course| {
-                    self.min_chain_recursive_with_exclusions(
-                        course,
-                        preferred_subject,
-                        plan_courses,
-                        exclude_courses,
-                        visiting,
-                    )
-                    .map(|c| chain.extend(c))
-                    .is_some()
-                });
-                if complete {
-                    options.push((branch.clone(), chain));
-                }
-            }
-        }
+        let mut branch_groups = self.branch_options(
+            prereq_edges,
+            or_branches,
+            preferred_subject,
+            plan_courses,
+            exclude_courses,
+            visiting,
+        );
 
         // Select best option from each OR-group, in group order, preferring courses in plan
         // and avoiding excluded courses
@@ -906,6 +890,45 @@ impl CourseGraph {
 
         deduplicate_preserving_order(&mut result_chain);
         Some(result_chain)
+    }
+
+    /// The options of each OR-group with multi-course branches: every branch whose each
+    /// course has a chain, carrying its courses and their chains. Only groups the course
+    /// still has edges for — a cycle-broken edge takes its branches with it.
+    fn branch_options(
+        &self,
+        prereq_edges: &[&PrerequisiteEdge],
+        or_branches: &prerequisite_parser::OrBranches,
+        preferred_subject: Option<&str>,
+        plan_courses: &HashSet<String>,
+        exclude_courses: &HashSet<String>,
+        visiting: &mut HashSet<String>,
+    ) -> BTreeMap<usize, Vec<BranchOption>> {
+        let mut branch_groups: BTreeMap<usize, Vec<BranchOption>> = BTreeMap::new();
+        for (group, branches) in or_branches {
+            if !prereq_edges.iter().any(|e| e.or_group == Some(*group)) {
+                continue;
+            }
+            let options = branch_groups.entry(*group).or_default();
+            for branch in branches {
+                let mut chain = Vec::new();
+                let complete = branch.iter().all(|course| {
+                    self.min_chain_recursive_with_exclusions(
+                        course,
+                        preferred_subject,
+                        plan_courses,
+                        exclude_courses,
+                        visiting,
+                    )
+                    .map(|c| chain.extend(c))
+                    .is_some()
+                });
+                if complete {
+                    options.push((branch.clone(), chain));
+                }
+            }
+        }
+        branch_groups
     }
 
     /// Get a structured prerequisite chain showing parallel branches
@@ -2227,17 +2250,7 @@ mod tests {
         assert!(chain.contains(&"MATH100".to_string()) || chain.contains(&"CS100".to_string()));
     }
 
-    /// CSU's MATH156, `(MATH124 & MATH126) | MATH127`, with a course that uses MATH124.
-    const MATH156: &str = r#"degree: {id: t, institution: CSU, program: T, total_credits: 10, gpa_minimum: 2.0}
-requirements:
-  core: {name: Core, type: all, category: major, courses: [MATH156]}
-courses:
-  MATH124: {title: Log, prefix: MATH, number: "124", credits: 1}
-  MATH126: {title: Trig, prefix: MATH, number: "126", credits: 1}
-  MATH127: {title: Precalc, prefix: MATH, number: "127", credits: 4}
-  MATH156: {title: Comp Math I, prefix: MATH, number: "156", credits: 4, prerequisites_raw: "(MATH124 & MATH126) | MATH127"}
-  CS999: {title: Uses MATH124, prefix: CS, number: "999", credits: 3, prerequisites_raw: "MATH124"}
-"#;
+    use crate::core::degree::test_degrees::MATH156;
 
     fn chain_for(plan: &[&str], exclude: &[&str]) -> Vec<String> {
         let graph = CourseGraph::from_degree_program(&fresh_program(MATH156)).graph;

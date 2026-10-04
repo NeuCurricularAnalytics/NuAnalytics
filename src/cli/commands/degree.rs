@@ -179,8 +179,9 @@ fn print_graph_header(
 fn print_graph_issues(result: &nu_analytics::core::models::CourseGraphResult) {
     if !result.cycles.is_empty() {
         println!("⚠ Circular Prerequisites Detected:");
+        // `detect_cycles` closes each path, repeating its start at the end.
         for cycle in &result.cycles {
-            println!("  {} → {}", cycle[0], cycle.join(" → "));
+            println!("  {}", cycle.join(" → "));
         }
         println!();
     }
@@ -454,8 +455,7 @@ fn print_audit_summary(
 #[derive(Debug, Default, Clone)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct AnalyzeOptions {
-    /// Calculation strategy override ("median" or "mean") - reserved for future use
-    #[allow(dead_code)]
+    /// Calculation strategy override ("median" or "mean"), recorded in the run's parameters
     pub calc_strategy: Option<String>,
     /// Sampling strategy override ("sequential", "shuffled", "stratified")
     pub sampling_strategy: Option<String>,
@@ -469,8 +469,11 @@ pub struct AnalyzeOptions {
     pub report_dir: Option<std::path::PathBuf>,
     /// Override metrics directory
     pub metrics_dir: Option<std::path::PathBuf>,
-    /// Skip CSV export
+    /// Skip the CSV files (plan CSVs, the `index.csv` row); the report JSON is still written
     pub no_csv: bool,
+    /// Skip every metrics-directory output, the report JSON and a `--school` roll-up
+    /// included; a worker pool still records failures in `failures.log`
+    pub no_metrics: bool,
     /// Skip HTML report
     pub no_report: bool,
     /// Whether to print verbose output
@@ -716,7 +719,7 @@ fn run_analyze_parallel(inputs: &[&Path], options: &AnalyzeOptions) {
     let metrics_dir = metrics_dir_or_default(options);
 
     // Write the index.csv header once so concurrent workers only append rows.
-    if !options.no_csv {
+    if !options.no_csv && !options.no_metrics {
         if let Err(e) =
             nu_analytics::core::report::plan_export::write_index_csv_header(&metrics_dir)
         {
@@ -866,6 +869,9 @@ fn analyze_child_flags(o: &AnalyzeOptions) -> Vec<String> {
     if o.no_csv {
         a.push("--no-csv".into());
     }
+    if o.no_metrics {
+        a.push("--no-metrics".into());
+    }
     if let Some(n) = o.max_plans {
         a.push("--max-plans".into());
         a.push(n.to_string());
@@ -931,7 +937,7 @@ fn run_analyze_inprocess(files: &[PathBuf], options: &AnalyzeOptions, config: &C
         }
     }
 
-    if !rollups.is_empty() {
+    if !rollups.is_empty() && !options.no_metrics {
         let metrics_dir = metrics_dir_or_default(options);
         match nu_analytics::core::report::unified_report::export_school_report_json(
             &school_name,
@@ -2070,7 +2076,7 @@ fn print_selection_summary(
     eprintln!("  Random Samples: {}", selected.random_samples.len());
 }
 
-/// Generate HTML report and CSV exports
+/// Write the HTML report and the metrics-directory files, as the `--no-*` flags allow.
 fn generate_analysis_outputs(
     ctx: &AnalysisContext<'_>,
     options: &AnalyzeOptions,
@@ -2085,67 +2091,8 @@ fn generate_analysis_outputs(
         outputs_generated.push(format!("Report: {}", report_path.display()));
     }
 
-    // Export CSV files (including JSONL and index for aggregation)
-    if !options.no_csv {
-        let exported = export_csv_files(ctx, options, selected)?;
-        for path in exported {
-            outputs_generated.push(format!("CSV: {path}"));
-        }
-
-        // Export JSONL and index CSV for aggregation (only when CSV export is enabled)
-        let metrics_dir = metrics_dir_or_default(options);
-
-        // Export degree summary JSONL
-        match export_degree_summary_jsonl(
-            ctx.school,
-            &ctx.program.degree,
-            ctx.report_stats,
-            selected,
-            &metrics_dir,
-        ) {
-            Ok(path) => outputs_generated.push(format!("JSONL: {}", path.display())),
-            Err(e) => {
-                if ctx.verbose {
-                    eprintln!("Warning: Failed to export JSONL summary: {e}");
-                }
-            }
-        }
-
-        // Export to index CSV for multi-degree analysis
-        match export_index_csv(
-            ctx.school,
-            &ctx.program.degree,
-            ctx.report_stats,
-            selected,
-            &metrics_dir,
-        ) {
-            Ok(path) => outputs_generated.push(format!("Index: {}", path.display())),
-            Err(e) => {
-                if ctx.verbose {
-                    eprintln!("Warning: Failed to export index CSV: {e}");
-                }
-            }
-        }
-
-        // Unified metrics-rich report JSON (the whole degree structure plus
-        // degree- and course-level metrics) for downstream viz/DB. Grouped with
-        // the other metrics-dir exports, so `--no-csv` suppresses it too.
-        let run_params = ctx.run_parameters();
-        match nu_analytics::core::report::unified_report::export_degree_report_json(
-            ctx.program,
-            aggregator,
-            selected,
-            run_params.sampling_strategy,
-            &run_params,
-            &metrics_dir,
-        ) {
-            Ok(path) => outputs_generated.push(format!("Report JSON: {}", path.display())),
-            Err(e) => {
-                if ctx.verbose {
-                    eprintln!("Warning: Failed to export unified report JSON: {e}");
-                }
-            }
-        }
+    if !options.no_metrics {
+        outputs_generated.extend(export_metrics_files(ctx, options, aggregator, selected)?);
     }
 
     if ctx.verbose && !outputs_generated.is_empty() {
@@ -2157,6 +2104,67 @@ fn generate_analysis_outputs(
     }
 
     Ok(outputs_generated)
+}
+
+/// Write the metrics-directory files: the plan CSVs and the `index.csv` row unless
+/// `--no-csv`, then the summary JSONL and the report JSON, which `--no-csv` leaves alone —
+/// the report JSON is what `db import` reads. Returns a line per file for the verbose list.
+fn export_metrics_files(
+    ctx: &AnalysisContext<'_>,
+    options: &AnalyzeOptions,
+    aggregator: &MetricsAggregator,
+    selected: &nu_analytics::core::degree::SelectedPlans,
+) -> Result<Vec<String>, String> {
+    let mut outputs = Vec::new();
+    let metrics_dir = metrics_dir_or_default(options);
+    let warn = |what: &str, e: &dyn std::fmt::Display| {
+        if ctx.verbose {
+            eprintln!("Warning: Failed to export {what}: {e}");
+        }
+    };
+
+    if !options.no_csv {
+        for path in export_csv_files(ctx, options, selected)? {
+            outputs.push(format!("CSV: {path}"));
+        }
+        match export_index_csv(
+            ctx.school,
+            &ctx.program.degree,
+            ctx.report_stats,
+            selected,
+            &metrics_dir,
+        ) {
+            Ok(path) => outputs.push(format!("Index: {}", path.display())),
+            Err(e) => warn("index CSV", &e),
+        }
+    }
+
+    match export_degree_summary_jsonl(
+        ctx.school,
+        &ctx.program.degree,
+        ctx.report_stats,
+        selected,
+        &metrics_dir,
+    ) {
+        Ok(path) => outputs.push(format!("JSONL: {}", path.display())),
+        Err(e) => warn("JSONL summary", &e),
+    }
+
+    // The whole degree structure plus degree- and course-level metrics, for downstream
+    // visualization and `db import`.
+    let run_params = ctx.run_parameters();
+    match nu_analytics::core::report::unified_report::export_degree_report_json(
+        ctx.program,
+        aggregator,
+        selected,
+        run_params.sampling_strategy,
+        &run_params,
+        &metrics_dir,
+    ) {
+        Ok(path) => outputs.push(format!("Report JSON: {}", path.display())),
+        Err(e) => warn("unified report JSON", &e),
+    }
+    Ok(outputs)
 }
 
 /// Generate HTML report
@@ -2689,6 +2697,7 @@ courses:
             report_dir: Some(PathBuf::from("r")),
             no_report: true,
             no_csv: true,
+            no_metrics: true,
             max_plans: Some(500),
             sample_plans: Some(50),
             sampling_strategy: Some("shuffled".to_string()),
@@ -2704,6 +2713,7 @@ courses:
             "--report-dir r",
             "--no-report",
             "--no-csv",
+            "--no-metrics",
             "--max-plans 500",
             "--sample-plans 50",
             "--sampling-strategy shuffled",

@@ -63,7 +63,7 @@ pub enum ReportFormatArg {
     Pdf,
 }
 
-/// Calculation strategy for aggregate metrics
+/// The summary statistic recorded with a run; reports carry both regardless
 #[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq, Default)]
 pub enum CalcStrategyArg {
     /// Median (default) - robust to outliers
@@ -240,7 +240,8 @@ pub enum DegreeSubcommand {
         #[arg(long, value_name = "NAME")]
         from_db: Option<String>,
 
-        /// Calculation strategy for aggregate metrics (median or mean)
+        /// Summary statistic to record with the run (median or mean). Recorded in the
+        /// report's parameters only: the statistics always include both
         #[arg(long, value_enum, value_name = "STRATEGY")]
         calc_strategy: Option<CalcStrategyArg>,
 
@@ -269,9 +270,16 @@ pub enum DegreeSubcommand {
         #[arg(long, value_name = "DIR")]
         metrics_dir: Option<PathBuf>,
 
-        /// Skip CSV plan export
+        /// Skip the CSV files: the plan CSVs and the batch `index.csv` row. The report JSON
+        /// and summary are still written; `--no-metrics` skips those too
         #[arg(long)]
         no_csv: bool,
+
+        /// Write no metrics files: no report JSON, summary, plan CSVs, index row or
+        /// `--school` roll-up. With `--no-report`, a run writes no output files (a worker
+        /// pool still records failed degrees in `failures.log`)
+        #[arg(long)]
+        no_metrics: bool,
 
         /// Skip HTML report generation
         #[arg(long)]

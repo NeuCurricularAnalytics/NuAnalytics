@@ -1,6 +1,6 @@
 # NuAnalytics
 
-**Version 0.5.4**
+**Version 0.6.0**
 
 NuAnalytics is a Rust command-line tool and MCP server for analyzing degree curricula. It
 measures how a curriculum is structured — the complexity, blocking, delay and centrality

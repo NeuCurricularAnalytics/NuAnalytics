@@ -76,8 +76,8 @@ prerequisite_chain_threshold = 4
 # Degree analysis
 # ---------------------------------------------------------------------------
 [degree_analysis]
-# Aggregate metric strategy across generated plans: median | mean
-# "median" is more robust to outlier plans; "mean" weights all plans equally.
+# Summary statistic recorded with each run: median | mean. Recorded only — every
+# report carries both the median and the mean.
 calc_strategy = "median"
 
 # How many randomly sampled plans to export in full (term schedules, CSVs).

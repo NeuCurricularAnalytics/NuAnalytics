@@ -24,7 +24,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 use super::degrees::resolve_program_key;
-use crate::core::database::{tables, DbClient, QueryFilters};
+use crate::core::database::{tables, DatabaseError, DbClient, QueryFilters};
 use crate::core::degree::plan_selector::PlanCategory;
 use crate::core::degree::{from_unified_value, PlanScore, PlanVariant, ScoredPlan, SelectedPlans};
 use crate::core::json::parse_json_array;
@@ -111,14 +111,33 @@ impl StoredReport {
 pub enum LoadError {
     /// The backend answered: no run of that variant is stored for the program.
     NoRun(String),
-    /// The backend failed, or what it returned could not be used.
+    /// The backend failed while reading the run. Kept as the [`DatabaseError`], so the
+    /// payload carries its kind rather than only a message.
+    Backend {
+        /// The read that failed.
+        op: String,
+        /// Why.
+        error: DatabaseError,
+    },
+    /// What the backend returned could not be used.
     Failed(String),
+}
+
+impl LoadError {
+    /// A failed read of `op`.
+    fn backend(op: impl Into<String>) -> impl FnOnce(DatabaseError) -> Self {
+        move |error| Self::Backend {
+            op: op.into(),
+            error,
+        }
+    }
 }
 
 impl std::fmt::Display for LoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoRun(message) | Self::Failed(message) => f.write_str(message),
+            Self::Backend { op, error } => write!(f, "{op}: {error}"),
         }
     }
 }
@@ -338,8 +357,9 @@ const RUN_COLS: &str = "run_key,variant,created_at,analyzer_version,variations_r
 /// Load the newest stored run for `program_key`, optionally pinned to one `variant`.
 ///
 /// # Errors
-/// [`LoadError::NoRun`] when no run matches; [`LoadError::Failed`] when the backend fails
-/// or the stored rows cannot be read back into a degree and its statistics.
+/// [`LoadError::NoRun`] when no run matches; [`LoadError::Backend`] when a read fails;
+/// [`LoadError::Failed`] when the stored rows cannot be read back into a degree and its
+/// statistics.
 pub async fn load(
     client: &Arc<DbClient>,
     program_key: &str,
@@ -361,7 +381,6 @@ async fn load_run(
     program_key: &str,
     variant: Option<&str>,
 ) -> Result<Option<StoredReport>, LoadError> {
-    let failed = LoadError::Failed;
     let filters = QueryFilters::new()
         .eq("program_key", Some(program_key))
         .eq("variant", variant)
@@ -370,7 +389,9 @@ async fn load_run(
         &client
             .select(tables::ANALYSIS_RUNS, RUN_COLS, &filters, Some(1))
             .await
-            .map_err(|e| failed(e.to_string()))?,
+            .map_err(LoadError::backend(format!(
+                "reading the stored runs of {program_key}"
+            )))?,
     );
     let Some(run) = runs.into_iter().next() else {
         return Ok(None);
@@ -380,12 +401,11 @@ async fn load_run(
     // and read against the program's full document they would sit beside courses the run
     // never saw.
     let program = match &run.analyzed_document {
-        Some(document) => program_from_document(document, program_key),
+        Some(document) => program_from_document(document, program_key).map_err(LoadError::Failed),
         None => load_program(client, program_key).await,
-    }
-    .map_err(failed)?;
-    let stats = load_stats(client, &run).await.map_err(failed)?;
-    let plans = load_plans(client, &run.run.run_key).await.map_err(failed)?;
+    }?;
+    let stats = load_stats(client, &run).await?;
+    let plans = load_plans(client, &run.run.run_key).await?;
 
     let total_plans_seen = usize::try_from(run.run.variations_run.unwrap_or(0)).unwrap_or(0);
     Ok(Some(StoredReport {
@@ -419,8 +439,14 @@ impl ReferenceError {
         match self {
             Self::Unresolved(payload) => payload,
             Self::Load { program_key, error } => {
-                serde_json::json!({ "error": error.to_string(), "program_key": program_key })
-                    .to_string()
+                let mut payload =
+                    serde_json::json!({ "error": error.to_string(), "program_key": program_key });
+                // A backend failure names its kind, which the MCP envelope makes the error
+                // code (`unreachable`, `not_authenticated`, …) rather than `tool_error`.
+                if let LoadError::Backend { error: cause, .. } = &error {
+                    payload["kind"] = cause.kind().into();
+                }
+                payload.to_string()
             }
         }
     }
@@ -473,12 +499,21 @@ pub async fn render_reference(
 }
 
 /// Fetch and parse the canonical degree document.
-async fn load_program(client: &Arc<DbClient>, program_key: &str) -> Result<DegreeProgram, String> {
+async fn load_program(
+    client: &Arc<DbClient>,
+    program_key: &str,
+) -> Result<DegreeProgram, LoadError> {
     let document = super::degrees::document_for_key(client, program_key)
         .await
-        .map_err(|e| format!("reading the document of {program_key}: {e}"))?
-        .ok_or_else(|| format!("no stored program `{program_key}` with a degree document"))?;
-    program_from_document(&document, program_key)
+        .map_err(LoadError::backend(format!(
+            "reading the document of {program_key}"
+        )))?
+        .ok_or_else(|| {
+            LoadError::Failed(format!(
+                "no stored program `{program_key}` with a degree document"
+            ))
+        })?;
+    program_from_document(&document, program_key).map_err(LoadError::Failed)
 }
 
 /// Parse a stored degree document, naming the program when it does not parse.
@@ -491,7 +526,7 @@ fn program_from_document(
 }
 
 /// Assemble the statistics the renderer reads.
-async fn load_stats(client: &Arc<DbClient>, row: &RunRow) -> Result<ReportStats, String> {
+async fn load_stats(client: &Arc<DbClient>, row: &RunRow) -> Result<ReportStats, LoadError> {
     let run = &row.run;
     let plan_count = usize::try_from(run.variations_run.unwrap_or(0)).unwrap_or(0);
     let degree = row
@@ -499,10 +534,10 @@ async fn load_stats(client: &Arc<DbClient>, row: &RunRow) -> Result<ReportStats,
         .as_ref()
         .and_then(|m| degree_stats_from_json(m, plan_count))
         .ok_or_else(|| {
-            format!(
+            LoadError::Failed(format!(
                 "run {} has no usable degree_metrics — re-import the program",
                 run.run_key
-            )
+            ))
         })?;
 
     let filters = QueryFilters::new().eq("run_key", Some(&run.run_key));
@@ -515,7 +550,10 @@ async fn load_stats(client: &Arc<DbClient>, row: &RunRow) -> Result<ReportStats,
                 Some(MAX_COURSE_ROWS),
             )
             .await
-            .map_err(|e| e.to_string())?,
+            .map_err(LoadError::backend(format!(
+                "reading the course metrics of run {}",
+                run.run_key
+            )))?,
     );
     let courses: HashMap<String, AggregatedCourseStats> = rows
         .iter()
@@ -526,7 +564,7 @@ async fn load_stats(client: &Arc<DbClient>, row: &RunRow) -> Result<ReportStats,
 }
 
 /// Fetch the curated plans for a run.
-async fn load_plans(client: &Arc<DbClient>, run_key: &str) -> Result<Vec<PlanRow>, String> {
+async fn load_plans(client: &Arc<DbClient>, run_key: &str) -> Result<Vec<PlanRow>, LoadError> {
     let filters = QueryFilters::new().eq("run_key", Some(run_key));
     Ok(parse_json_array(
         &client
@@ -537,7 +575,9 @@ async fn load_plans(client: &Arc<DbClient>, run_key: &str) -> Result<Vec<PlanRow
                 Some(MAX_PLAN_ROWS),
             )
             .await
-            .map_err(|e| e.to_string())?,
+            .map_err(LoadError::backend(format!(
+                "reading the selected plans of run {run_key}"
+            )))?,
     ))
 }
 
@@ -762,5 +802,31 @@ mod tests {
         assert_eq!(plan.schedule.terms.len(), 1);
         // Courses come from the schedule, since no course list is stored separately.
         assert_eq!(plan.variant.courses, ["MATH215"]);
+    }
+
+    /// A read that fails reaches the caller as `Backend`, keeping the database error's kind
+    /// — not flattened into a message, as every read of a stored run once was.
+    #[tokio::test]
+    async fn a_failed_read_is_a_backend_error_that_keeps_its_kind() {
+        let client = Arc::new(
+            DbClient::new("http://127.0.0.1:1", "anon", "token".to_string()).expect("client"),
+        );
+        let Err(error) = load(&client, "prog:1", None).await else {
+            panic!("nothing listens on port 1");
+        };
+        let LoadError::Backend { op, error: cause } = &error else {
+            panic!("expected Backend: {error:?}");
+        };
+        assert_eq!(op, "reading the stored runs of prog:1");
+        assert_eq!(cause.kind(), "unreachable");
+        let payload: serde_json::Value = serde_json::from_str(
+            &ReferenceError::Load {
+                program_key: "prog:1".to_string(),
+                error,
+            }
+            .into_payload(),
+        )
+        .expect("json");
+        assert_eq!(payload["kind"], "unreachable", "{payload}");
     }
 }
