@@ -146,7 +146,8 @@ JSON — the file `db import` reads — and the summary JSONL are written regard
   whatever failed.
 - **A blank `degree` with a `variant`** was told "a stored program is always analyzed
   afresh"; it is refused as blank.
-- **IPEDS archives named `.ZIP`** were read as CSV.
+- **An IPEDS file you download and pass to `db ipeds-import` or `db validate` with an
+  upper-case `.ZIP` extension** was read as CSV instead of opened as an archive.
 - **A course no longer stands in for its own prerequisite, which silently discarded
   plans.** Northeastern offers `{CS2800, CS4820}` as one slot, and CS4820 requires CS2800.
   A plan taking CS4820 resolved that prerequisite through the equivalence to CS4820
