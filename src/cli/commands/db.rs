@@ -60,6 +60,7 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
             max_rows,
             format,
         } => run_query(config, subcommand, sql.as_deref(), max_rows, format),
+        DbSubcommand::Cip { subcommand } => super::cip::run(subcommand, config),
         DbSubcommand::IpedsImport {
             dir,
             institutions,
@@ -120,7 +121,7 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
 /// wording for each variant — formatting it at the call site would let the same failure
 /// read three different ways. Always exits rather than returning: a connection failure
 /// that exits 0 tells a script the command succeeded.
-fn connect_or_exit(rt: &tokio::runtime::Runtime, config: &Config) -> DbClient {
+pub(super) fn connect_or_exit(rt: &tokio::runtime::Runtime, config: &Config) -> DbClient {
     match rt.block_on(DbClient::from_config(&config.database)) {
         Ok(c) => c,
         Err(e) => {
@@ -1972,7 +1973,8 @@ fn demographics_request(
         CompletionDemographicsRequest, DemographicsGroupBy,
     };
     CompletionDemographicsRequest {
-        group_by: Some(match args.group_by {
+        // `--degree` picks its own grouping; clap's default `total` would be refused.
+        group_by: args.degree.is_none().then_some(match args.group_by {
             DemographicsGrouping::Total => DemographicsGroupBy::Total,
             DemographicsGrouping::School => DemographicsGroupBy::School,
             DemographicsGrouping::Cip => DemographicsGroupBy::Cip,
@@ -1991,6 +1993,7 @@ fn demographics_request(
         // what make counts comparable across schools of different sizes.
         include_representation: Some(!args.raw),
         limit: args.limit,
+        degree_id: args.degree.clone(),
         ..CompletionDemographicsRequest::default()
     }
 }
@@ -2302,9 +2305,14 @@ fn run_query(
 
     // The engines report failure in their payload rather than by returning an error, so
     // a caller scripting this needs the exit code to agree with what it just read.
-    if serde_json::from_str::<serde_json::Value>(&json).is_ok_and(|v| v.get("error").is_some()) {
+    if is_error_payload(&json) {
         std::process::exit(1);
     }
+}
+
+/// Whether an engine's JSON payload reports a failure (a top-level `error`).
+pub(super) fn is_error_payload(json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(json).is_ok_and(|v| v.get("error").is_some())
 }
 
 // ============================================================================
@@ -2449,6 +2457,7 @@ mod tests {
             group_by,
             raw: false,
             limit: None,
+            degree: None,
         }
     }
 
@@ -2582,6 +2591,23 @@ mod tests {
         let payload = reject_unsupported_demographics_filters(&args).expect("refusal");
         let v: serde_json::Value = serde_json::from_str(&payload).expect("valid json");
         assert!(v.get("error").is_some(), "no error key: {payload}");
+    }
+
+    #[test]
+    fn test_degree_demographics_does_not_send_the_default_grouping() {
+        // clap fills in `total` by default; degree mode refuses any grouping but cip.
+        let mut a = demo_args(DemographicsGrouping::Total);
+        (a.school, a.degree) = (Some(167_358), Some("neu-bscs".into()));
+        let r = demographics_request(&a);
+        assert!(r.group_by.is_none());
+        assert_eq!(r.degree_id.as_deref(), Some("neu-bscs"));
+    }
+
+    #[test]
+    fn test_is_error_payload_reads_the_top_level_key_only() {
+        assert!(is_error_payload(r#"{"error": "x"}"#));
+        assert!(!is_error_payload(r#"{"cips": [{"source": "error"}]}"#));
+        assert!(!is_error_payload("not json"));
     }
 
     #[test]

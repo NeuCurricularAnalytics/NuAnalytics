@@ -4,6 +4,62 @@ All notable changes to NuAnalytics are recorded here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the
 project uses semantic versioning.
 
+## [0.7.0] — 2026-10-26
+
+**Breaking for stored data: the CIP is no longer part of `program_key`.** Most stored CIPs
+are guesses, and a program whose CIP is corrected must keep its identity; with the CIP in
+the key, a correction imported as a second program and left the first, with its runs,
+behind.
+
+A database created before 0.7.0 must be re-keyed once, with every importer stopped:
+`docs/database/historical/program-key-drop-cip.sql` (psql, one transaction). It re-keys
+the six tables that carry `program_key`, writes an `old_key,new_key` mapping for anything
+outside the database that stored keys, and adds a `program_key_has_no_cip` constraint to
+each of the six tables. Stop every client that imports while it runs: a 0.7.0 importer
+against an un-migrated database, or a 0.6.x one against a migrated database, inserts a
+second copy of any program it re-imports. The constraints turn the second case into a
+refused import. Re-applying `programs-schema.sql` adds them too, but only once the keys
+are migrated; before that it raises a NOTICE, which `db bootstrap` does not display.
+0.6.x clients can still read a migrated database. A key saved before the migration no
+longer resolves; look the program up by `degree_id` instead.
+
+It also adds `program_cips`, the registry of CIPs the schools confirm — the reason the
+CIP had to leave the key. Apply `docs/database/programs-schema.sql` (idempotent; needs
+Postgres 15+ for `UNIQUE NULLS NOT DISTINCT`) before using `db cip`. On a schema without
+the table, imports go ahead with the document's CIP and say the registry was not checked,
+and `db doctor`'s schema check names `program_cips` as missing.
+
+### Added
+- **Confirmed CIP codes**: the `program_cips` table and `db cip set | import | list |
+  relink | remove`. A CIP a school confirms is recorded against the program — school and
+  `degree_id`, across catalog years and dated versions — with a history for recodes
+  (`--from YYYY-YYYY`; without it, all years). Setting one corrects the stored programs
+  in place (`cip_code`, document, hash; never the key or a run), and `db import` uses it
+  in place of the document's guess — an explicit `--cip` still wins, with a warning. A
+  program not built yet can be registered (`--name`, `--degree-type`) and links when its
+  build is imported under that `degree_id`.
+- `db query demographics --school <UNITID> --degree <DEGREE_ID>` (MCP
+  `get_completion_demographics.degree_id`): one program's IPEDS demographics, each year
+  under the CIP it was filed under that year, marked `confirmed` or `guessed`, with where
+  the CIP changed and which other programs IPEDS counts in the same numbers.
+- Degree search reports each program's `degree_id`; search and a lookup that resolves to
+  one program report `cip_confirmed`.
+
+### Changed
+- `program_key` for an institution is now
+  `prog:<unitid or ref>|<catalog_year>|<degree_type>|<degree_id or name>[|v<date>]`. The
+  `prog:<degree_id>|<catalog_year>` and `fp:` forms are unchanged (they never held a CIP).
+
+### Fixed
+- `db import --cip` (and MCP `import_degree.cip`) now reaches the stored document, so a
+  degree pulled back out (`degree analyze --from-db`, `get_degree`) has the CIP its row
+  was imported with. The same holds for `--catalog`, `--degree-id`, `--institution`,
+  `--unitid` and `--institution-ref`; setting one of the last two clears the other in the
+  document. A program imported with one of these flags, where the flag's value differs
+  from the file's, is seen as changed the first time it is re-imported with that flag:
+  `needs_confirmation` as usual for a changed program, `updated` with `--replace` (or
+  `--force` when verified).
+
 ## [0.6.1] — 2026-10-09
 
 Backward compatible with 0.6.0 clients: new columns are additive and 0.6.0 ignores them. Apply

@@ -34,6 +34,11 @@ Data in:
 
 * `db ipeds-import` — bulk import IPEDS HD + completions CSVs
 * `db import`       — import degree analysis reports into the program tables
+* `db cip`          — record the CIP codes schools confirm (`set`, `import`, `list`,
+  `relink`, `remove`). Keyed on the program — school and `degree_id` — with a history
+  (`--from YYYY-YYYY`); setting one corrects the stored programs, and every later import
+  uses it in place of the document's guess. A program not built yet can be registered.
+  See [Confirmed CIP codes](../database/setup.md#confirmed-cip-codes)
 * `db validate`     — check stored data against the IPEDS file it came from
 * `db prune`        — drop old analysis runs, keeping a bounded history per program
 
@@ -53,11 +58,15 @@ trust either.
   substring (`hawaii`), never exact; plus `--state`, `--control`, `--carnegie-class`,
   `--hbcu`, `--tribal`, `--with-programs`, `--limit`
 * `db query degrees`      — stored programs: `--school <unitid>`, `--cip`,
-  `--catalog-year`, `--degree-type`, `--kind`, `--limit`
+  `--catalog-year`, `--degree-type`, `--kind`, `--limit`. Each carries its `degree_id`
+  and `cip_confirmed` (true when it carries the confirmed CIP in force for its catalog
+  year)
 * `db query metrics`      — analysis runs for one program: `--degree` (program key or
   degree id), `--variant`, `--all`
 * `db query demographics` — IPEDS completions by race and gender: `--school`, `--cip`,
-  `--cip-codes`, `--year`, `--award-level`, `--group-by`, `--raw`
+  `--cip-codes`, `--year`, `--award-level`, `--group-by`, `--raw`. `--degree
+  <DEGREE_ID>` (with `--school`) answers for one program instead: each IPEDS year under
+  the CIP it was filed under that year, marked `confirmed` or `guessed`
 * `db query cip`          — the CIP catalogue: `--search`, `--prefix`, `--limit`
 * `db query lookup`       — an IPEDS lookup table, i.e. what the numeric codes mean
 * `db query --sql <FILE>` — one read-only SELECT from a file, plus `--max-rows`

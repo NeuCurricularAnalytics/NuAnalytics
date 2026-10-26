@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use crate::core::database::cips;
 use crate::core::database::import::VERSION_KEY_SEPARATOR;
 use crate::core::database::{tables, DbClient, QueryFilters};
 use crate::core::json::{error_code, parse_first, parse_json_array, to_json_pretty};
@@ -14,7 +15,7 @@ use serde::{Deserialize, Serialize};
 /// are built from.
 macro_rules! program_summary_cols {
     () => {
-        "program_key,name,unitid,cip_code,catalog_year,degree_type,program_kind,discipline,verified,institution_resolved,has_impossible_requirements"
+        "program_key,name,unitid,cip_code,catalog_year,degree_type,program_kind,discipline,verified,institution_resolved,has_impossible_requirements,degree_id,institution_ref,version_date"
     };
 }
 
@@ -24,7 +25,7 @@ const PROGRAM_SUMMARY_COLS: &str = program_summary_cols!();
 /// the lossless `document` (unified-JSON degree) for downstream analysis.
 const PROGRAM_DETAIL_COLS: &str = concat!(
     program_summary_cols!(),
-    ",degree_id,institution_raw,total_credits,source_url,document"
+    ",institution_raw,total_credits,source_url,document"
 );
 
 // ============================================================================
@@ -126,6 +127,19 @@ struct ProgramSummary {
     institution_resolved: bool,
     #[serde(default)]
     has_impossible_requirements: bool,
+    /// The program across catalog years — what a confirmed CIP (`db cip set`) names.
+    #[serde(default)]
+    degree_id: Option<String>,
+    /// Read to look up confirmed CIPs; not part of the answer.
+    #[serde(default, skip_serializing)]
+    institution_ref: Option<String>,
+    /// Read to look up confirmed CIPs; not part of the answer.
+    #[serde(default, skip_serializing)]
+    version_date: Option<String>,
+    /// Whether `cip_code` is the CIP the school confirmed for this program's year
+    /// (`program_cips`), rather than a guess. Absent when the registry could not be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cip_confirmed: Option<bool>,
 }
 
 /// Full program record for `get_degree`, including the lossless unified-JSON
@@ -134,7 +148,6 @@ struct ProgramSummary {
 struct ProgramDetail {
     #[serde(flatten)]
     summary: ProgramSummary,
-    degree_id: Option<String>,
     institution_raw: Option<String>,
     total_credits: Option<i32>,
     source_url: Option<String>,
@@ -167,7 +180,7 @@ struct VersionRow {
 impl VersionRow {
     /// The key without its version-date suffix: what every dated version of one program
     /// shares. Comparing it, rather than a few columns, means two programs that differ in
-    /// any part of the key (CIP, degree type, school, catalog year) are never taken for
+    /// any part of the key (school, catalog year, degree type, degree id) are never taken for
     /// versions of one another.
     fn base_key(&self) -> &str {
         self.version_date
@@ -280,7 +293,13 @@ pub async fn resolve_program_key(client: &DbClient, degree: &str) -> Result<Stri
         Ok(v) => v,
         Err(e) => return Err(e.to_json(&format!("looking up degree_id \"{degree}\""))),
     };
-    let versions = parse_json_array::<VersionRow>(&rows);
+    degree_id_matches(degree, parse_json_array::<VersionRow>(&rows))
+}
+
+/// What a `degree_id` lookup's matches resolve to: the one program, the newest dated
+/// version when they are all versions of one program, else an ambiguity (marked
+/// truncated past [`AMBIGUITY_PROBE`]) or not-found payload.
+fn degree_id_matches(degree: &str, versions: Vec<VersionRow>) -> Result<String, String> {
     if versions.len() > 1 && versions.len() <= AMBIGUITY_PROBE {
         if let Some(latest) = latest_version(&versions) {
             return Ok(latest);
@@ -393,7 +412,8 @@ pub async fn execute_search_json(client: &Arc<DbClient>, req: SearchDegreesReque
         Err(e) => return e.to_json("searching stored programs"),
     };
 
-    let programs: Vec<ProgramSummary> = parse_json_array(&result);
+    let mut programs: Vec<ProgramSummary> = parse_json_array(&result);
+    mark_confirmed(client, &mut programs).await;
 
     to_json_pretty(&serde_json::json!({
         "count": programs.len(),
@@ -425,7 +445,10 @@ pub async fn execute_get_json(client: &Arc<DbClient>, req: GetDegreeRequest) -> 
         Ok(v) => v,
         Err(e) => return e.to_json("reading stored programs"),
     };
-    let programs: Vec<ProgramDetail> = parse_json_array(&result);
+    let mut programs: Vec<ProgramDetail> = parse_json_array(&result);
+    if let [program] = programs.as_mut_slice() {
+        mark_confirmed(client, std::slice::from_mut(&mut program.summary)).await;
+    }
 
     match programs.as_slice() {
         [] => serde_json::json!({
@@ -441,6 +464,46 @@ pub async fn execute_get_json(client: &Arc<DbClient>, req: GetDegreeRequest) -> 
         .to_string(),
         [program] => detail_json(client, program, req.include_document.unwrap_or(false)).await,
         many => matches_json(many),
+    }
+}
+
+/// Set each summary's `cip_confirmed` from the `program_cips` registry: true when the
+/// row in force for its catalog year names the CIP it has. Left unset when the registry
+/// cannot be read (a schema from before `program_cips` has no table), so a missing table
+/// never reads as "every CIP is a guess".
+async fn mark_confirmed(client: &DbClient, programs: &mut [ProgramSummary]) {
+    let mut refs: Vec<String> = programs
+        .iter()
+        .filter_map(|p| p.institution_ref.clone())
+        .collect();
+    refs.sort();
+    refs.dedup();
+    if refs.is_empty() {
+        return;
+    }
+    let Ok(rows) = cips::fetch_for_schools(client, &refs).await else {
+        return;
+    };
+    let mut by_program: std::collections::HashMap<(&str, &str), Vec<cips::ProgramCip>> =
+        std::collections::HashMap::new();
+    for r in &rows {
+        by_program
+            .entry((r.institution_ref.as_str(), r.degree_id.as_str()))
+            .or_default()
+            .push(r.clone());
+    }
+    for p in programs {
+        let mine = p
+            .institution_ref
+            .as_deref()
+            .zip(p.degree_id.as_deref())
+            .and_then(|key| by_program.get(&key))
+            .map_or(&[][..], Vec::as_slice);
+        let year = cips::program_year(p.catalog_year.as_deref(), p.version_date.as_deref());
+        p.cip_confirmed = Some(
+            cips::resolve(mine, year)
+                .is_some_and(|r| p.cip_code.as_deref() == Some(r.cip_code.as_str())),
+        );
     }
 }
 
@@ -509,7 +572,7 @@ fn matches_json(programs: &[ProgramDetail]) -> String {
 mod tests {
     use super::*;
 
-    const BS_2025: &str = "prog:1|11.0701|2025-2026|BS|cs";
+    const BS_2025: &str = "prog:1|2025-2026|BS|cs";
 
     /// A stored row of `base`, dated (`base|v<date>`) when `date` is given.
     fn version(base: &str, date: Option<&str>, generation: i64) -> VersionRow {
@@ -532,20 +595,20 @@ mod tests {
         ];
         assert_eq!(
             latest_version(&rows).as_deref(),
-            Some("prog:1|11.0701|2025-2026|BS|cs|v2026-10-09")
+            Some("prog:1|2025-2026|BS|cs|v2026-10-09")
         );
     }
 
     #[test]
     fn test_latest_version_refuses_programs_differing_in_any_key_part() {
-        // Different catalog year, school, CIP, degree type: each is another program, and
+        // Different catalog year, school, degree type, id: each is another program, and
         // two undated programs must stay ambiguous rather than be split by import time.
         for other in [
-            "prog:1|11.0701|2024-2025|BS|cs",
-            "prog:2|11.0701|2025-2026|BS|cs",
-            "prog:ca:university-of-toronto|11.0701|2025-2026|BS|cs",
-            "prog:1|11.0102|2025-2026|BS|cs",
-            "prog:1|11.0701|2025-2026|BA|cs",
+            "prog:1|2024-2025|BS|cs",
+            "prog:2|2025-2026|BS|cs",
+            "prog:ca:university-of-toronto|2025-2026|BS|cs",
+            "prog:1|2025-2026|BS|ai",
+            "prog:1|2025-2026|BA|cs",
         ] {
             for (date, other_date) in [(None, None), (None, Some("2026-10-09"))] {
                 let rows = [version(BS_2025, date, 1), version(other, other_date, 2)];
@@ -569,61 +632,99 @@ mod tests {
 
     /// A backend that finds no `program_key` match and answers every `degree_id` select
     /// with `by_id`, so `resolve_program_key` reaches its version logic.
-    async fn degree_id_backend(by_id: &'static str) -> DbClient {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind ephemeral port");
-        let url = format!("http://{}", listener.local_addr().expect("local addr"));
-        tokio::spawn(async move {
-            loop {
-                let Ok((mut stream, _)) = listener.accept().await else {
-                    return;
-                };
-                let mut buf = [0u8; 8192];
-                let n = tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
-                    .await
-                    .unwrap_or(0);
-                let request = String::from_utf8_lossy(&buf[..n]);
-                let body = if request.contains("program_key=eq") {
-                    "[]"
-                } else {
-                    by_id
-                };
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
-                     Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-                let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
-            }
-        });
-        DbClient::new(&url, "anon", "jwt".to_string()).expect("client")
+    async fn degree_id_backend(by_id: &str) -> DbClient {
+        crate::core::database::test_backend::routed(vec![
+            ("program_key=eq", "[]".to_string()),
+            ("/rest/v1/programs", by_id.to_string()),
+        ])
+        .await
+        .client
+    }
+
+    #[test]
+    fn test_too_many_versions_are_reported_truncated_not_collapsed() {
+        let rows: Vec<VersionRow> = (0..=AMBIGUITY_PROBE)
+            .map(|i| version(BS_2025, Some(&format!("2026-01-{i:02}")), 1))
+            .collect();
+        let err: serde_json::Value =
+            serde_json::from_str(&degree_id_matches("cs", rows).unwrap_err()).unwrap();
+        assert_eq!(err["truncated"], true, "{err}");
+        assert_eq!(
+            err["matches"].as_array().map(Vec::len),
+            Some(AMBIGUITY_PROBE)
+        );
+        let none: serde_json::Value =
+            serde_json::from_str(&degree_id_matches("cs", Vec::new()).unwrap_err()).unwrap();
+        assert_eq!(none["code"], error_code::SOURCE_NOT_FOUND);
+        assert_eq!(
+            degree_id_matches("cs", vec![version(BS_2025, None, 1)]).as_deref(),
+            Ok(BS_2025)
+        );
     }
 
     #[tokio::test]
     async fn test_resolve_program_key_returns_the_newest_dated_version() {
         let client = degree_id_backend(
-            r#"[{"program_key":"prog:1|11.0701|2025-2026|BS|cs","version_date":null,"generation":9},
-                {"program_key":"prog:1|11.0701|2025-2026|BS|cs|v2026-10-09","version_date":"2026-10-09","generation":5}]"#,
+            r#"[{"program_key":"prog:1|2025-2026|BS|cs","version_date":null,"generation":9},
+                {"program_key":"prog:1|2025-2026|BS|cs|v2026-10-09","version_date":"2026-10-09","generation":5}]"#,
         )
         .await;
         assert_eq!(
             resolve_program_key(&client, "cs").await.unwrap(),
-            "prog:1|11.0701|2025-2026|BS|cs|v2026-10-09"
+            "prog:1|2025-2026|BS|cs|v2026-10-09"
         );
     }
 
     #[tokio::test]
     async fn test_resolve_program_key_still_reports_two_programs_as_ambiguous() {
         let client = degree_id_backend(
-            r#"[{"program_key":"prog:1|11.0701|2024-2025|BS|cs","version_date":null,"generation":1},
-                {"program_key":"prog:1|11.0701|2025-2026|BS|cs","version_date":null,"generation":2}]"#,
+            r#"[{"program_key":"prog:1|2024-2025|BS|cs","version_date":null,"generation":1},
+                {"program_key":"prog:1|2025-2026|BS|cs","version_date":null,"generation":2}]"#,
         )
         .await;
         let err = resolve_program_key(&client, "cs").await.unwrap_err();
         let err: serde_json::Value = serde_json::from_str(&err).unwrap();
         assert_eq!(err["code"], error_code::AMBIGUOUS_REFERENCE, "{err}");
         assert_eq!(err["matches"].as_array().map(Vec::len), Some(2), "{err}");
+    }
+
+    fn summary(degree_id: Option<&str>, catalog: &str, cip: &str) -> ProgramSummary {
+        serde_json::from_value(serde_json::json!({
+            "program_key": format!("prog:1|{catalog}|BS|x"),
+            "name": "CS", "unitid": 1, "cip_code": cip, "catalog_year": catalog,
+            "degree_id": degree_id, "institution_ref": "1",
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_mark_confirmed_compares_the_cip_in_force_for_each_year() {
+        let rows = serde_json::json!([{
+            "institution_ref": "1", "degree_id": "cs", "from_year": 2024, "cip_code": "11.0102",
+            "name": "CS", "source": "registrar",
+        }])
+        .to_string();
+        let backend =
+            crate::core::database::test_backend::routed(vec![("/rest/v1/program_cips", rows)])
+                .await;
+        let mut programs = [
+            summary(Some("cs"), "2024-2025", "11.0102"),
+            summary(Some("cs"), "2023-2024", "11.0701"),
+            summary(Some("cs"), "2025-2026", "11.0701"),
+            summary(None, "2024-2025", "11.0102"),
+        ];
+        mark_confirmed(&backend.client, &mut programs).await;
+        let got: Vec<Option<bool>> = programs.iter().map(|p| p.cip_confirmed).collect();
+        assert_eq!(got, [Some(true), Some(false), Some(false), Some(false)]);
+
+        // An unreadable registry leaves the field unset rather than reading as "guessed".
+        let mut programs = [summary(Some("cs"), "2024-2025", "11.0102")];
+        mark_confirmed(
+            &crate::core::database::test_backend::unreachable(),
+            &mut programs,
+        )
+        .await;
+        assert_eq!(programs[0].cip_confirmed, None);
     }
 
     #[test]
@@ -639,7 +740,7 @@ mod tests {
     #[test]
     fn test_program_summary_deserializes_from_programs_row() {
         let row = serde_json::json!({
-            "program_key": "prog:126818|11.0701|2025-2026|BS",
+            "program_key": "prog:126818|2025-2026|BS",
             "name": "Computer Science, BS",
             "unitid": 126_818,
             "cip_code": "11.0701",
@@ -653,7 +754,7 @@ mod tests {
         });
         let summary: ProgramSummary =
             serde_json::from_value(row).expect("programs summary row must deserialize");
-        assert_eq!(summary.program_key, "prog:126818|11.0701|2025-2026|BS");
+        assert_eq!(summary.program_key, "prog:126818|2025-2026|BS");
         assert_eq!(summary.unitid, Some(126_818));
         assert_eq!(summary.degree_type.as_deref(), Some("BS"));
         assert!(summary.institution_resolved);
@@ -716,7 +817,7 @@ mod tests {
     #[test]
     fn test_program_detail_deserializes_with_document_and_nulls() {
         let row = serde_json::json!({
-            "program_key": "prog:141574||2024-2025|BS",
+            "program_key": "prog:141574|2024-2025|BS",
             "name": "BS in Computer Science - General Track",
             "unitid": 141_574,
             "cip_code": null,
@@ -736,11 +837,11 @@ mod tests {
         let detail: ProgramDetail =
             serde_json::from_value(row).expect("programs detail row must deserialize");
         assert_eq!(detail.summary.cip_code, None);
-        assert_eq!(detail.degree_id, None);
+        assert_eq!(detail.summary.degree_id, None);
         assert_eq!(detail.total_credits, Some(120));
         let flat = serde_json::to_value(&detail).expect("serializes");
         assert_eq!(
-            flat["program_key"], "prog:141574||2024-2025|BS",
+            flat["program_key"], "prog:141574|2024-2025|BS",
             "the summary fields stay at the top level"
         );
         assert!(flat.get("summary").is_none());

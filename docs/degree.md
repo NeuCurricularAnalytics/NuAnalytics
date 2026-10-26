@@ -132,7 +132,7 @@ passed `fresh=true` (see [docs/mcp.md](mcp.md#stored-or-fresh)).
 
 `<NAME>` is resolved through a ladder; the first tier that matches wins:
 
-1. exact `program_key` (e.g. `prog:167358|11.0701|2025-2026|BS`)
+1. exact `program_key` (e.g. `prog:167358|2025-2026|BS`)
 2. exact `degree_id`
 3. a `name` substring (case-insensitive `ILIKE`)
 
@@ -145,13 +145,13 @@ re-run with a more specific name or the exact `program_key`.
 nuanalytics degree analyze --from-db "Computer Science (Boston)"
 
 # Or pin the exact program by key, with the usual analyze options
-nuanalytics degree analyze --from-db "prog:167358|11.0701|2025-2026|BS" --sample-plans 20
+nuanalytics degree analyze --from-db "prog:167358|2025-2026|BS" --sample-plans 20
 ```
 
 On a single match the loaded-program banner is printed before analysis:
 
 ```
-✓ Loaded stored program: Bachelor of Science in Computer Science (Boston) (program_key prog:167358|11.0701|2025-2026|BS · unitid 167358)
+✓ Loaded stored program: Bachelor of Science in Computer Science (Boston) (program_key prog:167358|2025-2026|BS · unitid 167358)
 ```
 
 `--from-db` requires a configured, logged-in database session

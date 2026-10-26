@@ -66,8 +66,11 @@ pub struct ImportDegreeRequest {
     #[schemars(description = "Override the institution name used for resolution/display.")]
     pub institution: Option<String>,
 
-    /// Override the CIP code (part of the natural program key).
-    #[schemars(description = "Override the CIP code (part of the natural program key).")]
+    /// Override the CIP code. Not part of the `program_key`, so a corrected CIP lands on
+    /// the same program; written into the stored document.
+    #[schemars(
+        description = "Override the CIP code. Not part of the program_key, so a corrected CIP lands on the same program (pass replace=true to write it, or force=true for a verified program; otherwise the result is needs_confirmation). Written into the stored document."
+    )]
     pub cip: Option<String>,
 
     /// Override the catalog year (part of the program identity).
@@ -248,7 +251,7 @@ mod tests {
     /// tests. Avoids calling `execute_import`, which needs a live DB.
     fn outcome_with(result: ImportResult) -> ImportOutcome {
         ImportOutcome {
-            program_key: "prog:167358|11.0701|2024-2025|BS".to_string(),
+            program_key: "prog:167358|2024-2025|BS".to_string(),
             result,
             resolved_unitid: Some(167_358),
             institution_ref: None,
@@ -308,8 +311,7 @@ mod tests {
     #[tokio::test]
     async fn bad_version_date_and_both_institution_keys_are_bad_arguments() {
         // Refused before the network: port 9 is never answered.
-        let client =
-            Arc::new(DbClient::new("http://127.0.0.1:9", "anon", "jwt".to_string()).unwrap());
+        let client = Arc::new(crate::core::database::test_backend::unreachable());
         let report = r#"{"degree":{"name":"CS","degree_type":"BS","system_type":"semester"},"requirements":{},"courses":{}}"#;
         for extra in [
             serde_json::json!({"version_date": "2026-13-01"}),
@@ -435,7 +437,7 @@ mod tests {
         let outcome = outcome_with(ImportResult::Created);
         let value = outcome_to_json(&outcome);
         assert_eq!(value["result"], "created");
-        assert_eq!(value["program_key"], "prog:167358|11.0701|2024-2025|BS");
+        assert_eq!(value["program_key"], "prog:167358|2024-2025|BS");
         assert_eq!(value["resolved_unitid"], 167_358);
         assert_eq!(value["courses_written"], 5);
         assert_eq!(value["requirements_written"], 4);

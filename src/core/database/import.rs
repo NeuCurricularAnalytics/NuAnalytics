@@ -96,7 +96,8 @@ pub struct ImportOptions {
     pub unitid: Option<i32>,
     /// Override the institution name.
     pub institution: Option<String>,
-    /// Override the CIP code (part of the natural program key).
+    /// Override the CIP code. Not part of the `program_key`; written into the stored
+    /// document.
     pub cip_code: Option<String>,
     /// Override the catalog year (part of the program identity).
     pub catalog_year: Option<String>,
@@ -413,15 +414,15 @@ fn display_institution(
 
 /// Compute the deterministic `program_key` for a degree.
 ///
-/// - `prog:<ref>|<cip>|<catalog_year>|<degree_type>|<degree_id or name>` for a non-US
+/// - `prog:<ref>|<catalog_year>|<degree_type>|<degree_id or name>` for a non-US
 ///   institution (`intl`);
-/// - `prog:<unitid>|<cip>|<catalog_year>|<degree_type>|<degree_id or name>` when the
-///   unit id resolved;
+/// - `prog:<unitid>|<catalog_year>|<degree_type>|<degree_id or name>` when the unit id
+///   resolved;
 /// - `prog:<degree_id>|<catalog_year>` when it did not but the degree has an id;
 /// - `fp:<sha256>` otherwise.
 ///
 /// With a version date every form gains a `|v<YYYY-MM-DD>` suffix; without one the key
-/// is exactly what it was before version dates existed, so existing rows keep theirs.
+/// has no suffix, so undated rows keep theirs.
 fn program_key(
     degree: &crate::core::models::Degree,
     opts: &ImportOptions,
@@ -435,6 +436,101 @@ fn program_key(
     }
 }
 
+/// Write the options that decide a program's identity into the degree itself, so the
+/// stored `document` (and its hash) says what the row is keyed on.
+///
+/// Without this an override keyed the row while the document kept the file's value:
+/// `--cip` never reached a pulled degree, and re-importing a stored document without
+/// `--institution-ref` (or `--institution`) resolved the school by name and could produce
+/// a second program. Only explicit options are written — a unit id found by name
+/// resolution is not, and a ref the document already carries is left as written — since
+/// either would change the hash of stored programs for no gain.
+fn apply_identity_overrides(
+    degree: &mut crate::core::models::Degree,
+    opts: &ImportOptions,
+    intl: Option<&InstitutionRef>,
+) {
+    if let Some(name) = &opts.institution {
+        degree.institution = Some(name.clone());
+    }
+    if let Some(cip) = &opts.cip_code {
+        degree.cip_code = Some(cip.clone());
+    }
+    if let Some(year) = &opts.catalog_year {
+        degree.catalog_year = Some(year.clone());
+    }
+    if let Some(id) = &opts.degree_id {
+        degree.id = Some(id.clone());
+    }
+    // A program is keyed on one of the two, so setting one clears the other. `intl` is
+    // the parsed form of `opts.institution_ref` whenever that option is set.
+    if let (Some(_), Some(r)) = (&opts.institution_ref, intl) {
+        degree.institution_ref = Some(r.reference.clone());
+        degree.unitid = None;
+    } else if let Some(unitid) = opts.unitid {
+        degree.unitid = Some(unitid);
+        degree.institution_ref = None;
+    }
+}
+
+/// A program's stored document and its hash — built one way for every writer.
+///
+/// `db import` and `db cip set`'s correction of stored programs ([`super::cips`]) both
+/// store documents. A corrected program re-imports as unchanged only because both hash
+/// the same thing, so neither may build the pair any other way.
+///
+/// # Errors
+/// [`DatabaseError::ParseError`] when the program cannot be rebuilt or serialized.
+pub(crate) fn document_and_hash(program: &DegreeProgram) -> DatabaseResult<(Value, String)> {
+    let document = to_unified_value(program)
+        .map_err(|e| DatabaseError::ParseError(format!("failed to build document: {e}")))?;
+    let hash = content_hash(
+        &serialize_degree_json(program, false)
+            .map_err(|e| DatabaseError::ParseError(format!("failed to serialize degree: {e}")))?,
+    );
+    Ok((document, hash))
+}
+
+/// Replace the program's CIP with the confirmed one in force for its year, if any.
+///
+/// An explicit `--cip` is the caller saying what they want, so it wins; when it
+/// disagrees with the registry the import says so rather than choosing silently.
+fn apply_confirmed_cip(
+    program: &mut DegreeProgram,
+    opts: &ImportOptions,
+    confirmed_cips: &[super::cips::ProgramCip],
+    warnings: &mut Vec<String>,
+) {
+    let catalog = catalog_year_of(&program.degree, opts);
+    let year = super::cips::program_year(Some(&catalog), opts.version_date.as_deref());
+    let Some(row) = super::cips::resolve(confirmed_cips, year) else {
+        return;
+    };
+    if year.is_none() {
+        warnings.push(format!(
+            "catalog year {catalog:?} has no year in it and there is no version date: used \
+             the newest confirmed cip_code"
+        ));
+    }
+    match opts.cip_code.as_deref().map(str::trim) {
+        // A matching --cip is the same confirmation, recorded the same way, so the
+        // document hashes as a plain re-import does.
+        None => {
+            super::cips::apply_confirmed(program, row);
+            warnings.push(format!(
+                "cip_code {} from program_cips ({})",
+                row.cip_code, row.source
+            ));
+        }
+        Some(cip) if cip == row.cip_code => super::cips::apply_confirmed(program, row),
+        Some(cip) => warnings.push(format!(
+            "the cip override {cip} (--cip / cip) replaces the confirmed cip_code {} ({}); the \
+             next `db cip set` for this program will put the confirmed one back",
+            row.cip_code, row.source
+        )),
+    }
+}
+
 /// What joins a version date onto a `program_key`: `<base>|v<YYYY-MM-DD>`.
 pub const VERSION_KEY_SEPARATOR: &str = "|v";
 
@@ -445,11 +541,6 @@ fn base_program_key(
     resolved_unitid: Option<i32>,
     intl: Option<&InstitutionRef>,
 ) -> String {
-    let cip = opts
-        .cip_code
-        .clone()
-        .or_else(|| degree.cip_code.clone())
-        .unwrap_or_default();
     let cat = catalog_year_of(degree, opts);
     let dtype = &degree.degree_type;
     let institution_part = intl
@@ -464,12 +555,17 @@ fn base_program_key(
         // so runs ended up pointing at a `programs.document` describing a different
         // degree. Note the fingerprint tier below already hashed the name, which is a
         // fair hint this omission was an oversight rather than a decision.
+        //
+        // The CIP is deliberately not part of it (0.7.0). Three-quarters of stored CIPs
+        // are guesses, and a program whose CIP is corrected must keep its identity: with
+        // the CIP in the key, a correction re-imported as a second program and left the
+        // first, with its runs, behind.
         let discriminator = opts
             .degree_id
             .clone()
             .or_else(|| degree.id.clone())
             .unwrap_or_else(|| degree.name.clone());
-        format!("prog:{inst}|{cip}|{cat}|{dtype}|{discriminator}")
+        format!("prog:{inst}|{cat}|{dtype}|{discriminator}")
     } else if let Some(id) = opts.degree_id.clone().or_else(|| degree.id.clone()) {
         format!("prog:{id}|{cat}")
     } else {
@@ -489,16 +585,6 @@ fn base_program_key(
 
 /// Derive the normalized `program_kind` from degree type, tags, and name.
 fn derive_program_kind(degree: &crate::core::models::Degree) -> String {
-    let kinds = [
-        "major",
-        "minor",
-        "concentration",
-        "certificate",
-        "track",
-        "specialization",
-        "emphasis",
-        "micro",
-    ];
     let haystack = format!(
         "{} {} {}",
         degree.degree_type.to_lowercase(),
@@ -509,12 +595,12 @@ fn derive_program_kind(degree: &crate::core::models::Degree) -> String {
             .map(|t| t.join(" ").to_lowercase())
             .unwrap_or_default()
     );
-    for kind in kinds {
+    for &kind in super::program_kinds::ALL {
         if haystack.contains(kind) {
             return kind.to_string();
         }
     }
-    "major".to_string()
+    super::program_kinds::MAJOR.to_string()
 }
 
 /// Derive the primary `discipline` from the degree tags (first of ai/cs/ds/cy).
@@ -718,29 +804,50 @@ fn flatten_requirement(
 /// # Errors
 /// Returns [`DatabaseError::ParseError`] when the report text cannot be parsed
 /// as a degree or serialized back to the canonical document.
-// Top-level sequential assembly of one `ImportPlan`. The sub-steps already
-// delegate to helpers (`build_course`, `flatten_requirement`, `build_analysis_run`);
-// the remaining length is the flat field-by-field `StoredProgram` mapping, which
-// reads clearer inline than behind a 9-field args struct — so the line-count lint
-// is allowed here by design.
-#[allow(clippy::too_many_lines)]
 pub fn build_import_plan(
     report_text: &str,
     opts: &ImportOptions,
     resolved_unitid: Option<i32>,
     generation: i64,
 ) -> Result<(ImportPlan, Vec<String>), DatabaseError> {
+    build_import_plan_with(report_text, opts, resolved_unitid, generation, &[])
+}
+
+/// [`build_import_plan`] with the program's confirmed CIPs.
+///
+/// `confirmed_cips` are the `program_cips` rows for its school and `degree_id`: the one
+/// in force for its catalog year replaces the document's CIP, unless `--cip` was given,
+/// which wins (with a warning when the two disagree).
+///
+/// # Errors
+/// As [`build_import_plan`].
+// Top-level sequential assembly of one `ImportPlan`. The sub-steps already
+// delegate to helpers (`build_course`, `flatten_requirement`, `build_analysis_run`);
+// the remaining length is the flat field-by-field `StoredProgram` mapping, which
+// reads clearer inline than behind a 9-field args struct — so the line-count lint
+// is allowed here by design.
+#[allow(clippy::too_many_lines)]
+pub fn build_import_plan_with(
+    report_text: &str,
+    opts: &ImportOptions,
+    resolved_unitid: Option<i32>,
+    generation: i64,
+    confirmed_cips: &[super::cips::ProgramCip],
+) -> Result<(ImportPlan, Vec<String>), DatabaseError> {
     // (a) canonical degree (ignores analysis / metrics / selected_plans blocks)
-    let (program, conversion_warnings) = parse_degree_auto(report_text)
+    let (mut program, mut conversion_warnings) = parse_degree_auto(report_text)
         .map_err(|e| DatabaseError::ParseError(format!("failed to parse degree: {e}")))?;
     // (b) raw report value for the report-only blocks
     let raw: Value = serde_json::from_str(report_text).unwrap_or(Value::Null);
 
-    let degree = &program.degree;
     let variant = opts.variant.clone();
     let is_full = variant.eq_ignore_ascii_case(super::variants::FULL);
 
-    let intl = effective_institution_ref(degree, opts).map_err(DatabaseError::IngestError)?;
+    let intl =
+        effective_institution_ref(&program.degree, opts).map_err(DatabaseError::IngestError)?;
+    apply_identity_overrides(&mut program.degree, opts, intl.as_ref());
+    apply_confirmed_cip(&mut program, opts, confirmed_cips, &mut conversion_warnings);
+    let degree = &program.degree;
     // A non-US institution has no IPEDS unit id, whatever the caller resolved.
     let resolved_unitid = if intl.is_some() {
         None
@@ -755,12 +862,7 @@ pub fn build_import_plan(
     let program_key = program_key(degree, opts, resolved_unitid, intl.as_ref());
     let catalog_year = catalog_year_of(degree, opts);
 
-    let document = to_unified_value(&program)
-        .map_err(|e| DatabaseError::ParseError(format!("failed to build document: {e}")))?;
-    let document_hash = content_hash(
-        &serialize_degree_json(&program, false)
-            .map_err(|e| DatabaseError::ParseError(format!("failed to serialize degree: {e}")))?,
-    );
+    let (document, document_hash) = document_and_hash(&program)?;
 
     // ---- courses + program_courses --------------------------------------
     let mut courses = Vec::with_capacity(program.courses.len());
@@ -821,21 +923,19 @@ pub fn build_import_plan(
     let stored_program = StoredProgram {
         id: None,
         program_key: program_key.clone(),
-        degree_id: opts.degree_id.clone().or_else(|| degree.id.clone()),
+        // The overrides are already in `degree` (`apply_identity_overrides`).
+        degree_id: degree.id.clone(),
         unitid: resolved_unitid,
         institution_ref: inst_ref,
         institution_raw: display_institution(degree, opts),
-        cip_code: opts.cip_code.clone().or_else(|| degree.cip_code.clone()),
+        cip_code: degree.cip_code.clone(),
         name: degree.name.clone(),
         degree_type: (!degree.degree_type.is_empty()).then(|| degree.degree_type.clone()),
         program_kind: Some(derive_program_kind(degree)),
         discipline: derive_discipline(degree),
         system_type: degree.system_type.clone(),
         tags: degree.tags.clone(),
-        catalog_year: opts
-            .catalog_year
-            .clone()
-            .or_else(|| degree.catalog_year.clone()),
+        catalog_year: degree.catalog_year.clone(),
         source_url: degree.source_url.clone(),
         total_credits: degree.total_credits.map(u32_to_i32),
         upper_division_credits: degree.upper_division_credits.map(u32_to_i32),
@@ -1302,9 +1402,17 @@ pub async fn execute_import(
     // 2. generation.
     let generation = now_generation();
 
-    // 3. build the plan.
-    let (plan, conversion_warnings) =
-        build_import_plan(report_text, opts, resolved_unitid, generation)?;
+    // 3. the program's confirmed CIPs, then the plan.
+    let (confirmed_cips, registry_note) =
+        confirmed_cips_for(client, &degree, opts, intl.as_ref(), resolved_unitid).await;
+    let (plan, mut conversion_warnings) = build_import_plan_with(
+        report_text,
+        opts,
+        resolved_unitid,
+        generation,
+        &confirmed_cips,
+    )?;
+    conversion_warnings.extend(registry_note);
     let program_key = plan
         .program
         .as_ref()
@@ -1357,6 +1465,39 @@ pub async fn execute_import(
     .await?;
 
     Ok(outcome)
+}
+
+/// The `program_cips` rows for the program this import names, and a note when they
+/// could not be read.
+///
+/// Fail-soft: a schema from before `program_cips`, or a failed read, imports
+/// with the document's CIP and says so, rather than refusing the import.
+async fn confirmed_cips_for(
+    client: &DbClient,
+    degree: &crate::core::models::Degree,
+    opts: &ImportOptions,
+    intl: Option<&InstitutionRef>,
+    resolved_unitid: Option<i32>,
+) -> (Vec<super::cips::ProgramCip>, Option<String>) {
+    let Some(degree_id) = opts.degree_id.clone().or_else(|| degree.id.clone()) else {
+        return (Vec::new(), None);
+    };
+    // `institution_ref` puts a non-US ref ahead of any unit id, as the plan does.
+    let inst_ref = institution_ref(
+        intl,
+        resolved_unitid,
+        display_institution(degree, opts).as_deref(),
+    );
+    match super::cips::fetch(client, &inst_ref, &degree_id).await {
+        Ok(rows) => (rows, None),
+        Err(e) => (
+            Vec::new(),
+            Some(format!(
+                "confirmed CIPs not checked (program_cips could not be read: {e}); the \
+                 document's cip_code is used"
+            )),
+        ),
+    }
 }
 
 /// Fetch an existing program's idempotency snapshot, if any.
@@ -1599,11 +1740,472 @@ mod tests {
         let report = sample_report();
         let (plan, _) = build_import_plan(&report, &opts(), Some(167_358), 1).unwrap();
         let key = &plan.program.as_ref().unwrap().program_key;
-        assert_eq!(key, "prog:167358|11.0701|2024-2025|BS|Computer Science");
+        assert_eq!(key, "prog:167358|2024-2025|BS|Computer Science");
     }
 
     #[test]
-    fn two_programs_sharing_cip_year_and_type_get_different_keys() {
+    fn correcting_the_cip_keeps_the_program_key() {
+        // The reason the CIP left the key (0.7.0): most CIPs are guesses, and fixing one
+        // must update the program in place, not import a second program beside it.
+        let guessed = key_of(&sample_report(), &opts(), Some(167_358));
+        let corrected = ImportOptions {
+            cip_code: Some("11.0102".to_string()),
+            ..opts()
+        };
+        let fixed = key_of(&sample_report(), &corrected, Some(167_358));
+        assert_eq!(fixed.program_key, guessed.program_key);
+        assert_eq!(fixed.cip_code.as_deref(), Some("11.0102"));
+        let by_document = key_of(
+            &sample_report().replace("11.0701", "11.0102"),
+            &opts(),
+            Some(167_358),
+        );
+        assert_eq!(by_document.program_key, guessed.program_key);
+    }
+
+    #[test]
+    fn no_key_starts_with_its_rows_old_prefix() {
+        // Mirrors the `program_key_has_no_cip` CHECK constraint: a key built now must
+        // never start with the prefix its row's columns give under the pre-0.7.0 rule,
+        // or the constraint would refuse a valid import. Covers a blank CIP and a blank
+        // catalog year, which leave `||` in the old and new keys respectively.
+        let no_year = sample_report().replace(r#""catalog_year": "2024-2025","#, "");
+        let no_cip = sample_report().replace(r#""cip_code": "11.0701","#, "");
+        let neither = no_year.replace(r#""cip_code": "11.0701","#, "");
+        for (report, unitid, options) in [
+            (sample_report(), Some(167_358), opts()),
+            (no_year, Some(167_358), opts()),
+            (no_cip.clone(), Some(167_358), opts()),
+            (neither.clone(), Some(167_358), opts()),
+            (sample_report(), None, intl("ca:university-of-toronto")),
+            (neither, None, intl("ca:university-of-toronto")),
+            (no_cip, Some(167_358), dated("2026-03-15")),
+        ] {
+            let p = key_of(&report, &options, unitid);
+            let old_prefix = format!(
+                "prog:{}|{}|{}|{}|",
+                p.unitid
+                    .map_or_else(|| p.institution_ref.clone(), |u| u.to_string()),
+                p.cip_code.clone().unwrap_or_default(),
+                p.catalog_year.clone().unwrap_or_default(),
+                p.degree_type.clone().unwrap_or_default(),
+            );
+            assert!(
+                !p.program_key.starts_with(&old_prefix),
+                "{} starts with its old prefix {old_prefix}",
+                p.program_key
+            );
+        }
+    }
+
+    #[test]
+    fn identity_overrides_reach_the_stored_document() {
+        let overridden = ImportOptions {
+            cip_code: Some("11.0102".to_string()),
+            catalog_year: Some("2025-2026".to_string()),
+            degree_id: Some("test-cs".to_string()),
+            unitid: Some(167_358),
+            ..opts()
+        };
+        let p = key_of(&sample_report(), &overridden, Some(167_358));
+        let degree = &p.document["degree"];
+        assert_eq!(degree["cip_code"], "11.0102");
+        assert_eq!(degree["catalog_year"], "2025-2026");
+        assert_eq!(degree["id"], "test-cs");
+        assert_eq!(degree["unitid"], 167_358);
+        // The hash covers the overridden document, so re-importing it unchanged matches.
+        let stored = serde_json::to_string(&p.document).unwrap();
+        assert_eq!(
+            key_of(&stored, &opts(), Some(167_358)).document_hash,
+            p.document_hash
+        );
+        // A unit id found by name resolution is not written: it would rehash every row.
+        let resolved = key_of(&sample_report(), &opts(), Some(167_358));
+        assert!(resolved.document["degree"].get("unitid").is_none());
+    }
+
+    #[test]
+    fn an_institution_override_replaces_the_documents_other_key() {
+        let with_unitid = sample_report().replace(
+            r#""institution": "Test University","#,
+            r#""institution": "Test University", "unitid": 167358,"#,
+        );
+        let p = key_of(&with_unitid, &intl("ca:university-of-toronto"), None);
+        assert_eq!(
+            p.document["degree"]["institution_ref"],
+            "ca:university-of-toronto"
+        );
+        assert!(p.document["degree"].get("unitid").is_none());
+
+        let with_ref = sample_report().replace(
+            r#""institution": "Test University","#,
+            r#""institution": "Test University", "institution_ref": "ca:university-of-toronto","#,
+        );
+        let by_unitid = ImportOptions {
+            unitid: Some(167_358),
+            ..opts()
+        };
+        let p = key_of(&with_ref, &by_unitid, Some(167_358));
+        assert_eq!(p.document["degree"]["unitid"], 167_358);
+        assert!(p.document["degree"].get("institution_ref").is_none());
+    }
+
+    #[test]
+    fn an_institution_option_settles_a_document_that_sets_both() {
+        let both = sample_report().replace(
+            r#""institution": "Test University","#,
+            r#""institution": "Test University", "unitid": 167358, "institution_ref": "ca:university-of-toronto","#,
+        );
+        assert!(
+            build_import_plan(&both, &opts(), Some(167_358), 1).is_err(),
+            "with no option the document is still refused"
+        );
+        let by_unitid = ImportOptions {
+            unitid: Some(167_358),
+            ..opts()
+        };
+        let p = key_of(&both, &by_unitid, Some(167_358));
+        assert_eq!(p.program_key, "prog:167358|2024-2025|BS|Computer Science");
+        assert!(p.document["degree"].get("institution_ref").is_none());
+        let p = key_of(&both, &intl("ca:university-of-toronto"), None);
+        assert_eq!(
+            p.program_key,
+            "prog:ca:university-of-toronto|2024-2025|BS|Computer Science"
+        );
+        assert!(p.document["degree"].get("unitid").is_none());
+    }
+
+    #[test]
+    fn a_documents_own_institution_ref_is_stored_as_written() {
+        // Only explicit options are written: normalising a document's own ref would
+        // rehash every stored program that wrote it differently.
+        let report = sample_report().replace(
+            r#""institution": "Test University","#,
+            r#""institution": "U of T", "institution_ref": "CA:university-of-toronto","#,
+        );
+        let p = key_of(&report, &opts(), None);
+        assert!(p.program_key.starts_with("prog:ca:university-of-toronto|"));
+        assert_eq!(
+            p.document["degree"]["institution_ref"],
+            "CA:university-of-toronto"
+        );
+    }
+
+    #[test]
+    fn a_cip_override_keeps_the_key_and_changes_the_hash() {
+        let before = key_of(&sample_report(), &opts(), Some(167_358));
+        let fixed = ImportOptions {
+            cip_code: Some("11.0102".to_string()),
+            ..opts()
+        };
+        let after = key_of(&sample_report(), &fixed, Some(167_358));
+        assert_eq!(after.program_key, before.program_key);
+        assert_ne!(
+            after.document_hash, before.document_hash,
+            "an equal hash would make the existence check skip the correction"
+        );
+        let same = ImportOptions {
+            cip_code: Some("11.0701".to_string()),
+            ..opts()
+        };
+        assert_eq!(
+            key_of(&sample_report(), &same, Some(167_358)).document_hash,
+            before.document_hash,
+            "an override equal to the file's value is not a change"
+        );
+    }
+
+    #[test]
+    fn a_changed_document_needs_replace_to_update() {
+        // Pins what CHANGELOG 0.7.0 says about re-importing an overridden program.
+        let existing = ExistingProgram {
+            document_hash: "old".to_string(),
+            verified: false,
+        };
+        let d = decide_existence(Some(&existing), "new", true, &opts());
+        assert!(matches!(d.result, ImportResult::NeedsConfirmation(_)));
+        assert!(!d.write_program);
+        let replace = ImportOptions {
+            replace: true,
+            ..opts()
+        };
+        let d = decide_existence(Some(&existing), "new", true, &replace);
+        assert!(matches!(d.result, ImportResult::Updated) && d.write_program);
+    }
+
+    #[test]
+    fn a_degree_id_override_is_the_discriminator() {
+        let o = ImportOptions {
+            degree_id: Some("test-cs".to_string()),
+            ..opts()
+        };
+        let p = key_of(&sample_report(), &o, Some(167_358));
+        assert_eq!(p.program_key, "prog:167358|2024-2025|BS|test-cs");
+        assert_eq!(p.degree_id.as_deref(), Some("test-cs"));
+    }
+
+    #[test]
+    fn a_stored_document_reimports_under_its_key_without_the_flags() {
+        // The defect `apply_identity_overrides` fixes: the stored document alone must
+        // reproduce the row's key, including a non-US institution.
+        let o = ImportOptions {
+            cip_code: Some("11.0102".to_string()),
+            catalog_year: Some("2025-2026".to_string()),
+            degree_id: Some("test-cs".to_string()),
+            institution: Some("University of Toronto".to_string()),
+            ..intl("ca:university-of-toronto")
+        };
+        let first = key_of(&sample_report(), &o, None);
+        let stored = serde_json::to_string(&first.document).unwrap();
+        let again = key_of(&stored, &opts(), None);
+        assert_eq!(again.program_key, first.program_key);
+        assert_eq!(again.document_hash, first.document_hash);
+        assert_eq!(again.country, first.country);
+        assert_eq!(
+            again.institution_raw.as_deref(),
+            Some("University of Toronto")
+        );
+    }
+
+    #[test]
+    fn a_trimmed_run_carries_the_overrides() {
+        let o = ImportOptions {
+            cip_code: Some("11.0102".to_string()),
+            catalog_year: Some("2025-2026".to_string()),
+            ..opts()
+        };
+        let full = key_of(&sample_report(), &o, Some(167_358));
+        let trimmed = ImportOptions {
+            variant: super::super::variants::TRIMMED.to_string(),
+            ..o
+        };
+        let (plan, _) = build_import_plan(&sample_report(), &trimmed, Some(167_358), 2).unwrap();
+        let run = plan.run.unwrap();
+        assert_eq!(run.program_key, full.program_key);
+        let analyzed = run.analyzed_document.unwrap();
+        assert_eq!(analyzed["degree"]["cip_code"], "11.0102");
+        assert_eq!(analyzed["degree"]["catalog_year"], "2025-2026");
+    }
+
+    #[test]
+    fn the_unresolved_key_forms_ignore_the_cip() {
+        let with_id = r#"{
+            "degree": {"name": "CS", "degree_type": "BS", "system_type": "semester",
+                       "id": "test-cs-2024", "catalog_year": "2024-2025", "cip_code": "11.0701"},
+            "requirements": {}, "courses": {}
+        }"#;
+        let no_id = r#"{
+            "degree": {"name": "CS", "degree_type": "BS", "system_type": "semester",
+                       "institution": "Test University", "catalog_year": "2024-2025", "cip_code": "11.0701"},
+            "requirements": {}, "courses": {}
+        }"#;
+        assert_eq!(
+            key_of(with_id, &opts(), None).program_key,
+            "prog:test-cs-2024|2024-2025"
+        );
+        let cip = ImportOptions {
+            cip_code: Some("11.0102".to_string()),
+            ..opts()
+        };
+        for report in [with_id, no_id] {
+            assert_eq!(
+                key_of(report, &cip, None).program_key,
+                key_of(report, &opts(), None).program_key
+            );
+        }
+    }
+
+    // --- confirmed CIPs (program_cips) --------------------------------------
+
+    fn confirmed(from_year: Option<i32>, cip: &str) -> super::super::cips::ProgramCip {
+        super::super::cips::ProgramCip {
+            institution_ref: "167358".to_string(),
+            degree_id: "test-cs".to_string(),
+            from_year,
+            unitid: Some(167_358),
+            cip_code: cip.to_string(),
+            award_level: Some(5),
+            name: "Computer Science".to_string(),
+            degree_type: Some("BS".to_string()),
+            source: "registrar".to_string(),
+            note: None,
+        }
+    }
+
+    fn with_registry(
+        opts: &ImportOptions,
+        rows: &[super::super::cips::ProgramCip],
+    ) -> (StoredProgram, Vec<String>) {
+        let (plan, warnings) =
+            build_import_plan_with(&sample_report(), opts, Some(167_358), 1, rows).unwrap();
+        (plan.program.unwrap(), warnings)
+    }
+
+    #[test]
+    fn a_confirmed_cip_replaces_the_guess_and_keeps_the_key() {
+        let guessed = key_of(&sample_report(), &opts(), Some(167_358));
+        let (p, warnings) = with_registry(&opts(), &[confirmed(None, "11.0102")]);
+        assert_eq!(p.program_key, guessed.program_key);
+        assert_eq!(p.cip_code.as_deref(), Some("11.0102"));
+        assert_eq!(p.document["degree"]["cip_code"], "11.0102");
+        let notes = p.document["conversion_warnings"].as_array().unwrap();
+        assert!(
+            notes.iter().any(|n| n
+                .as_str()
+                .unwrap()
+                .starts_with("cip_code confirmed: 11.0102")),
+            "{notes:?}"
+        );
+        assert!(
+            warnings.iter().any(|w| w.contains("from program_cips")),
+            "{warnings:?}"
+        );
+    }
+
+    #[test]
+    fn an_explicit_cip_wins_over_the_registry_and_says_so() {
+        let o = ImportOptions {
+            cip_code: Some("11.0103".to_string()),
+            ..opts()
+        };
+        let (p, warnings) = with_registry(&o, &[confirmed(None, "11.0102")]);
+        assert_eq!(p.cip_code.as_deref(), Some("11.0103"));
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("replaces the confirmed")),
+            "{warnings:?}"
+        );
+    }
+
+    #[test]
+    fn an_explicit_cip_equal_to_the_registry_still_records_the_confirmation() {
+        let o = ImportOptions {
+            cip_code: Some("11.0102".to_string()),
+            ..opts()
+        };
+        let (with_flag, _) = with_registry(&o, &[confirmed(None, "11.0102")]);
+        let (without, _) = with_registry(&opts(), &[confirmed(None, "11.0102")]);
+        assert_eq!(with_flag.document_hash, without.document_hash);
+    }
+
+    #[test]
+    fn an_unreadable_catalog_year_uses_the_newest_confirmed_cip_and_says_so() {
+        let report = sample_report().replace(r#""catalog_year": "2024-2025","#, "");
+        let rows = [confirmed(None, "11.0101"), confirmed(Some(2025), "11.0102")];
+        let (plan, warnings) =
+            build_import_plan_with(&report, &opts(), Some(167_358), 1, &rows).unwrap();
+        assert_eq!(plan.program.unwrap().cip_code.as_deref(), Some("11.0102"));
+        assert!(
+            warnings.iter().any(|w| w.contains("has no year in it")),
+            "{warnings:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_registry_is_skipped_without_a_degree_id_and_fails_soft() {
+        let client = crate::core::database::test_backend::unreachable();
+        let degree = parse_degree_auto(&sample_report()).unwrap().0.degree;
+        // No degree_id: nothing to look up, and no request (the client is unreachable).
+        assert_eq!(
+            confirmed_cips_for(&client, &degree, &opts(), None, Some(167_358)).await,
+            (Vec::new(), None)
+        );
+        let with_id = ImportOptions {
+            degree_id: Some("test-cs".into()),
+            ..opts()
+        };
+        let (rows, note) =
+            confirmed_cips_for(&client, &degree, &with_id, None, Some(167_358)).await;
+        assert!(rows.is_empty());
+        assert!(note.unwrap().contains("confirmed CIPs not checked"));
+    }
+
+    #[tokio::test]
+    async fn an_import_reads_the_registry_and_a_dry_run_writes_nothing() {
+        let backend = crate::core::database::test_backend::routed(vec![(
+            "/rest/v1/program_cips",
+            serde_json::to_string(&[confirmed(None, "11.0102")]).unwrap(),
+        )])
+        .await;
+        let o = ImportOptions {
+            unitid: Some(167_358),
+            degree_id: Some("test-cs".into()),
+            dry_run: true,
+            ..opts()
+        };
+        let outcome = execute_import(&backend.client, &sample_report(), &o)
+            .await
+            .unwrap();
+        assert!(
+            outcome
+                .conversion_warnings
+                .iter()
+                .any(|w| w.contains("11.0102 from program_cips")),
+            "{:?}",
+            outcome.conversion_warnings
+        );
+        assert_eq!(backend.write_count(), 0);
+    }
+
+    #[test]
+    fn a_version_date_stands_in_for_an_unreadable_catalog_year() {
+        let report = sample_report().replace(r#""catalog_year": "2024-2025","#, "");
+        let rows = [confirmed(None, "11.0101"), confirmed(Some(2026), "11.0102")];
+        let (plan, warnings) =
+            build_import_plan_with(&report, &dated("2026-03-15"), Some(167_358), 1, &rows).unwrap();
+        assert_eq!(
+            plan.program.unwrap().cip_code.as_deref(),
+            Some("11.0101"),
+            "2026-03-15 is in 2025-2026, before the 2026 row"
+        );
+        assert!(
+            !warnings.iter().any(|w| w.contains("has no year in it")),
+            "{warnings:?}"
+        );
+    }
+
+    #[test]
+    fn a_confirmed_cip_applies_only_from_its_year() {
+        // sample_report is the 2024-2025 catalog.
+        let (p, _) = with_registry(&opts(), &[confirmed(Some(2025), "11.0102")]);
+        assert_eq!(
+            p.cip_code.as_deref(),
+            Some("11.0701"),
+            "2024-2025 precedes it"
+        );
+        let (p, _) = with_registry(&opts(), &[confirmed(Some(2024), "11.0102")]);
+        assert_eq!(p.cip_code.as_deref(), Some("11.0102"));
+        let history = [confirmed(None, "11.0101"), confirmed(Some(2025), "11.0102")];
+        let (p, _) = with_registry(&opts(), &history);
+        assert_eq!(
+            p.cip_code.as_deref(),
+            Some("11.0101"),
+            "the all-years row before 2025"
+        );
+    }
+
+    #[test]
+    fn a_stored_correction_and_a_reimport_hash_the_same() {
+        // `db cip set` corrects a stored program from its document; re-importing the
+        // source afterwards must produce the same hash, or every corrected program would
+        // come back as needs_confirmation.
+        let row = confirmed(None, "11.0102");
+        let stored = key_of(&sample_report(), &opts(), Some(167_358));
+        let mut parsed = crate::core::degree::from_unified_value(&stored.document).unwrap();
+        super::super::cips::apply_confirmed(&mut parsed, &row);
+        let corrected_hash = content_hash(&serialize_degree_json(&parsed, false).unwrap());
+        let (reimported, _) = with_registry(&opts(), &[row]);
+        assert_eq!(reimported.document_hash, corrected_hash);
+        assert_eq!(
+            to_unified_value(&parsed).unwrap(),
+            reimported.document,
+            "the corrected document is the re-imported one"
+        );
+    }
+
+    #[test]
+    fn two_programs_sharing_school_year_and_type_get_different_keys() {
         // The collision that lost 47 of 1,088 corpus degrees: one institution offering
         // several programs under one CIP in one catalog year. Without a discriminator
         // they share a key, `programs.document` keeps only the last, and the earlier
@@ -1724,10 +2326,7 @@ mod tests {
     #[test]
     fn without_a_version_date_keys_are_unchanged() {
         let p = key_of(&sample_report(), &opts(), Some(167_358));
-        assert_eq!(
-            p.program_key,
-            "prog:167358|11.0701|2024-2025|BS|Computer Science"
-        );
+        assert_eq!(p.program_key, "prog:167358|2024-2025|BS|Computer Science");
         assert_eq!(p.version_date, None);
         assert_eq!(
             p.country, None,
@@ -1740,7 +2339,7 @@ mod tests {
         let p = key_of(&sample_report(), &dated("2026-03-15"), Some(167_358));
         assert_eq!(
             p.program_key,
-            "prog:167358|11.0701|2024-2025|BS|Computer Science|v2026-03-15"
+            "prog:167358|2024-2025|BS|Computer Science|v2026-03-15"
         );
         assert_eq!(p.version_date.as_deref(), Some("2026-03-15"));
         assert!(p.institution_resolved);
@@ -1789,7 +2388,7 @@ mod tests {
         let p = key_of(&sample_report(), &intl("ca:university-of-toronto"), None);
         assert_eq!(
             p.program_key,
-            "prog:ca:university-of-toronto|11.0701|2024-2025|BS|Computer Science"
+            "prog:ca:university-of-toronto|2024-2025|BS|Computer Science"
         );
         assert_eq!(p.institution_ref, "ca:university-of-toronto");
         assert_eq!(p.unitid, None);
@@ -1807,7 +2406,7 @@ mod tests {
         let p = plan.program.unwrap();
         assert_eq!(
             p.program_key,
-            "prog:ca:university-of-toronto|11.0701|2024-2025|BS|Computer Science|v2026-03-15"
+            "prog:ca:university-of-toronto|2024-2025|BS|Computer Science|v2026-03-15"
         );
         assert_eq!(p.unitid, None);
         assert!(plan
@@ -1884,7 +2483,7 @@ mod tests {
     async fn bad_options_are_rejected_before_any_network_call() {
         // Port 9 (discard) is never answered: reaching the network would fail the test
         // with a transport error rather than return an outcome.
-        let client = DbClient::new("http://127.0.0.1:9", "anon", "jwt".to_string()).unwrap();
+        let client = crate::core::database::test_backend::unreachable();
         for bad in [
             ImportOptions {
                 unitid: Some(167_358),

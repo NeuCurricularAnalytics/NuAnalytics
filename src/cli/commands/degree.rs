@@ -2847,7 +2847,7 @@ courses:
         // what is local is which columns this row type demands.
         let value = serde_json::json!([
             {
-                "program_key": "prog:1|11.0701|2024-2025|BS",
+                "program_key": "prog:1|2024-2025|BS",
                 "degree_id": "cs-2024",
                 "name": "Computer Science",
                 "unitid": 1,
@@ -2860,7 +2860,7 @@ courses:
         ]);
         let rows = nu_analytics::core::json::parse_json_array::<StoredProgramRow>(&value);
         assert_eq!(rows.len(), 1, "only the well-formed row parses");
-        assert_eq!(rows[0].program_key, "prog:1|11.0701|2024-2025|BS");
+        assert_eq!(rows[0].program_key, "prog:1|2024-2025|BS");
         assert_eq!(rows[0].name, "Computer Science");
         assert_eq!(rows[0].unitid, Some(1));
     }
@@ -2870,7 +2870,7 @@ courses:
     fn test_format_program_candidates_layout_and_fallbacks() {
         let rows = vec![
             StoredProgramRow {
-                program_key: "prog:1|11.0701|2024-2025|BS".to_string(),
+                program_key: "prog:1|2024-2025|BS".to_string(),
                 name: "Computer Science".to_string(),
                 unitid: Some(1),
                 institution_raw: Some("Test University".to_string()),
@@ -2889,7 +2889,7 @@ courses:
         let lines = format_program_candidates(&rows);
         assert_eq!(
             lines[0],
-            "prog:1|11.0701|2024-2025|BS  ·  Computer Science  ·  Test University  ·  2024-2025"
+            "prog:1|2024-2025|BS  ·  Computer Science  ·  Test University  ·  2024-2025"
         );
         // Missing institution_raw / catalog_year fall back to placeholders.
         assert_eq!(

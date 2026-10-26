@@ -49,13 +49,17 @@ CREATE TABLE IF NOT EXISTS degree_types (
 --
 -- program_key is the deterministic idempotency key (ON CONFLICT target), built in
 -- src/core/database/import.rs:
---   "prog:<ref>|<cip>|<catalog_year>|<degree_type>|<degree.id or name>"
+--   "prog:<ref>|<catalog_year>|<degree_type>|<degree.id or name>"
 --        (a non-US institution: `db import --institution-ref ca:university-of-toronto`
 --         or `degree.institution_ref`; unitid stays NULL)
---   "prog:<unitid>|<cip>|<catalog_year>|<degree_type>|<degree.id or name>"
+--   "prog:<unitid>|<catalog_year>|<degree_type>|<degree.id or name>"
 --        (when the IPEDS unitid resolved)
 --   "prog:<degree.id>|<catalog_year>"                   (else, when degree.id is present)
 --   "fp:<sha256(institution_raw|name|degree_type|catalog_year|source_url)>"  (fallback)
+-- The CIP is not part of the key (since 0.7.0): most stored CIPs are guesses, and a
+-- program whose CIP is corrected keeps its identity. Keys from before 0.7.0 carried it
+-- after the institution; docs/database/historical/program-key-drop-cip.sql re-keys them,
+-- and `program_key_has_no_cip` (below) refuses such keys from an older client.
 -- `db import --version-date YYYY-MM-DD` appends "|v<YYYY-MM-DD>" to every form and
 -- stores the date in `version_date`; without it the key is unchanged, so rows imported
 -- before version dates existed keep their keys.
@@ -134,6 +138,40 @@ CREATE TABLE IF NOT EXISTS institutions_intl (
     website         TEXT,
     source          TEXT,                  -- where the record came from
     created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================================================
+-- program_cips — confirmed CIP codes, one row per CIP a program has had
+--
+-- Most stored CIPs are guesses. A CIP confirmed by the school goes here, keyed on the
+-- program — (institution_ref, degree_id), which spans catalog years and dated versions
+-- — not on one program_key. `db import` reads it and overrides the guess; `db cip set`
+-- writes it and corrects the programs already stored. No FK to programs: a row may
+-- name a program that is not built yet, so its CIP can line up with IPEDS demographics
+-- before there is a degree to analyze.
+--
+-- History: a school can recode a program. `from_year` is the start of the academic
+-- year the CIP applies from (2024 = 2024-2025), until the next row's; NULL means all
+-- years (in a history, every year before the first dated row). A year before every
+-- dated row, with no NULL row, has no confirmed CIP. NULLS NOT DISTINCT (Postgres 15+)
+-- makes the all-years row unique too, so it can be the upsert target.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS program_cips (
+    id              BIGSERIAL PRIMARY KEY,
+    institution_ref TEXT NOT NULL,          -- as programs.institution_ref: unitid-as-text, or 'cc:slug'
+    degree_id       TEXT NOT NULL,          -- as programs.degree_id
+    from_year       INTEGER,                -- academic-year start; NULL = all years
+    unitid          INTEGER,                -- NULL for non-US; what completions join on
+    cip_code        TEXT NOT NULL,          -- dot notation; checked against cip_codes by the CLI
+    award_level     INTEGER,                -- IPEDS award level (5 = bachelor's, …)
+    name            TEXT NOT NULL,          -- the program as the school names it
+    degree_type     TEXT,
+    source          TEXT NOT NULL,          -- where the CIP came from: an email, a URL, …
+    note            TEXT,
+    created_by      UUID DEFAULT auth.uid(),  -- attribution only, as on programs
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT program_cips_identity UNIQUE NULLS NOT DISTINCT (institution_ref, degree_id, from_year)
 );
 
 -- =============================================================================
@@ -423,6 +461,56 @@ CREATE INDEX IF NOT EXISTS idx_programs_degree_version ON programs (degree_id, v
 CREATE INDEX IF NOT EXISTS idx_programs_country        ON programs (country);
 CREATE INDEX IF NOT EXISTS idx_institutions_intl_country ON institutions_intl (country);
 
+-- program_key_has_no_cip: refuse pre-0.7.0 keys, so an old client importing into a
+-- re-keyed database fails loudly instead of inserting a second copy of the program.
+--
+-- On `programs` a key is refused when it starts with exactly the prefix its own columns
+-- give under the old rule, `prog:<inst>|<cip>|<catalog_year>|<degree_type>|` — exact, not
+-- a pattern, so a new key cannot match by accident, even with a blank CIP or catalog year.
+-- The five child tables carry no CIP column, so they refuse the old shape instead, a CIP
+-- right after the institution. They need it as much as `programs` does: an import writes
+-- the program row last, so without them an old client's refused import would still leave
+-- its child rows behind under a key that names no program. (A pre-0.7.0 key with a
+-- *blank* CIP, `prog:<inst>||…`, passes the child check — no shape tells it from a new key
+-- with a blank catalog year — and is refused only at the program row.)
+--
+-- Each is added only if every existing row satisfies it, so re-applying this file to a
+-- database that still holds old keys does not fail; it raises a NOTICE instead. Run
+-- docs/database/historical/program-key-drop-cip.sql there, which re-keys and adds them.
+-- `db bootstrap` (the Management API) does not show NOTICEs; `--print | psql` does.
+DO $$
+DECLARE
+  t text;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conname = 'program_key_has_no_cip' AND conrelid = 'programs'::regclass) THEN
+    BEGIN
+      ALTER TABLE programs ADD CONSTRAINT program_key_has_no_cip CHECK (NOT starts_with(
+        program_key,
+        'prog:' || coalesce(unitid::text, institution_ref) || '|' || coalesce(cip_code, '')
+          || '|' || coalesce(catalog_year, '') || '|' || coalesce(degree_type, '') || '|'));
+    EXCEPTION WHEN check_violation THEN
+      RAISE NOTICE 'programs still holds pre-0.7.0 keys (with the CIP); program_key_has_no_cip '
+                   'not added. Run docs/database/historical/program-key-drop-cip.sql.';
+      RETURN;
+    END;
+  END IF;
+  FOREACH t IN ARRAY ARRAY['program_courses', 'program_requirements', 'analysis_runs',
+                           'analysis_plans', 'analysis_course_metrics'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conname = 'program_key_has_no_cip' AND conrelid = t::regclass) THEN
+      BEGIN
+        EXECUTE format('ALTER TABLE %I ADD CONSTRAINT program_key_has_no_cip CHECK (program_key !~ %L)',
+                       t, '^prog:[^|]+\|\d\d\.\d{4}\|');
+      EXCEPTION WHEN check_violation THEN
+        RAISE NOTICE '% still holds pre-0.7.0 keys; program_key_has_no_cip not added. Run '
+                     'docs/database/historical/program-key-drop-cip.sql.', t;
+        RETURN;
+      END;
+    END IF;
+  END LOOP;
+END $$;
+
 -- One-off backfill, NOT run by this file: date the programs imported before
 -- version_date existed by their import time. `generation` is the import's epoch
 -- milliseconds. Run by hand once, if wanted; re-running is harmless (only NULLs change).
@@ -507,6 +595,13 @@ DROP POLICY IF EXISTS "auth read analysis_plans"  ON analysis_plans;
 CREATE POLICY "auth read analysis_plans"  ON analysis_plans FOR SELECT USING (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "auth write analysis_plans" ON analysis_plans;
 CREATE POLICY "auth write analysis_plans" ON analysis_plans FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+
+-- program_cips
+ALTER TABLE program_cips ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "auth read program_cips"  ON program_cips;
+CREATE POLICY "auth read program_cips"  ON program_cips FOR SELECT USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "auth write program_cips" ON program_cips;
+CREATE POLICY "auth write program_cips" ON program_cips FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
 
 -- institutions_intl
 DROP POLICY IF EXISTS "auth read institutions_intl"  ON institutions_intl;

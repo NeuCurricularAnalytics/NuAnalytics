@@ -43,6 +43,8 @@ allowed-tools: mcp__nuanalytics__search_degrees mcp__nuanalytics__get_degree mcp
   current analyzer sees it, and say that its figures are not the stored ones.
 - **A `degree_id` can span catalog years.** When it matches several programs, you get
   their `program_key`s. Pick one, and never average across the matches.
+- **A program's `cip_code` is usually a guess.** Only `cip_confirmed: true` means the
+  school confirmed it; say so when the CIP matters to the answer.
 - This skill only reads. Adding a program is `import_degree`, which the server offers
   only when started with `--allow-writes`.
 

@@ -148,6 +148,12 @@ pub struct CompletionDemographicsRequest {
     #[schemars(description = "group_by=school only: schools to return (default 50, max 200)")]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_usize")]
     pub limit: Option<usize>,
+    /// One program at `unitid`, by `degree_id`: answered per IPEDS year under the CIP
+    /// the program was filed under that year ([`super::program_demographics`]).
+    #[schemars(
+        description = "One program's degree_id at unitid (stored, or only registered with a confirmed CIP). Answers each IPEDS year under the CIP the program was filed under that year — confirmed in program_cips, else the stored guess — and says which (cip_source), where the CIP changed, and which other programs IPEDS counts in the same numbers. Needs unitid. Refuses cip_prefix, cip_codes, any group_by but cip, and the institution filters (state, control, carnegie_class, hbcu, tribal, inst_size_min, min_completions, limit). award_level comes from the confirmed row, else the degree type when that is unambiguous; pass it otherwise. A minor has no IPEDS line."
+    )]
+    pub degree_id: Option<String>,
 }
 
 /// A filter not every grouping applies.
@@ -195,7 +201,22 @@ impl DemoFilter {
 /// aggregate, so there is nothing to limit. The one list every surface refuses from.
 #[must_use]
 pub fn inapplicable_filters(req: &CompletionDemographicsRequest) -> Vec<DemoFilter> {
-    let set = [
+    let applies = |f: DemoFilter| match req.group_by.unwrap_or_default() {
+        DemographicsGroupBy::School => true,
+        DemographicsGroupBy::Total => !matches!(f, DemoFilter::MinCompletions | DemoFilter::Limit),
+        DemographicsGroupBy::Cip => false,
+    };
+    set_filters(req)
+        .into_iter()
+        .filter(|&f| !applies(f))
+        .collect()
+}
+
+/// Every [`DemoFilter`] the request sets, in field order — the one table of them, so a
+/// filter added to the request is refused or applied the same way everywhere.
+#[must_use]
+pub fn set_filters(req: &CompletionDemographicsRequest) -> Vec<DemoFilter> {
+    [
         (req.carnegie_class.is_some(), DemoFilter::CarnegieClass),
         (req.control.is_some(), DemoFilter::Control),
         (req.state.is_some(), DemoFilter::State),
@@ -204,16 +225,10 @@ pub fn inapplicable_filters(req: &CompletionDemographicsRequest) -> Vec<DemoFilt
         (req.inst_size_min.is_some(), DemoFilter::InstSizeMin),
         (req.min_completions.is_some(), DemoFilter::MinCompletions),
         (req.limit.is_some(), DemoFilter::Limit),
-    ];
-    let applies = |f: DemoFilter| match req.group_by.unwrap_or_default() {
-        DemographicsGroupBy::School => true,
-        DemographicsGroupBy::Total => !matches!(f, DemoFilter::MinCompletions | DemoFilter::Limit),
-        DemographicsGroupBy::Cip => false,
-    };
-    set.into_iter()
-        .filter(|&(is_set, f)| is_set && !applies(f))
-        .map(|(_, f)| f)
-        .collect()
+    ]
+    .into_iter()
+    .filter_map(|(is_set, f)| is_set.then_some(f))
+    .collect()
 }
 
 /// The CIP selection: exact codes when given, else the prefix, else every CIP.
@@ -644,6 +659,9 @@ pub async fn execute(
 
 /// [`execute`] as pretty JSON, refusing inapplicable filters by field name first.
 pub async fn execute_json(client: &Arc<DbClient>, req: CompletionDemographicsRequest) -> String {
+    if req.degree_id.is_some() {
+        return super::program_demographics::execute_json(client, &req).await;
+    }
     let refused = inapplicable_filters(&req);
     if !refused.is_empty() {
         let names: Vec<&str> = refused.iter().map(|f| f.field()).collect();

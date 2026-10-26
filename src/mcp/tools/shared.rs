@@ -104,11 +104,7 @@ pub struct DegreeSourceArgs {
     pub path: Option<String>,
 }
 
-/// A refusal of the arguments themselves, coded so the MCP error envelope says so.
-#[must_use]
-pub fn bad_arguments(message: impl std::fmt::Display) -> String {
-    coded_error(error_code::BAD_ARGUMENTS, message).to_string()
-}
+pub use crate::core::json::bad_arguments;
 
 /// A degree source, once exactly one was given.
 #[derive(Debug, PartialEq, Eq)]

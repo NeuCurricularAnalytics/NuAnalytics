@@ -32,6 +32,12 @@ pub fn coded_error(code: &str, message: impl std::fmt::Display) -> serde_json::V
     serde_json::json!({ "error": message.to_string(), "code": code })
 }
 
+/// A refusal of the arguments themselves, coded so the MCP error envelope says so.
+#[must_use]
+pub fn bad_arguments(message: impl std::fmt::Display) -> String {
+    coded_error(error_code::BAD_ARGUMENTS, message).to_string()
+}
+
 /// Serialize a JSON error response string from a display-able error value.
 pub fn error_json(msg: impl std::fmt::Display) -> String {
     serde_json::json!({ "error": msg.to_string() }).to_string()

@@ -21,7 +21,9 @@ it.
   representation ratios:
   - `total` pools the matched schools;
   - `school` ranks them;
-  - `cip` lists one school's programs, and needs `unitid`.
+  - `cip` lists one school's programs, and needs `unitid`;
+  - `degree_id` (with `unitid`, instead of `group_by` and the CIP filters) answers for one
+    program: each year under the CIP it was filed under that year, with `cip_source`.
 - `search_degrees` and `get_stored_analysis` give the stored programs and their metrics.
 - `query_sql(sql=…, params={…})` runs read-only SQL for what the typed tools cannot
   express. Call `get_reference(topic="database")` first.
@@ -42,6 +44,9 @@ Open `ipeds.md` before interpreting any demographics figure. In short:
   `min_completions` when ranking schools.
 - **A program can be filed under an unexpected CIP.** When a school returns nothing, use
   the `nearby_cips_with_data` hint rather than concluding it has no such program.
+- **Most stored CIPs are guesses.** A program's `cip_code` is the school's own only when
+  `cip_confirmed` is true (or `cip_source` is `confirmed`). Say which you used; a guessed
+  CIP can put a program's graduates under the wrong code entirely.
 
 ## Done when
 

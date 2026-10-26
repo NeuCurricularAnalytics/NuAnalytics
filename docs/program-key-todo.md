@@ -1,6 +1,11 @@
 # Take the CIP out of `program_key`, then make CIPs correctable
 
-Written 2026-10-25. Status: **planned, nothing started.**
+Written 2026-10-25. Status (2026-10-26): **all three phases done.** Phase 3 (also 0.7.0 — folded in before release) is on
+`feature/cip-registry`, uncommitted; its schema is applied to the live backend and
+smoke-tested there (a throwaway unbuilt registration with a history: set, upsert,
+list, degree demographics, remove). No real CIP has been recorded yet.
+Phase 1 is on `feature/program-key-no-cip` (uncommitted when phase 2 ran). Phase 2 ran on
+the live backend 2026-10-26 — see "Phase 2 — done" below.
 
 ## Why
 
@@ -129,88 +134,90 @@ Correcting a guessed CIP is therefore impossible without breaking identity:
 6. `/check-rs`; `cargo test --all-features` and
    `cargo test --no-default-features --features database` (in a cgroup).
 
-## Phase 2 — migration (user runs it; `psql` on the server, one transaction)
+## Phase 2 — done 2026-10-26
 
-Put the file in `docs/database/historical/` — **not** `docs/database/`, whose `*.sql` must
-match `bootstrap::SCHEMA_FILES` (a test diffs them). Fresh installs never need it.
+Run in this order, from this machine:
 
-Re-key only rows whose key is provably the institution form, built from the row's own
-columns — a blind regex would also strip the catalog year from `prog:<id>|<cat>|v<date>`.
+1. Stopped `nuanalytics-nightly.timer` (not disabled; restarted at the end). No
+   `nuanalytics` process was running.
+2. Installed 0.7.0 (`cargo install --path . --locked`, default features — as 0.6.1 was).
+3. Fresh dump with the service's own `backup.sh`:
+   `supabase-20261026-110143.dump` (65M, verified by `pg_restore -l`). **Rollback point.**
+4. Rehearsal: restored that dump into a scratch database `rekey_rehearsal` in the same
+   container and ran the migration there (15 s). Re-ran it (re-keyed 0), re-applied
+   `programs-schema.sql` (harmless), confirmed all six constraints, that an old-shape
+   key is refused on `programs` and on `program_requirements`, that a new key with blank
+   CIP and blank catalog year is accepted, and no orphans. Dropped the scratch database.
+5. Live: `podman exec -w /tmp -i supabase-db psql -U postgres -d postgres -v
+   ON_ERROR_STOP=1 -f - < docs/database/historical/program-key-drop-cip.sql`. Re-keyed
+   2,012 programs, 78,138 program_courses, 20,812 program_requirements, 11,929 runs,
+   74,694 plans, 415,877 course metrics; six constraints added; 0 old-shape keys left.
+   Mapping copied out of the container (`podman cp`), 2,012 rows.
+6. Nightly-sync rewritten from the mapping, after backing the files up and checking
+   each reproduces byte-for-byte on a no-op round trip: `state/queue.csv` (1,105 keys +
+   1,105 revisit ids), `lists/revisit.csv` (1,961 ids), and `lists/fractional_credits.csv`
+   (2 keys — missed by the plan). Nothing unmapped; line counts unchanged.
+7. Smoke: `db doctor` 9/9; `degree analyze --from-db` on a rewritten queue key loads the
+   stored program and run; a dry-run re-import of a nightly corpus degree with nightly's
+   own flags computes the new key, which exists — it lands on the stored row.
+8. Restarted the timer (next run 22:00 that night).
 
-```sql
-BEGIN;
-SET LOCAL statement_timeout = 0;   -- ~600k rows; don't let a role default cut it off
-CREATE TEMP TABLE rekey ON COMMIT DROP AS
-SELECT program_key AS old_key,
-       'prog:' || coalesce(unitid::text, institution_ref) || '|' ||
-       substr(program_key,
-              length('prog:' || coalesce(unitid::text, institution_ref) || '|' ||
-                     coalesce(cip_code, '') || '|') + 1) AS new_key
-  FROM programs
- WHERE program_key LIKE 'prog:' || coalesce(unitid::text, institution_ref) || '|' ||
-                        coalesce(cip_code, '') || '|%';
--- expect 1,963 (all rows today); stop if not
-SELECT count(*), count(DISTINCT new_key) FROM rekey;
+**Not done, deliberately:** a live import by the 0.6.1 binary to see the refusal text.
+It upserts the shared `courses` rows before it reaches a refused write, so the test
+itself would have side effects; the rehearsal showed the constraints refuse old keys at
+the database. The CHANGELOG therefore names no error wording.
 
-UPDATE programs                p SET program_key = r.new_key FROM rekey r WHERE p.program_key = r.old_key;
-UPDATE program_courses         t SET program_key = r.new_key FROM rekey r WHERE t.program_key = r.old_key;
-UPDATE program_requirements    t SET program_key = r.new_key FROM rekey r WHERE t.program_key = r.old_key;
-UPDATE analysis_runs           t SET program_key = r.new_key FROM rekey r WHERE t.program_key = r.old_key;
-UPDATE analysis_plans          t SET program_key = r.new_key FROM rekey r WHERE t.program_key = r.old_key;
-UPDATE analysis_course_metrics t SET program_key = r.new_key FROM rekey r WHERE t.program_key = r.old_key;
+**The `needs_confirmation` concern below is mostly moot:** nightly probes with `--dry-run`
+and skips a variant whose run is already stored under the key (`importer.py` `_has_run`)
+before importing, so its retries never reach the existence check.
 
--- checks before COMMIT: no child row of any of the five tables points at a missing
--- program (repeat this for program_courses, program_requirements, analysis_plans,
--- analysis_course_metrics); all must be 0
-SELECT count(*) FROM analysis_runs r WHERE NOT EXISTS (SELECT 1 FROM programs p WHERE p.program_key = r.program_key);
+## Phase 2 — migration (reference)
 
--- Export the mapping NOW: the temp table is dropped at COMMIT. Phase 2b needs it.
-\copy rekey TO 'program-key-rekey.csv' CSV HEADER
+**The file is `docs/database/historical/program-key-drop-cip.sql`** (written 2026-10-26,
+in phase 1). Not in `docs/database/`, whose `*.sql` must match `bootstrap::SCHEMA_FILES`.
+Read its header; in short:
 
--- Refuse old-form keys from now on, so a 0.6.x import fails loudly instead of inserting
--- a duplicate. Only rows with a CIP are checked: with an empty CIP the old pattern is
--- `prog:<inst>||%`, which a NEW key also produces when catalog_year is blank (49
--- programs have a blank catalog year today) — checking those would refuse valid rows.
--- A non-empty CIP cannot match a new key unless it equals the catalog year.
--- The cost: an old binary importing a program with no CIP is not caught (1 row today).
-ALTER TABLE programs ADD CONSTRAINT program_key_has_no_cip CHECK (
-  coalesce(cip_code, '') = ''
-  OR program_key NOT LIKE 'prog:' || coalesce(unitid::text, institution_ref) || '|'
-                          || cip_code || '|%');
-COMMIT;
-```
+- A key is re-keyed only when it starts with **exactly** the prefix its own row's columns
+  give under the old rule: `prog:<unitid or ref>|<cip>|<catalog_year>|<degree_type>|`,
+  compared with `left(...) =`, not `LIKE`. Dry run against the live backend, 2026-10-26:
+  all 2,012 programs match (nightly added 49 since the 1,963 of 2026-10-25), 2,012
+  distinct new keys, none equal to an existing key; no orphaned child rows in any of
+  the five tables beforehand.
+- It aborts (`RAISE EXCEPTION`) on duplicate new keys, a new key that already exists,
+  any key that still carries a CIP but doesn't match its columns, or orphaned child rows
+  after the updates.
+- It exports `program-key-rekey.csv` **inside** the transaction (the temp table is
+  dropped at `COMMIT`), then adds `program_key_has_no_cip`.
+- Re-running it changes nothing: a new key never starts with its row's old prefix.
 
-**Review fixes (2026-10-25), recorded so they are not undone:**
+**The constraints.** `programs` refuses a key that starts with its own old prefix
+(`starts_with`); the five child tables, which have no CIP column, refuse the old shape
+`^prog:[^|]+\|\d\d\.\d{4}\|`. The child ones were added in the phase 1 review
+(2026-10-26): an import writes the program row **last**, so a constraint on `programs`
+alone refused an old client's import only after its courses, requirements, run, plans and
+metrics were written — orphans under a key naming no program, which would also make the
+migration's own orphan check abort a re-run. Live check that day: 0 of 2,012 new keys
+trip the child pattern; it catches 2,011 old ones (the one it misses has a blank CIP, and
+`programs` still refuses it). Server is Postgres 17.6, so `starts_with` is available.
 
-- The first draft of the constraint checked empty CIPs too, and claimed a new key could
-  never contain `||`. It can: `prog:<inst>||BS|…` when the catalog year is blank (e.g.
-  today's `prog:476975|11.0101||BS|…` becomes `prog:476975||BS|…`). Combined with a blank
-  CIP, the constraint would have refused a valid new-binary import.
-- The first draft exported the mapping after `COMMIT`, by which time `ON COMMIT DROP` had
-  removed it.
-- `analysis_runs.config_fingerprint` hashes the program key in
-  (`import.rs`, `config_fingerprint`). It is advisory (schema comment: "NOT the
-  identity"), and nothing in this repo or nightly-sync looks runs up by it, so stale
-  fingerprints are left as they are: the only effect is that a re-run of an identical
-  configuration is not recognised as a duplicate of a pre-migration run — it costs a
-  redundant row, which is the failure mode that column was designed for. Do not try to
-  recompute it in SQL.
+The `programs` constraint uses the same exact-prefix test. `programs-schema.sql` adds it too, in a
+`DO` block that adds each constraint inside an exception handler — a `check_violation`
+becomes a NOTICE naming the migration — so re-applying the schema file to an un-migrated
+database does not fail. `db bootstrap` (Management API) does not display NOTICEs; only
+`--print | psql` does, so after the cutover confirm the constraints exist from psql. The Rust test `no_key_starts_with_its_rows_old_prefix` mirrors it.
 
-The constraint also belongs in `programs-schema.sql` (phase 1), so fresh installs get it;
-add it there idempotently (`DROP CONSTRAINT IF EXISTS` then `ADD`), after the
-`ALTER TABLE … ADD COLUMN` block. Add a test, if one is practical against the schema
-text, that a key built by `program_key` never matches the pattern. Confirm on the server
-that an import by the old binary is refused with a readable error (PostgREST returns 400
-with code `23514`), and record the wording it prints in the CHANGELOG entry.
+**Review fixes, recorded so they are not undone:**
 
-Verify the `cip_code` column equals the CIP inside each key before trusting the `LIKE`
-guard (checked 2026-10-25 only that column = document; the key itself is built from the
-same `opts.cip_code.or(degree.cip_code)` as the column, so it should hold — the
-`expect 1,963` count is the check).
-
-`analysis_plans` and `analysis_course_metrics` both carry `program_key` (confirmed in
-`programs-schema.sql`). Before writing the final file, grep the schema once more for any
-other `program_key` column or view (`programs_latest` selects `p.*`, so it follows).
+- The first draft matched on `prog:<inst>|<cip>|%` with `LIKE`. With a blank CIP that
+  pattern (`prog:<inst>||%`) also matches a *new* key whose catalog year is blank, so the
+  draft had to skip blank-CIP rows; it would also have re-keyed such a row a second time
+  on a re-run, and `LIKE` treats `_` in a value as a wildcard. Matching the full old
+  prefix exactly removes all three, and the constraint now covers blank-CIP rows too.
+- The first draft exported the mapping after `COMMIT`.
+- `analysis_runs.config_fingerprint` hashes the program key in. It is advisory and read by
+  nothing in this repo or nightly-sync, so stale fingerprints stay: an identical re-run
+  of a pre-migration configuration is not recognised as a duplicate and costs a redundant
+  row. Do not try to recompute it in SQL.
 
 ### Phase 2b — nightly-sync, same window
 
@@ -223,6 +230,14 @@ for a `prog:`/`fp:` token; `runner.py` and `lists.py` pass keys through). What m
   first. `lists/revisit.csv` carries the same ids — rewrite it too, or regenerate it.
 - The `nuanalytics` binary it calls (`~/.cargo/bin`) — the 0.7.0 install in step 1 of the
   cutover.
+
+**Expect one round of `needs_confirmation` from nightly** (found in the phase 1 review).
+Nightly passes `--unitid` or `--institution-ref` (and `--version-date`) on every import,
+and `--replace` only for non-full variants. 0.7.0 writes those options into the stored
+document, so the first re-import of an already-stored *full* program under the same
+dated key hashes differently and reports `needs_confirmation` instead of `skipped`. Once
+per program; new dated versions are new keys and unaffected. Check how nightly records a
+`needs_confirmation` result before resuming it, so a batch of them isn't read as failures.
 
 Leave alone: `reports/*.md` and the 875 `corpus/**/import.log` files (history), and the
 `tests/test_core.py` fixture id (opaque test data).
@@ -249,8 +264,8 @@ one would reapply its guess over a correction.
 
 ## Phase 3 — correcting CIPs (the original goal)
 
-**Release:** phase 3 is additive — a new table, new commands — so it ships after the
-cutover as 0.7.1, following the 0.6.1 precedent (`institutions_intl` was additive too).
+**Release:** phase 3 is additive — a new table, new commands. It was built as 0.7.1 and
+folded into 0.7.0 before either was released (2026-10-26).
 Its CHANGELOG entry says to apply `programs-schema.sql` first: `db doctor`'s schema check
 requires every table in `tables::ALL`, so it fails on a database without `program_cips`.
 
@@ -341,9 +356,12 @@ the same `degree_id`**. That is the one thing to get right:
 
 - When registering an unbuilt program, the CLI proposes the id the builders would
   produce (the slug convention: `<school-slug>-<program-slug>`) and prints it.
-- `db import` already accepts `--degree-id`; nightly can pass it. Optional nightly change:
-  turn unbuilt registry rows into build items (it already generates items per school and
-  CIP in `lists.py`), so a confirmed program is queued with its id fixed in advance.
+- `db import` already accepts `--degree-id`. **Done in nightly-sync (2026-10-26):** a
+  `registered` stream, first in priority, turns unbuilt `program_cips` rows into build items
+  pinned to the registered `degree_id` (the revisit pin, generalised), with the confirmed CIP
+  in the build prompt. It supersedes a pending discovered build of the same program, and
+  holds back a registration whose school stores a program of the same name under another
+  id (a likely typo), naming the `db cip relink` to run.
 - `db cip relink <school> <old-id> <new-id>` for when a build arrives under another id.
 
 ### 3.3 Applying it
@@ -422,6 +440,17 @@ award_level)`.
   check fails (`every_early_exit_lists_the_same_checks_as_a_full_run` catches it).
 - MCP: read-only — `cip_confirmed` and `cip_source` in existing outputs. Writes stay CLI
   (or behind `--allow-writes` if wanted later).
+
+### 3.5a Carried over from the phase 1 review
+
+- An override doesn't touch `conversion_warnings`: a document whose warnings say
+  "cip_code inferred from program name" still says so after `--cip` or a registry
+  correction. 3.3's "confirmed: <source>" note should replace the stale warning, not sit
+  beside it.
+- `--institution` is now written into the document (phase 1). The `fp:` key hashes
+  `degree.institution`, so an unresolved program imported with `--institution` gets a
+  different `fp:` key under 0.7.0. There are no `fp:` rows today (all 2,012 are
+  institution-form), so nothing to migrate.
 
 ### 3.6 Out of scope for now
 

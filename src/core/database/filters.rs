@@ -16,6 +16,8 @@ pub(super) enum FilterKind {
     /// In list (`in.(v1,v2,v3)`) — values stored comma-separated in the String slot.
     /// Values must not contain commas (safe for integers and CIP codes).
     In,
+    /// `IS NULL` (`is.null`) — the value slot is unused.
+    IsNull,
 }
 
 /// Builder for `PostgREST` query filters.
@@ -120,6 +122,13 @@ impl QueryFilters {
                 .join(",");
             self.entries.push((FilterKind::In, col, joined));
         }
+        self
+    }
+
+    /// Add an `IS NULL` filter on `col`.
+    #[must_use]
+    pub fn is_null(mut self, col: &'static str) -> Self {
+        self.entries.push((FilterKind::IsNull, col, String::new()));
         self
     }
 

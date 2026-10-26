@@ -17,6 +17,7 @@ pub mod degrees;
 pub mod institutions;
 pub mod lookup;
 pub mod metrics;
+pub mod program_demographics;
 pub mod report_source;
 pub mod schema_doc;
 pub mod sql;

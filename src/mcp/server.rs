@@ -1667,7 +1667,7 @@ mod tests {
     #[test]
     fn a_stored_program_refuses_fresh_run_settings_in_every_analysis_tool() {
         let server = NuAnalyticsMcpServer::new();
-        let stored = "prog:1|11.0701|2025-2026|BS|test";
+        let stored = "prog:1|2025-2026|BS|test";
         let calls: [(&str, ToolCall<'_>); 4] = [
             (
                 "analyze_degree",

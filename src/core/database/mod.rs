@@ -23,6 +23,7 @@
 
 pub mod auth;
 pub mod bootstrap;
+pub mod cips;
 pub mod client;
 pub mod doctor;
 pub mod error;
@@ -32,6 +33,8 @@ pub mod import;
 pub mod ipeds;
 pub mod models;
 pub mod prune;
+#[cfg(test)]
+pub(crate) mod test_backend;
 pub mod validate;
 
 /// Backend function names, defined in `docs/database/programs-schema.sql`.
@@ -81,6 +84,41 @@ pub mod variants {
     pub const TRIMMED: &str = "trimmed";
 }
 
+/// The `programs.program_kind` values `db import` derives (`derive_program_kind`).
+pub mod program_kinds {
+    /// A major — the default.
+    pub const MAJOR: &str = "major";
+    /// A minor: not an IPEDS award.
+    pub const MINOR: &str = "minor";
+    /// A concentration within a major.
+    pub const CONCENTRATION: &str = "concentration";
+    /// A certificate.
+    pub const CERTIFICATE: &str = "certificate";
+    /// A track within a major.
+    pub const TRACK: &str = "track";
+    /// A specialization within a major.
+    pub const SPECIALIZATION: &str = "specialization";
+    /// An emphasis within a major.
+    pub const EMPHASIS: &str = "emphasis";
+    /// A micro-credential.
+    pub const MICRO: &str = "micro";
+
+    /// Every kind, in the order `derive_program_kind` tries them.
+    pub const ALL: &[&str] = &[
+        MAJOR,
+        MINOR,
+        CONCENTRATION,
+        CERTIFICATE,
+        TRACK,
+        SPECIALIZATION,
+        EMPHASIS,
+        MICRO,
+    ];
+
+    /// The kinds IPEDS counts under the major they belong to, not as awards of their own.
+    pub const COUNTED_UNDER_PARENT: &[&str] = &[CONCENTRATION, TRACK, SPECIALIZATION, EMPHASIS];
+}
+
 /// Supabase table name constants — use these instead of raw string literals.
 pub mod tables {
     /// IPEDS institution directory
@@ -104,6 +142,8 @@ pub mod tables {
     pub const PROGRAM_COURSES: &str = "program_courses";
     /// Flattened requirement tree per program (addressed by `req_path`)
     pub const PROGRAM_REQUIREMENTS: &str = "program_requirements";
+    /// Confirmed CIP codes per program (`institution_ref`, `degree_id`), with history
+    pub const PROGRAM_CIPS: &str = "program_cips";
     /// Lookup for normalized `degree_type` codes
     pub const DEGREE_TYPES: &str = "degree_types";
     /// One row per `degree analyze` run of a program (params + variant + degree-level metrics)
@@ -153,6 +193,7 @@ pub mod tables {
         INSTITUTION_SECTOR,
         INSTITUTION_SIZE,
         PROGRAMS,
+        PROGRAM_CIPS,
         PROGRAM_COURSES,
         PROGRAM_REQUIREMENTS,
     ];

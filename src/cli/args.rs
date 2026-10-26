@@ -862,6 +862,31 @@ pub enum DbSubcommand {
         #[arg(long, value_enum, default_value = "json", global = true)]
         format: crate::output::OutputFormat,
     },
+    /// Record the CIP codes schools confirm for their programs.
+    ///
+    /// Most stored CIPs are guesses. A CIP recorded here is keyed on the program —
+    /// school and `degree_id` — so it covers every catalog year and dated version of
+    /// it: `db import` uses it in place of the document's guess, and setting one
+    /// corrects the programs already stored. A program not built yet can be
+    /// registered too, so its CIP lines up with IPEDS demographics
+    /// (`db query demographics --school <UNITID> --degree <DEGREE_ID>`).
+    ///
+    /// Schools recode programs: `--from 2024-2025` records a CIP from that academic
+    /// year on, and without it the CIP applies to all years.
+    ///
+    /// Examples:
+    /// ```sh
+    /// nuanalytics db cip set 167358 neu-bscs 11.0701 --source "registrar email 2026-11-02"
+    /// nuanalytics db cip set 167358 neu-bscs 11.0102 --from 2024-2025 --source "catalog 2024"
+    /// nuanalytics db cip set 167358 neu-bs-ai 11.0102 --name "BS in AI" --degree-type BS --source "dept"
+    /// nuanalytics db cip list --school 167358 --format table
+    /// nuanalytics db cip import confirmed.csv           # dry run; add --apply to write
+    /// ```
+    Cip {
+        /// The `db cip` subcommand to run.
+        #[command(subcommand)]
+        subcommand: CipSubcommand,
+    },
     /// Generate the degree analysis report (HTML) for a stored program.
     ///
     /// Reads the stored analysis run rather than re-running the analysis, so the report
@@ -1004,7 +1029,9 @@ pub enum DbSubcommand {
         #[arg(long, value_name = "NAME")]
         institution: Option<String>,
 
-        /// Override the CIP code (part of the natural program key).
+        /// Override the CIP code. Not part of the program key, so a corrected CIP lands
+        /// on the same program (write it with `--replace`, or `--force` if verified);
+        /// stored in the document.
         #[arg(long, value_name = "CIP")]
         cip: Option<String>,
 
@@ -1037,6 +1064,119 @@ pub enum DbSubcommand {
         #[arg(short = 'j', long, value_name = "N", default_value_t = 1)]
         jobs: usize,
     },
+}
+
+/// `db cip` subcommands.
+#[cfg(feature = "database")]
+#[derive(Debug, Subcommand)]
+pub enum CipSubcommand {
+    /// Record one program's confirmed CIP, and correct its stored programs.
+    Set(SetCipArgs),
+    /// Record many confirmed CIPs from a CSV file — a dry run unless `--apply`.
+    ///
+    /// Columns: `school,degree_id,cip_code,from,source,name,degree_type,award_level,note`
+    /// (`from` is `YYYY-YYYY` or blank for all years; `name` may be blank for a stored
+    /// program; `degree_type`, `award_level` and `note` are optional).
+    ///
+    /// The dry run checks each row against the database as it is, so two rows for one
+    /// program in the same file are each reported as if the other were not there;
+    /// `--apply` writes them in order and ends in the state the file describes.
+    Import {
+        /// The CSV file.
+        file: std::path::PathBuf,
+        /// Write the rows. Without it, every row is checked and nothing is written.
+        #[arg(long)]
+        apply: bool,
+    },
+    /// List the confirmed CIPs, and whether each program is built yet.
+    List {
+        /// One school (unitid or non-US ref).
+        #[arg(long)]
+        school: Option<String>,
+        /// Only programs not built yet.
+        #[arg(long)]
+        unbuilt: bool,
+        /// Output format: `json` (default) or `table`.
+        #[arg(long, value_enum, default_value = "json")]
+        format: crate::output::OutputFormat,
+    },
+    /// Move a program's confirmed CIPs to another `degree_id` — when its build was
+    /// imported under a different id.
+    Relink {
+        /// The school (unitid or non-US ref).
+        school: String,
+        /// The `degree_id` the CIPs are recorded under.
+        old_id: String,
+        /// The `degree_id` the build has.
+        new_id: String,
+    },
+    /// Remove a program's confirmed CIPs, then correct its stored programs: one a
+    /// remaining row covers takes that row's CIP; one no row covers keeps the CIP it has.
+    Remove {
+        /// The school (unitid or non-US ref).
+        school: String,
+        /// The program's `degree_id`.
+        degree_id: String,
+        /// Only the row from this academic year (`YYYY-YYYY`).
+        #[arg(long, value_name = "YYYY-YYYY", value_parser = nu_analytics::database::cips::parse_academic_year, conflicts_with = "all_years")]
+        from: Option<i32>,
+        /// Only the all-years row.
+        #[arg(long = "all-years")]
+        all_years: bool,
+    },
+}
+
+/// `db cip set`'s arguments — a struct of their own so the dispatch can convert them in
+/// one step.
+#[cfg(feature = "database")]
+#[derive(clap::Args, Debug)]
+pub struct SetCipArgs {
+    /// The school: an IPEDS unitid, or a non-US ref such as `ca:university-of-toronto`.
+    pub school: String,
+    /// The program's `degree_id` (`db query degrees --school <UNITID>` lists them).
+    pub degree_id: String,
+    /// The CIP code, dot notation (e.g. `11.0701`).
+    pub cip: String,
+    /// Where the CIP came from — kept with it, and noted in the stored document.
+    #[arg(long)]
+    pub source: String,
+    /// The academic year it applies from, `YYYY-YYYY`. Omit for all years.
+    #[arg(long, value_name = "YYYY-YYYY", value_parser = nu_analytics::database::cips::parse_academic_year)]
+    pub from: Option<i32>,
+    /// The program's name. Required when it is not stored yet.
+    #[arg(long)]
+    pub name: Option<String>,
+    /// Its degree type (e.g. `BS`). Overrides the stored program's; give it with
+    /// `--name` for one not built yet.
+    #[arg(long = "degree-type", value_name = "TYPE")]
+    pub degree_type: Option<String>,
+    /// IPEDS award level (3 associate, 5 bachelor's, 7 master's). Derived from the
+    /// degree type when that is unambiguous.
+    #[arg(long = "award-level", value_name = "N")]
+    pub award_level: Option<i32>,
+    /// Anything else to keep with it.
+    #[arg(long)]
+    pub note: Option<String>,
+    /// Check it and report what would change, writing nothing.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[cfg(feature = "database")]
+impl From<SetCipArgs> for nu_analytics::database::cips::NewCip {
+    fn from(a: SetCipArgs) -> Self {
+        Self {
+            school: a.school,
+            degree_id: a.degree_id,
+            cip_code: a.cip,
+            from_year: a.from,
+            source: a.source,
+            name: a.name,
+            degree_type: a.degree_type,
+            award_level: a.award_level,
+            note: a.note,
+        }
+    }
 }
 
 /// Filters for `db query demographics`.
@@ -1085,6 +1225,17 @@ pub struct DemographicsArgs {
     /// Maximum schools returned by `--group-by school` (default 50, max 200).
     #[arg(long, value_name = "N")]
     pub limit: Option<usize>,
+    /// One program at `--school`, by its `degree_id`: each IPEDS year under the CIP the
+    /// program was filed under that year (confirmed with `db cip set`, else the stored
+    /// guess). Works for a program registered but not built. Looks the CIP up itself, so
+    /// it takes none of `--cip`, `--cip-codes`, `--group-by` or the institution filters.
+    #[arg(
+        long,
+        value_name = "DEGREE_ID",
+        requires = "school",
+        conflicts_with_all = ["cip", "cip_codes", "group_by", "state", "control", "carnegie_class", "hbcu", "tribal", "limit"]
+    )]
+    pub degree: Option<String>,
 }
 
 /// How `db query demographics` should group its rows.
@@ -1415,6 +1566,66 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    #[cfg(feature = "database")]
+    fn test_demographics_degree_needs_a_school_and_no_cip_or_grouping() {
+        let parse = |extra: &[&str]| {
+            let mut argv = vec!["nuanalytics", "db", "query", "demographics"];
+            argv.extend_from_slice(extra);
+            Cli::try_parse_from(argv)
+        };
+        assert!(parse(&["--degree", "x"]).is_err(), "requires --school");
+        for clash in [
+            ["--cip", "11."],
+            ["--cip-codes", "11.0701"],
+            ["--group-by", "school"],
+            ["--state", "MA"],
+        ] {
+            let mut argv = vec!["--school", "167358", "--degree", "x"];
+            argv.extend_from_slice(&clash);
+            assert!(parse(&argv).is_err(), "{clash:?} accepted with --degree");
+        }
+        assert!(parse(&["--school", "167358", "--degree", "x"]).is_ok());
+    }
+
+    #[test]
+    #[cfg(feature = "database")]
+    fn test_cip_remove_takes_one_year_or_the_all_years_row() {
+        let remove = |extra: &[&str]| {
+            let mut argv = vec!["nuanalytics", "db", "cip", "remove", "167358", "neu-cs"];
+            argv.extend_from_slice(extra);
+            Cli::try_parse_from(argv)
+        };
+        assert!(remove(&["--from", "2024-2025", "--all-years"]).is_err());
+        assert!(
+            remove(&["--from", "2024"]).is_err(),
+            "a bare year is ambiguous"
+        );
+        assert!(remove(&["--all-years"]).is_ok() && remove(&[]).is_ok());
+    }
+
+    #[test]
+    #[cfg(feature = "database")]
+    fn test_cip_set_refuses_a_bare_year() {
+        let set = |from: &str| {
+            Cli::try_parse_from([
+                "nuanalytics",
+                "db",
+                "cip",
+                "set",
+                "167358",
+                "neu-cs",
+                "11.0701",
+                "--source",
+                "s",
+                "--from",
+                from,
+            ])
+        };
+        assert!(set("2024").is_err());
+        assert!(set("2024-2025").is_ok());
+    }
 
     #[cfg(feature = "database")]
     fn parse_import(extra: &[&str]) -> Result<Cli, clap::Error> {

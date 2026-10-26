@@ -10,8 +10,8 @@ codebase — run `/init` if you want that.
 
 Default features: `log-info`, `log-debug`, `verbose`, `file-logging`, `database`, `mcp`.
 
-    cargo test --all-features                       # 1571 tests, clean
-    cargo test --no-default-features --features database   # 1328 — the CLI's feature set
+    cargo test --all-features                       # 1639 tests, clean
+    cargo test --no-default-features --features database   # 1396 — the CLI's feature set
     cargo build --features database
 
 **Three feature sets are tested in CI, and the middle one is load-bearing.** The query
@@ -146,7 +146,7 @@ shapes. Do not add a cause of our own to a rejection. The password is prompted v
 
 **`nuanalytics db doctor` is the first thing to run against an unfamiliar deployment.** It
 walks configuration → reachability → anon-key read → session → authenticated read → schema
-(all 21 tables) → seed data → row limit → query functions, each check gating the next so the report names one
+(all 22 tables) → seed data → row limit → query functions, each check gating the next so the report names one
 cause rather than repeating it. Logic is in `src/core/database/doctor.rs`; the CLI only
 formats. A check added to `diagnose` must also be added to the three `*_DEPENDENTS` arrays,
 or it silently disappears from the report when an earlier check fails —
@@ -174,6 +174,27 @@ does not have.
 `db status` and the MCP server's `db_not_configured_response` render it. Add wording there
 rather than at a call site, and keep to the rule the TODO sets: name the backend, name
 what failed, name the next step, and assert no cause the code has not established.
+
+**`program_key` does not contain the CIP (0.7.0).** It is
+`prog:<unitid or ref>|<catalog_year>|<degree_type>|<degree_id or name>[|v<date>]`, built
+only in `base_program_key`; everything else treats it as opaque. Most stored CIPs are
+guesses, and a corrected CIP must land on the same row. Every table that carries
+`program_key` has a `program_key_has_no_cip` CHECK refusing the old shape, so a pre-0.7.0
+client's import fails instead of forking the program — keep any new table that carries the
+key in that set. Import overrides (`--cip`, `--catalog`, `--degree-id`, `--institution`,
+`--unitid`, `--institution-ref`) are written into the stored document by
+`apply_identity_overrides`, so a pulled degree re-imports under its own key; a unit id
+found by name resolution is deliberately not. `docs/program-key-todo.md` has the
+migration and the cutover.
+
+**Confirmed CIPs live in `program_cips` (0.7.0), keyed on the program, not the key** —
+`(institution_ref, degree_id, from_year)`, NULL `from_year` = all years, history resolved
+by `cips::resolve`. `db import` applies the row in force (`build_import_plan_with`), and
+`db cip set` corrects stored programs through `cips::reapply`; both go through
+`cips::apply_confirmed` and hash with `serialize_degree_json`, which is what makes a
+corrected program re-import as unchanged — `a_stored_correction_and_a_reimport_hash_the_same`
+pins it, so never let the two paths build the document differently. IPEDS survey year Y
+is academic year Y-1 (`ipeds_academic_year`).
 
 ## The MCP server
 

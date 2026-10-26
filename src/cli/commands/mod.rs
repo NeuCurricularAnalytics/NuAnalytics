@@ -22,4 +22,6 @@ pub mod report;
 pub mod mcp;
 
 #[cfg(feature = "database")]
+pub mod cip;
+#[cfg(feature = "database")]
 pub mod db;

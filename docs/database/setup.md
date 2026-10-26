@@ -177,7 +177,7 @@ If a step fails during `db bootstrap`, it stops there and names the file rather 
 carrying on and burying the cause under a cascade of missing-relation errors. Everything
 is idempotent, so fix the problem and re-run.
 
-Verify the result with `nuanalytics db doctor`, which checks all 21 tables and the seed
+Verify the result with `nuanalytics db doctor`, which checks all 22 tables and the seed
 row counts.
 
 ### What gets created
@@ -347,7 +347,7 @@ Backend:  https://db.example.edu
 ✓ anon-key read        200 — row-level security filters an unauthenticated read rather than rejecting it
 ✓ session              valid, you@example.edu
 ✓ authenticated read   succeeded
-✓ schema               all 21 tables present
+✓ schema               all 22 tables present
 ✓ seed data            cip_codes has all 2173 rows
 ✓ row limit            completions returned all 5000 rows of a 5000-row request
 
@@ -359,7 +359,7 @@ rather than six errors that all share one cause. Exits 1 on any failure. Warning
 fail it — a short optional seed still leaves a working deployment.
 
 Run this before Step 4 as well as after: on an unconfigured schema it tells you exactly
-which of the 21 tables are missing, which is faster than reading SQL errors.
+which of the 22 tables are missing, which is faster than reading SQL errors.
 
 ---
 
@@ -489,7 +489,7 @@ nuanalytics db logout
 `docs/database/programs-schema.sql` (+ `docs/database/program-lookup-seed.sql`,
 applied in [Step 4b](#step-4b--the-five-files-if-you-are-applying-them-by-hand)) add a
 normalized, **queryable** projection of imported degree programs alongside the
-lossless source document. Nine tables and a view:
+lossless source document. Ten tables and a view:
 
 | Table | What it holds |
 |-------|---------------|
@@ -497,6 +497,7 @@ lossless source document. Nine tables and a view:
 | `programs` | One row per program. The lossless unified-JSON `document` (JSONB) is the source of truth; the other columns are a queryable scalar projection. `program_key` is the deterministic idempotency key (see [Program keys](#program-keys)). `version_date` dates a revision; `country` is `US` unless the school is in `institutions_intl` |
 | `programs_latest` | View over `programs`: the newest version of each program, one row per school (`unitid`, else `institution_ref`) and `degree_id`, by `version_date` (undated last) then latest import |
 | `institutions_intl` | Schools outside the US, which IPEDS does not cover: `ref` (`<country>:<slug>`, e.g. `ca:university-of-toronto`), `country`, `region`, `name`, `alternate_names`, `website`, `source`. Programs there carry `institution_ref = ref` and a NULL `unitid` |
+| `program_cips` | CIP codes the schools confirmed, keyed on the program — `(institution_ref, degree_id)` — with a history (`from_year`, NULL = all years). Read by `db import`, written by `db cip set`; see [Confirmed CIP codes](#confirmed-cip-codes) |
 | `courses` | Shared per-institution course catalog, partitioned by `institution_ref` and keyed `(institution_ref, course_code)` |
 | `program_courses` | M:N junction programs ↔ courses, with per-program `credit_hours_override` / `name_as_listed` |
 | `program_requirements` | The requirement tree flattened by `req_path` / `parent_path`, with JSONB `selection_spec` / `req_constraints` and `is_impossible` / `allow_double_count` flags |
@@ -536,7 +537,7 @@ nuanalytics db import report.json --unitid 167358 --replace
 ```
 ℹ <report>.json: skipped (dry-run)
   institution:    Colorado State University (unitid 126818)
-  program_key:    prog:126818|11.0701|2025-2026|BS
+  program_key:    prog:126818|2025-2026|BS|colorado-state-university-bs-computer-science
   variant:        full
   analysis:       10000 variations (shuffled), 7 sample plans
   rows:           82 courses, 32 requirements, 72 course-metrics
@@ -549,10 +550,17 @@ its row:
 
 | Institution | Key |
 |---|---|
-| Non-US (`--institution-ref` or `degree.institution_ref`) | `prog:<ref>\|<cip>\|<catalog_year>\|<degree_type>\|<degree_id or name>` |
-| IPEDS unitid resolved | `prog:<unitid>\|<cip>\|<catalog_year>\|<degree_type>\|<degree_id or name>` |
+| Non-US (`--institution-ref` or `degree.institution_ref`) | `prog:<ref>\|<catalog_year>\|<degree_type>\|<degree_id or name>` |
+| IPEDS unitid resolved | `prog:<unitid>\|<catalog_year>\|<degree_type>\|<degree_id or name>` |
 | Unresolved, degree has an `id` | `prog:<degree_id>\|<catalog_year>` |
 | Otherwise | `fp:<sha256(institution\|name\|degree_type\|catalog_year\|source_url)>` |
+
+The CIP is not part of the key (since 0.7.0), so correcting a program's CIP — with
+`--cip`, or in the file — re-imports onto the same row rather than adding a second
+program. As with any changed program, it is written with `--replace` (`--force` for a
+verified one); without, it reports that confirmation is needed. `--cip`, `--catalog`,
+`--degree-id`, `--institution`, `--unitid` and `--institution-ref` are written into the
+stored document too, so a degree pulled back out says what its row is keyed on.
 
 `--version-date YYYY-MM-DD` appends `|v<YYYY-MM-DD>` to any of these and stores the
 date in `programs.version_date`, so dated revisions of one catalog year are kept side by
@@ -582,6 +590,66 @@ The full flag set (`--variant`, `--unitid`, `--institution-ref`, `--version-date
 `--institution`, `--cip`, `--catalog`, `--degree-id`, `--force`, `--replace`, `--skip-existing`,
 `--dry-run`, `-j/--jobs`) is available via `nuanalytics db import --help`; the
 [MCP `import_degree` tool](../mcp.md#tools-that-write) takes the same options.
+
+### Confirmed CIP codes
+
+Most stored CIPs are guesses: on 2026-10-25, 76% of programs carried a conversion
+warning saying the CIP was inferred from the program's name. When a school confirms a
+program's CIP, record it with `db cip set`:
+
+```sh
+# Find the program's degree_id
+nuanalytics db query degrees --school 167358 --format table
+
+# All years
+nuanalytics db cip set 167358 neu-bscs 11.0701 --source "registrar email 2026-11-02"
+
+# The school recoded it from 2024-2025 on
+nuanalytics db cip set 167358 neu-bscs 11.0102 --from 2024-2025 --source "catalog 2024"
+```
+
+The CIP is recorded against the **program** — school and `degree_id` — so it covers
+every catalog year and dated version of it. Setting one corrects the stored programs at
+once (the `cip_code` column, the document, and a "cip_code confirmed: …" note in its
+`conversion_warnings`), and every later `db import` of that program uses it in place of
+the document's guess. An explicit `--cip` on an import still wins, with a warning. The
+key does not change (it holds no CIP since 0.7.0), and stored analysis runs are not
+touched: the CIP is not an analysis input.
+
+**History.** Each row applies from its `--from` academic year until the next row's; a row
+without `--from` covers all years, or in a history every year before the first dated
+row. A year before every dated row with no all-years row has no confirmed CIP and keeps
+its guess. A program's catalog year resolves by its first year (`2026-2028` → 2026), and
+an IPEDS survey year by the academic year it counts (IPEDS 2025 is 2024-2025). `--from`
+takes `YYYY-YYYY`; a bare year is refused as ambiguous between the two.
+
+**A program not built yet** can be registered too — pass `--name` and `--degree-type` —
+so its CIP lines up with IPEDS before there is a degree to analyze. It links when a build
+is imported under the same `degree_id` (`db import --degree-id`); `db cip relink` moves
+the rows if the build arrives under another id. `db cip list --unbuilt` shows what is
+waiting.
+
+**Demographics by program.** `db query demographics --school <UNITID> --degree
+<DEGREE_ID>` (MCP: `degree_id` on `get_completion_demographics`) answers each IPEDS year
+under the CIP the program was filed under that year, says whether that CIP was confirmed
+or guessed, where it changed, and which of the school's other programs IPEDS counts in
+the same numbers — a BS and a BA under one CIP and award level are indistinguishable
+there. A minor has no IPEDS line; a stored concentration or track is counted under its
+major's CIP; the answer says so in both cases. It takes none of `--cip`, `--cip-codes`,
+`--group-by` or the institution filters, since it looks the CIP up itself.
+
+The award level is `--award-level` on the query when given, else the one recorded with
+`db cip set`, else what the degree type implies when that is unambiguous (BS, BA → 5;
+MS → 7). A certificate needs one of the first two.
+
+A program whose school never resolved — imported with neither a unitid nor a non-US
+ref, so its `institution_ref` is a name slug — cannot be named by `db cip set`;
+re-import it with `--unitid` first.
+
+`db cip import <file.csv>` records many at once (columns
+`school,degree_id,cip_code,from,source,name,degree_type,award_level,note`); it is a dry
+run unless `--apply`. `program_cips` needs Postgres 15 or later (`UNIQUE NULLS NOT
+DISTINCT`); Supabase cloud and the `supabase/postgres` image both are.
 
 ---
 

@@ -1,6 +1,6 @@
 # NuAnalytics
 
-**Version 0.6.1**
+**Version 0.7.0**
 
 NuAnalytics is a Rust command-line tool and MCP server for analyzing degree curricula. It
 measures how a curriculum is structured — the complexity, blocking, delay and centrality
@@ -36,7 +36,8 @@ changes.
 - **Database** (optional): a Supabase backend, cloud or self-hosted, holding IPEDS
   institutions and completion demographics and a store of degree programs with their
   analysis runs. `db import` loads analyzed degrees; `degree analyze --from-db` and the MCP
-  tools read them back. Reads and writes require signing in (`nuanalytics db login`). See
+  tools read them back. `db cip` records the CIP codes schools confirm, which imports and
+  the per-program demographics then use in place of the guessed ones. Reads and writes require signing in (`nuanalytics db login`). See
   [Database Setup](docs/database/setup.md).
 - **MCP server** (optional): tools that let a model author, validate, analyze and render
   degrees, read stored programs and their analysis, and query completion demographics or

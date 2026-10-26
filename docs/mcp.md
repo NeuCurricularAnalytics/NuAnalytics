@@ -102,8 +102,9 @@ Every tool that takes a degree takes exactly one of three arguments:
   - `sample:csu` is a bundled sample (`list_sample_degrees` lists them).
   - `cache:<hash>` is a degree an earlier call cached.
   - Anything else is a stored program's `program_key`, or a `degree_id` that names one
-    program. A `degree_id` that matches several programs is refused, with their
-    `program_key`s listed.
+    program. Dated versions of one program (keys equal apart from `|v<date>`) resolve to
+    the newest. A `degree_id` that matches several different programs — other catalog
+    years, say — is refused, with their `program_key`s listed.
 - **`content`**: the degree inline, as YAML or unified JSON. It is cached as it passes
   through, and the response's `source.handle` is a `cache:` reference to pass next time
   instead of the text.

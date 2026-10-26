@@ -683,44 +683,79 @@ impl DbClient {
     ///
     /// # Errors
     /// [`DatabaseError::QueryError`] when the filter is empty or the backend refuses,
+    /// [`DatabaseError::NotAuthenticated`] when there is no usable session,
     /// [`DatabaseError::ConnectionError`] when it could not be reached, and
     /// [`DatabaseError::ParseError`] when the row count cannot be read back.
     pub async fn delete_where(&self, table: &str, filters: &QueryFilters) -> DatabaseResult<u64> {
+        self.filtered_write(reqwest::Method::DELETE, table, filters, None)
+            .await
+    }
+
+    /// Set `fields` on every row of `table` matching `filters` (`PATCH`). Returns how many
+    /// rows changed.
+    ///
+    /// Refuses an empty filter for the same reason [`Self::delete_where`] does: an update
+    /// with no filter rewrites the whole table.
+    ///
+    /// # Errors
+    /// As [`Self::delete_where`].
+    pub async fn update_where(
+        &self,
+        table: &str,
+        filters: &QueryFilters,
+        fields: &serde_json::Value,
+    ) -> DatabaseResult<u64> {
+        self.filtered_write(reqwest::Method::PATCH, table, filters, Some(fields))
+            .await
+    }
+
+    /// A `DELETE` or `PATCH` of the rows matching `filters`, returning the row count the
+    /// backend reports (`count=exact`). Never sent without a filter.
+    async fn filtered_write(
+        &self,
+        method: reqwest::Method,
+        table: &str,
+        filters: &QueryFilters,
+        body: Option<&serde_json::Value>,
+    ) -> DatabaseResult<u64> {
+        let verb = if method == reqwest::Method::DELETE {
+            ("delete from", "deleted from")
+        } else {
+            ("update", "updated in")
+        };
         if filters.is_empty() {
             return Err(DatabaseError::QueryError(format!(
-                "refusing to delete from {table} with no filter — that would empty the table"
+                "refusing to {} {table} with no filter — that would touch every row",
+                verb.0
             )));
         }
         let url = build_select_url(&self.endpoint, table, "*", filters, None);
         let token = self.current_token().await?;
-        let response = self
+        let mut request = self
             .http
-            .delete(&url)
+            .request(method, &url)
             .header("apikey", &self.anon_key)
-            .header("Authorization", format!("Bearer {token}"))
-            .header("Prefer", "count=exact")
-            .send()
-            .await
-            .map_err(|e| {
-                DatabaseError::ConnectionError(format!("request to {} failed: {e}", self.endpoint))
-            })?;
+            .header("Authorization", format!("Bearer {token}"));
+        request = match body {
+            Some(fields) => request
+                .header("Prefer", "count=exact,return=minimal")
+                .json(fields),
+            None => request.header("Prefer", "count=exact"),
+        };
+        let response = request.send().await.map_err(|e| {
+            DatabaseError::ConnectionError(format!("request to {} failed: {e}", self.endpoint))
+        })?;
 
         if !response.status().is_success() {
             return Err(self.classify_failure(response).await);
         }
-        // `Content-Range` is `*/<deleted>` for a delete with count=exact.
-        response
-            .headers()
-            .get("content-range")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|r| r.rsplit('/').next())
-            .and_then(|total| total.trim().parse::<u64>().ok())
-            .ok_or_else(|| {
-                DatabaseError::ParseError(format!(
-                    "{} did not report how many rows it deleted from {table}",
-                    self.endpoint
-                ))
-            })
+        // `Content-Range` is `*/<rows>` for a write with count=exact.
+        content_range_total(response.headers()).ok_or_else(|| {
+            DatabaseError::ParseError(format!(
+                "{} did not report how many rows it {} {table}",
+                self.endpoint, verb.1
+            ))
+        })
     }
 
     /// Upsert a batch of records.
@@ -784,6 +819,20 @@ impl DbClient {
     }
 }
 
+/// The total after the `/` in a `Content-Range` header (`0-9/42`, `*/3`), which
+/// `PostgREST` sends for a `count=exact` request.
+fn content_range_total(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get("content-range")?
+        .to_str()
+        .ok()?
+        .rsplit('/')
+        .next()?
+        .trim()
+        .parse()
+        .ok()
+}
+
 /// Build a `PostgREST` query URL from a table, column list, filter set, and
 /// optional limit. Values are percent-encoded via the `form_urlencoded`
 /// serialiser, which intentionally leaves `*` literal — `PostgREST` treats
@@ -830,6 +879,7 @@ fn filter_value(kind: &FilterKind, val: &str) -> String {
         FilterKind::Lte => format!("lte.{val}"),
         // `in` wants parenthesised list: `in.(v1,v2,v3)`.
         FilterKind::In => format!("in.({val})"),
+        FilterKind::IsNull => "is.null".to_string(),
     }
 }
 
@@ -843,6 +893,91 @@ fn url_encode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn update_where_refuses_an_empty_filter_without_a_request() {
+        let client = crate::core::database::test_backend::unreachable();
+        let err = client
+            .update_where(
+                "programs",
+                &QueryFilters::new(),
+                &serde_json::json!({"x": 1}),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, DatabaseError::QueryError(ref m) if m.contains("no filter")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_where_reads_the_count_from_content_range() {
+        let backend = crate::core::database::test_backend::routed(Vec::new()).await;
+        let filters = QueryFilters::new().eq("degree_id", Some("cs"));
+        let n = backend
+            .client
+            .update_where(
+                "program_cips",
+                &filters,
+                &serde_json::json!({"degree_id": "cs2"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(backend.write_count(), 1);
+    }
+
+    #[test]
+    fn content_range_total_reads_the_figure_after_the_slash() {
+        let total = |v: Option<&str>| {
+            let mut h = reqwest::header::HeaderMap::new();
+            if let Some(v) = v {
+                h.insert("content-range", v.parse().unwrap());
+            }
+            content_range_total(&h)
+        };
+        assert_eq!(total(Some("0-9/42")), Some(42));
+        assert_eq!(total(Some("*/3")), Some(3));
+        assert_eq!(total(Some("*/0")), Some(0));
+        assert_eq!(total(Some("*/*")), None, "no count was requested");
+        assert_eq!(total(Some("garbage")), None);
+        assert_eq!(total(None), None);
+    }
+
+    #[tokio::test]
+    async fn update_where_needs_the_count_and_passes_a_refusal_through() {
+        let filters = QueryFilters::new().eq("degree_id", Some("cs"));
+        let fields = serde_json::json!({"degree_id": "cs2"});
+        let url = stub_server_counting("200 OK", "", None).await;
+        let client = DbClient::new(&url, "anon", "jwt".to_string()).expect("client");
+        match client.update_where("program_cips", &filters, &fields).await {
+            Err(DatabaseError::ParseError(m)) => {
+                assert!(m.contains("updated in program_cips"), "{m}");
+            }
+            other => panic!("expected ParseError, got {other:?}"),
+        }
+        let url =
+            stub_server_counting("403 Forbidden", r#"{"message":"permission denied"}"#, None).await;
+        let client = DbClient::new(&url, "anon", "jwt".to_string()).expect("client");
+        let err = client
+            .update_where("program_cips", &filters, &fields)
+            .await
+            .unwrap_err();
+        assert!(!matches!(err, DatabaseError::ParseError(_)), "{err:?}");
+    }
+
+    #[test]
+    fn build_select_url_renders_is_null() {
+        let url = build_select_url(
+            "https://example.supabase.co",
+            "program_cips",
+            "*",
+            &QueryFilters::new().is_null("from_year"),
+            None,
+        );
+        assert!(url.contains("from_year=is.null"), "{url}");
+    }
 
     #[test]
     fn new_rejects_empty_endpoint() {
