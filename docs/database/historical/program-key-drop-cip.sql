@@ -7,7 +7,9 @@
 -- keys, and `programs-schema.sql` adds the constraint itself.
 --
 -- Run with psql, as one transaction, with every importer stopped (nightly paused, MCP
--- servers restarted onto 0.7.0 afterwards). A 0.6.x importer running after this would
+-- servers restarted onto 0.7.0 afterwards). Rehearse it first: restore a fresh dump into
+-- a scratch database and run it there, then re-run it (it must re-key 0) and re-apply
+-- programs-schema.sql (it must do nothing) before touching the live database. A 0.6.x importer running after this would
 -- insert duplicates; the constraints at the end refuse its writes instead.
 --
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f program-key-drop-cip.sql

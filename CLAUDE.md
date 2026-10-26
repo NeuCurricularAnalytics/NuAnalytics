@@ -184,8 +184,9 @@ client's import fails instead of forking the program — keep any new table that
 key in that set. Import overrides (`--cip`, `--catalog`, `--degree-id`, `--institution`,
 `--unitid`, `--institution-ref`) are written into the stored document by
 `apply_identity_overrides`, so a pulled degree re-imports under its own key; a unit id
-found by name resolution is deliberately not. `docs/program-key-todo.md` has the
-migration and the cutover.
+found by name resolution is deliberately not. The migration for a database from before
+0.7.0 is `docs/database/historical/program-key-drop-cip.sql` (its header has the procedure);
+what is left of the work is section 5 of `docs/database-audit-todo.md`.
 
 **Confirmed CIPs live in `program_cips` (0.7.0), keyed on the program, not the key** —
 `(institution_ref, degree_id, from_year)`, NULL `from_year` = all years, history resolved

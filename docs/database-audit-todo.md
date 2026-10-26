@@ -178,6 +178,36 @@ CS4820 resolved that prerequisite to CS4820 itself, drew a self-loop and was dis
 same defect had long cost Miami's BS 17% of its plans and Duke 4.4%. Fixed, and the four
 degrees re-imported; `clean-up-analysis-todo.md` section 6 has the detail.
 
+## 5. Confirmed CIP codes (0.7.0) — what is left
+
+0.7.0 took the CIP out of `program_key` and added the `program_cips` registry (see
+`setup.md`, "Confirmed CIP codes"). The live backend was re-keyed on 2026-10-26: 2,012
+programs and every child row, rehearsed first on a copy restored from that morning's
+dump; the nightly-sync queue was rewritten from the migration's mapping. The first real
+CIPs are Auburn's (unitid 100858, 12 programs); its 9 unbuilt programs are held in the
+nightly queue until released.
+
+Not done:
+
+- **A confirmed CIP whose program disappeared is not reported.** A rebuild under a new
+  `degree_id` leaves the registry row unlinked; only `db cip list` (`built: false`) shows
+  it. `db doctor` could report rows whose school stores programs but none with that id.
+  Nightly's `registered` stream already holds back a registration whose name matches a
+  stored program under another id, which covers the common case (a mistyped id).
+- **A pre-0.7.0 client's refusal was never seen live.** The rehearsal showed the
+  `program_key_has_no_cip` constraints refusing old keys at the database; a live import by
+  the 0.6.1 binary would have upserted shared `courses` rows before its refused write, so
+  it was not run, and the CHANGELOG names no error wording.
+- **Confirmed CIPs are not written back into the WebScrappedCombinedDataMetrics source
+  JSONs.** Optional: every import applies the registry, so the files disagreeing with the
+  database does not change what is stored.
+- **Most stored CIPs are still guesses, and some are wrong.** IPEDS files Northeastern's
+  CS bachelor's under 11.0101 (748 completions in 2025), not the 11.0701 most of its
+  stored CS programs guessed, and has no 11.0102 bachelor's line at all for its BS in AI.
+  `db query demographics --school <UNITID> --degree <DEGREE_ID>` shows this per program
+  (its empty years carry `nearby_cips_with_data`); correcting one needs the school's word,
+  recorded with `db cip set`.
+
 ---
 
 ## What this audit did *not* check
@@ -217,3 +247,13 @@ degrees re-imported; `clean-up-analysis-todo.md` section 6 has the detail.
   was considered and dropped.
 - **The `completions` table is complete.** All CIP codes, both major numbers, ~313,000
   rows per year — not the CS-only subset four documents used to claim.
+- **A confirmed CIP is keyed on the program, not on a `program_key`** —
+  `(institution_ref, degree_id)`. A school's answer is about a program, not one catalog
+  year: keyed on `program_key` it would cover one year and version, and next year's import
+  would bring the guess back. School + name is ambiguous (several schools have two programs
+  named "Bachelor of Science in Computer Science"). The cost: a rebuild that changes the
+  `degree_id` loses the link, hence `db cip relink`.
+- **A confirmation adds a note; it does not delete the guess's warning.** Many conversion
+  warnings mix the CIP guess with other facts ("degree_type confirmed BS; cip_code …
+  inferred"), so removing them would lose those. The `cip_code confirmed:` note after them
+  is what supersedes the guess, and a later confirmation replaces only that note.
