@@ -18,6 +18,7 @@ use std::sync::Arc;
 use crate::core::database::import::{execute_import, ImportOptions, ImportOutcome, ImportResult};
 use crate::core::database::DbClient;
 use crate::core::json::error_json;
+use crate::mcp::tools::shared::bad_arguments;
 use rmcp::schemars;
 use serde::Deserialize;
 
@@ -77,6 +78,19 @@ pub struct ImportDegreeRequest {
     #[schemars(description = "Override the degree id.")]
     pub degree_id: Option<String>,
 
+    /// Publication date of this version of the program, `YYYY-MM-DD`.
+    #[schemars(
+        description = "Publication date of this version of the program, YYYY-MM-DD. Appended to the program_key (|v<date>) and stored as programs.version_date, so dated revisions of one catalog year coexist. Pass the same date when attaching a trimmed run so it lands on the dated program. Omit for the undated key."
+    )]
+    pub version_date: Option<String>,
+
+    /// A non-US institution reference (`<country>:<slug>`). Mutually exclusive with
+    /// `unitid`.
+    #[schemars(
+        description = "Non-US institution reference, <country>:<slug> (e.g. ca:university-of-toronto), as listed in institutions_intl. Keys the program on it instead of an IPEDS UNITID, sets programs.country from the prefix, and skips IPEDS name resolution. Mutually exclusive with unitid."
+    )]
+    pub institution_ref: Option<String>,
+
     /// Overwrite a verified program / skip the confirmation gate.
     #[schemars(description = "Overwrite a verified program / skip the confirmation gate.")]
     #[serde(default, deserialize_with = "crate::core::json::deserialize_opt_bool")]
@@ -123,11 +137,19 @@ pub async fn execute_json(client: &Arc<DbClient>, req: ImportDegreeRequest) -> S
         cip_code: req.cip,
         catalog_year: req.catalog,
         degree_id: req.degree_id,
+        version_date: req.version_date,
+        institution_ref: req.institution_ref,
         force: req.force.unwrap_or(false),
         replace: req.replace.unwrap_or(false),
         skip_existing: req.skip_existing.unwrap_or(false),
         dry_run: req.dry_run.unwrap_or(false),
     };
+
+    // Bad arguments are a failure, not an import outcome: refused here they carry a code
+    // and become an `isError` envelope, where `execute_import` would report `rejected`.
+    if let Err(e) = opts.validate() {
+        return bad_arguments(e);
+    }
 
     match execute_import(client, &text, &opts).await {
         Ok(outcome) => outcome_to_json(&outcome).to_string(),
@@ -166,6 +188,7 @@ fn outcome_to_json(outcome: &ImportOutcome) -> serde_json::Value {
         "result": result_tag(&outcome.result),
         "program_key": outcome.program_key,
         "resolved_unitid": outcome.resolved_unitid,
+        "institution_ref": outcome.institution_ref,
         "institution": outcome.institution,
         "variant": outcome.variant,
         "variations_run": outcome.variations_run,
@@ -228,6 +251,7 @@ mod tests {
             program_key: "prog:167358|11.0701|2024-2025|BS".to_string(),
             result,
             resolved_unitid: Some(167_358),
+            institution_ref: None,
             variant: "full".to_string(),
             institution: Some("Test University".to_string()),
             variations_run: Some(137),
@@ -269,6 +293,58 @@ mod tests {
         assert!(req.variant.is_none());
         assert!(req.unitid.is_none());
         assert!(req.dry_run.is_none());
+    }
+
+    #[test]
+    fn intl_outcome_carries_institution_ref_and_no_unitid() {
+        let mut outcome = outcome_with(ImportResult::Created);
+        outcome.resolved_unitid = None;
+        outcome.institution_ref = Some("ca:university-of-toronto".to_string());
+        let value = outcome_to_json(&outcome);
+        assert_eq!(value["institution_ref"], "ca:university-of-toronto");
+        assert!(value["resolved_unitid"].is_null());
+    }
+
+    #[tokio::test]
+    async fn bad_version_date_and_both_institution_keys_are_bad_arguments() {
+        // Refused before the network: port 9 is never answered.
+        let client =
+            Arc::new(DbClient::new("http://127.0.0.1:9", "anon", "jwt".to_string()).unwrap());
+        let report = r#"{"degree":{"name":"CS","degree_type":"BS","system_type":"semester"},"requirements":{},"courses":{}}"#;
+        for extra in [
+            serde_json::json!({"version_date": "2026-13-01"}),
+            serde_json::json!({"unitid": 167_358, "institution_ref": "ca:university-of-toronto"}),
+            serde_json::json!({"institution_ref": "university-of-toronto"}),
+        ] {
+            let mut args = serde_json::json!({ "json_content": report });
+            args.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let req: ImportDegreeRequest = serde_json::from_value(args).unwrap();
+            let v: serde_json::Value =
+                serde_json::from_str(&execute_json(&client, req).await).unwrap();
+            assert_eq!(
+                v["code"],
+                crate::core::json::error_code::BAD_ARGUMENTS,
+                "{extra}: {v}"
+            );
+            assert!(v["error"].is_string(), "{v}");
+        }
+    }
+
+    #[test]
+    fn request_carries_version_date_and_institution_ref() {
+        let req: ImportDegreeRequest = serde_json::from_value(serde_json::json!({
+            "json_path": "/tmp/r.json",
+            "version_date": "2026-03-15",
+            "institution_ref": "ca:university-of-toronto",
+        }))
+        .expect("request must deserialize");
+        assert_eq!(req.version_date.as_deref(), Some("2026-03-15"));
+        assert_eq!(
+            req.institution_ref.as_deref(),
+            Some("ca:university-of-toronto")
+        );
     }
 
     #[test]

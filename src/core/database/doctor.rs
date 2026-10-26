@@ -797,14 +797,14 @@ mod tests {
 
     #[test]
     fn every_schema_table_is_checked_and_the_list_has_no_duplicates() {
-        // A duplicate would make the "N of 20" counts wrong, and a missing entry would
+        // A duplicate would make the "N of 21" counts wrong, and a missing entry would
         // let a half-applied schema pass.
         let unique: std::collections::HashSet<&&str> = tables::ALL.iter().collect();
         assert_eq!(unique.len(), tables::ALL.len(), "duplicate in tables::ALL");
         assert_eq!(
             tables::ALL.len(),
-            20,
-            "the schema defines 20 tables; update ALL when that changes"
+            21,
+            "the schema defines 21 tables; update ALL when that changes"
         );
         for named in [
             tables::INSTITUTIONS,

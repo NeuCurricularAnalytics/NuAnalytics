@@ -6,6 +6,8 @@
 --
 -- Adds the normalized, queryable storage for imported degree programs:
 --   programs              one row per degree program (+ lossless `document` JSONB)
+--   programs_latest       view: the newest version of each program per institution
+--   institutions_intl     non-US institutions (IPEDS covers only the US)
 --   courses               shared per-institution course catalog
 --   program_courses       M:N junction programs <-> courses (with per-program overrides)
 --   program_requirements  the requirement tree, flattened by `req_path`
@@ -45,14 +47,23 @@ CREATE TABLE IF NOT EXISTS degree_types (
 -- =============================================================================
 -- programs — one row per degree program
 --
--- program_key is the deterministic idempotency key (ON CONFLICT target):
---   "prog:<unitid>|<cip>|<catalog_year>|<degree_type>"  (when the unitid resolved)
+-- program_key is the deterministic idempotency key (ON CONFLICT target), built in
+-- src/core/database/import.rs:
+--   "prog:<ref>|<cip>|<catalog_year>|<degree_type>|<degree.id or name>"
+--        (a non-US institution: `db import --institution-ref ca:university-of-toronto`
+--         or `degree.institution_ref`; unitid stays NULL)
+--   "prog:<unitid>|<cip>|<catalog_year>|<degree_type>|<degree.id or name>"
+--        (when the IPEDS unitid resolved)
 --   "prog:<degree.id>|<catalog_year>"                   (else, when degree.id is present)
 --   "fp:<sha256(institution_raw|name|degree_type|catalog_year|source_url)>"  (fallback)
+-- `db import --version-date YYYY-MM-DD` appends "|v<YYYY-MM-DD>" to every form and
+-- stores the date in `version_date`; without it the key is unchanged, so rows imported
+-- before version dates existed keep their keys.
 --
 -- No FK on unitid / cip_code / degree_type: LEFT JOIN institutions / cip_codes /
 -- degree_types (IPEDS cross-survey coverage isn't guaranteed; degree_type may be
--- a value not yet seeded).
+-- a value not yet seeded). A non-US program (country <> 'US') joins
+-- institutions_intl on institution_ref = institutions_intl.ref instead.
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS programs (
     id                          BIGSERIAL PRIMARY KEY,
@@ -81,6 +92,8 @@ CREATE TABLE IF NOT EXISTS programs (
 
     -- scalar projection of Degree
     catalog_year                TEXT,
+    version_date                DATE,           -- publication date of this version (NULL = undated)
+    country                     TEXT DEFAULT 'US',  -- 'US' for IPEDS schools; else institutions_intl.country
     source_url                  TEXT,
     total_credits               INTEGER,
     upper_division_credits      INTEGER,
@@ -100,6 +113,27 @@ CREATE TABLE IF NOT EXISTS programs (
     generation                  BIGINT  NOT NULL DEFAULT 0,       -- re-import commit marker
     created_at                  TIMESTAMPTZ DEFAULT NOW(),
     updated_at                  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================================================
+-- institutions_intl — institutions outside the US
+--
+-- IPEDS (`institutions`) covers US schools only. A program at a school abroad is
+-- keyed on `ref` instead of a unitid: programs.institution_ref = institutions_intl.ref,
+-- programs.unitid IS NULL, programs.country = institutions_intl.country.
+-- `ref` is "<country>:<slug>", lowercase (e.g. 'ca:university-of-toronto'); the
+-- country prefix is ISO 3166 alpha-2 (or alpha-3), stored upper-case in `country`.
+-- No FK from programs (the FK-free convention above): LEFT JOIN on the ref.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS institutions_intl (
+    ref             TEXT PRIMARY KEY,      -- '<country>:<slug>', e.g. 'ca:university-of-toronto'
+    country         TEXT NOT NULL,         -- upper-case country code, e.g. 'CA'
+    region          TEXT,                  -- province / state / region, free text
+    name            TEXT NOT NULL,
+    alternate_names TEXT[],
+    website         TEXT,
+    source          TEXT,                  -- where the record came from
+    created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- =============================================================================
@@ -380,10 +414,50 @@ ALTER TABLE program_requirements ADD COLUMN IF NOT EXISTS external_note        T
 ALTER TABLE analysis_course_metrics ADD COLUMN IF NOT EXISTS chain_length_mean REAL;
 ALTER TABLE courses              ADD COLUMN IF NOT EXISTS catalog_year         TEXT NOT NULL DEFAULT '';
 ALTER TABLE program_courses      ADD COLUMN IF NOT EXISTS catalog_year         TEXT NOT NULL DEFAULT '';
+ALTER TABLE programs             ADD COLUMN IF NOT EXISTS version_date         DATE;
+ALTER TABLE programs             ADD COLUMN IF NOT EXISTS country              TEXT DEFAULT 'US';
+
+-- Indexes on the later columns: they cannot sit with the others above, which run
+-- before these columns exist on a database created earlier.
+CREATE INDEX IF NOT EXISTS idx_programs_degree_version ON programs (degree_id, version_date);
+CREATE INDEX IF NOT EXISTS idx_programs_country        ON programs (country);
+CREATE INDEX IF NOT EXISTS idx_institutions_intl_country ON institutions_intl (country);
+
+-- One-off backfill, NOT run by this file: date the programs imported before
+-- version_date existed by their import time. `generation` is the import's epoch
+-- milliseconds. Run by hand once, if wanted; re-running is harmless (only NULLs change).
+--
+--   UPDATE programs
+--      SET version_date = to_timestamp(generation / 1000.0)::date
+--    WHERE version_date IS NULL AND generation > 0;
+
+-- =============================================================================
+-- programs_latest — the newest version of each program
+--
+-- One row per (institution, degree): the institution is the unitid when there is one,
+-- else institution_ref (non-US and unresolved schools); the degree is degree_id, or the
+-- program_key itself when degree_id is NULL so undated id-less programs are not
+-- collapsed into one. Newest = latest version_date (undated rows last), then the most
+-- recent import (generation). degree_id spans catalog years, so rows from different
+-- years compete too: the winner is the latest version_date, else the latest import --
+-- not one row per year, and not necessarily the newest catalog_year when undated.
+--
+-- security_invoker so the caller's RLS on `programs` applies; a plain view would read
+-- as its owner and bypass it.
+-- =============================================================================
+CREATE OR REPLACE VIEW programs_latest WITH (security_invoker = true) AS
+SELECT DISTINCT ON (coalesce(p.unitid::text, p.institution_ref), coalesce(p.degree_id, p.program_key))
+       p.*
+  FROM programs p
+ ORDER BY coalesce(p.unitid::text, p.institution_ref),
+          coalesce(p.degree_id, p.program_key),
+          p.version_date DESC NULLS LAST,
+          p.generation DESC;
 
 
 ALTER TABLE analysis_course_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE analysis_plans          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE institutions_intl       ENABLE ROW LEVEL SECURITY;
 
 -- programs
 DROP POLICY IF EXISTS "auth read programs"  ON programs;
@@ -433,6 +507,12 @@ DROP POLICY IF EXISTS "auth read analysis_plans"  ON analysis_plans;
 CREATE POLICY "auth read analysis_plans"  ON analysis_plans FOR SELECT USING (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "auth write analysis_plans" ON analysis_plans;
 CREATE POLICY "auth write analysis_plans" ON analysis_plans FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
+
+-- institutions_intl
+DROP POLICY IF EXISTS "auth read institutions_intl"  ON institutions_intl;
+CREATE POLICY "auth read institutions_intl"  ON institutions_intl FOR SELECT USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "auth write institutions_intl" ON institutions_intl;
+CREATE POLICY "auth write institutions_intl" ON institutions_intl FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
 
 -- =============================================================================
 -- query_readonly — the backend half of `nuanalytics db query --sql`

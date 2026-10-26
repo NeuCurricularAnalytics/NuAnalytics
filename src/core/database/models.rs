@@ -281,6 +281,14 @@ pub struct StoredProgram {
     pub has_impossible_requirements: bool,
     /// Re-import commit-marker generation
     pub generation: i64,
+    /// Publication date of this version of the program (`YYYY-MM-DD`), when the import
+    /// named one. Omitted from the write when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_date: Option<String>,
+    /// Country code (`US`, `CA`, …). Set only for a non-US institution; omitted from
+    /// the write otherwise so the column's `'US'` default applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
     /// Creation timestamp (ISO 8601)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,

@@ -638,6 +638,12 @@ pub enum Command {
     },
 }
 
+/// `--institution-ref`: `<country>:<slug>`, normalized to a lowercase prefix.
+#[cfg(feature = "database")]
+fn parse_institution_ref_arg(s: &str) -> Result<String, String> {
+    nu_analytics::database::import::parse_institution_ref(s).map(|r| r.reference)
+}
+
 /// Database management subcommands
 #[cfg(feature = "database")]
 #[derive(Debug, Subcommand)]
@@ -955,6 +961,8 @@ pub enum DbSubcommand {
     /// nuanalytics db import metrics/neu-khoury-bscs-boston_report.json
     /// nuanalytics db import metrics/ --dry-run
     /// nuanalytics db import report.json --unitid 167358 --replace
+    /// nuanalytics db import report.json --version-date 2026-03-15
+    /// nuanalytics db import report.json --institution-ref ca:university-of-toronto
     /// ```
     Import {
         /// Degree report / unified degree file(s) and/or directories. A directory
@@ -968,8 +976,29 @@ pub enum DbSubcommand {
         variant: Option<String>,
 
         /// Override the resolved institution IPEDS unit id.
-        #[arg(long, value_name = "N")]
+        #[arg(long, value_name = "N", conflicts_with = "institution_ref")]
         unitid: Option<i32>,
+
+        /// Key the program on a non-US institution (`<country>:<slug>`, e.g.
+        /// `ca:university-of-toronto`) instead of an IPEDS unit id. Sets
+        /// `programs.country` from the prefix and skips IPEDS name resolution.
+        #[arg(
+            long = "institution-ref",
+            value_name = "REF",
+            value_parser = parse_institution_ref_arg
+        )]
+        institution_ref: Option<String>,
+
+        /// Publication date of this version of the program (`YYYY-MM-DD`). Appended
+        /// to the program key (`|v<date>`) and stored as `programs.version_date`, so
+        /// dated revisions of one catalog year coexist. Pass the same date when
+        /// importing a trimmed run so it attaches to the dated program.
+        #[arg(
+            long = "version-date",
+            value_name = "YYYY-MM-DD",
+            value_parser = nu_analytics::database::import::parse_version_date
+        )]
+        version_date: Option<String>,
 
         /// Override the institution name used for resolution.
         #[arg(long, value_name = "NAME")]
@@ -1386,6 +1415,62 @@ mod tests {
     }
 
     use super::*;
+
+    #[cfg(feature = "database")]
+    fn parse_import(extra: &[&str]) -> Result<Cli, clap::Error> {
+        let mut argv = vec!["nuanalytics", "db", "import", "report.json"];
+        argv.extend_from_slice(extra);
+        Cli::try_parse_from(argv)
+    }
+
+    #[cfg(feature = "database")]
+    fn import_args(cli: Cli) -> (Option<i32>, Option<String>, Option<String>) {
+        match cli.command {
+            Command::Db {
+                subcommand:
+                    DbSubcommand::Import {
+                        unitid,
+                        institution_ref,
+                        version_date,
+                        ..
+                    },
+            } => (unitid, institution_ref, version_date),
+            other => panic!("expected db import, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "database")]
+    fn test_import_version_date_is_validated() {
+        let (_, _, date) = import_args(parse_import(&["--version-date", "2026-03-15"]).unwrap());
+        assert_eq!(date.as_deref(), Some("2026-03-15"));
+        for bad in ["2026-3-15", "2026-02-30", "March 2026"] {
+            assert!(
+                parse_import(&["--version-date", bad]).is_err(),
+                "{bad} accepted"
+            );
+        }
+        let (_, _, none) = import_args(parse_import(&[]).unwrap());
+        assert!(none.is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "database")]
+    fn test_import_institution_ref_is_validated_and_excludes_unitid() {
+        let (unitid, r, _) =
+            import_args(parse_import(&["--institution-ref", "CA:university-of-toronto"]).unwrap());
+        assert_eq!(unitid, None);
+        assert_eq!(r.as_deref(), Some("ca:university-of-toronto"));
+        assert!(parse_import(&["--institution-ref", "university-of-toronto"]).is_err());
+        let err = parse_import(&[
+            "--unitid",
+            "167358",
+            "--institution-ref",
+            "ca:university-of-toronto",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
 
     #[test]
     fn test_log_level_display() {

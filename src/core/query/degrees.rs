@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use crate::core::database::import::VERSION_KEY_SEPARATOR;
 use crate::core::database::{tables, DbClient, QueryFilters};
 use crate::core::json::{error_code, parse_first, parse_json_array, to_json_pretty};
 use serde::{Deserialize, Serialize};
@@ -150,10 +151,50 @@ struct DocumentRow {
     document: serde_json::Value,
 }
 
-/// One `program_key` column, for the identity probes below.
+/// The columns [`VersionRow`] reads.
+const VERSION_ROW_COLS: &str = "program_key,version_date,generation";
+
+/// A `degree_id` match with what separates dated versions of one program.
 #[derive(Debug, Deserialize)]
-struct KeyRow {
+struct VersionRow {
     program_key: String,
+    #[serde(default)]
+    version_date: Option<String>,
+    #[serde(default)]
+    generation: Option<i64>,
+}
+
+impl VersionRow {
+    /// The key without its version-date suffix: what every dated version of one program
+    /// shares. Comparing it, rather than a few columns, means two programs that differ in
+    /// any part of the key (CIP, degree type, school, catalog year) are never taken for
+    /// versions of one another.
+    fn base_key(&self) -> &str {
+        self.version_date
+            .as_deref()
+            .and_then(|date| {
+                self.program_key
+                    .strip_suffix(date)?
+                    .strip_suffix(VERSION_KEY_SEPARATOR)
+            })
+            .unwrap_or(&self.program_key)
+    }
+}
+
+/// When every match is a version of the same program (same key once the version date is
+/// removed), the newest one: `version_date` first (the undated row is the oldest), then
+/// the latest write. `None` when the matches are genuinely different programs.
+fn latest_version(rows: &[VersionRow]) -> Option<String> {
+    let first = rows.first()?;
+    if !rows.iter().all(|r| r.base_key() == first.base_key()) {
+        return None;
+    }
+    rows.iter()
+        .max_by(|a, b| {
+            (a.version_date.as_deref(), a.generation)
+                .cmp(&(b.version_date.as_deref(), b.generation))
+        })
+        .map(|r| r.program_key.clone())
 }
 
 /// How many `degree_id` matches to read before reporting the list as truncated.
@@ -201,7 +242,14 @@ pub async fn find_programs<T: serde::de::DeserializeOwned>(
 ///
 /// Tries `program_key` first because it is unique. A `degree_id` can match several
 /// programs (one per catalog year), and silently reporting one of them as "the" answer
-/// would be worse than saying so — hence the ambiguity error.
+/// would be worse than saying so — hence the ambiguity error. Dated versions of one
+/// program (`--version-date` imports: the same key apart from its `|v<date>` suffix) are
+/// not ambiguous: the newest version is the program.
+///
+/// Deliberately narrower than the `programs_latest` view, which keeps one row per school
+/// and `degree_id` *across* catalog years. The view answers "what is current", where
+/// collapsing years is the point; this resolves a reference to one program, where two
+/// catalog years are two answers and the caller must pick.
 ///
 /// # Errors
 /// A finished JSON payload, not a message — callers return it verbatim — when nothing
@@ -213,7 +261,8 @@ pub async fn resolve_program_key(client: &DbClient, degree: &str) -> Result<Stri
         .select(tables::PROGRAMS, "program_key", &by_key, Some(1))
         .await
     {
-        Ok(v) if parse_first::<KeyRow>(&v).is_some() => return Ok(degree.to_string()),
+        // Existence is all this probe asks, so any row will do.
+        Ok(v) if parse_first::<serde_json::Value>(&v).is_some() => return Ok(degree.to_string()),
         Ok(_) => {}
         Err(e) => return Err(e.to_json(&format!("looking up stored program \"{degree}\""))),
     }
@@ -222,7 +271,7 @@ pub async fn resolve_program_key(client: &DbClient, degree: &str) -> Result<Stri
     let rows = match client
         .select(
             tables::PROGRAMS,
-            "program_key",
+            VERSION_ROW_COLS,
             &by_id,
             Some(AMBIGUITY_PROBE + 1),
         )
@@ -231,10 +280,13 @@ pub async fn resolve_program_key(client: &DbClient, degree: &str) -> Result<Stri
         Ok(v) => v,
         Err(e) => return Err(e.to_json(&format!("looking up degree_id \"{degree}\""))),
     };
-    let mut keys: Vec<String> = parse_json_array::<KeyRow>(&rows)
-        .into_iter()
-        .map(|r| r.program_key)
-        .collect();
+    let versions = parse_json_array::<VersionRow>(&rows);
+    if versions.len() > 1 && versions.len() <= AMBIGUITY_PROBE {
+        if let Some(latest) = latest_version(&versions) {
+            return Ok(latest);
+        }
+    }
+    let mut keys: Vec<String> = versions.into_iter().map(|r| r.program_key).collect();
 
     match keys.len() {
         0 => Err(serde_json::json!({
@@ -456,6 +508,130 @@ fn matches_json(programs: &[ProgramDetail]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const BS_2025: &str = "prog:1|11.0701|2025-2026|BS|cs";
+
+    /// A stored row of `base`, dated (`base|v<date>`) when `date` is given.
+    fn version(base: &str, date: Option<&str>, generation: i64) -> VersionRow {
+        VersionRow {
+            program_key: date.map_or_else(
+                || base.to_string(),
+                |d| format!("{base}{VERSION_KEY_SEPARATOR}{d}"),
+            ),
+            version_date: date.map(Into::into),
+            generation: Some(generation),
+        }
+    }
+
+    #[test]
+    fn test_latest_version_picks_newest_dated_row() {
+        let rows = [
+            version(BS_2025, None, 9),
+            version(BS_2025, Some("2026-10-09"), 5),
+            version(BS_2025, Some("2026-09-01"), 7),
+        ];
+        assert_eq!(
+            latest_version(&rows).as_deref(),
+            Some("prog:1|11.0701|2025-2026|BS|cs|v2026-10-09")
+        );
+    }
+
+    #[test]
+    fn test_latest_version_refuses_programs_differing_in_any_key_part() {
+        // Different catalog year, school, CIP, degree type: each is another program, and
+        // two undated programs must stay ambiguous rather than be split by import time.
+        for other in [
+            "prog:1|11.0701|2024-2025|BS|cs",
+            "prog:2|11.0701|2025-2026|BS|cs",
+            "prog:ca:university-of-toronto|11.0701|2025-2026|BS|cs",
+            "prog:1|11.0102|2025-2026|BS|cs",
+            "prog:1|11.0701|2025-2026|BA|cs",
+        ] {
+            for (date, other_date) in [(None, None), (None, Some("2026-10-09"))] {
+                let rows = [version(BS_2025, date, 1), version(other, other_date, 2)];
+                assert_eq!(latest_version(&rows), None, "{other} {other_date:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_base_key_strips_only_its_own_version_suffix() {
+        assert_eq!(version(BS_2025, Some("2026-10-09"), 1).base_key(), BS_2025);
+        assert_eq!(version(BS_2025, None, 1).base_key(), BS_2025);
+        // A date that does not match the key's suffix leaves the key whole.
+        let mismatched = VersionRow {
+            program_key: format!("{BS_2025}|v2026-10-09"),
+            version_date: Some("2026-01-01".into()),
+            generation: None,
+        };
+        assert_eq!(mismatched.base_key(), mismatched.program_key);
+    }
+
+    /// A backend that finds no `program_key` match and answers every `degree_id` select
+    /// with `by_id`, so `resolve_program_key` reaches its version logic.
+    async fn degree_id_backend(by_id: &'static str) -> DbClient {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind ephemeral port");
+        let url = format!("http://{}", listener.local_addr().expect("local addr"));
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let mut buf = [0u8; 8192];
+                let n = tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
+                    .await
+                    .unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]);
+                let body = if request.contains("program_key=eq") {
+                    "[]"
+                } else {
+                    by_id
+                };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
+            }
+        });
+        DbClient::new(&url, "anon", "jwt".to_string()).expect("client")
+    }
+
+    #[tokio::test]
+    async fn test_resolve_program_key_returns_the_newest_dated_version() {
+        let client = degree_id_backend(
+            r#"[{"program_key":"prog:1|11.0701|2025-2026|BS|cs","version_date":null,"generation":9},
+                {"program_key":"prog:1|11.0701|2025-2026|BS|cs|v2026-10-09","version_date":"2026-10-09","generation":5}]"#,
+        )
+        .await;
+        assert_eq!(
+            resolve_program_key(&client, "cs").await.unwrap(),
+            "prog:1|11.0701|2025-2026|BS|cs|v2026-10-09"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_program_key_still_reports_two_programs_as_ambiguous() {
+        let client = degree_id_backend(
+            r#"[{"program_key":"prog:1|11.0701|2024-2025|BS|cs","version_date":null,"generation":1},
+                {"program_key":"prog:1|11.0701|2025-2026|BS|cs","version_date":null,"generation":2}]"#,
+        )
+        .await;
+        let err = resolve_program_key(&client, "cs").await.unwrap_err();
+        let err: serde_json::Value = serde_json::from_str(&err).unwrap();
+        assert_eq!(err["code"], error_code::AMBIGUOUS_REFERENCE, "{err}");
+        assert_eq!(err["matches"].as_array().map(Vec::len), Some(2), "{err}");
+    }
+
+    #[test]
+    fn test_latest_version_single_row_is_itself() {
+        let rows = [version(BS_2025, None, 1)];
+        assert_eq!(latest_version(&rows).as_deref(), Some(BS_2025));
+        assert_eq!(latest_version(&[]), None);
+    }
 
     /// Guards the `PROGRAM_SUMMARY_COLS` → `ProgramSummary` contract: a row
     /// shaped like a `PostgREST` `programs` select must deserialize cleanly. A

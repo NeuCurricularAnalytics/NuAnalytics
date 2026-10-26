@@ -42,6 +42,12 @@ pub struct Degree {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unitid: Option<i32>,
 
+    /// Reference to a non-US institution in `institutions_intl` (e.g.
+    /// `"ca:university-of-toronto"`), for schools IPEDS does not cover. Mutually
+    /// exclusive with `unitid`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub institution_ref: Option<String>,
+
     /// Catalog year (e.g., "2024-2025")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub catalog_year: Option<String>,
@@ -342,6 +348,7 @@ impl Degree {
             id: None,
             institution: None,
             unitid: None,
+            institution_ref: None,
             catalog_year: None,
             source_url: None,
             total_credits: None,
@@ -382,6 +389,7 @@ impl Degree {
             id: Some(id),
             institution: Some(institution),
             unitid: None,
+            institution_ref: None,
             catalog_year: Some(catalog_year),
             source_url: None,
             total_credits: Some(total_credits),
@@ -443,6 +451,26 @@ impl Degree {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_institution_ref_round_trips_and_is_omitted_when_absent() {
+        // Omitted when None, so documents without it serialize byte-for-byte as before.
+        let mut degree = Degree::new(
+            "Computer Science".to_string(),
+            "BS".to_string(),
+            None,
+            "semester".to_string(),
+        );
+        assert!(!serde_json::to_string(&degree)
+            .unwrap()
+            .contains("institution_ref"));
+        degree.institution_ref = Some("ca:university-of-toronto".to_string());
+        let back: Degree = serde_json::from_str(&serde_json::to_string(&degree).unwrap()).unwrap();
+        assert_eq!(
+            back.institution_ref.as_deref(),
+            Some("ca:university-of-toronto")
+        );
+    }
 
     #[test]
     fn test_degree_creation() {

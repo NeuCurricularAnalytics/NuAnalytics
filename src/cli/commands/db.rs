@@ -78,6 +78,8 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
             files,
             variant,
             unitid,
+            institution_ref,
+            version_date,
             institution,
             cip,
             catalog,
@@ -96,6 +98,8 @@ pub fn run(subcommand: DbSubcommand, config: &Config, sources: &ConfigSources) {
                 cip_code: cip,
                 catalog_year: catalog,
                 degree_id,
+                version_date,
+                institution_ref,
                 force,
                 replace,
                 skip_existing,
@@ -1747,6 +1751,19 @@ const fn tally_outcome(tally: &mut ImportTally, result: &ImportResult) {
     }
 }
 
+/// How an import names its institution: the name, then how it was keyed.
+fn institution_label(name: Option<&str>, unitid: Option<i32>, reference: Option<&str>) -> String {
+    match (name, unitid, reference) {
+        // A non-US institution: keyed on its ref, never IPEDS-resolved.
+        (Some(name), _, Some(reference)) => format!("{name} ({reference})"),
+        (None, _, Some(reference)) => format!("({reference})"),
+        (Some(name), Some(u), None) => format!("{name} (unitid {u})"),
+        (Some(name), None, None) => format!("{name} (unresolved)"),
+        (None, Some(u), None) => format!("(unitid {u})"),
+        (None, None, None) => "(unresolved)".to_string(),
+    }
+}
+
 /// Print the detailed outcome of a single import (result, resolved unit id,
 /// row counts, conversion warnings, messages, and guidance when blocked).
 fn print_import_outcome(path: &std::path::Path, outcome: &ImportOutcome, dry: &str) {
@@ -1756,14 +1773,19 @@ fn print_import_outcome(path: &std::path::Path, outcome: &ImportOutcome, dry: &s
         path.display(),
         result_label(&outcome.result)
     );
-    let institution = match (&outcome.institution, outcome.resolved_unitid) {
-        (Some(name), Some(u)) => format!("{name} (unitid {u})"),
-        (Some(name), None) => format!("{name} (unresolved)"),
-        (None, Some(u)) => format!("(unitid {u})"),
-        (None, None) => "(unresolved)".to_string(),
-    };
+    let institution = institution_label(
+        outcome.institution.as_deref(),
+        outcome.resolved_unitid,
+        outcome.institution_ref.as_deref(),
+    );
     println!("  institution:    {institution}");
-    println!("  program_key:    {}", outcome.program_key);
+    // Empty when the options were refused before a key could be computed.
+    let key = if outcome.program_key.is_empty() {
+        "(not computed)"
+    } else {
+        &outcome.program_key
+    };
+    println!("  program_key:    {key}");
     println!("  variant:        {}", outcome.variant);
     // On the ambiguous path nothing is built (resolution stops early), so the
     // analysis/row counts would be meaningless — skip them; the candidate list
@@ -2292,6 +2314,25 @@ fn run_query(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_institution_label_prefers_the_intl_ref_over_a_unitid() {
+        for (name, unitid, reference, want) in [
+            (
+                Some("U of T"),
+                Some(1),
+                Some("ca:u-of-t"),
+                "U of T (ca:u-of-t)",
+            ),
+            (None, None, Some("ca:u-of-t"), "(ca:u-of-t)"),
+            (Some("NEU"), Some(167_358), None, "NEU (unitid 167358)"),
+            (Some("NEU"), None, None, "NEU (unresolved)"),
+            (None, Some(167_358), None, "(unitid 167358)"),
+            (None, None, None, "(unresolved)"),
+        ] {
+            assert_eq!(institution_label(name, unitid, reference), want);
+        }
+    }
 
     // --- db report helpers --------------------------------------------------
 

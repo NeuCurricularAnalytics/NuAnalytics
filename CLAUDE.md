@@ -10,8 +10,8 @@ codebase — run `/init` if you want that.
 
 Default features: `log-info`, `log-debug`, `verbose`, `file-logging`, `database`, `mcp`.
 
-    cargo test --all-features                       # 1544 tests, clean
-    cargo test --no-default-features --features database   # 1304 — the CLI's feature set
+    cargo test --all-features                       # 1571 tests, clean
+    cargo test --no-default-features --features database   # 1328 — the CLI's feature set
     cargo build --features database
 
 **Three feature sets are tested in CI, and the middle one is load-bearing.** The query
@@ -146,7 +146,7 @@ shapes. Do not add a cause of our own to a rejection. The password is prompted v
 
 **`nuanalytics db doctor` is the first thing to run against an unfamiliar deployment.** It
 walks configuration → reachability → anon-key read → session → authenticated read → schema
-(all 20 tables) → seed data → row limit → query functions, each check gating the next so the report names one
+(all 21 tables) → seed data → row limit → query functions, each check gating the next so the report names one
 cause rather than repeating it. Logic is in `src/core/database/doctor.rs`; the CLI only
 formats. A check added to `diagnose` must also be added to the three `*_DEPENDENTS` arrays,
 or it silently disappears from the report when an earlier check fails —

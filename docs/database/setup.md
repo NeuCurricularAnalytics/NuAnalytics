@@ -177,7 +177,7 @@ If a step fails during `db bootstrap`, it stops there and names the file rather 
 carrying on and burying the cause under a cascade of missing-relation errors. Everything
 is idempotent, so fix the problem and re-run.
 
-Verify the result with `nuanalytics db doctor`, which checks all 20 tables and the seed
+Verify the result with `nuanalytics db doctor`, which checks all 21 tables and the seed
 row counts.
 
 ### What gets created
@@ -347,7 +347,7 @@ Backend:  https://db.example.edu
 ✓ anon-key read        200 — row-level security filters an unauthenticated read rather than rejecting it
 ✓ session              valid, you@example.edu
 ✓ authenticated read   succeeded
-✓ schema               all 20 tables present
+✓ schema               all 21 tables present
 ✓ seed data            cip_codes has all 2173 rows
 ✓ row limit            completions returned all 5000 rows of a 5000-row request
 
@@ -359,7 +359,7 @@ rather than six errors that all share one cause. Exits 1 on any failure. Warning
 fail it — a short optional seed still leaves a working deployment.
 
 Run this before Step 4 as well as after: on an unconfigured schema it tells you exactly
-which of the 20 tables are missing, which is faster than reading SQL errors.
+which of the 21 tables are missing, which is faster than reading SQL errors.
 
 ---
 
@@ -489,12 +489,14 @@ nuanalytics db logout
 `docs/database/programs-schema.sql` (+ `docs/database/program-lookup-seed.sql`,
 applied in [Step 4b](#step-4b--the-five-files-if-you-are-applying-them-by-hand)) add a
 normalized, **queryable** projection of imported degree programs alongside the
-lossless source document. Eight tables:
+lossless source document. Nine tables and a view:
 
 | Table | What it holds |
 |-------|---------------|
 | `degree_types` | Lookup for normalized `degree_type` codes (`BS`, `BA`, `MINOR`, …); seeded by `program-lookup-seed.sql` |
-| `programs` | One row per program. The lossless unified-JSON `document` (JSONB) is the source of truth; the other columns are a queryable scalar projection. `program_key` is the deterministic idempotency key |
+| `programs` | One row per program. The lossless unified-JSON `document` (JSONB) is the source of truth; the other columns are a queryable scalar projection. `program_key` is the deterministic idempotency key (see [Program keys](#program-keys)). `version_date` dates a revision; `country` is `US` unless the school is in `institutions_intl` |
+| `programs_latest` | View over `programs`: the newest version of each program, one row per school (`unitid`, else `institution_ref`) and `degree_id`, by `version_date` (undated last) then latest import |
+| `institutions_intl` | Schools outside the US, which IPEDS does not cover: `ref` (`<country>:<slug>`, e.g. `ca:university-of-toronto`), `country`, `region`, `name`, `alternate_names`, `website`, `source`. Programs there carry `institution_ref = ref` and a NULL `unitid` |
 | `courses` | Shared per-institution course catalog, partitioned by `institution_ref` and keyed `(institution_ref, course_code)` |
 | `program_courses` | M:N junction programs ↔ courses, with per-program `credit_hours_override` / `name_as_listed` |
 | `program_requirements` | The requirement tree flattened by `req_path` / `parent_path`, with JSONB `selection_spec` / `req_constraints` and `is_impossible` / `allow_double_count` flags |
@@ -540,11 +542,44 @@ nuanalytics db import report.json --unitid 167358 --replace
   rows:           82 courses, 32 requirements, 72 course-metrics
 ```
 
+#### Program keys
+
+`program_key` is built from the degree, so re-importing the same program updates
+its row:
+
+| Institution | Key |
+|---|---|
+| Non-US (`--institution-ref` or `degree.institution_ref`) | `prog:<ref>\|<cip>\|<catalog_year>\|<degree_type>\|<degree_id or name>` |
+| IPEDS unitid resolved | `prog:<unitid>\|<cip>\|<catalog_year>\|<degree_type>\|<degree_id or name>` |
+| Unresolved, degree has an `id` | `prog:<degree_id>\|<catalog_year>` |
+| Otherwise | `fp:<sha256(institution\|name\|degree_type\|catalog_year\|source_url)>` |
+
+`--version-date YYYY-MM-DD` appends `|v<YYYY-MM-DD>` to any of these and stores the
+date in `programs.version_date`, so dated revisions of one catalog year are kept side by
+side (`programs_latest` picks the newest). Without the flag the key is unchanged. When
+attaching a trimmed (or other non-`full`) run to a dated program, pass the same
+`--version-date`, or the run lands on the undated key.
+
+```sh
+# A dated revision
+nuanalytics db import report.json --version-date 2026-03-15
+nuanalytics db import report_trimmed.json --variant trimmed --version-date 2026-03-15
+
+# A school outside the US: no IPEDS lookup, unitid NULL, country CA
+nuanalytics db import report.json --institution-ref ca:university-of-toronto
+```
+
+`--institution-ref` takes `<country>:<slug>` — a 2- or 3-letter country code, then
+lowercase letters, digits and `-` — and is mutually exclusive with `--unitid`. A degree
+can carry the same value as `degree.institution_ref` instead (an explicit `--unitid`
+overrides it; a degree with both `unitid` and `institution_ref` is rejected). Add the
+school to `institutions_intl` so queries can name it; the import does not require it.
+
 Overwriting an existing program requires `--replace` (unverified) or `--force`
 (verified). Stored programs can then be analyzed without re-reading the file via
 `degree analyze --from-db <NAME>` (see [Degree Command](../degree.md#analyze-a-stored-program---from-db)).
-The full flag set (`--variant`, `--unitid`, `--institution`, `--cip`,
-`--catalog`, `--degree-id`, `--force`, `--replace`, `--skip-existing`,
+The full flag set (`--variant`, `--unitid`, `--institution-ref`, `--version-date`,
+`--institution`, `--cip`, `--catalog`, `--degree-id`, `--force`, `--replace`, `--skip-existing`,
 `--dry-run`, `-j/--jobs`) is available via `nuanalytics db import --help`; the
 [MCP `import_degree` tool](../mcp.md#tools-that-write) takes the same options.
 
@@ -571,7 +606,7 @@ See [docs/config.md](../config.md) for the rest. Config files:
 Both observed in practice while standing this stack up, not inferred from reading code.
 
 **The seed tables are read-only through the API — seed them with SQL.** Every RLS policy
-in the schema is `auth.role() = 'authenticated'`, and only 12 of the 31 are write
+in the schema is `auth.role() = 'authenticated'`, and only 13 of the 33 are write
 (`FOR ALL`) policies. `cip_codes`, the seven lookup tables and `degree_types` have a read
 policy and no write policy, so an authenticated `POST` to `cip_codes` returns `42501`.
 That is deliberate: they are reference data. `db bootstrap` applies the seed files as SQL

@@ -4,6 +4,27 @@ All notable changes to NuAnalytics are recorded here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the
 project uses semantic versioning.
 
+## [0.6.1] — 2026-10-09
+
+Backward compatible with 0.6.0 clients: new columns are additive and 0.6.0 ignores them. Apply
+`docs/database/programs-schema.sql` (idempotent) before using the new flags.
+
+### Added
+- `db import --version-date YYYY-MM-DD` (and MCP `import_degree.version_date`): appends
+  `|v<date>` to the `program_key`, so a re-built program gets a new dated entry instead of
+  overwriting. `programs.version_date` column and `programs_latest` view.
+- Non-US institutions: `institutions_intl` table and `db import --institution-ref <cc:slug>`
+  (e.g. `ca:university-of-toronto`); such programs have `unitid` NULL and `programs.country`.
+
+### Changed
+- Resolving a `degree_id` that matches several dated versions of one program (keys equal
+  apart from their `|v<date>` suffix) now returns the newest version instead of an
+  ambiguity error. Matches that differ in any other part of the key are still ambiguous.
+  A 0.6.0 client still reports dated versions as ambiguous and needs the exact
+  `program_key`.
+- MCP `import_degree`: a malformed `version_date` or `institution_ref`, or `unitid` with
+  `institution_ref`, is refused as a `bad_arguments` error before anything is read.
+
 ## [0.6.0] — 2026-10-03
 
 The MCP server is redesigned: fewer, broader tools; SQL access in layers; stored analysis

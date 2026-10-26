@@ -102,6 +102,16 @@ pub struct ImportOptions {
     pub catalog_year: Option<String>,
     /// Override the degree id.
     pub degree_id: Option<String>,
+    /// The date this version of the program was published (`YYYY-MM-DD`). When set it
+    /// is appended to the `program_key` (`|v<date>`) and stored in
+    /// `programs.version_date`, so dated revisions of one catalog year coexist. Validate
+    /// with [`parse_version_date`].
+    pub version_date: Option<String>,
+    /// A non-US institution reference (`<country>:<slug>`, e.g.
+    /// `ca:university-of-toronto`) that keys the program instead of an IPEDS unit id.
+    /// Skips IPEDS name resolution. Mutually exclusive with [`Self::unitid`]; validate
+    /// with [`parse_institution_ref`].
+    pub institution_ref: Option<String>,
     /// Overwrite a verified program / skip confirmation.
     pub force: bool,
     /// Replace an existing (unverified) program.
@@ -121,11 +131,131 @@ impl Default for ImportOptions {
             cip_code: None,
             catalog_year: None,
             degree_id: None,
+            version_date: None,
+            institution_ref: None,
             force: false,
             replace: false,
             skip_existing: false,
             dry_run: false,
         }
+    }
+}
+
+impl ImportOptions {
+    /// Check the options that cannot be checked one flag at a time.
+    ///
+    /// # Errors
+    /// Returns a message when `unitid` and `institution_ref` are both set, or when
+    /// `version_date` / `institution_ref` is malformed.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.unitid.is_some() && self.institution_ref.is_some() {
+            return Err(
+                "unitid and institution_ref are mutually exclusive: a program is keyed on an \
+                 IPEDS unit id or on a non-US institution reference, not both"
+                    .to_string(),
+            );
+        }
+        if let Some(date) = &self.version_date {
+            parse_version_date(date)?;
+        }
+        if let Some(r) = &self.institution_ref {
+            parse_institution_ref(r)?;
+        }
+        Ok(())
+    }
+}
+
+/// Validate a `--version-date` value: a real calendar date written `YYYY-MM-DD`.
+///
+/// Strict on the shape (zero-padded, ten characters) because the value becomes part of
+/// the `program_key`: `2026-1-5` and `2026-01-05` must not name two programs.
+///
+/// # Errors
+/// Returns a message naming the expected format when the value is not one.
+pub fn parse_version_date(s: &str) -> Result<String, String> {
+    let s = s.trim();
+    // `%m`/`%d` also accept one digit, so the shape is checked by formatting back.
+    let canonical = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+        .is_ok_and(|d| d.format("%Y-%m-%d").to_string() == s);
+    if canonical {
+        Ok(s.to_string())
+    } else {
+        Err(format!(
+            "version_date must be a calendar date written YYYY-MM-DD, got \"{s}\""
+        ))
+    }
+}
+
+/// A validated non-US institution reference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstitutionRef {
+    /// The normalised reference — trimmed, country prefix lower-cased — e.g.
+    /// `ca:university-of-toronto`.
+    pub reference: String,
+    /// The country code from its prefix, upper-cased, e.g. `CA`.
+    pub country: String,
+}
+
+/// Validate an `--institution-ref` value: `<country>:<slug>`, e.g.
+/// `ca:university-of-toronto`.
+///
+/// The prefix is a two- or three-letter country code (ISO 3166 alpha-2 or alpha-3) and
+/// becomes `programs.country`, upper-cased. The slug must already be in the form
+/// [`institution_slug`] produces — lowercase ASCII letters and digits, single `-` between
+/// them — so a typed ref and one derived from a name cannot spell one school two ways,
+/// and it cannot carry the `|` that separates `program_key` fields.
+///
+/// # Errors
+/// Returns a message describing the expected shape when the value does not match it.
+pub fn parse_institution_ref(s: &str) -> Result<InstitutionRef, String> {
+    let s = s.trim();
+    let bad = || {
+        format!(
+            "institution_ref must be <country>:<slug> with a 2-3 letter country code and a \
+             slug of lowercase letters and digits joined by single '-' \
+             (e.g. ca:university-of-toronto), got \"{s}\""
+        )
+    };
+    let (country, slug) = s.split_once(':').ok_or_else(bad)?;
+    let country_ok =
+        (2..=3).contains(&country.len()) && country.chars().all(|c| c.is_ascii_alphabetic());
+    let slug_ok = !slug.is_empty() && institution_slug(slug) == slug;
+    if !(country_ok && slug_ok) {
+        return Err(bad());
+    }
+    Ok(InstitutionRef {
+        reference: format!("{}:{slug}", country.to_ascii_lowercase()),
+        country: country.to_ascii_uppercase(),
+    })
+}
+
+/// The non-US institution this import is keyed on, if any.
+///
+/// `opts.institution_ref` wins; an explicit `opts.unitid` overrides whatever the
+/// document says; otherwise the document's own `degree.institution_ref` applies.
+///
+/// # Errors
+/// Returns a message when the options or the document carry both a unit id and an
+/// institution ref, or when the ref is malformed.
+fn effective_institution_ref(
+    degree: &crate::core::models::Degree,
+    opts: &ImportOptions,
+) -> Result<Option<InstitutionRef>, String> {
+    opts.validate()?;
+    if let Some(r) = &opts.institution_ref {
+        return parse_institution_ref(r).map(Some);
+    }
+    if opts.unitid.is_some() {
+        return Ok(None);
+    }
+    match (&degree.institution_ref, degree.unitid) {
+        (Some(r), Some(u)) => Err(format!(
+            "the degree document sets both unitid ({u}) and institution_ref (\"{r}\"); remove \
+             one from the document, or override it with unitid / institution_ref \
+             (CLI: --unitid / --institution-ref)"
+        )),
+        (Some(r), None) => parse_institution_ref(r).map(Some),
+        (None, _) => Ok(None),
     }
 }
 
@@ -144,7 +274,8 @@ pub enum ImportResult {
     /// The institution name matched several institutions; the caller must pick
     /// one and re-run with an explicit `unitid`. Carries `(unitid, name)` pairs.
     InstitutionAmbiguous(Vec<(i32, String)>),
-    /// The report could not be turned into a valid plan. Carries the errors.
+    /// The report or the import options could not be turned into a valid plan. Carries
+    /// the errors.
     Rejected(Vec<String>),
 }
 
@@ -157,6 +288,8 @@ pub struct ImportOutcome {
     pub result: ImportResult,
     /// The resolved IPEDS unit id, when one was determined.
     pub resolved_unitid: Option<i32>,
+    /// The non-US institution reference the program is keyed on, when it is one.
+    pub institution_ref: Option<String>,
     /// The analysis-run variant label.
     pub variant: String,
     /// Institution name from the degree (raw), for display.
@@ -227,14 +360,20 @@ pub fn institution_slug(name: &str) -> String {
 }
 
 /// Compute the `institution_ref` (course-catalog partition key).
-fn institution_ref(resolved_unitid: Option<i32>, institution: Option<&str>) -> String {
+fn institution_ref(
+    intl: Option<&InstitutionRef>,
+    resolved_unitid: Option<i32>,
+    institution: Option<&str>,
+) -> String {
+    if let Some(r) = intl {
+        return r.reference.clone();
+    }
     resolved_unitid.map_or_else(
         || institution.map_or_else(|| "unknown".to_string(), institution_slug),
         |u| u.to_string(),
     )
 }
 
-/// Compute the deterministic `program_key` for a degree.
 /// A fresh run identifier.
 ///
 /// Random rather than derived: see the note at its use site in
@@ -261,23 +400,62 @@ fn catalog_year_of(degree: &crate::core::models::Degree, opts: &ImportOptions) -
         .unwrap_or_default()
 }
 
+/// The institution name this import reports and stores: the option wins over the
+/// document, as for every other override.
+fn display_institution(
+    degree: &crate::core::models::Degree,
+    opts: &ImportOptions,
+) -> Option<String> {
+    opts.institution
+        .clone()
+        .or_else(|| degree.institution.clone())
+}
+
+/// Compute the deterministic `program_key` for a degree.
+///
+/// - `prog:<ref>|<cip>|<catalog_year>|<degree_type>|<degree_id or name>` for a non-US
+///   institution (`intl`);
+/// - `prog:<unitid>|<cip>|<catalog_year>|<degree_type>|<degree_id or name>` when the
+///   unit id resolved;
+/// - `prog:<degree_id>|<catalog_year>` when it did not but the degree has an id;
+/// - `fp:<sha256>` otherwise.
+///
+/// With a version date every form gains a `|v<YYYY-MM-DD>` suffix; without one the key
+/// is exactly what it was before version dates existed, so existing rows keep theirs.
 fn program_key(
     degree: &crate::core::models::Degree,
     opts: &ImportOptions,
     resolved_unitid: Option<i32>,
+    intl: Option<&InstitutionRef>,
+) -> String {
+    let base = base_program_key(degree, opts, resolved_unitid, intl);
+    match &opts.version_date {
+        Some(date) => format!("{base}{VERSION_KEY_SEPARATOR}{}", date.trim()),
+        None => base,
+    }
+}
+
+/// What joins a version date onto a `program_key`: `<base>|v<YYYY-MM-DD>`.
+pub const VERSION_KEY_SEPARATOR: &str = "|v";
+
+/// [`program_key`] without the version-date suffix.
+fn base_program_key(
+    degree: &crate::core::models::Degree,
+    opts: &ImportOptions,
+    resolved_unitid: Option<i32>,
+    intl: Option<&InstitutionRef>,
 ) -> String {
     let cip = opts
         .cip_code
         .clone()
         .or_else(|| degree.cip_code.clone())
         .unwrap_or_default();
-    let cat = opts
-        .catalog_year
-        .clone()
-        .or_else(|| degree.catalog_year.clone())
-        .unwrap_or_default();
+    let cat = catalog_year_of(degree, opts);
     let dtype = &degree.degree_type;
-    if let Some(u) = resolved_unitid {
+    let institution_part = intl
+        .map(|r| r.reference.clone())
+        .or_else(|| resolved_unitid.map(|u| u.to_string()));
+    if let Some(inst) = institution_part {
         // The degree id (or its name) is part of the key, not decoration. Without it,
         // `unitid|cip|catalog_year|degree_type` collides for any two programs an
         // institution offers under one CIP in one year — three of Illinois State's AI
@@ -291,7 +469,7 @@ fn program_key(
             .clone()
             .or_else(|| degree.id.clone())
             .unwrap_or_else(|| degree.name.clone());
-        format!("prog:{u}|{cip}|{cat}|{dtype}|{discriminator}")
+        format!("prog:{inst}|{cip}|{cat}|{dtype}|{discriminator}")
     } else if let Some(id) = opts.degree_id.clone().or_else(|| degree.id.clone()) {
         format!("prog:{id}|{cat}")
     } else {
@@ -562,8 +740,19 @@ pub fn build_import_plan(
     let variant = opts.variant.clone();
     let is_full = variant.eq_ignore_ascii_case(super::variants::FULL);
 
-    let inst_ref = institution_ref(resolved_unitid, degree.institution.as_deref());
-    let program_key = program_key(degree, opts, resolved_unitid);
+    let intl = effective_institution_ref(degree, opts).map_err(DatabaseError::IngestError)?;
+    // A non-US institution has no IPEDS unit id, whatever the caller resolved.
+    let resolved_unitid = if intl.is_some() {
+        None
+    } else {
+        resolved_unitid
+    };
+    let inst_ref = institution_ref(
+        intl.as_ref(),
+        resolved_unitid,
+        degree.institution.as_deref(),
+    );
+    let program_key = program_key(degree, opts, resolved_unitid, intl.as_ref());
     let catalog_year = catalog_year_of(degree, opts);
 
     let document = to_unified_value(&program)
@@ -635,10 +824,7 @@ pub fn build_import_plan(
         degree_id: opts.degree_id.clone().or_else(|| degree.id.clone()),
         unitid: resolved_unitid,
         institution_ref: inst_ref,
-        institution_raw: opts
-            .institution
-            .clone()
-            .or_else(|| degree.institution.clone()),
+        institution_raw: display_institution(degree, opts),
         cip_code: opts.cip_code.clone().or_else(|| degree.cip_code.clone()),
         name: degree.name.clone(),
         degree_type: (!degree.degree_type.is_empty()).then(|| degree.degree_type.clone()),
@@ -664,6 +850,10 @@ pub fn build_import_plan(
         verified: false,
         institution_resolved: resolved_unitid.is_some(),
         has_impossible_requirements: has_impossible,
+        version_date: opts.version_date.as_ref().map(|d| d.trim().to_string()),
+        // Only a non-US program sends the column; a US one leaves it to the `'US'`
+        // default, so imports keep working against a database without the column.
+        country: intl.as_ref().map(|r| r.country.clone()),
         generation,
         created_at: None,
         updated_at: None,
@@ -1025,6 +1215,33 @@ async fn resolve_institution(
     }
 }
 
+/// The outcome of an import stopped before anything was built or written.
+fn blocked_outcome(
+    degree: &crate::core::models::Degree,
+    opts: &ImportOptions,
+    program_key: String,
+    result: ImportResult,
+    messages: Vec<String>,
+) -> ImportOutcome {
+    ImportOutcome {
+        program_key,
+        result,
+        resolved_unitid: None,
+        institution_ref: None,
+        variant: opts.variant.clone(),
+        institution: display_institution(degree, opts),
+        variations_run: None,
+        sample_type: None,
+        courses_written: 0,
+        requirements_written: 0,
+        run_written: false,
+        plans_written: 0,
+        course_metrics_written: 0,
+        conversion_warnings: Vec::new(),
+        messages,
+    }
+}
+
 /// Import a degree report into the database.
 ///
 /// Resolves the institution, computes the existence/verified decision, builds
@@ -1047,30 +1264,38 @@ pub async fn execute_import(
         .map_err(|e| DatabaseError::ParseError(format!("failed to parse degree: {e}")))?;
     let degree = program.degree.clone();
 
-    // 1. institution resolution.
-    let resolved_unitid = match resolve_institution(client, opts, &degree).await? {
+    // 0. options the flags cannot check one at a time (unitid vs institution_ref, the
+    //    version-date and ref formats), and the document's own institution_ref.
+    let intl = match effective_institution_ref(&degree, opts) {
+        Ok(intl) => intl,
+        Err(e) => {
+            return Ok(blocked_outcome(
+                &degree,
+                opts,
+                String::new(),
+                ImportResult::Rejected(vec![e]),
+                Vec::new(),
+            ));
+        }
+    };
+
+    // 1. institution resolution — skipped for a non-US institution, which IPEDS does
+    //    not list and so could only be mis-resolved by name.
+    let resolution = if intl.is_some() {
+        Ok(None)
+    } else {
+        resolve_institution(client, opts, &degree).await?
+    };
+    let resolved_unitid = match resolution {
         Ok(u) => u,
         Err(candidates) => {
-            let key = program_key(&degree, opts, None);
-            return Ok(ImportOutcome {
-                program_key: key,
-                result: ImportResult::InstitutionAmbiguous(candidates),
-                resolved_unitid: None,
-                variant: opts.variant.clone(),
-                institution: opts
-                    .institution
-                    .clone()
-                    .or_else(|| degree.institution.clone()),
-                variations_run: None,
-                sample_type: None,
-                courses_written: 0,
-                requirements_written: 0,
-                run_written: false,
-                plans_written: 0,
-                course_metrics_written: 0,
-                conversion_warnings: Vec::new(),
-                messages: vec!["institution name matched multiple institutions".to_string()],
-            });
+            return Ok(blocked_outcome(
+                &degree,
+                opts,
+                program_key(&degree, opts, None, None),
+                ImportResult::InstitutionAmbiguous(candidates),
+                vec!["institution name matched multiple institutions".to_string()],
+            ));
         }
     };
 
@@ -1099,11 +1324,9 @@ pub async fn execute_import(
         program_key: program_key.clone(),
         result: decision.result,
         resolved_unitid,
+        institution_ref: intl.map(|r| r.reference),
         variant: opts.variant.clone(),
-        institution: opts
-            .institution
-            .clone()
-            .or_else(|| degree.institution.clone()),
+        institution: display_institution(&degree, opts),
         variations_run: plan.run.as_ref().and_then(|r| r.variations_run),
         sample_type: plan.run.as_ref().and_then(|r| r.sample_type.clone()),
         courses_written: plan.courses.len(),
@@ -1459,14 +1682,293 @@ mod tests {
     #[test]
     fn test_institution_ref_prefers_unitid() {
         assert_eq!(
-            institution_ref(Some(167_358), Some("Test University")),
+            institution_ref(None, Some(167_358), Some("Test University")),
             "167358"
         );
         assert_eq!(
-            institution_ref(None, Some("Test University")),
+            institution_ref(None, None, Some("Test University")),
             "test-university"
         );
-        assert_eq!(institution_ref(None, None), "unknown");
+        assert_eq!(institution_ref(None, None, None), "unknown");
+        let intl = parse_institution_ref("ca:university-of-toronto").unwrap();
+        assert_eq!(
+            institution_ref(Some(&intl), None, Some("University of Toronto")),
+            "ca:university-of-toronto"
+        );
+    }
+
+    // --- version dates and non-US institutions ------------------------------
+
+    fn key_of(report: &str, opts: &ImportOptions, unitid: Option<i32>) -> StoredProgram {
+        build_import_plan(report, opts, unitid, 1)
+            .unwrap()
+            .0
+            .program
+            .unwrap()
+    }
+
+    fn dated(date: &str) -> ImportOptions {
+        ImportOptions {
+            version_date: Some(date.to_string()),
+            ..opts()
+        }
+    }
+
+    fn intl(reference: &str) -> ImportOptions {
+        ImportOptions {
+            institution_ref: Some(reference.to_string()),
+            ..opts()
+        }
+    }
+
+    #[test]
+    fn without_a_version_date_keys_are_unchanged() {
+        let p = key_of(&sample_report(), &opts(), Some(167_358));
+        assert_eq!(
+            p.program_key,
+            "prog:167358|11.0701|2024-2025|BS|Computer Science"
+        );
+        assert_eq!(p.version_date, None);
+        assert_eq!(
+            p.country, None,
+            "US rows leave country to the column default"
+        );
+    }
+
+    #[test]
+    fn a_version_date_suffixes_the_us_key_and_is_stored() {
+        let p = key_of(&sample_report(), &dated("2026-03-15"), Some(167_358));
+        assert_eq!(
+            p.program_key,
+            "prog:167358|11.0701|2024-2025|BS|Computer Science|v2026-03-15"
+        );
+        assert_eq!(p.version_date.as_deref(), Some("2026-03-15"));
+        assert!(p.institution_resolved);
+    }
+
+    #[test]
+    fn a_version_date_suffixes_the_unresolved_and_fingerprint_keys() {
+        let with_id = r#"{
+            "degree": {"name": "CS", "degree_type": "BS", "system_type": "semester",
+                       "id": "test-cs-2024", "catalog_year": "2024-2025"},
+            "requirements": {}, "courses": {}
+        }"#;
+        assert_eq!(
+            key_of(with_id, &dated("2025-08-01"), None).program_key,
+            "prog:test-cs-2024|2024-2025|v2025-08-01"
+        );
+        let no_id = r#"{
+            "degree": {"name": "CS", "degree_type": "BS", "system_type": "semester",
+                       "institution": "Test University", "catalog_year": "2024-2025"},
+            "requirements": {}, "courses": {}
+        }"#;
+        let plain = key_of(no_id, &opts(), None).program_key;
+        let dated_key = key_of(no_id, &dated("2025-08-01"), None).program_key;
+        assert!(plain.starts_with("fp:"), "{plain}");
+        assert_eq!(dated_key, format!("{plain}|v2025-08-01"));
+    }
+
+    #[test]
+    fn a_trimmed_run_with_the_same_date_attaches_to_the_dated_program() {
+        let full = key_of(&sample_report(), &dated("2026-03-15"), Some(167_358));
+        let trimmed_opts = ImportOptions {
+            variant: super::super::variants::TRIMMED.to_string(),
+            ..dated("2026-03-15")
+        };
+        let (plan, _) =
+            build_import_plan(&sample_report(), &trimmed_opts, Some(167_358), 2).unwrap();
+        assert!(!plan.is_full);
+        assert_eq!(plan.program.unwrap().program_key, full.program_key);
+        assert_eq!(plan.run.unwrap().program_key, full.program_key);
+        let other_date = key_of(&sample_report(), &dated("2026-09-01"), Some(167_358));
+        assert_ne!(other_date.program_key, full.program_key);
+    }
+
+    #[test]
+    fn an_intl_ref_keys_the_program_and_sets_country_without_a_unitid() {
+        let p = key_of(&sample_report(), &intl("ca:university-of-toronto"), None);
+        assert_eq!(
+            p.program_key,
+            "prog:ca:university-of-toronto|11.0701|2024-2025|BS|Computer Science"
+        );
+        assert_eq!(p.institution_ref, "ca:university-of-toronto");
+        assert_eq!(p.unitid, None);
+        assert_eq!(p.country.as_deref(), Some("CA"));
+        assert!(!p.institution_resolved, "no IPEDS unit id was resolved");
+    }
+
+    #[test]
+    fn an_intl_ref_overrides_a_resolved_unitid_and_partitions_courses() {
+        let opts = ImportOptions {
+            version_date: Some("2026-03-15".to_string()),
+            ..intl("ca:university-of-toronto")
+        };
+        let (plan, _) = build_import_plan(&sample_report(), &opts, Some(167_358), 1).unwrap();
+        let p = plan.program.unwrap();
+        assert_eq!(
+            p.program_key,
+            "prog:ca:university-of-toronto|11.0701|2024-2025|BS|Computer Science|v2026-03-15"
+        );
+        assert_eq!(p.unitid, None);
+        assert!(plan
+            .courses
+            .iter()
+            .all(|c| c.institution_ref == "ca:university-of-toronto" && c.unitid.is_none()));
+    }
+
+    #[test]
+    fn the_document_can_carry_its_own_institution_ref() {
+        let report = sample_report().replace(
+            r#""institution": "Test University","#,
+            r#""institution": "University of Toronto", "institution_ref": "ca:university-of-toronto","#,
+        );
+        let p = key_of(&report, &opts(), None);
+        assert!(
+            p.program_key.starts_with("prog:ca:university-of-toronto|"),
+            "{}",
+            p.program_key
+        );
+        assert_eq!(p.country.as_deref(), Some("CA"));
+        // An explicit --unitid overrides the document's ref.
+        let overridden = ImportOptions {
+            unitid: Some(167_358),
+            ..opts()
+        };
+        assert!(key_of(&report, &overridden, Some(167_358))
+            .program_key
+            .starts_with("prog:167358|"));
+        // A document with both is refused rather than guessed at.
+        let both = report.replace(r#""institution_ref""#, r#""unitid": 1, "institution_ref""#);
+        let err = build_import_plan(&both, &opts(), Some(1), 1).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("sets both unitid (1) and institution_ref"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_malformed_document_institution_ref_is_refused() {
+        let report = sample_report().replace(
+            r#""institution": "Test University","#,
+            r#""institution": "U of T", "institution_ref": "University of Toronto","#,
+        );
+        let err = build_import_plan(&report, &opts(), None, 1).unwrap_err();
+        assert!(err.to_string().contains("institution_ref must be"), "{err}");
+    }
+
+    #[test]
+    fn an_institution_ref_option_overrides_a_document_carrying_both() {
+        let report = sample_report().replace(
+            r#""institution": "Test University","#,
+            r#""institution": "Test University", "unitid": 1, "institution_ref": "gb:other","#,
+        );
+        let p = key_of(&report, &intl("ca:university-of-toronto"), Some(1));
+        assert!(
+            p.program_key.starts_with("prog:ca:university-of-toronto|"),
+            "{}",
+            p.program_key
+        );
+        assert_eq!(p.unitid, None);
+    }
+
+    #[test]
+    fn an_untrimmed_version_date_keys_and_stores_the_trimmed_value() {
+        // MCP input never passes through clap's parser, so the raw value reaches here.
+        let p = key_of(&sample_report(), &dated(" 2026-03-15 "), Some(167_358));
+        assert!(p.program_key.ends_with("|v2026-03-15"), "{}", p.program_key);
+        assert_eq!(p.version_date.as_deref(), Some("2026-03-15"));
+    }
+
+    #[tokio::test]
+    async fn bad_options_are_rejected_before_any_network_call() {
+        // Port 9 (discard) is never answered: reaching the network would fail the test
+        // with a transport error rather than return an outcome.
+        let client = DbClient::new("http://127.0.0.1:9", "anon", "jwt".to_string()).unwrap();
+        for bad in [
+            ImportOptions {
+                unitid: Some(167_358),
+                ..intl("ca:university-of-toronto")
+            },
+            dated("2026-02-30"),
+            intl("university-of-toronto"),
+        ] {
+            let outcome = execute_import(&client, &sample_report(), &bad)
+                .await
+                .unwrap();
+            assert!(
+                matches!(outcome.result, ImportResult::Rejected(_)),
+                "{bad:?}"
+            );
+            assert!(outcome.program_key.is_empty());
+            assert!(!outcome.run_written && outcome.courses_written == 0);
+        }
+    }
+
+    #[test]
+    fn unitid_and_institution_ref_are_mutually_exclusive() {
+        let both = ImportOptions {
+            unitid: Some(167_358),
+            ..intl("ca:university-of-toronto")
+        };
+        assert!(both.validate().unwrap_err().contains("mutually exclusive"));
+        assert!(build_import_plan(&sample_report(), &both, Some(167_358), 1).is_err());
+        assert!(intl("ca:university-of-toronto").validate().is_ok());
+        assert!(opts().validate().is_ok());
+        assert!(dated("2026-02-30").validate().is_err());
+    }
+
+    #[test]
+    fn version_dates_must_be_zero_padded_calendar_dates() {
+        assert_eq!(parse_version_date("2026-03-15").unwrap(), "2026-03-15");
+        assert_eq!(parse_version_date(" 2024-02-29 ").unwrap(), "2024-02-29");
+        for bad in [
+            "2026-3-15",
+            "2026/03/15",
+            "2026-13-01",
+            "2025-02-29",
+            "20260315",
+            "2026-03-15T00:00",
+            "2026-02-30",
+            "2026-03- 5",
+            "+2026-03-15",
+            "",
+        ] {
+            assert!(parse_version_date(bad).is_err(), "{bad:?} accepted");
+        }
+    }
+
+    #[test]
+    fn institution_refs_need_a_country_prefix_and_a_slug() {
+        let r = parse_institution_ref("ca:university-of-toronto").unwrap();
+        assert_eq!(r.reference, "ca:university-of-toronto");
+        assert_eq!(r.country, "CA");
+        let upper = parse_institution_ref("GB:imperial-college-london").unwrap();
+        assert_eq!(upper.reference, "gb:imperial-college-london");
+        assert_eq!(upper.country, "GB");
+        assert_eq!(parse_institution_ref("deu:tum").unwrap().country, "DEU");
+        assert_eq!(
+            parse_institution_ref("  ca:toronto \n").unwrap().reference,
+            "ca:toronto"
+        );
+        for bad in [
+            "",
+            ":toronto",
+            "ca:a:b",
+            "ca:toronto-",
+            "ca:a--b",
+            "university-of-toronto",
+            "c:toronto",
+            "cana:toronto",
+            "c1:toronto",
+            "ca:",
+            "ca:University-Of-Toronto",
+            "ca:toronto|2024",
+            "ca:-toronto",
+            "ca:university of toronto",
+        ] {
+            assert!(parse_institution_ref(bad).is_err(), "{bad:?} accepted");
+        }
     }
 
     #[test]

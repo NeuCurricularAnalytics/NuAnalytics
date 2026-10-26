@@ -85,6 +85,8 @@ pub mod variants {
 pub mod tables {
     /// IPEDS institution directory
     pub const INSTITUTIONS: &str = "institutions";
+    /// Non-US institutions, keyed by `ref` (`<country>:<slug>`) — IPEDS covers only the US
+    pub const INSTITUTIONS_INTL: &str = "institutions_intl";
     /// IPEDS degree completions — every row of the `C_A` file: all CIP codes, both major
     /// numbers, ~313,000 rows per survey year. Not filtered.
     pub const COMPLETIONS: &str = "completions";
@@ -143,6 +145,7 @@ pub mod tables {
         DEGREES,
         DEGREE_TYPES,
         INSTITUTIONS,
+        INSTITUTIONS_INTL,
         INSTITUTION_COMPLETION_TOTALS,
         INSTITUTION_CONTROL,
         INSTITUTION_LEVEL,
