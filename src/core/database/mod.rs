@@ -117,6 +117,12 @@ pub mod program_kinds {
 
     /// The kinds IPEDS counts under the major they belong to, not as awards of their own.
     pub const COUNTED_UNDER_PARENT: &[&str] = &[CONCENTRATION, TRACK, SPECIALIZATION, EMPHASIS];
+
+    /// Whether a degree type names a minor, which IPEDS has no line for.
+    #[must_use]
+    pub fn is_minor(degree_type: Option<&str>) -> bool {
+        degree_type.is_some_and(|t| t.trim().eq_ignore_ascii_case(MINOR))
+    }
 }
 
 /// Supabase table name constants — use these instead of raw string literals.

@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use super::error::{DatabaseError, DatabaseResult};
 use super::filters::QueryFilters;
 use super::import::document_and_hash;
-use super::{tables, DbClient};
+use super::{program_kinds, tables, DbClient};
 use crate::core::degree::from_unified_value;
 use crate::core::json::parse_json_array;
 use crate::core::models::DegreeProgram;
@@ -832,7 +832,8 @@ fn build_row(
         .or_else(|| degree_type.as_deref().and_then(default_award_level));
 
     let mut warnings = Vec::new();
-    if award_level.is_none() {
+    // A minor has no IPEDS line, so demographics refuses it whatever its award level.
+    if award_level.is_none() && !program_kinds::is_minor(degree_type.as_deref()) {
         warnings.push(degree_type.as_deref().map_or_else(
             || {
                 "no award level: no degree type is given or stored; pass --award-level \
@@ -1110,6 +1111,22 @@ mod tests {
         };
         let draft = build_row(&untyped, "167358", Some(167_358), &at_school()).unwrap();
         assert!(draft.warnings.iter().any(|w| w.contains("no degree type")));
+        for minor in ["minor", "Minor", " MINOR "] {
+            let typed = NewCip {
+                degree_type: Some(minor.into()),
+                ..untyped.clone()
+            };
+            let draft = build_row(&typed, "167358", Some(167_358), &at_school()).unwrap();
+            assert_eq!(draft.row.award_level, None);
+            assert!(
+                !draft
+                    .warnings
+                    .iter()
+                    .any(|w| w.starts_with("no award level")),
+                "{minor}: {:?}",
+                draft.warnings
+            );
+        }
         for bad in [
             NewCip {
                 degree_id: "  ".into(),

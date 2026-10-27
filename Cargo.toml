@@ -1,6 +1,6 @@
 [package]
 name = "nu-analytics"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 authors = ["Albert Lionelle <a.lionelle@northeastern.edu>","Hasnain Sikora <sikora.h@northeastern.edu>"]
 description = "A CLI and MCP server for curricular analytics: curriculum metrics from CurricularAnalytics.org (delay, blocking, complexity, centrality), degree-plan enumeration and reports, and an optional Supabase store of IPEDS data and degree programs."

@@ -4,6 +4,14 @@ All notable changes to NuAnalytics are recorded here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the
 project uses semantic versioning.
 
+## [0.7.1] — 2026-10-27
+
+**Fixed:** `db cip set` and `db cip import` no longer warn that a minor has no award
+level. The warning said demographics would need one, but a minor has no IPEDS line and
+`db query demographics --degree` refuses it whatever its award level. The minor check is
+now one function, `program_kinds::is_minor`, shared by the registry and the
+demographics query.
+
 ## [0.7.0] — 2026-10-26
 
 **Breaking for stored data: the CIP is no longer part of `program_key`.** Most stored CIPs

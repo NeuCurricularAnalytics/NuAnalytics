@@ -28,11 +28,6 @@ const PROGRAM_COLS: &str =
 /// Program kinds that are not IPEDS awards of their own.
 use crate::core::database::program_kinds;
 
-/// Whether a registered degree type is a minor, which IPEDS has no line for.
-fn is_minor_type(degree_type: Option<&str>) -> bool {
-    degree_type.is_some_and(|t| t.eq_ignore_ascii_case(program_kinds::MINOR))
-}
-
 #[derive(Debug, Clone, Deserialize)]
 struct StoredProgram {
     #[serde(default)]
@@ -167,7 +162,9 @@ fn kind_notes(
     stored: &[StoredProgram],
 ) -> Result<Vec<String>, String> {
     let kind = stored.iter().find_map(|p| p.program_kind.as_deref());
-    let registered_minor = rows.iter().any(|r| is_minor_type(r.degree_type.as_deref()));
+    let registered_minor = rows
+        .iter()
+        .any(|r| program_kinds::is_minor(r.degree_type.as_deref()));
     if kind == Some(program_kinds::MINOR) || registered_minor {
         return Err(to_json_pretty(&serde_json::json!({
             "degree_id": degree_id,
@@ -446,7 +443,7 @@ fn shared_programs(
     }
     for r in registered {
         if r.degree_id == degree_id
-            || is_minor_type(r.degree_type.as_deref())
+            || program_kinds::is_minor(r.degree_type.as_deref())
             || !cips_used.contains(r.cip_code.as_str())
             || r.award_level.is_some_and(|l| l != award_level)
             || !seen.insert(r.degree_id.as_str())
