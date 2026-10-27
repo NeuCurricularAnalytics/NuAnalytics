@@ -207,6 +207,19 @@ Not done:
   `db query demographics --school <UNITID> --degree <DEGREE_ID>` shows this per program
   (its empty years carry `nearby_cips_with_data`); correcting one needs the school's word,
   recorded with `db cip set`.
+- **A school's own program code and CIP have nowhere to go but a note.** `program_cips`
+  holds one CIP, the one IPEDS files the program under, because that is what demographics
+  join on. A school's records often say something else. Colorado State's 2024-25 official
+  program list gives each CS concentration its own CIP (CPSC-SEGZ-BS is 14.0903,
+  CPSC-NSCZ-BS 11.1003, …) and an internal code. But CSU reports the major, CPSC-BS, to
+  IPEDS, so every concentration's completions are under 11.0101, which is the CIP
+  recorded. The school's code and CIP are kept only in the free-text `note`: no query can
+  find a program by them, and they never reach the stored program, whose
+  `cip_code confirmed:` line is built from `source`. A school can also recode a
+  concentration while its IPEDS CIP stays put (CSU's Human-Centered Computing: 11.0101 in
+  the 24-25 list, 30.3101 later). A fix would add `school_code` and `school_cip` columns
+  to `program_cips` (dated by `from_year` like `cip_code`), accept them in `db cip set` /
+  `db cip import`, and decide whether they belong in the stored document too.
 
 ---
 
